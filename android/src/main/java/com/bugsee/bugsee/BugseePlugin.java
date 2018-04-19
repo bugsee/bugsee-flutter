@@ -1,5 +1,7 @@
 package com.bugsee.bugsee;
 
+import android.graphics.Rect;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -53,6 +55,30 @@ public class BugseePlugin implements MethodCallHandler {
         Bugsee.setAttribute(key, value);
     }
 
+    private void handleAddSecureRect(MethodCall call, final Result result) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = (Map<String, Object>) call.arguments;
+        int x1 = ((Number)arguments.get("X")).intValue();
+        int y1 = ((Number)arguments.get("Y")).intValue();
+        int x2 = x1 + ((Number)arguments.get("Width")).intValue();
+        int y2 = y1 + ((Number)arguments.get("Height")).intValue();
+        Bugsee.addSecureRectangle(new Rect(x1 ,y1, x2, y2));
+    }
+
+    private void handleRemoveSecureRect(MethodCall call, final Result result) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = (Map<String, Object>) call.arguments;
+        int x1 = ((Number)arguments.get("X")).intValue();
+        int y1 = ((Number)arguments.get("Y")).intValue();
+        int x2 = x1 + ((Number)arguments.get("Width")).intValue();
+        int y2 = y1 + ((Number)arguments.get("Height")).intValue();
+        Bugsee.removeSecureRectangle(new Rect(x1 ,y1, x2, y2));
+    }
+
+    private void handleRemoveAllSecureRects(MethodCall call, final Result result) {
+        Bugsee.removeAllSecureRectangles();
+    }
+
     private void handleLogException(MethodCall call, final Result result) {
         @SuppressWarnings("unchecked")
         Map<String, Object> arguments = (Map<String, Object>) call.arguments;
@@ -86,6 +112,18 @@ public class BugseePlugin implements MethodCallHandler {
 
             case "setAttribute":
                 handleSetAttribute(call, result);
+                break;
+
+            case "addSecureRect":
+                handleAddSecureRect(call, result);
+                break;
+
+            case "removeSecureRect":
+                handleRemoveSecureRect(call, result);
+                break;
+
+            case "removeAllSecureRects":
+                handleRemoveAllSecureRects(call, result);
                 break;
 
             default:

@@ -174,4 +174,23 @@ runZoned<Future<Null>>(() async {
 });
 ```
 
+## Privacy
+
+For privacy reasons rectangular regions in the video may be concealed by using the following methods:
+
+```dart
+Rect hiddenRect = const Offset(50.0, 50.0) &
+                      const Size(100.0, 100.0);
+
+// Hide region
+Bugsee.addSecureRect(rect: hiddenRect);
+
+// Unhide region
+Bugsee.removeSecureRect(rect: hiddenRect);
+
+// Unhide everything
+Bugsee.removeAllSecureRects();
+
+```
+
 Bugsee can be further customized. For a complete SDK documentation covering additional options and API's visit [https://docs.bugsee.com/sdk/flutter](https://docs.bugsee.com/sdk/flutter)

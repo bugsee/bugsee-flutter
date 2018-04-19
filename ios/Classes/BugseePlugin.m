@@ -24,7 +24,7 @@
         result(nil);
     }
 
-    if ([@"trace" isEqualToString:call.method]) {
+    else if ([@"trace" isEqualToString:call.method]) {
         NSString *name = call.arguments[@"name"];
         id value = call.arguments[@"value"];
         [Bugsee traceKey:name withValue:value];
@@ -32,7 +32,7 @@
         result(nil);
     }
 
-    if ([@"setAttribute" isEqualToString:call.method]) {
+    else if ([@"setAttribute" isEqualToString:call.method]) {
         NSString *key = call.arguments[@"key"];
         id value = call.arguments[@"value"];
 
@@ -41,7 +41,7 @@
         result(nil);
     }
 
-    if ([@"clearAttribute" isEqualToString:call.method]) {
+    else if ([@"clearAttribute" isEqualToString:call.method]) {
         NSString *key = call.arguments[@"key"];
 
         [Bugsee clearAttribute:key];
@@ -64,6 +64,39 @@
         result(nil);
     }
 
+    else if ([@"addSecureRect" isEqualToString:call.method]) {
+        CGRect rect;
+        if (CGRectMakeWithDictionaryRepresentation((CFDictionaryRef)call.arguments, &rect)){
+
+            CGFloat scale = [UIScreen mainScreen].scale;
+            rect.size.width /= scale; rect.size.height /= scale;
+            rect.origin.x /= scale; rect.origin.y /= scale;
+
+            [Bugsee addSecureRect:rect];
+        }
+
+        result(nil);
+    }
+
+    else if ([@"removeSecureRect" isEqualToString:call.method]) {
+        CGRect rect;
+        if (CGRectMakeWithDictionaryRepresentation((CFDictionaryRef)call.arguments, &rect)){
+
+            CGFloat scale = [UIScreen mainScreen].scale;
+            rect.size.width /= scale; rect.size.height /= scale;
+            rect.origin.x /= scale; rect.origin.y /= scale;
+
+            [Bugsee removeSecureRect:rect];
+        }
+
+        result(nil);
+    }
+
+    else if ([@"removeAllSecureRects" isEqualToString:call.method]) {
+        [Bugsee removeAllSecureRects];
+
+        result(nil);
+    }
 
     else {
         result(FlutterMethodNotImplemented);

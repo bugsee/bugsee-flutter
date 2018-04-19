@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'dart:convert';
+import 'dart:ui';
 import 'package:meta/meta.dart';
 import 'package:flutter/services.dart';
 import 'package:stack_trace/stack_trace.dart';
@@ -37,6 +38,29 @@ class Bugsee {
   static Future<Null> clearAttribute({@required String key}) async {
     await _channel.invokeMethod('clearAttribute', <String, dynamic>{
       'key': key,
+    });
+  }
+
+  static Future<Null> addSecureRect({@required Rect rect}) async {
+    await _channel.invokeMethod('addSecureRect', <String, dynamic>{
+      'X': rect.left,
+      'Y': rect.top,
+      'Width': rect.width,
+      'Height': rect.height,
+    });
+  }
+
+  static Future<Null> removeSecureRect({@required Rect rect}) async {
+    await _channel.invokeMethod('removeSecureRect', <String, dynamic>{
+      'X': rect.left,
+      'Y': rect.top,
+      'Width': rect.width,
+      'Height': rect.height,
+    });
+  }
+
+  static Future<Null> removeAllSecureRects({@required Rect rect}) async {
+    await _channel.invokeMethod('removeSecureRect', <String, dynamic>{
     });
   }
 

@@ -151,6 +151,24 @@ class MyHomePage extends StatelessWidget {
               },
             ),
             new RaisedButton(
+              child: new Text('Add Secure Rect'),
+              elevation: 1.0,
+              onPressed: () async {
+                Rect hiddenRect = const Offset(50.0, 50.0) &
+                                      const Size(100.0, 100.0);
+                Bugsee.addSecureRect(rect: hiddenRect);
+              },
+            ),
+            new RaisedButton(
+              child: new Text('Remove Secure Rect'),
+              elevation: 1.0,
+              onPressed: () async {
+                Rect hiddenRect = const Offset(50.0, 50.0) &
+                                      const Size(100.0, 100.0);
+                Bugsee.removeSecureRect(rect: hiddenRect);
+              },
+            ),
+            new RaisedButton(
               child: new Text('Custom events'),
               elevation: 1.0,
               onPressed: () async {

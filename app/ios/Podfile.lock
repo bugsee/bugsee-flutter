@@ -1,0 +1,29 @@
+PODS:
+  - Bugsee (1.27.0)
+  - bugsee (2.0.0):
+    - Bugsee
+    - Flutter
+  - Flutter (1.0.0)
+
+DEPENDENCIES:
+  - bugsee (from `.symlinks/plugins/bugsee/ios`)
+  - Flutter (from `Flutter`)
+
+SPEC REPOS:
+  trunk:
+    - Bugsee
+
+EXTERNAL SOURCES:
+  bugsee:
+    :path: ".symlinks/plugins/bugsee/ios"
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  Bugsee: fe151b38b61956faf92788a64136785227d3a125
+  bugsee: 80b3b8596cad7a9b0bfbcae1fb0d70c3f2c6e84f
+  Flutter: 434fef37c0980e73bb6479ef766c45957d4b510c
+
+PODFILE CHECKSUM: 8e679eca47255a8ca8067c4c67aab20e64cb974d
+
+COCOAPODS: 1.10.1

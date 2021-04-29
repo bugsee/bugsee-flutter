@@ -3,9 +3,10 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:bugsee/src/networking.dart';
+import 'package:bugsee/src/ui.dart';
 import 'package:flutter/services.dart';
-import 'package:stack_trace/stack_trace.dart';
 import 'package:flutter/widgets.dart';
+import 'package:stack_trace/stack_trace.dart';
 
 import 'src/appearance.dart';
 import 'src/callbacks.dart';
@@ -17,9 +18,10 @@ import 'src/types.dart';
 
 export 'src/appearance.dart';
 export 'src/enums.dart';
+export 'src/networking.dart' show BugseeHttpOverrides;
 export 'src/options.dart' show AndroidLaunchOptions, IOSLaunchOptions;
 export 'src/types.dart';
-export 'src/networking.dart' show BugseeHttpOverrides;
+export 'src/ui.dart' show BugseeSecureView;
 
 typedef AppRunCallback = FutureOr<void> Function();
 
@@ -30,6 +32,7 @@ class Bugsee {
   static BugseeAppearance? _appearance;
   static BugseeExceptionHandler? _exceptionHandler;
   static BugseeCallbacks? _callbacks;
+  static BugseeViewManager? _viewManager;
 
   static BugseeAppearance get appearance {
     _init();
@@ -46,6 +49,7 @@ class Bugsee {
       _appearance = BugseeAppearance(_channel!);
       _exceptionHandler = BugseeExceptionHandler(_channel!);
       _callbacks = BugseeCallbacks(_channel!);
+      _viewManager = BugseeViewManager(_channel!);
     }
   }
 
@@ -76,6 +80,8 @@ class Bugsee {
       _exceptionHandler?.deactivateUnhandledInterception();
     }
 
+    _viewManager?.startViewTracking();
+
     if (appRunCallback != null) {
       runZonedGuarded<FutureOr<void>>(() async {
         await appRunCallback();
@@ -90,6 +96,7 @@ class Bugsee {
 
   /// Stop Bugsee
   static Future<void> stop() async {
+    _viewManager?.stopViewTracking();
     await _channel?.invokeMethod('stop', <String, dynamic>{});
   }
 
@@ -110,9 +117,11 @@ class Bugsee {
           0;
       if (launched) {
         _exceptionHandler?.syncWithOptions(getLaunchOptions());
+        _viewManager?.startViewTracking();
       } else {
         // relaunch failed -> deactivate exceptions handler
         _exceptionHandler?.deactivateUnhandledInterception();
+        _viewManager?.stopViewTracking();
       }
     }
 
@@ -308,6 +317,7 @@ class Bugsee {
 
   static Future<List<Rectangle<double>>?> getAllSecureRects() async {
     _init();
+
     List<dynamic>? rawRectangles =
         await _channel?.invokeMethod('getAllSecureRects', <String, dynamic>{});
 

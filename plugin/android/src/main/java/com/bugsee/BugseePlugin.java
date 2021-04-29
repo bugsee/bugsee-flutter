@@ -294,6 +294,9 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             case "getAllSecureRects":
                 getAllSecureRects(call, result);
                 break;
+            case "setSecureRectsInternal":
+                setSecureRectsInternal(call, result);
+                break;
             case "setViewHidden":
                 setViewHidden(call, result);
                 break;
@@ -617,6 +620,24 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         }
 
         result.success(finalRectangles);
+    }
+
+    private void setSecureRectsInternal(MethodCall call, final Result result) {
+        // TODO: replace this with a new API which will set internal secure
+        // rectangles
+        Bugsee.removeAllSecureRectangles();
+
+        List<Double> bounds = call.argument("bounds");
+        for (int i = 0; i < bounds.size(); i += 4) {
+            int x = getRectValue(bounds.get(i));
+            int y = getRectValue(bounds.get(i + 1));
+            int w = getRectValue(bounds.get(i + 2)) + x;
+            int h = getRectValue(bounds.get(i + 3)) + y;
+            Rect rect = new Rect(x, y, w, h);
+            Bugsee.addSecureRectangle(rect);
+        }
+
+        result.success(null);
     }
 
     // endregion

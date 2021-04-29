@@ -16,7 +16,6 @@ import 'dart:math';
 
 // This imports the Bugsee plugin
 import 'package:bugsee/bugsee.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -104,21 +103,23 @@ class MyHomePage extends StatelessWidget {
                 }
               },
             ),
-            new ElevatedButton(
-              child: new Text('Log messages'),
-              onPressed: () {
-                print("This is a message posted with print() call");
-                Bugsee.log("This is a test console message");
-                Bugsee.log("This is a test console ERROR message",
-                    BugseeLogLevel.error);
-                Bugsee.log("This is a test console DEBUG message",
-                    BugseeLogLevel.debug);
-                Bugsee.log(
-                    "This is a test console INFO message", BugseeLogLevel.info);
-                Bugsee.log("This is a test console WARNING message",
-                    BugseeLogLevel.warning);
-              },
-            ),
+            new BugseeSecureView(
+                enabled: true,
+                child: new ElevatedButton(
+                  child: new Text('Log messages'),
+                  onPressed: () {
+                    print("This is a message posted with print() call");
+                    Bugsee.log("This is a test console message");
+                    Bugsee.log("This is a test console ERROR message",
+                        BugseeLogLevel.error);
+                    Bugsee.log("This is a test console DEBUG message",
+                        BugseeLogLevel.debug);
+                    Bugsee.log("This is a test console INFO message",
+                        BugseeLogLevel.info);
+                    Bugsee.log("This is a test console WARNING message",
+                        BugseeLogLevel.warning);
+                  },
+                )),
             new ElevatedButton(
               child: new Text('Network request'),
               onPressed: () async {
@@ -190,8 +191,8 @@ class MyHomePage extends StatelessWidget {
             new ElevatedButton(
               child: new Text('Get all secure rects'),
               onPressed: () async {
-                var rectangles = await Bugsee.getAllSecureRects();
-                print(rectangles);
+                dynamic rects = await Bugsee.getAllSecureRects();
+                print(rects);
               },
             ),
           ],

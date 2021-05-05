@@ -17,6 +17,7 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.Math;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -221,105 +222,105 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         // of the latter. The downside of it, however, is much more
         // verbose and bloated code
         switch (call.method) {
-        case "launch":
-            launch(call, result);
-            break;
-        case "stop":
-            stop(call, result);
-            break;
-        case "relaunch":
-            relaunch(call, result);
-            break;
-        case "pause":
-            pause(call, result);
-            break;
-        case "resume":
-            resume(call, result);
-            break;
-        case "event":
-            event(call, result);
-            break;
-        case "trace":
-            trace(call, result);
-            break;
-        case "log":
-            log(call, result);
-            break;
-        case "setAttribute":
-            setAttribute(call, result);
-            break;
-        case "getAttribute":
-            getAttribute(call, result);
-            break;
-        case "clearAttribute":
-            clearAttribute(call, result);
-            break;
-        case "clearAllAttributes":
-            clearAllAttributes(call, result);
-            break;
-        case "setEmail":
-            setEmail(call, result);
-            break;
-        case "getEmail":
-            getEmail(call, result);
-            break;
-        case "clearEmail":
-            clearEmail(call, result);
-            break;
-        case "logException":
-            logException(call, result);
-            break;
-        case "upload":
-            upload(call, result);
-            break;
-        case "showReportDialog":
-            showReportDialog(call, result);
-            break;
-        case "showFeedbackUI":
-            showFeedbackUI(call, result);
-            break;
-        case "setDefaultFeedbackGreeting":
-            setDefaultFeedbackGreeting(call, result);
-            break;
-        case "addSecureRect":
-            addSecureRect(call, result);
-            break;
-        case "removeSecureRect":
-            removeSecureRect(call, result);
-            break;
-        case "removeAllSecureRects":
-            removeAllSecureRects(call, result);
-            break;
-        case "getAllSecureRects":
-            getAllSecureRects(call, result);
-            break;
-        case "setViewHidden":
-            setViewHidden(call, result);
-            break;
-        case "isViewHidden":
-            isViewHidden(call, result);
-            break;
-        case "setAppearanceProperty":
-            setAppearanceProperty(call, result);
-            break;
-        case "getAppearanceProperty":
-            getAppearanceProperty(call, result);
-            break;
-        case "setCallbackState":
-            setCallbackState(call, result);
-            break;
-        case "registerNetworkEvent":
-            registerNetworkEvent(call, result);
-            break;
-        case "testExceptionCrash":
-            testExceptionCrash(call, result);
-            break;
-        case "testSignalCrash":
-            testSignalCrash(call, result);
-            break;
-        default:
-            result.notImplemented();
-            break;
+            case "launch":
+                launch(call, result);
+                break;
+            case "stop":
+                stop(call, result);
+                break;
+            case "relaunch":
+                relaunch(call, result);
+                break;
+            case "pause":
+                pause(call, result);
+                break;
+            case "resume":
+                resume(call, result);
+                break;
+            case "event":
+                event(call, result);
+                break;
+            case "trace":
+                trace(call, result);
+                break;
+            case "log":
+                log(call, result);
+                break;
+            case "setAttribute":
+                setAttribute(call, result);
+                break;
+            case "getAttribute":
+                getAttribute(call, result);
+                break;
+            case "clearAttribute":
+                clearAttribute(call, result);
+                break;
+            case "clearAllAttributes":
+                clearAllAttributes(call, result);
+                break;
+            case "setEmail":
+                setEmail(call, result);
+                break;
+            case "getEmail":
+                getEmail(call, result);
+                break;
+            case "clearEmail":
+                clearEmail(call, result);
+                break;
+            case "logException":
+                logException(call, result);
+                break;
+            case "upload":
+                upload(call, result);
+                break;
+            case "showReportDialog":
+                showReportDialog(call, result);
+                break;
+            case "showFeedbackUI":
+                showFeedbackUI(call, result);
+                break;
+            case "setDefaultFeedbackGreeting":
+                setDefaultFeedbackGreeting(call, result);
+                break;
+            case "addSecureRect":
+                addSecureRect(call, result);
+                break;
+            case "removeSecureRect":
+                removeSecureRect(call, result);
+                break;
+            case "removeAllSecureRects":
+                removeAllSecureRects(call, result);
+                break;
+            case "getAllSecureRects":
+                getAllSecureRects(call, result);
+                break;
+            case "setViewHidden":
+                setViewHidden(call, result);
+                break;
+            case "isViewHidden":
+                isViewHidden(call, result);
+                break;
+            case "setAppearanceProperty":
+                setAppearanceProperty(call, result);
+                break;
+            case "getAppearanceProperty":
+                getAppearanceProperty(call, result);
+                break;
+            case "setCallbackState":
+                setCallbackState(call, result);
+                break;
+            case "registerNetworkEvent":
+                registerNetworkEvent(call, result);
+                break;
+            case "testExceptionCrash":
+                testExceptionCrash(call, result);
+                break;
+            case "testSignalCrash":
+                testSignalCrash(call, result);
+                break;
+            default:
+                result.notImplemented();
+                break;
         }
     }
 
@@ -575,7 +576,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
     private int getRectValue(Object rectValue) {
         if (rectValue instanceof Double) {
-            return ((Double)rectValue).intValue();
+            return ((Double) rectValue).intValue();
         }
 
         return 0;
@@ -607,10 +608,12 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
     private void getAllSecureRects(MethodCall call, final Result result) {
         ArrayList<Rect> rawRectangles = Bugsee.getAllSecureRectangles();
-        ArrayList<int[]> finalRectangles = new ArrayList<int[]>();
+        ArrayList<List<Double>> finalRectangles = new ArrayList<List<Double>>();
 
         for (Rect rawRect : rawRectangles) {
-            finalRectangles.add(new int[] { rawRect.left, rawRect.top, rawRect.width(), rawRect.height() });
+            List<Double> items = Arrays.asList((double) rawRect.left, (double) rawRect.top, (double) rawRect.width(),
+                    (double) rawRect.height());
+            finalRectangles.add(items);
         }
 
         result.success(finalRectangles);
@@ -804,10 +807,12 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     }
 
     private void handleAttachments(final Report report) {
-        List<Object> reportArgs = new ArrayList<Object>() {{
-            add(report.getType().toString());
-            add(report.getSeverity().getIntValue());
-        }};
+        List<Object> reportArgs = new ArrayList<Object>() {
+            {
+                add(report.getType().toString());
+                add(report.getSeverity().getIntValue());
+            }
+        };
 
         channel.invokeMethod("onAttachmentsForReport", reportArgs, new Result() {
             @Override
@@ -817,11 +822,11 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                         List<List<Object>> resultData = (List<List<Object>>) result;
                         ArrayList<CustomAttachment> attachments = new ArrayList<>();
 
-                        for (List<Object> itemValues: resultData) {
+                        for (List<Object> itemValues : resultData) {
                             CustomAttachment attachment = null;
-                            String name = (String)itemValues.get(0);
-                            String fileName = (String)itemValues.get(1);
-                            byte[] rawData = (byte[])itemValues.get(2);
+                            String name = (String) itemValues.get(0);
+                            String fileName = (String) itemValues.get(1);
+                            byte[] rawData = (byte[]) itemValues.get(2);
 
                             if (rawData != null) {
                                 String dataString = new String(rawData);
@@ -837,8 +842,8 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                         BugseeInternalAdapter.setAttachments(attachments);
                         return;
                     } catch (Exception e) {
-                        BugseeInternalAdapter.logWarning(TAG,
-                                "Failed to handle attachments. Error: " + e.toString(), false);
+                        BugseeInternalAdapter.logWarning(TAG, "Failed to handle attachments. Error: " + e.toString(),
+                                false);
                     }
                 }
 

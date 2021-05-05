@@ -308,7 +308,7 @@ class Bugsee {
 
   static Future<List<Rectangle<double>>?> getAllSecureRects() async {
     _init();
-    List<List<double>>? rawRectangles =
+    List<dynamic>? rawRectangles =
         await _channel?.invokeMethod('getAllSecureRects', <String, dynamic>{});
 
     if (rawRectangles != null) {

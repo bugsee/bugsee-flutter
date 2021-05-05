@@ -188,9 +188,8 @@ class MyHomePage extends StatelessWidget {
               },
             ),
             new ElevatedButton(
-              child: new Text('Add secure rect'),
+              child: new Text('Get all secure rects'),
               onPressed: () async {
-                Bugsee.addSecureRect(new Rectangle(20, 20, 100, 100));
                 var rectangles = await Bugsee.getAllSecureRects();
                 print(rectangles);
               },

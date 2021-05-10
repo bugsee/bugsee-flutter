@@ -412,6 +412,23 @@ NSMutableSet * activeCallbacks = nil;
     result(nil);
 }
 
+- (void) setSecureRectsInternal:(FlutterMethodCall*)call result:(FlutterResult)result {
+    // TODO: replace this with a new API which will set internal secure rectangles
+    [Bugsee removeAllSecureRects];
+
+    NSArray * boundsData = call.arguments[@"bounds"];
+    
+    for (int i = 0; i < boundsData.count; i += 4) {
+        CGFloat x = [boundsData[i] floatValue];
+        CGFloat y = [boundsData[i + 1] floatValue];
+        CGFloat w = [boundsData[i + 2] floatValue];
+        CGFloat h = [boundsData[i + 3] floatValue];
+        [Bugsee addSecureRect:CGRectMake(x, y, w, h)];
+    }
+
+    result(nil);
+}
+
 
 // ----------------------------------------------------------------------------------
 # pragma mark -

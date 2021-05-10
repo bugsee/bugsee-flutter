@@ -364,7 +364,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             }
         }
 
-        result.success(null);
+        result.success(1);
     }
 
     private void stop(MethodCall call, Result result) {
@@ -623,8 +623,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     }
 
     private void setSecureRectsInternal(MethodCall call, final Result result) {
-        // TODO: replace this with a new API which will set internal secure
-        // rectangles
+        // TODO: replace this with a new API which will set internal secure rectangles
         Bugsee.removeAllSecureRectangles();
 
         List<Double> bounds = call.argument("bounds");

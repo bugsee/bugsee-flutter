@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'enums.dart';
+import 'version.dart';
 
 const MAX_BODY_LENGTH = 5 * 1024;
 
@@ -19,6 +20,9 @@ abstract class BugseeLaunchOptions {
   }
 
   void setDefaults() {
+    // set wrapper info
+    _optionsMap['wrapper'] = {'type': 'flutter', 'version': BUGSEE_VERSION};
+
     maxRecordingTime = 60;
     shakeToReport = true;
     crashReport = true;

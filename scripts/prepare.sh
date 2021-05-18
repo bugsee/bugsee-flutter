@@ -1,11 +1,9 @@
 #!/bin/bash
 
-pushd ./plugin
 flutter clean
-flutter pub get
+
+pushd ./example
+flutter clean
 popd
 
-pushd ./app
-flutter clean
 flutter pub get
-popd

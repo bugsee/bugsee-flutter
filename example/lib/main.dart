@@ -1,6 +1,5 @@
 /// This is a sample Flutter app  that demonstrates how to catch various kinds
 /// of errors in Flutter apps and report them to Bugsee.
-library flutterdevapp;
 
 import 'dart:async';
 import 'dart:convert';

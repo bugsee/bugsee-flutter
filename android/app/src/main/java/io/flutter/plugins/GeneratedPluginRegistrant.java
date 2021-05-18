@@ -2,6 +2,7 @@ package io.flutter.plugins;
 
 import io.flutter.plugin.common.PluginRegistry;
 import com.bugsee.BugseePlugin;
+import io.flutter.plugins.packageinfo.PackageInfoPlugin;
 
 /**
  * Generated file. Do not edit.
@@ -12,6 +13,7 @@ public final class GeneratedPluginRegistrant {
       return;
     }
     BugseePlugin.registerWith(registry.registrarFor("com.bugsee.BugseePlugin"));
+    PackageInfoPlugin.registerWith(registry.registrarFor("io.flutter.plugins.packageinfo.PackageInfoPlugin"));
   }
 
   private static boolean alreadyRegisteredWith(PluginRegistry registry) {

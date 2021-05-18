@@ -1,46 +1,86 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
-/// This is a sample Flutter app that demonstrates how to catch various kinds
+/// This is a sample Flutter app  that demonstrates how to catch various kinds
 /// of errors in Flutter apps and report them to Bugsee.
-///
-/// Explanations are provided in the inline comments in the code below.
-library crashy;
+library flutterdevapp;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-// import 'dart:html';
 import 'dart:math';
+import 'dart:typed_data';
 
 // This imports the Bugsee plugin
 import 'package:bugsee/bugsee.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import 'bugsee-helper.dart' show launchBugsee, customizeBugsee;
+void onBugseeLifecycleEvent(BugseeLifecycleEventType e) {
+  print(e);
+}
+
+Future<BugseeLogEvent> onBugseeLogEvent(BugseeLogEvent logEvent) {
+  logEvent.text = "Filtered: " + logEvent.text;
+  return Future.value(logEvent);
+}
+
+Future<BugseeNetworkEvent> onBugseeNetworkEvent(BugseeNetworkEvent e) {
+  e.url = "<redacted>";
+  return Future.value(e);
+}
+
+Future<List<BugseeAttachment>> onBugseeAttachmentsRequest(BugseeReport report) {
+  var attachments = <BugseeAttachment>[];
+  var list = utf8.encode("This is the contents of the attachment!");
+  var data = list is Uint8List ? list : new Uint8List.fromList(list);
+  attachments.add(BugseeAttachment("testAttachment", "", data));
+  return Future.value(attachments);
+}
+
+Future<Null> configureBugsee() async {
+  Bugsee.setLogFilter(onBugseeLogEvent);
+  Bugsee.setNetworkFilter(onBugseeNetworkEvent);
+  Bugsee.setLifecycleCallback(onBugseeLifecycleEvent);
+  Bugsee.setAttachmentsCallback(onBugseeAttachmentsRequest);
+
+  var bgColor = Color.fromARGB(255, 100, 150, 180);
+
+  await Bugsee.appearance.iOS.setReportBackgroundColor(bgColor);
+  await Bugsee.appearance.android.setReportBackgroundColor(bgColor);
+}
+
+BugseeLaunchOptions? createLaunchOptions() {
+  if (Platform.isAndroid) {
+    return new AndroidLaunchOptions();
+  } else if (Platform.isIOS) {
+    return new IOSLaunchOptions();
+  }
+
+  return null;
+}
+
+Future<Null> launchBugsee(Function(bool isBugseeLaunched) appRunner) async {
+  var launchOptions = createLaunchOptions();
+  var bugseeToken = "";
+
+  if (Platform.isAndroid) {
+    bugseeToken = "5fd1ecce-2f29-4db8-b22e-78a2ed85402d";
+  } else if (Platform.isIOS) {
+    bugseeToken = "a9920d8b-cb0b-43c0-a360-af68c77b5065";
+  }
+
+  await Bugsee.launch(bugseeToken,
+      appRunCallback: appRunner, launchOptions: launchOptions);
+}
 
 Future<Null> main() async {
+  // This is required to let Bugsee intercept network requests
   HttpOverrides.global = Bugsee.defaultHttpOverrides;
 
-  print('Application initializing...');
-
-  await customizeBugsee();
-  await launchBugsee(() => runApp(new CrashyApp()));
-
-  // This creates a [Zone] that contains the Flutter application and establishes
-  // an error handler that captures errors and reports them.
-  //
-  // Using a zone makes sure that as many errors as possible are captured,
-  // including those thrown from [Timer]s, microtasks, I/O, and those forwarded
-  // from the `FlutterError` handler.
-  //
-  // More about zones:
-  //
-  // - https://api.dartlang.org/stable/1.24.2/dart-async/Zone-class.html
-  // - https://www.dartlang.org/articles/libraries/zones
-  //
+  await launchBugsee((bool isBugseeLaunched) async {
+    if (isBugseeLaunched) {
+      await configureBugsee();
+    }
+    runApp(new CrashyApp());
+  });
 }
 
 class CrashyApp extends StatelessWidget {

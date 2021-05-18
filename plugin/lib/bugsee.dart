@@ -15,15 +15,17 @@ import 'src/exceptions.dart';
 import 'src/options.dart';
 import 'src/state.dart';
 import 'src/types.dart';
+import 'src/version.dart';
 
 export 'src/appearance.dart';
 export 'src/enums.dart';
 export 'src/networking.dart' show BugseeHttpOverrides;
-export 'src/options.dart' show AndroidLaunchOptions, IOSLaunchOptions;
+export 'src/options.dart'
+    show AndroidLaunchOptions, IOSLaunchOptions, BugseeLaunchOptions;
 export 'src/types.dart';
 export 'src/ui.dart' show BugseeSecureView;
 
-typedef AppRunCallback = FutureOr<void> Function();
+typedef AppRunCallback = void Function(bool isBugseeLaunched);
 
 class Bugsee {
   static final HttpOverrides _httpOverrides = BugseeHttpOverrides();
@@ -57,38 +59,48 @@ class Bugsee {
   // Execution management
   // ----------------------------------------------------------------------------------
 
-  /// Launch Bugsee
-  static Future<bool> launch(String appToken,
-      {AppRunCallback? appRunCallback,
-      BugseeLaunchOptions? launchOptions}) async {
-    // Make sure we've initialized all the internals
+  static Future<bool> _initAndLaunch(String appToken,
+      {BugseeLaunchOptions? launchOptions}) async {
     _init();
-
+    await autoFillVersionInternal();
     // either use provided options, or fallback to explicit defaults
     setLaunchOptions(launchOptions ?? getDefaultLaunchOptions());
-    var launched = (await _channel?.invokeMethod('launch', <String, dynamic>{
-              'token': appToken,
-              'launchOptions': getLaunchOptions()!.toMap(),
-            }) ??
-            0) !=
-        0;
-
+    var params = <String, dynamic>{
+      'token': appToken,
+      'launchOptions': getLaunchOptions()!.toMap(),
+    };
+    var launched = ((await _channel?.invokeMethod('launch', params)) ?? 0) != 0;
     if (launched) {
       _exceptionHandler?.syncWithOptions(getLaunchOptions());
+      _viewManager?.startViewTracking();
     } else {
       // launch failed -> deactivate exceptions handler
       _exceptionHandler?.deactivateUnhandledInterception();
     }
+    return Future.value(launched);
+  }
 
-    _viewManager?.startViewTracking();
+  /// Launch Bugsee
+  static Future<bool> launch(String appToken,
+      {AppRunCallback? appRunCallback,
+      BugseeLaunchOptions? launchOptions}) async {
+    bool launched = false;
+
+    var launchCallback = () async {
+      launched = await _initAndLaunch(appToken, launchOptions: launchOptions);
+      _exceptionHandler?.installGlobalErrorHandler();
+    };
 
     if (appRunCallback != null) {
-      runZonedGuarded<FutureOr<void>>(() async {
-        await appRunCallback();
+      await runZonedGuarded<FutureOr<void>>(() async {
+        // Make sure we've initialized all the internals
+        await launchCallback();
+        appRunCallback(launched);
       }, (error, stackTrace) async {
-        // TODO: Handled or Unhandled?
         await Bugsee.logHandledException(error, stackTrace);
       });
+    } else {
+      await launchCallback();
     }
 
     return Future.value(launched);
@@ -347,6 +359,10 @@ class Bugsee {
   static Future<Null> logException(dynamic exception,
       [dynamic stackTrace]) async {
     return logHandledException(exception, stackTrace);
+  }
+
+  static void setApplicationVersion(String version) {
+    setApplicationVersionInternal(version);
   }
 
   // ----------------------------------------------------------------------------------

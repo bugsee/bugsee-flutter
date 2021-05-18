@@ -191,30 +191,6 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     // ----------------------------------------------------------------------------------
     // region MethodCallHandler implementation and accompanying routines
 
-    private Method getMethod(String methodName) {
-        Method method = null;
-
-        if (this.methods.containsKey(methodName)) {
-            return this.methods.get(methodName);
-        }
-
-        try {
-            Method[] declaredMethods = this.getClass().getDeclaredMethods();
-            for (Method m : declaredMethods) {
-                if (methodName.equals(m.getName())) {
-                    method = m;
-                    break;
-                }
-            }
-        } catch (Throwable t) {
-            BugseeInternalAdapter.logWarning(TAG, t.toString(), false);
-        }
-
-        this.methods.put(methodName, method);
-
-        return method;
-    }
-
     @Override
     @UiThread
     public void onMethodCall(MethodCall call, @NonNull Result result) {
@@ -349,6 +325,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     // region Execution management
 
     private void launch(MethodCall call, Result result) {
+        int returnValue = 1;
         String appToken = call.argument("token");
         HashMap<String, Object> launchOptions = call.argument("launchOptions");
 
@@ -361,10 +338,12 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             if (context != null) {
                 lastLaunchOptions = launchOptions;
                 Bugsee.launch((Application) context, appToken, launchOptions);
+            } else {
+                returnValue = 0;
             }
         }
 
-        result.success(1);
+        result.success(returnValue);
     }
 
     private void stop(MethodCall call, Result result) {

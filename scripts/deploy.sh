@@ -1,0 +1,27 @@
+export PATH=$PATH:/usr/local/bin
+
+WORKSPACE=${WORKSPACE-$PWD}
+
+BUGSEE_SDK_VERSION=`grep  "version: " pubspec.yaml | awk -F ": " '{print $2}'`
+DEPLOY_DIR=${WORKSPACE}/deploy/
+
+rm -rf $DEPLOY_DIR
+git clone ssh://git@github.com/bugsee/flutter $DEPLOY_DIR
+cd $DEPLOY_DIR
+
+cp -rf ${WORKSPACE}/CHANGELOG.md .
+cp -rf ${WORKSPACE}/LICENSE .
+cp -rf ${WORKSPACE}/README.md .
+cp -rf ${WORKSPACE}/android .
+cp -rf ${WORKSPACE}/example .
+cp -rf ${WORKSPACE}/ios .
+cp -rf ${WORKSPACE}/lib .
+cp -rf ${WORKSPACE}/pubspec.yaml .
+cp -rf ${WORKSPACE}/.gitignore .
+
+git add .
+
+git commit -m "Updating SDK to $BUGSEE_SDK_VERSION"
+git push -f origin HEAD:refs/heads/master
+git push -f origin HEAD:refs/tags/$BUGSEE_SDK_VERSION
+cd -

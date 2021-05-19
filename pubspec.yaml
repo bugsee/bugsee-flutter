@@ -1,8 +1,8 @@
 name: bugsee
 description: Bugsee Flutter SDK
-version: 2.0.0
+version: 0.9.0
 author: Bugsee <support@bugsee.com>
-homepage: https://github.com/bugsee/flutter-bugsee
+homepage: https://github.com/bugsee/flutter
 
 environment:
     sdk: ">=2.12.0 <3.0.0"

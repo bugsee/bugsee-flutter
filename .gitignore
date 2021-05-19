@@ -30,6 +30,7 @@ android/.gradle/
 .packages
 .pub/
 build/
+deploy/
 .packages
 pubspec.lock
 .flutter-plugins-dependencies

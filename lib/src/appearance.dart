@@ -236,7 +236,7 @@ class BugseeAppearanceAndroid extends BugseeAppearanceBase {
 
   Future<Color?> get feedbackBackgroundColor =>
       _getProperty('FeedbackBackgroundColor');
-  Future<Null> setFactoryeedbackBackgroundColor(Color value) async {
+  Future<Null> setFeedbackBackgroundColor(Color value) async {
     await _setProperty('FeedbackBackgroundColor', value);
   }
 
@@ -272,7 +272,7 @@ class BugseeAppearanceAndroid extends BugseeAppearanceBase {
 
   Future<Color?> get feedbackDateTextColor =>
       _getProperty('FeedbackDateTextColor');
-  Future<Null> setFfeedbackDateTextColor(Color value) async {
+  Future<Null> setFeedbackDateTextColor(Color value) async {
     await _setProperty('FeedbackDateTextColor', value);
   }
 

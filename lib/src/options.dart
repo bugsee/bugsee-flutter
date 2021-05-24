@@ -21,7 +21,11 @@ abstract class BugseeLaunchOptions {
 
   void setDefaults() {
     // set wrapper info
-    _optionsMap['wrapper'] = {'type': 'flutter', 'version': BUGSEE_VERSION};
+    _optionsMap['wrapper_info'] = {
+      'type': 'flutter',
+      'version': BUGSEE_VERSION,
+      'build': '0'
+    };
 
     maxRecordingTime = 60;
     shakeToReport = true;

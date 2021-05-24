@@ -81,7 +81,8 @@ class BugseeViewManager {
   void startViewTracking() {
     if (!_areViewsTracked) {
       this._areViewsTracked = true;
-      _onFrameUpdated(DateTime.now());
+      // TODO: enable this once we have stable implementation
+      // _onFrameUpdated(DateTime.now());
     }
   }
 

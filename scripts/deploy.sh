@@ -6,7 +6,7 @@ BUGSEE_SDK_VERSION=`grep  "version: " pubspec.yaml | awk -F ": " '{print $2}'`
 DEPLOY_DIR=${WORKSPACE}/deploy/
 
 rm -rf $DEPLOY_DIR
-git clone ssh://git@github.com/bugsee/flutter $DEPLOY_DIR
+git clone ssh://git@github.com/bugsee/flutter-bugsee $DEPLOY_DIR
 cd $DEPLOY_DIR
 
 cp -rf ${WORKSPACE}/CHANGELOG.md .

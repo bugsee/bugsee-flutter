@@ -209,8 +209,8 @@ class Bugsee {
   // Events and traces
   // ----------------------------------------------------------------------------------
 
-  static Future<Null> event(
-      String name, Map<String, dynamic> parameters) async {
+  static Future<Null> event(String name,
+      [Map<String, dynamic>? parameters]) async {
     await _channel?.invokeMethod('event', <String, dynamic>{
       'name': name,
       'parameters': parameters,

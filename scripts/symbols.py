@@ -8,6 +8,7 @@ import hashlib
 import tempfile
 import glob
 import os
+import binascii
 from zipfile import ZipFile
 from os import walk, path, unlink
 import requests
@@ -20,7 +21,7 @@ def _read_arguments():
     argv = sys.argv[1:]
 
     try:
-      opts, args = getopt.getopt(argv, "t:v:d:p:", ["token=","version=","symdir=","platform="])
+      opts, args = getopt.getopt(argv, "t:v:d:e:", ["token=","version=","symdir=","endpoint="])
     except getopt.GetoptError:
       print('Failed to read arguments')
       sys.exit(2)
@@ -48,6 +49,17 @@ def _find_out_application_version():
 
     return ''
 
+def _get_file_hash(filename):
+    h = hashlib.sha1()
+
+    with open(filename, 'rb') as symbol_file_stream:
+        chunk = 0
+        while chunk != b'':
+            chunk = symbol_file_stream.read(1024)
+            h.update(chunk)
+        
+    return h.hexdigest()
+
 
 def _extract_info_from_filename(filename):
     matches = re.match(r'(?:.*\.)([^.]+)\-([^\-]+)(\.symbols)$', filename)
@@ -64,16 +76,13 @@ def _get_symbols_paths(symbols_dir):
     return symbol_files
 
 
-def _create_symbols_manifest_as_string(symbol_files, application_version, target_platform):
+def _create_symbols_manifest_as_string(symbols_dir, symbol_files, application_version):
     manifest_files = []
     for symbol_file in symbol_files:
-        # TODO: extract arch info from file contents (ELF/DWARF data)
         symbols_info = _extract_info_from_filename(symbol_file)
-        arch = symbols_info['arch']
-        target_platform = target_platform if target_platform is not None else symbols_info['platform']
         manifest_files.append({
-            'arch': arch,
-            'uuid': _hash_string(f'{application_version}-{target_platform}-{arch}'),
+            'arch': symbols_info['arch'],
+            'uuid': _get_file_hash(path.join(symbols_dir, symbol_file)),
             'entry': symbol_file,
             'version': application_version,
             'build': ''
@@ -97,46 +106,57 @@ def _send_request(url, method, data):
 
 
 def main():
+    exit_result = 0
+
     args = _read_arguments()
 
+    endpoint_base = args.get('e') or API_BASE_URL
     app_token = args.get('t')
     symbols_dir = args.get('d')
     application_version = args.get('v') or _find_out_application_version()
-    target_platform = args.get('p')
     symbol_files = _get_symbols_paths(symbols_dir)
-    
-    _, symbols_zip_path = tempfile.mkstemp()
 
-    with ZipFile(symbols_zip_path, 'w') as symbols_zip:
-        for symbol_file in symbol_files:
-            symbols_zip.write(path.join(symbols_dir, symbol_file), symbol_file)
-        manifest_str = _create_symbols_manifest_as_string(symbol_files, application_version, target_platform)
-        symbols_zip.writestr('/manifest.json', manifest_str)
+    if len(symbol_files) > 0:
+        _, symbols_zip_path = tempfile.mkstemp()
 
-    request_uuid = _hash_string(f'{application_version}-{target_platform}-arm64'),
-    raw_response = _send_request(f'{API_BASE_URL}apps/{app_token}/symbols', 'POST', {
-        'uuid': request_uuid,
-        'version': application_version,
-        'build': '0'
-    })
+        with ZipFile(symbols_zip_path, 'w') as symbols_zip:
+            for symbol_file in symbol_files:
+                symbols_zip.write(path.join(symbols_dir, symbol_file), symbol_file)
+            manifest_str = _create_symbols_manifest_as_string(symbols_dir, symbol_files, application_version)
+            symbols_zip.writestr('/manifest.json', manifest_str)
+        
+        # we need to provide proper unique UUID here to prevent duplicated debug symbols
+        # error from server
+        request_uuid = _get_file_hash(path.join(symbols_dir, symbol_files[0])),
+        raw_response = _send_request(f'{endpoint_base}apps/{app_token}/symbols', 'POST', {
+            'uuid': request_uuid,
+            'version': application_version,
+            'build': '0'
+        })
 
-    if raw_response:
-        response = json.loads(raw_response)
-        if response.get('ok'):
-            endpoint = response.get('result', {}).get('endpoint')
-            with open(symbols_zip_path, 'rb') as symbols_bundle:
-                response = _send_request(endpoint, 'PUT', symbols_bundle)
-                if response is None:
-                    print('Failed to upload symbols bundle!')
-        else:
-            response_error = response.get('error')
-            if response_error:
-                print(response_error.get('type'))
+        if raw_response:
+            response = json.loads(raw_response)
+            if response.get('ok'):
+                endpoint = response.get('result', {}).get('endpoint')
+                with open(symbols_zip_path, 'rb') as symbols_bundle:
+                    response = _send_request(endpoint, 'PUT', symbols_bundle)
+                    if response is None:
+                        print('Failed to upload symbols bundle!')
+                        exit_result = 1
             else:
-                print('Failed to upload symbols bundle!')
+                response_error = response.get('error')
+                if response_error:
+                    error_message = response_error.get('type')
+                    print(f'Failed to upload symbols bundle: {error_message}!')
+                    exit_result = 1
+                else:
+                    print('Failed to upload symbols bundle!')
+                    exit_result = 1
 
-    # remove the temporary file in regardless of the result
-    unlink(symbols_zip_path)
+        # remove the temporary file in regardless of the result
+        unlink(symbols_zip_path)
+
+    return exit_result
 
 if __name__ == "__main__":
-   main()
+   exit(main())

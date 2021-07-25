@@ -3,8 +3,6 @@ export PATH=$PATH:/usr/local/bin
 source ./version.txt
 
 WORKSPACE=${WORKSPACE-$PWD}
-
-BUGSEE_SDK_VERSION=`grep  "version: " pubspec.yaml | awk -F ": " '{print $2}'`
 DEPLOY_DIR=${WORKSPACE}/deploy/
 
 rm -rf ./example/ios/.symlinks
@@ -38,7 +36,7 @@ sed -E -i '' "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" ./andro
 
 git add .
 
-git commit -m "Updating SDK to $BUGSEE_SDK_VERSION"
+git commit -m "Updating SDK to $BUGSEE_PLUGIN_VERSION"
 git push -f origin HEAD:refs/heads/master
-git push -f origin HEAD:refs/tags/$BUGSEE_SDK_VERSION
+git push -f origin HEAD:refs/tags/$BUGSEE_PLUGIN_VERSION
 cd -

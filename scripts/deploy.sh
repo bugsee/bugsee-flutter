@@ -27,7 +27,7 @@ sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./pubspec.yaml
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
 
 # put Bugsee iOS SDK version into .podspec file
-sed -E -i '' "s/'Bugsee'/'Bugsee', '~> ${IOS_VERSION}'/" ./ios/bugsee_flutter.podspec
+sed -E -i '' "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" ./ios/bugsee_flutter.podspec
 
 # put Bugsee Android SDK version into build.gradle
 sed -E -i '' "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" ./android/build.gradle

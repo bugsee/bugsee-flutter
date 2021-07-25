@@ -26,6 +26,8 @@ cp -rf ${WORKSPACE}/.gitignore .
 # update wrapper version
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./pubspec.yaml
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
+sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./ios/bugsee_flutter.podspec
+sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./android/build.gradle
 
 # put Bugsee iOS SDK version into .podspec file
 sed -E -i '' "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" ./ios/bugsee_flutter.podspec

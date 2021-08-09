@@ -13,6 +13,7 @@ Bugsee Flutter SDK.
   s.public_header_files = 'Classes/**/*.h'
   s.dependency 'Flutter'
   s.dependency 'Bugsee'
+  s.static_framework = true
 
   s.pod_target_xcconfig = { 'OTHER_LDFLAGS' => '"$(inherited)" "-framework" "Flutter" "-framework" "Bugsee"' }
   s.ios.deployment_target = '8.0'

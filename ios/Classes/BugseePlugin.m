@@ -396,7 +396,7 @@ NSMutableSet * activeCallbacks = nil;
     result(nil);
 
     FlutterStandardTypedData * boundsData = call.arguments[@"bounds"];
-    NSData * finalData = boundsData ? [boundsData data] : nil;
+    NSData * finalData = (boundsData && ![boundsData isEqual:[NSNull null]]) ? [boundsData data] : nil;
     [Bugsee setInternalSecureRectangles:finalData];
 }
 

@@ -313,6 +313,19 @@ class BugseeHttpClient implements HttpClient {
   Future<HttpClientRequest> putUrl(Uri url) {
     return _wrapRequest(_httpClient.putUrl(url));
   }
+
+  @override
+  set connectionFactory(
+      Future<ConnectionTask<Socket>> Function(
+              Uri url, String? proxyHost, int? proxyPort)?
+          f) {
+    _httpClient.connectionFactory = f;
+  }
+
+  @override
+  set keyLog(Function(String line)? callback) {
+    _httpClient.keyLog = callback;
+  }
 }
 
 class _BugseeHttpClientRequest extends HttpClientRequest {

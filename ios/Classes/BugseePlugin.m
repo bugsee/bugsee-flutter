@@ -680,4 +680,21 @@ NSMutableSet * activeCallbacks = nil;
     result(nil);
 }
 
+- (void) appInfo:(FlutterMethodCall*)call result:(FlutterResult)result {
+    result(@{
+      @"appName" : [[NSBundle mainBundle]
+          objectForInfoDictionaryKey:@"CFBundleDisplayName"]
+          ?: [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"]
+                 ?: [NSNull null],
+      @"packageName" : [[NSBundle mainBundle] bundleIdentifier]
+          ?: [NSNull null],
+      @"version" : [[NSBundle mainBundle]
+          objectForInfoDictionaryKey:@"CFBundleShortVersionString"]
+          ?: [NSNull null],
+      @"buildNumber" : [[NSBundle mainBundle]
+          objectForInfoDictionaryKey:@"CFBundleVersion"]
+          ?: [NSNull null],
+    });
+}
+
 @end

@@ -30,10 +30,11 @@ class BugseeViewManager {
   }
 
   void _updateDevicePixelRatio() {
+    // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
       if (Platform.isAndroid) {
         this._devicePixelRatio =
-            WidgetsBinding.instance!.window.devicePixelRatio;
+            WidgetsBinding.instance.window.devicePixelRatio;
       } else if (Platform.isIOS) {
         this._devicePixelRatio = 1;
       }
@@ -113,8 +114,6 @@ class BugseeViewManager {
     if (_isCollecting) return;
 
     _isCollecting = true;
-    // _stopwatch.reset();
-    // _stopwatch.start();
 
     this._updateDevicePixelRatio();
 
@@ -122,16 +121,18 @@ class BugseeViewManager {
       List<int> boundsData = [];
 
       // start widgets tree traversal
-      WidgetsBinding.instance?.renderViewElement
-          ?.visitChildren((Element element) {
-        _visitChildElements(element, boundsData);
-      });
+
+      // ignore: unnecessary_null_comparison
+      if (WidgetsBinding.instance != null) {
+        WidgetsBinding.instance.renderViewElement
+            ?.visitChildren((Element element) {
+          _visitChildElements(element, boundsData);
+        });
+      }
 
       _sendBoundsData(boundsData);
     }
 
-    // print("View tracking complete. It took: ${_stopwatch.elapsedMilliseconds}");
-    // _stopwatch.stop();
     _isCollecting = false;
   }
 
@@ -169,7 +170,10 @@ class BugseeViewManager {
 
     collectAndSendSecureRectangles();
 
-    WidgetsBinding.instance?.addPostFrameCallback(onAfterFrame);
+    // ignore: unnecessary_null_comparison
+    if (WidgetsBinding.instance != null) {
+      WidgetsBinding.instance.addPostFrameCallback(onAfterFrame);
+    }
   }
 
   void _createOptionsForElement(Element element, ViewHierarchyItem item) {
@@ -243,9 +247,15 @@ class BugseeViewManager {
 
   String? dumpViewHierarchy() {
     this._updateDevicePixelRatio();
+    Element? rootElement;
 
-    ViewHierarchyItem? rootItem = _createViewHierarchyItemFromElement(
-        WidgetsBinding.instance?.renderViewElement);
+    // ignore: unnecessary_null_comparison
+    if (WidgetsBinding.instance != null) {
+      rootElement = WidgetsBinding.instance.renderViewElement;
+    }
+
+    ViewHierarchyItem? rootItem =
+        _createViewHierarchyItemFromElement(rootElement);
 
     if (rootItem != null) {
       try {
@@ -270,7 +280,10 @@ class BugseeViewManager {
   }
 
   void initialize(BugseeCallbacks callbacks) {
-    WidgetsBinding.instance?.addPersistentFrameCallback(onFrame);
+    // ignore: unnecessary_null_comparison
+    if (WidgetsBinding.instance != null) {
+      WidgetsBinding.instance.addPersistentFrameCallback(onFrame);
+    }
     onAfterFrame(Duration(seconds: 0));
     Timer.periodic(new Duration(milliseconds: 500), _onExtraFrameUpdate);
   }

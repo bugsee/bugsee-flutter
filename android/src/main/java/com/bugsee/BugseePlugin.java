@@ -1,5 +1,6 @@
 package com.bugsee;
 
+import android.os.Build;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
@@ -13,6 +14,8 @@ import android.os.Looper;
 import android.view.OrientationEventListener;
 import android.view.Surface;
 import android.view.WindowManager;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -327,6 +330,9 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                 break;
             case "testSignalCrash":
                 testSignalCrash(call, result);
+                break;
+            case "appInfo":
+                appInfo(call, result);
                 break;
             default:
                 result.notImplemented();
@@ -1155,6 +1161,41 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         // TODO: can we trigger signal crash from here?
         Process.sendSignal(Process.myPid(), 11);
         result.success(null);
+    }
+
+    private void appInfo(MethodCall call, final Result result) {
+        Context context = getCurrentContext();
+        if (context != null) {
+            try {
+                PackageManager packageManager = context.getPackageManager();
+                String packageName = context.getPackageName();
+                PackageInfo info = packageManager.getPackageInfo(packageName, 0);
+
+                HashMap<String, String> infoMap = new HashMap<>();
+                if (info.applicationInfo != null) {
+                    infoMap.put("appName", info.applicationInfo.loadLabel(packageManager).toString());
+                }
+                infoMap.put("packageName", packageName);
+                infoMap.put("version", info.versionName);
+                infoMap.put("buildNumber", getVersionCode(info).toString());
+
+                result.success(infoMap);
+
+                return;
+            } catch (Exception ignore) {
+            }
+        }
+
+        result.success(null);
+    }
+
+    // @Suppress("deprecation")
+    private Long getVersionCode(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return info.getLongVersionCode();
+        }
+
+        return Long.valueOf(info.versionCode);
     }
 
     private enum Orientation {

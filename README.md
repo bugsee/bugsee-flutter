@@ -19,7 +19,14 @@ dependencies:
 ## Launching
 
 ```dart
+// For Flutter 3.x and up
 import 'package:bugsee_flutter/bugsee.dart';
+
+// For Flutter >=2.5 and <3.0
+// import 'package:bugsee_flutter/bugsee_pre30.dart';
+
+// For Flutter <2.5
+// import 'package:bugsee_flutter/bugsee_pre25.dart';
 
 Future<Null> launchBugsee(Function(bool isBugseeLaunched) appRunner) async {
   var launchOptions;

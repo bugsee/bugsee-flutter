@@ -72,7 +72,14 @@ class Bugsee {
   static Future<bool> _initAndLaunch(String appToken,
       {BugseeLaunchOptions? launchOptions}) async {
     _init();
-    await autoFillVersionInternal();
+
+    if (!isApplicationVersionSet()) {
+      var appInfo = await _channel?.invokeMethod("appInfo");
+      if (appInfo != null) {
+        setApplicationVersionInternal(appInfo["version"]);
+      }
+    }
+
     // either use provided options, or fallback to explicit defaults
     setLaunchOptions(launchOptions ?? getDefaultLaunchOptions());
     var params = <String, dynamic>{

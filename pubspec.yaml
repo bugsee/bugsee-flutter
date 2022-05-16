@@ -1,7 +1,10 @@
 name: bugsee_flutter
 description: Bugsee Flutter SDK
 version: 99.99.99
-homepage: https://github.com/bugsee/flutter
+homepage: https://www.bugsee.com/
+documentation: https://docs.bugsee.com/sdk/flutter/installation/
+issue_tracker: https://github.com/bugsee/flutter-bugsee/issues
+repository: https://github.com/bugsee/flutter-bugsee
 
 environment:
   sdk: ">=2.12.0 <3.0.0"

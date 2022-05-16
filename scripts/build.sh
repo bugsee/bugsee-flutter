@@ -7,6 +7,10 @@ DEPLOY_DIR=${WORKSPACE}/package/
 
 # TODO: should we udpate files from Git here?
 
+# delete extra files and folders from source directories
+rm -rf ./example/ios/.symlinks
+rm -rf ./example/ios/Pods
+
 rm -rf $DEPLOY_DIR
 mkdir $DEPLOY_DIR
 cd $DEPLOY_DIR
@@ -17,6 +21,7 @@ cp -rf ${WORKSPACE}/README.md .
 cp -rf ${WORKSPACE}/android .
 cp -rf ${WORKSPACE}/ios .
 cp -rf ${WORKSPACE}/lib .
+cp -rf ${WORKSPACE}/example .
 cp -rf ${WORKSPACE}/pubspec.yaml .
 cp -rf ${WORKSPACE}/.gitignore .
 

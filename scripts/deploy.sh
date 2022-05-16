@@ -7,4 +7,6 @@ DEPLOY_DIR=${WORKSPACE}/package/
 
 cd $DEPLOY_DIR
 
+dart pub publish
+
 cd -

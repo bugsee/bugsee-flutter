@@ -17,7 +17,6 @@ cp -rf ${WORKSPACE}/CHANGELOG.md .
 cp -rf ${WORKSPACE}/LICENSE .
 cp -rf ${WORKSPACE}/README.md .
 cp -rf ${WORKSPACE}/android .
-cp -rf ${WORKSPACE}/example .
 cp -rf ${WORKSPACE}/ios .
 cp -rf ${WORKSPACE}/lib .
 cp -rf ${WORKSPACE}/pubspec.yaml .

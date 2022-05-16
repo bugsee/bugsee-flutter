@@ -21,3 +21,5 @@ flutter:
       android:
         package: com.bugsee
         pluginClass: BugseePlugin
+      ios:
+        pluginClass: BugseePlugin

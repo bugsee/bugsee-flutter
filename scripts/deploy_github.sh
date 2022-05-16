@@ -6,6 +6,7 @@ WORKSPACE=${WORKSPACE-$PWD}
 DEPLOY_DIR=${WORKSPACE}/deploy/
 
 rm -rf ./example/ios/.symlinks
+rm -rf ./example/ios/Pods
 rm -rf $DEPLOY_DIR
 git clone ssh://git@github.com/bugsee/flutter-bugsee $DEPLOY_DIR
 rm -rf $DEPLOY_DIR/*

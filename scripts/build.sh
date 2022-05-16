@@ -8,6 +8,7 @@ DEPLOY_DIR=${WORKSPACE}/deploy/
 # TODO: should we udpate files from Git here?
 
 rm -rf ./example/ios/.symlinks
+rm -rf ./example/ios/Pods
 rm -rf $DEPLOY_DIR
 mkdir $DEPLOY_DIR
 cd $DEPLOY_DIR

@@ -3,12 +3,10 @@ export PATH=$PATH:/usr/local/bin
 source ./version.txt
 
 WORKSPACE=${WORKSPACE-$PWD}
-DEPLOY_DIR=${WORKSPACE}/deploy/
+DEPLOY_DIR=${WORKSPACE}/package/
 
 # TODO: should we udpate files from Git here?
 
-rm -rf ./example/ios/.symlinks
-rm -rf ./example/ios/Pods
 rm -rf $DEPLOY_DIR
 mkdir $DEPLOY_DIR
 cd $DEPLOY_DIR

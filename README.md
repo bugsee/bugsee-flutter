@@ -10,10 +10,7 @@ Install Bugsee plugin into your dart project by adding it to dependecies in your
 
 ```yaml
 dependencies:
-  bugsee_flutter:
-    git:
-      url: https://github.com/bugsee/flutter-bugsee
-      # ref: 1.2.3 # if forcing a specific version by tag or branch
+  bugsee_flutter: "3.0.0"
 ```
 
 ## Launching

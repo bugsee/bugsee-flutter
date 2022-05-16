@@ -5,10 +5,11 @@ source ./version.txt
 WORKSPACE=${WORKSPACE-$PWD}
 DEPLOY_DIR=${WORKSPACE}/deploy/
 
+# TODO: should we udpate files from Git here?
+
 rm -rf ./example/ios/.symlinks
 rm -rf $DEPLOY_DIR
-git clone ssh://git@github.com/bugsee/flutter-bugsee $DEPLOY_DIR
-rm -rf $DEPLOY_DIR/*
+mkdir $DEPLOY_DIR
 cd $DEPLOY_DIR
 
 cp -rf ${WORKSPACE}/CHANGELOG.md .

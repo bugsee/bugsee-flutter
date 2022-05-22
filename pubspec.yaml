@@ -1,5 +1,5 @@
 name: bugsee_flutter
-description: Bugsee Flutter SDK
+description: Bugsee is a mobile SDK that adds crucial information to your bug and crash reports. Bugsee reports include video of user actions, network traffic, console logs and many other important traces from your app. Now you know what exactly led to the unexpected behavior.
 version: 99.99.99
 homepage: https://www.bugsee.com/
 documentation: https://docs.bugsee.com/sdk/flutter/installation/

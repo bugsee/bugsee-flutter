@@ -65,7 +65,7 @@ class BugseeCallbacks {
             return Future.value(null);
           }
         }
-      } catch (ex, st) {
+      } catch (e) {
         // TODO: log error here
       }
     }
@@ -113,7 +113,7 @@ class BugseeCallbacks {
         return logEvent == null
             ? null
             : Future.value([logEvent.text, logEvent.level.index]);
-      } catch (ex, st) {
+      } catch (e) {
         // TODO: log error here
       }
     }

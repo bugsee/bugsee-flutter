@@ -117,18 +117,16 @@ class BugseeViewManager {
 
     this._updateDevicePixelRatio();
 
+    // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
       List<int> boundsData = [];
 
       // start widgets tree traversal
 
-      // ignore: unnecessary_null_comparison
-      if (WidgetsBinding.instance != null) {
-        WidgetsBinding.instance.renderViewElement
-            ?.visitChildren((Element element) {
-          _visitChildElements(element, boundsData);
-        });
-      }
+      WidgetsBinding.instance.renderViewElement
+          ?.visitChildren((Element element) {
+        _visitChildElements(element, boundsData);
+      });
 
       _sendBoundsData(boundsData);
     }

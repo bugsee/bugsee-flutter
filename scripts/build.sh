@@ -23,6 +23,7 @@ cp -rf ${WORKSPACE}/ios .
 cp -rf ${WORKSPACE}/lib .
 cp -rf ${WORKSPACE}/example .
 cp -rf ${WORKSPACE}/pubspec.yaml .
+cp -rf ${WORKSPACE}/analysis_options.yaml .
 cp -rf ${WORKSPACE}/.gitignore .
 
 # update wrapper version

@@ -1,7 +1,5 @@
 import 'dart:math';
 
-import 'package:flutter/material.dart';
-
 import 'types.dart';
 
 class BugseeNetworkEventImpl extends BugseeNetworkEvent {
@@ -12,7 +10,7 @@ class BugseeNetworkEventImpl extends BugseeNetworkEvent {
 
   /// Convert raw event data received from the native layer
   /// into the class instance with proper fields
-  static BugseeNetworkEvent? fromRawEvent(dynamic? event) {
+  static BugseeNetworkEvent? fromRawEvent(dynamic event) {
     if (event == null) {
       return null;
     }

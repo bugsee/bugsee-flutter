@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:bugsee_flutter/src/constants.dart';
 import 'package:flutter/services.dart';
 
 import 'enums.dart';
 import 'types_internal.dart';
 import 'types.dart';
+import 'utils.dart';
 
 class BugseeCallbacks {
   final MethodChannel _channel;
@@ -103,41 +105,54 @@ class BugseeCallbacks {
   }
 
   Future<dynamic> _onLogFilterCall(MethodCall call) async {
-    var text = call.arguments[0];
-    var level = BugseeLogLevel.values[call.arguments[1]];
+    var text = tryCast(call.arguments[0], '');
+    var level = BugseeLogLevel
+        .values[tryCast(call.arguments[1], constDefaultLogLevel.index)];
+    List<dynamic>? returnValue;
 
     if (_logFilterCallback != null) {
       try {
         BugseeLogEvent? logEvent =
             await _logFilterCallback!(BugseeLogEvent(text, level));
-        return logEvent == null
-            ? null
-            : Future.value([logEvent.text, logEvent.level.index]);
+        if (logEvent != null) {
+          returnValue = [logEvent.text, logEvent.level.index];
+        }
       } catch (e) {
         // TODO: log error here
       }
+    } else {
+      returnValue = [text, level.index];
     }
 
-    return Future.value([text, level]);
+    return Future.value(returnValue);
   }
 
   Future<dynamic> _onLifecycleEventCall(MethodCall call) async {
     if (_bugseeLifecycleCallback != null) {
-      _bugseeLifecycleCallback!(
-          BugseeLifecycleEventType.values[call.arguments[0]]);
+      var eventType = tryCast(call.arguments[0], -1);
+      if (eventType >= 0) {
+        _bugseeLifecycleCallback!(BugseeLifecycleEventType.values[eventType]);
+      }
     }
     return Future.value(null);
   }
 
   Future<dynamic> _onAttachmentsForReportCall(MethodCall call) async {
     if (_bugseeAttachmentsCallback != null) {
-      var report = BugseeReport(
-          call.arguments[0], BugseeSeverityLevel.values[call.arguments[1] - 1]);
-      var attachments = await _bugseeAttachmentsCallback!(report);
-      if (attachments != null) {
-        var finalAttachments =
-            attachments.map((a) => [a.name, a.filename, a.data]).toList();
-        return Future.value(finalAttachments);
+      var reportType = tryCast(call.arguments[0], '');
+      if (reportType != '') {
+        var defaultSEverity = reportType == 'bug'
+            ? constOptionDefaultBugPriority
+            : constOptionDefaultCrashPriority;
+        var reportSeverity = BugseeSeverityLevel
+            .values[tryCast(call.arguments[1], defaultSEverity.index + 1) - 1];
+        var report = BugseeReport(reportType, reportSeverity);
+        var attachments = await _bugseeAttachmentsCallback!(report);
+        if (attachments != null) {
+          var finalAttachments =
+              attachments.map((a) => [a.name, a.filename, a.data]).toList();
+          return Future.value(finalAttachments);
+        }
       }
     }
     return Future.value(null);
@@ -145,7 +160,8 @@ class BugseeCallbacks {
 
   Future<dynamic> _onNewFeedbackMessagesAvailableCall(MethodCall call) async {
     if (_bugseeNewFeedbackMessagesCallback != null) {
-      _bugseeNewFeedbackMessagesCallback!(call.arguments[0]);
+      _bugseeNewFeedbackMessagesCallback!(
+          tryCast(call.arguments[0], <String>[]));
     }
     return Future.value(null);
   }
@@ -157,8 +173,8 @@ class BugseeCallbacks {
 
   Future<dynamic> _onCaptureAdditionalData(MethodCall call) async {
     if (_bugseeAdditionalDataCaptureCallback != null) {
-      return Future.value(
-          _bugseeAdditionalDataCaptureCallback!(call.arguments[0]));
+      return Future.value(_bugseeAdditionalDataCaptureCallback!(
+          tryCast(call.arguments[0], '')));
     }
 
     return Future.value(null);

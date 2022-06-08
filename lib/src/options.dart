@@ -1,21 +1,21 @@
 import 'dart:io' show Platform;
 import 'dart:math';
 
+import 'constants.dart';
 import 'enums.dart';
+import 'utils.dart';
 import 'version.dart';
-
-const MAX_BODY_LENGTH = 5 * 1024;
 
 /// Base launch options class
 abstract class BugseeLaunchOptions {
-  final Map<String, dynamic> _optionsMap = new Map<String, dynamic>();
+  final Map<String, dynamic> _optionsMap = <String, dynamic>{};
 
   Map<String, dynamic> toMap() {
-    return new Map<String, dynamic>.from(_optionsMap);
+    return Map<String, dynamic>.from(_optionsMap);
   }
 
-  operator [](index) => _optionsMap[index];
-  operator []=(index, value) {
+  dynamic operator [](String index) => _optionsMap[index];
+  void operator []=(String index, dynamic value) {
     _optionsMap[index] = value;
   }
 
@@ -23,32 +23,32 @@ abstract class BugseeLaunchOptions {
     // set wrapper info
     _optionsMap['wrapper_info'] = {
       'type': 'flutter',
-      'version': BUGSEE_VERSION,
+      'version': bugseeVersion,
       'build': '0'
     };
 
-    maxRecordingTime = 60;
-    shakeToReport = true;
-    crashReport = true;
-    videoEnabled = true;
-    videoScale = 1.0;
-    captureLogs = true;
-    monitorNetwork = true;
-    // logLevel = BugseeLogLevel.verbose;
-    maxDataSize = 50;
-    reportPrioritySelector = false;
-    defaultCrashPriority = BugseeSeverityLevel.blocker;
-    defaultBugPriority = BugseeSeverityLevel.high;
-    frameRate = BugseeFrameRate.high;
-    wifiOnlyUpload = false;
-    maxNetworkBodySize = MAX_BODY_LENGTH;
-    captureDeviceAndNetworkNames = false;
-    viewHierarchyEnabled = true;
-    reportSummaryRequired = false;
-    reportDescriptionRequired = false;
-    reportEmailRequired = false;
-    reportLabelsEnabled = false;
-    reportLabelsRequired = false;
+    maxRecordingTime = constOptionMaxRecordingTime;
+    shakeToReport = constOptionShakeToReport;
+    crashReport = constOptionCrashReport;
+    videoEnabled = constOptionVideoEnabled;
+    videoScale = constOptionVideoScale;
+    captureLogs = constOptionCaptureLogs;
+    monitorNetwork = constOptionMonitorNetwork;
+    screenshotEnabled = constOptionScreenshotEnabled;
+    maxDataSize = constOptionMaxDataSize;
+    reportPrioritySelector = constOptionReportPrioritySelector;
+    defaultCrashPriority = constOptionDefaultCrashPriority;
+    defaultBugPriority = constOptionDefaultBugPriority;
+    frameRate = constOptionFrameRate;
+    wifiOnlyUpload = constOptionWiFiOnlyUpload;
+    maxNetworkBodySize = constOptionMaxNetworkBodySize;
+    captureDeviceAndNetworkNames = constOptionCaptureDeviceAndNetworkNames;
+    viewHierarchyEnabled = constOptionViewHierarchyEnabled;
+    reportSummaryRequired = constOptionReportSummaryRequired;
+    reportDescriptionRequired = constOptionReportDescriptionRequired;
+    reportEmailRequired = constOptionReportEmailRequired;
+    reportLabelsEnabled = constOptionReportLabelsEnabled;
+    reportLabelsRequired = constOptionReportLabelRequired;
   }
 
   /// Adds specified custom launch option
@@ -57,88 +57,100 @@ abstract class BugseeLaunchOptions {
   }
 
   /// Video capturing frame rate
-  BugseeFrameRate get frameRate =>
-      BugseeFrameRate.values[this["FrameRate"] - 1];
+  BugseeFrameRate get frameRate => BugseeFrameRate
+      .values[tryCast(this["FrameRate"], constOptionFrameRate.index + 1) - 1];
   set frameRate(BugseeFrameRate frameRate) {
     this["FrameRate"] = frameRate.index + 1;
   }
 
   /// Maximum recording duration
-  int get maxRecordingTime => this["MaxRecordingTime"];
+  int get maxRecordingTime =>
+      tryCast(this["MaxRecordingTime"], constOptionMaxRecordingTime);
   set maxRecordingTime(int value) {
     this["MaxRecordingTime"] = value;
   }
 
   /// Shake gesture to trigger report
-  bool get shakeToReport => this["ShakeToReport"];
+  bool get shakeToReport =>
+      tryCast(this["ShakeToReport"], constOptionShakeToReport);
   set shakeToReport(bool value) {
     this["ShakeToReport"] = value;
   }
 
   /// Catch and report application crashes
-  bool get crashReport => this["CrashReport"];
+  bool get crashReport => tryCast(this["CrashReport"], constOptionCrashReport);
   set crashReport(bool value) {
     this["CrashReport"] = value;
   }
 
   /// Enable video recording
-  bool get videoEnabled => this["VideoEnabled"];
+  bool get videoEnabled =>
+      tryCast(this["VideoEnabled"], constOptionVideoEnabled);
   set videoEnabled(bool value) {
     this["VideoEnabled"] = value;
   }
 
   /// Enable video recording
-  double get videoScale => this["VideoScale"];
+  double get videoScale => tryCast(this["VideoScale"], constOptionVideoScale);
   set videoScale(double value) {
     this["VideoScale"] = max(value, 0.0);
   }
 
   /// Automatically capture all console logs
-  bool get captureLogs => this["CaptureLogs"];
+  bool get captureLogs => tryCast(this["CaptureLogs"], constOptionCaptureLogs);
   set captureLogs(bool value) {
     this["CaptureLogs"] = value;
   }
 
   /// Capture network traffic
-  bool get monitorNetwork => this["MonitorNetwork"];
+  bool get monitorNetwork =>
+      tryCast(this["MonitorNetwork"], constOptionMonitorNetwork);
   set monitorNetwork(bool value) {
     this["MonitorNetwork"] = value;
   }
 
   /// Allow user to modify priority when reporting manually
-  bool get reportPrioritySelector => this["BugseeReportPrioritySelector"];
+  bool get reportPrioritySelector => tryCast(
+      this["BugseeReportPrioritySelector"], constOptionReportPrioritySelector);
   set reportPrioritySelector(bool value) {
     this["BugseeReportPrioritySelector"] = value;
   }
 
   /// Default priority for crashes
   BugseeSeverityLevel get defaultCrashPriority =>
-      BugseeSeverityLevel.values[this["BugseeDefaultCrashPriority"] - 1];
+      BugseeSeverityLevel.values[tryCast(this["BugseeDefaultCrashPriority"],
+              constOptionDefaultCrashPriority.index + 1) -
+          1];
   set defaultCrashPriority(BugseeSeverityLevel value) {
     this["BugseeDefaultCrashPriority"] = value.index + 1;
   }
 
   /// Default priority for bugs
   BugseeSeverityLevel get defaultBugPriority =>
-      BugseeSeverityLevel.values[this["BugseeDefaultBugPriority"] - 1];
+      BugseeSeverityLevel.values[tryCast(this["BugseeDefaultBugPriority"],
+              constOptionDefaultBugPriority.index + 1) -
+          1];
   set defaultBugPriority(BugseeSeverityLevel value) {
     this["BugseeDefaultBugPriority"] = value.index + 1;
   }
 
   /// Attach screenshot to a report.
-  bool get screenshotEnabled => this["ScreenshotEnabled"];
+  bool get screenshotEnabled =>
+      tryCast(this["ScreenshotEnabled"], constOptionScreenshotEnabled);
   set screenshotEnabled(bool value) {
     this["ScreenshotEnabled"] = value;
   }
 
   /// Enable View hierarchy capturing
-  bool get viewHierarchyEnabled => this["ViewHierarchyEnabled"];
+  bool get viewHierarchyEnabled =>
+      tryCast(this["ViewHierarchyEnabled"], constOptionViewHierarchyEnabled);
   set viewHierarchyEnabled(bool value) {
     this["ViewHierarchyEnabled"] = value;
   }
 
   /// Upload reports only when a device is connected to a wifi network.
-  bool get wifiOnlyUpload => this["WifiOnlyUpload"];
+  bool get wifiOnlyUpload =>
+      tryCast(this["WifiOnlyUpload"], constOptionWiFiOnlyUpload);
   set wifiOnlyUpload(bool value) {
     this["WifiOnlyUpload"] = value;
   }
@@ -146,48 +158,56 @@ abstract class BugseeLaunchOptions {
   /// Bugsee will avoid using more disk space than specified (in MB). If total Bugsee data size exceeds
   /// specified value, oldest recordings (even not sent) will be removed. Value should not be smaller
   /// than 10.
-  int get maxDataSize => this["MaxDataSize"];
+  int get maxDataSize => tryCast(this["MaxDataSize"], constOptionMaxDataSize);
   set maxDataSize(int value) {
     this["MaxDataSize"] = value;
   }
 
   /// The maximal size of network request/response body.
-  int get maxNetworkBodySize => this["bodySizeLimit"];
+  int get maxNetworkBodySize =>
+      tryCast(this["bodySizeLimit"], constOptionMaxNetworkBodySize);
   set maxNetworkBodySize(int value) {
     this["bodySizeLimit"] = value;
   }
 
-  bool get captureDeviceAndNetworkNames => this["CaptureDeviceAndNetworkNames"];
+  bool get captureDeviceAndNetworkNames => tryCast(
+      this["CaptureDeviceAndNetworkNames"],
+      constOptionCaptureDeviceAndNetworkNames);
   set captureDeviceAndNetworkNames(bool value) {
     this["CaptureDeviceAndNetworkNames"] = value;
   }
 
   /// Controls whether Summary field is defined as mandatory in bug reporting UI
-  bool get reportSummaryRequired => this["ReportSummaryRequired"];
+  bool get reportSummaryRequired =>
+      tryCast(this["ReportSummaryRequired"], constOptionReportSummaryRequired);
   set reportSummaryRequired(bool value) {
     this["ReportSummaryRequired"] = value;
   }
 
   /// Controls whether Description field is defined as mandatory in bug reporting UI
-  bool get reportDescriptionRequired => this["ReportDescriptionRequired"];
+  bool get reportDescriptionRequired => tryCast(
+      this["ReportDescriptionRequired"], constOptionReportDescriptionRequired);
   set reportDescriptionRequired(bool value) {
     this["ReportDescriptionRequired"] = value;
   }
 
   /// Controls whether Email field is defined as mandatory in bug reporting UI
-  bool get reportEmailRequired => this["ReportEmailRequired"];
+  bool get reportEmailRequired =>
+      tryCast(this["ReportEmailRequired"], constOptionReportEmailRequired);
   set reportEmailRequired(bool value) {
     this["ReportEmailRequired"] = value;
   }
 
   /// Controls whether Labels field is enabled in bug reporting UI
-  bool get reportLabelsEnabled => this["ReportLabelsEnabled"];
+  bool get reportLabelsEnabled =>
+      tryCast(this["ReportLabelsEnabled"], constOptionReportLabelsEnabled);
   set reportLabelsEnabled(bool value) {
     this["ReportLabelsEnabled"] = value;
   }
 
   /// Controls whether Labels field is defined as mandatory in bug reporting UI
-  bool get reportLabelsRequired => this["ReportLabelsRequired"];
+  bool get reportLabelsRequired =>
+      tryCast(this["ReportLabelsRequired"], constOptionReportLabelRequired);
   set reportLabelsRequired(bool value) {
     this["ReportLabelsRequired"] = value;
   }
@@ -196,40 +216,43 @@ abstract class BugseeLaunchOptions {
 /// Bugsee launch options for iOS
 class IOSLaunchOptions extends BugseeLaunchOptions {
   IOSLaunchOptions() : super() {
-    this.setDefaults();
+    setDefaults();
   }
 
   @override
   void setDefaults() {
     super.setDefaults();
 
-    this.style = BugseeIosVisualStyle.defaultColors;
-    this.screenshotToReport = this.videoEnabled;
-    this.killDetection = false;
-    this.monitorBluetoothStatus = false;
+    style = constOptionStyle;
+    screenshotToReport = constOptionScreenshotToReport;
+    killDetection = constOptionKillDetection;
+    monitorBluetoothStatus = constOptionMonitorBluetoothStatus;
   }
 
   /// Defines the style which is used in Bugsee reporting UI
-  BugseeIosVisualStyle get style =>
-      BugseeIosVisualStyle.values[this["BugseeStyle"] - 1];
+  BugseeIosVisualStyle get style => BugseeIosVisualStyle
+      .values[tryCast(this["BugseeStyle"], constOptionStyle.index + 1) - 1];
   set style(BugseeIosVisualStyle value) {
     this["BugseeStyle"] = value.index + 1;
   }
 
   /// Screenshot key to trigger report
-  bool get screenshotToReport => this["ScreenshotToReport"];
+  bool get screenshotToReport =>
+      tryCast(this["ScreenshotToReport"], constOptionScreenshotToReport);
   set screenshotToReport(bool value) {
     this["ScreenshotToReport"] = value;
   }
 
   /// Detect abnormal termination (experimental)
-  bool get killDetection => this["BugseeKillDetectionKey"];
+  bool get killDetection =>
+      tryCast(this["BugseeKillDetectionKey"], constOptionKillDetection);
   set killDetection(bool value) {
     this["BugseeKillDetectionKey"] = value;
   }
 
   /// Constantly monitor Bluetooth status
-  bool get monitorBluetoothStatus => this["MonitorBluetoothStatus"];
+  bool get monitorBluetoothStatus => tryCast(
+      this["MonitorBluetoothStatus"], constOptionMonitorBluetoothStatus);
   set monitorBluetoothStatus(bool value) {
     this["MonitorBluetoothStatus"] = value;
   }
@@ -237,38 +260,41 @@ class IOSLaunchOptions extends BugseeLaunchOptions {
 
 class AndroidLaunchOptions extends BugseeLaunchOptions {
   AndroidLaunchOptions() : super() {
-    this.setDefaults();
+    setDefaults();
   }
 
   @override
   void setDefaults() {
     super.setDefaults();
 
-    this.serviceMode = false;
+    notificationBarTrigger = constOptionNotificationBarTrigger;
+    serviceMode = constOptionServiceMode;
     // default is set to V3 to make sure we capture
     // what Flutter is rendering onto the GL surface
-    this.videoMode = BugseeVideoMode.v3;
-    // this is required as V3 is no allowed on
+    videoMode = constOptionVideoMode;
+    // this is required as V3 is not allowed on
     // some devices (e.g. Samsung), but is
     // required for Flutter as it renders its
     // UI onto GL surface
-    this["forceVideoModeV3"] = true;
+    this["forceVideoModeV3"] = constOptionForceVideoModeV3;
   }
 
   /// Video capture mode
-  BugseeVideoMode get videoMode => BugseeVideoMode.values[this["VideoMode"]];
+  BugseeVideoMode get videoMode => BugseeVideoMode
+      .values[tryCast(this["VideoMode"], constOptionVideoMode.index)];
   set videoMode(BugseeVideoMode value) {
     this["VideoMode"] = value.index;
   }
 
   /// Whether application Bugsee is contained within is running as service
-  bool get serviceMode => this["ServiceMode"];
+  bool get serviceMode => tryCast(this["ServiceMode"], constOptionServiceMode);
   set serviceMode(bool value) {
     this["ServiceMode"] = value;
   }
 
   ///
-  bool get notificationBarTrigger => this["NotificationBarTrigger"];
+  bool get notificationBarTrigger => tryCast(
+      this["NotificationBarTrigger"], constOptionNotificationBarTrigger);
   set notificationBarTrigger(bool value) {
     this["NotificationBarTrigger"] = value;
   }

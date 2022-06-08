@@ -8,7 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../bugsee.dart';
 import 'state.dart';
 
-const Uuid _globalUuid = const Uuid();
+const Uuid _globalUuid = Uuid();
 
 void _registerBeginEvent(_BugseeHttpClientRequest request,
     [String? noBodyReason, String? body, int? timestamp]) {
@@ -173,30 +173,35 @@ class BugseeHttpClient implements HttpClient {
 
   @override
   bool get autoUncompress => _httpClient.autoUncompress;
+  @override
   set autoUncompress(bool value) {
     _httpClient.autoUncompress = value;
   }
 
   @override
   Duration? get connectionTimeout => _httpClient.connectionTimeout;
+  @override
   set connectionTimeout(Duration? value) {
     _httpClient.connectionTimeout = value;
   }
 
   @override
   Duration get idleTimeout => _httpClient.idleTimeout;
+  @override
   set idleTimeout(Duration value) {
     _httpClient.idleTimeout = value;
   }
 
   @override
   int? get maxConnectionsPerHost => _httpClient.maxConnectionsPerHost;
+  @override
   set maxConnectionsPerHost(int? value) {
     _httpClient.maxConnectionsPerHost = value;
   }
 
   @override
   String? get userAgent => _httpClient.userAgent;
+  @override
   set userAgent(String? value) {
     _httpClient.userAgent = value;
   }
@@ -333,8 +338,8 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
     request.done.then((value) {
       _readRequestBody(request);
 
-      var response = _wrapResponse(value, requestID, request.uri.toString(),
-          request.method, this.timestamp);
+      var response = _wrapResponse(
+          value, requestID, request.uri.toString(), request.method, timestamp);
       _registerCompleteEvent(
           response, null, null, DateTime.now().millisecondsSinceEpoch);
       return response;
@@ -353,10 +358,12 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
   }
 
   void _addItems(List<int> data) {
-    if (this.headers.contentType != ContentType.binary) {
+    if (headers.contentType != ContentType.binary) {
       try {
         _sendBuffer?.write(utf8.decode(data));
-      } catch (ex) {}
+      } catch (ex) {
+        // log error if required
+      }
       _checkAndResetBufferIfRequired();
     }
   }
@@ -370,6 +377,7 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
 
   @override
   Encoding get encoding => _httpClientRequest.encoding;
+  @override
   set encoding(Encoding value) {
     _httpClientRequest.encoding = value;
   }
@@ -391,7 +399,7 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
   }
 
   @override
-  Future addStream(Stream<List<int>> stream) async {
+  Future<dynamic> addStream(Stream<List<int>> stream) async {
     var newStream = _readAndRecreateStream(stream);
     return _httpClientRequest.addStream(newStream);
   }
@@ -403,7 +411,7 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
         requestID,
         _httpClientRequest.uri.toString(),
         _httpClientRequest.method,
-        this.timestamp));
+        timestamp));
   }
 
   @override
@@ -419,11 +427,11 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
         requestID,
         _httpClientRequest.uri.toString(),
         _httpClientRequest.method,
-        this.timestamp));
+        timestamp));
   }
 
   @override
-  Future flush() {
+  Future<dynamic> flush() {
     return _httpClientRequest.flush();
   }
 
@@ -442,18 +450,22 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
     if (headers.contentType != ContentType.binary) {
       try {
         _sendBuffer?.write(object);
-      } catch (ex) {}
+      } catch (ex) {
+        // log error if required
+      }
       _checkAndResetBufferIfRequired();
     }
   }
 
   @override
-  void writeAll(Iterable objects, [String separator = ""]) {
+  void writeAll(Iterable<dynamic> objects, [String separator = ""]) {
     _httpClientRequest.writeAll(objects);
     if (headers.contentType != ContentType.binary) {
       try {
         _sendBuffer?.writeAll(objects, separator);
-      } catch (ex) {}
+      } catch (ex) {
+        // log error if required
+      }
       _checkAndResetBufferIfRequired();
     }
   }
@@ -464,7 +476,9 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
     if (headers.contentType != ContentType.binary) {
       try {
         _sendBuffer?.writeCharCode(charCode);
-      } catch (ex) {}
+      } catch (ex) {
+        // log error if required
+      }
       _checkAndResetBufferIfRequired();
     }
   }
@@ -475,7 +489,9 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
     if (headers.contentType != ContentType.binary) {
       try {
         _sendBuffer?.writeln(object);
-      } catch (ex) {}
+      } catch (ex) {
+        // log error if required
+      }
       _checkAndResetBufferIfRequired();
     }
   }
@@ -504,10 +520,12 @@ class _BugseeHttpClientResponse extends HttpClientResponse {
   }
 
   void _addItems(List<int> data) {
-    if (this.headers.contentType != ContentType.binary) {
+    if (headers.contentType != ContentType.binary) {
       try {
         _receiveBuffer?.write(utf8.decode(data));
-      } catch (ex) {}
+      } catch (ex) {
+        // log error if required
+      }
       _checkAndResetBufferIfRequired();
     }
   }
@@ -523,242 +541,237 @@ class _BugseeHttpClientResponse extends HttpClientResponse {
 
   @override
   Future<bool> any(bool Function(List<int> element) test) {
-    return this._wrapperStream!.any(test);
+    return _wrapperStream!.any(test);
   }
 
   @override
   Stream<List<int>> asBroadcastStream(
       {void Function(StreamSubscription<List<int>> subscription)? onListen,
       void Function(StreamSubscription<List<int>> subscription)? onCancel}) {
-    return this
-        ._wrapperStream!
+    return _wrapperStream!
         .asBroadcastStream(onListen: onListen, onCancel: onCancel);
   }
 
   @override
   Stream<E> asyncExpand<E>(Stream<E>? Function(List<int> event) convert) {
-    return this._wrapperStream!.asyncExpand(convert);
+    return _wrapperStream!.asyncExpand(convert);
   }
 
   @override
   Stream<E> asyncMap<E>(FutureOr<E> Function(List<int> event) convert) {
-    return this._wrapperStream!.asyncMap(convert);
+    return _wrapperStream!.asyncMap(convert);
   }
 
   @override
   Stream<R> cast<R>() {
-    return this._wrapperStream!.cast();
+    return _wrapperStream!.cast();
   }
 
   @override
-  X509Certificate? get certificate => this._httpClientResponse.certificate;
+  X509Certificate? get certificate => _httpClientResponse.certificate;
 
   @override
   HttpClientResponseCompressionState get compressionState =>
-      this._httpClientResponse.compressionState;
+      _httpClientResponse.compressionState;
 
   @override
-  HttpConnectionInfo? get connectionInfo =>
-      this._httpClientResponse.connectionInfo;
+  HttpConnectionInfo? get connectionInfo => _httpClientResponse.connectionInfo;
 
   @override
   Future<bool> contains(Object? needle) {
-    return this._wrapperStream!.contains(needle);
+    return _wrapperStream!.contains(needle);
   }
 
   @override
-  int get contentLength => this._httpClientResponse.contentLength;
+  int get contentLength => _httpClientResponse.contentLength;
 
   @override
-  List<Cookie> get cookies => this._httpClientResponse.cookies;
+  List<Cookie> get cookies => _httpClientResponse.cookies;
 
   @override
   Future<Socket> detachSocket() {
-    return this._httpClientResponse.detachSocket();
+    return _httpClientResponse.detachSocket();
   }
 
   @override
   Stream<List<int>> distinct(
       [bool Function(List<int> previous, List<int> next)? equals]) {
-    return this._wrapperStream!.distinct(equals);
+    return _wrapperStream!.distinct(equals);
   }
 
   @override
   Future<E> drain<E>([E? futureValue]) {
-    return this._wrapperStream!.drain(futureValue);
+    return _wrapperStream!.drain(futureValue);
   }
 
   @override
   Future<List<int>> elementAt(int index) {
-    return this._wrapperStream!.elementAt(index);
+    return _wrapperStream!.elementAt(index);
   }
 
   @override
   Future<bool> every(bool Function(List<int> element) test) {
-    return this._wrapperStream!.every(test);
+    return _wrapperStream!.every(test);
   }
 
   @override
   Stream<S> expand<S>(Iterable<S> Function(List<int> element) convert) {
-    return this._wrapperStream!.expand(convert);
+    return _wrapperStream!.expand(convert);
   }
 
   @override
-  Future<List<int>> get first => this._wrapperStream!.first;
+  Future<List<int>> get first => _wrapperStream!.first;
 
   @override
   Future<List<int>> firstWhere(bool Function(List<int> element) test,
       {List<int> Function()? orElse}) {
-    return this._wrapperStream!.firstWhere(test, orElse: orElse);
+    return _wrapperStream!.firstWhere(test, orElse: orElse);
   }
 
   @override
   Future<S> fold<S>(
       S initialValue, S Function(S previous, List<int> element) combine) {
-    return this._wrapperStream!.fold(initialValue, combine);
+    return _wrapperStream!.fold(initialValue, combine);
   }
 
   @override
-  Future forEach(void Function(List<int> element) action) {
-    return this._wrapperStream!.forEach(action);
+  Future<dynamic> forEach(void Function(List<int> element) action) {
+    return _wrapperStream!.forEach(action);
   }
 
   @override
+  // ignore: inference_failure_on_untyped_parameter, use_function_type_syntax_for_parameters
   Stream<List<int>> handleError(Function onError, {bool test(error)?}) {
-    return this._wrapperStream!.handleError(onError, test: test);
+    return _wrapperStream!.handleError(onError, test: test);
   }
 
   @override
-  HttpHeaders get headers => this._httpClientResponse.headers;
+  HttpHeaders get headers => _httpClientResponse.headers;
 
   @override
-  bool get isBroadcast => this._wrapperStream!.isBroadcast;
+  bool get isBroadcast => _wrapperStream!.isBroadcast;
 
   @override
-  Future<bool> get isEmpty => this._wrapperStream!.isEmpty;
+  Future<bool> get isEmpty => _wrapperStream!.isEmpty;
 
   @override
-  bool get isRedirect => this._httpClientResponse.isRedirect;
+  bool get isRedirect => _httpClientResponse.isRedirect;
 
   @override
   Future<String> join([String separator = ""]) {
-    return this._wrapperStream!.join(separator);
+    return _wrapperStream!.join(separator);
   }
 
   @override
-  Future<List<int>> get last => this._wrapperStream!.last;
+  Future<List<int>> get last => _wrapperStream!.last;
 
   @override
   Future<List<int>> lastWhere(bool Function(List<int> element) test,
       {List<int> Function()? orElse}) {
-    return this._wrapperStream!.lastWhere(test, orElse: orElse);
+    return _wrapperStream!.lastWhere(test, orElse: orElse);
   }
 
   @override
-  Future<int> get length => this._wrapperStream!.length;
+  Future<int> get length => _wrapperStream!.length;
 
   @override
   StreamSubscription<List<int>> listen(void Function(List<int> event)? onData,
       {Function? onError, void Function()? onDone, bool? cancelOnError}) {
-    return this
-        ._wrapperStream!
-        .listen(onData, onError: onError, onDone: onDone);
+    return _wrapperStream!.listen(onData, onError: onError, onDone: onDone);
   }
 
   @override
   Stream<S> map<S>(S Function(List<int> event) convert) {
-    return this._wrapperStream!.map(convert);
+    return _wrapperStream!.map(convert);
   }
 
   @override
-  bool get persistentConnection =>
-      this._httpClientResponse.persistentConnection;
+  bool get persistentConnection => _httpClientResponse.persistentConnection;
 
   @override
-  Future pipe(StreamConsumer<List<int>> streamConsumer) {
-    return this._wrapperStream!.pipe(streamConsumer);
+  Future<dynamic> pipe(StreamConsumer<List<int>> streamConsumer) {
+    return _wrapperStream!.pipe(streamConsumer);
   }
 
   @override
-  String get reasonPhrase => this._httpClientResponse.reasonPhrase;
+  String get reasonPhrase => _httpClientResponse.reasonPhrase;
 
   @override
   Future<HttpClientResponse> redirect(
       [String? method, Uri? url, bool? followLoops]) async {
-    return this
-        ._httpClientResponse
+    return _httpClientResponse
         .redirect(method, url, followLoops)
         .then((response) {
       return _wrapResponse(
-          response, requestID, originalUrl, originalMethod, this.timestamp);
+          response, requestID, originalUrl, originalMethod, timestamp);
     });
   }
 
   @override
-  List<RedirectInfo> get redirects => this._httpClientResponse.redirects;
+  List<RedirectInfo> get redirects => _httpClientResponse.redirects;
 
   @override
   Future<List<int>> reduce(
       List<int> Function(List<int> previous, List<int> element) combine) {
-    return this._wrapperStream!.reduce(combine);
+    return _wrapperStream!.reduce(combine);
   }
 
   @override
-  Future<List<int>> get single => this._wrapperStream!.single;
+  Future<List<int>> get single => _wrapperStream!.single;
 
   @override
   Future<List<int>> singleWhere(bool Function(List<int> element) test,
       {List<int> Function()? orElse}) {
-    return this._wrapperStream!.singleWhere(test, orElse: orElse);
+    return _wrapperStream!.singleWhere(test, orElse: orElse);
   }
 
   @override
   Stream<List<int>> skip(int count) {
-    return this._wrapperStream!.skip(count);
+    return _wrapperStream!.skip(count);
   }
 
   @override
   Stream<List<int>> skipWhile(bool Function(List<int> element) test) {
-    return this._wrapperStream!.skipWhile(test);
+    return _wrapperStream!.skipWhile(test);
   }
 
   @override
-  int get statusCode => this._httpClientResponse.statusCode;
+  int get statusCode => _httpClientResponse.statusCode;
 
   @override
   Stream<List<int>> take(int count) {
-    return this._wrapperStream!.take(count);
+    return _wrapperStream!.take(count);
   }
 
   @override
   Stream<List<int>> takeWhile(bool Function(List<int> element) test) {
-    return this._wrapperStream!.takeWhile(test);
+    return _wrapperStream!.takeWhile(test);
   }
 
   @override
   Stream<List<int>> timeout(Duration timeLimit,
       {void Function(EventSink<List<int>> sink)? onTimeout}) {
-    return this._wrapperStream!.timeout(timeLimit, onTimeout: onTimeout);
+    return _wrapperStream!.timeout(timeLimit, onTimeout: onTimeout);
   }
 
   @override
   Future<List<List<int>>> toList() {
-    return this._wrapperStream!.toList();
+    return _wrapperStream!.toList();
   }
 
   @override
   Future<Set<List<int>>> toSet() {
-    return this._wrapperStream!.toSet();
+    return _wrapperStream!.toSet();
   }
 
   @override
   Stream<S> transform<S>(StreamTransformer<List<int>, S> streamTransformer) {
-    return this._wrapperStream!.transform(streamTransformer);
+    return _wrapperStream!.transform(streamTransformer);
   }
 
   @override
   Stream<List<int>> where(bool Function(List<int> event) test) {
-    return this._wrapperStream!.where(test);
+    return _wrapperStream!.where(test);
   }
 }
 

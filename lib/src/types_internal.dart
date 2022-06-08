@@ -1,11 +1,15 @@
 import 'dart:math';
 
 import 'types.dart';
+import 'utils.dart';
 
 class BugseeNetworkEventImpl extends BugseeNetworkEvent {
   String _internalMethod = '';
   String _internalEventType = "";
+
+  @override
   String get method => _internalMethod;
+  @override
   String get type => _internalEventType;
 
   /// Convert raw event data received from the native layer
@@ -16,12 +20,12 @@ class BugseeNetworkEventImpl extends BugseeNetworkEvent {
     }
 
     BugseeNetworkEventImpl wrappedEvent = BugseeNetworkEventImpl();
-    wrappedEvent._internalMethod = event['method'];
-    wrappedEvent._internalEventType = event['type'];
-    wrappedEvent.url = event['url'];
-    wrappedEvent.body = event['body'];
-    wrappedEvent.redirectUrl = event['redirectUrl'];
-    wrappedEvent.headers = event['headers'];
+    wrappedEvent._internalMethod = tryCast(event['method'], '');
+    wrappedEvent._internalEventType = tryCast(event['type'], '');
+    wrappedEvent.url = tryCast(event['url'], '');
+    wrappedEvent.body = tryCast(event['body'], null);
+    wrappedEvent.redirectUrl = tryCast(event['redirectUrl'], null);
+    wrappedEvent.headers = tryCast(event['headers'], null);
 
     return wrappedEvent;
   }
@@ -53,11 +57,7 @@ class ViewHierarchyItem {
   Map<String, dynamic>? options;
   List<ViewHierarchyItem>? subitems;
 
-  ViewHierarchyItem(String id, Rectangle bounds, String className) {
-    this.id = id;
-    this.bounds = bounds;
-    this.className = className;
-  }
+  ViewHierarchyItem(this.id, this.bounds, this.className);
 
   Map<String, dynamic> toMap() {
     Map<String, dynamic> map = {

@@ -1,0 +1,36 @@
+import 'enums.dart';
+
+const flagDebug = true;
+
+const constOptionMaxRecordingTime = 60;
+const constOptionShakeToReport = true;
+const constOptionCrashReport = true;
+const constOptionVideoEnabled = true;
+const constOptionVideoScale = 1.0;
+const constOptionCaptureLogs = true;
+const constOptionMonitorNetwork = true;
+const constOptionScreenshotEnabled = true;
+const constOptionMaxDataSize = 50;
+const constOptionReportPrioritySelector = false;
+const constOptionDefaultCrashPriority = BugseeSeverityLevel.blocker;
+const constOptionDefaultBugPriority = BugseeSeverityLevel.high;
+const constOptionFrameRate = BugseeFrameRate.high;
+const constOptionWiFiOnlyUpload = false;
+const constOptionMaxNetworkBodySize = 5 * 1024;
+const constOptionCaptureDeviceAndNetworkNames = false;
+const constOptionViewHierarchyEnabled = true;
+const constOptionReportSummaryRequired = false;
+const constOptionReportDescriptionRequired = false;
+const constOptionReportEmailRequired = false;
+const constOptionReportLabelsEnabled = false;
+const constOptionReportLabelRequired = false;
+const constOptionStyle = BugseeIosVisualStyle.defaultColors;
+const constOptionScreenshotToReport = constOptionVideoEnabled;
+const constOptionKillDetection = false;
+const constOptionMonitorBluetoothStatus = false;
+const constOptionServiceMode = false;
+const constOptionVideoMode = BugseeVideoMode.v3;
+const constOptionForceVideoModeV3 = true;
+const constOptionNotificationBarTrigger = true;
+
+const constDefaultLogLevel = BugseeLogLevel.info;

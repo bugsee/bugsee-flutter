@@ -29,12 +29,12 @@ Future<BugseeNetworkEvent> onBugseeNetworkEvent(BugseeNetworkEvent e) {
 Future<List<BugseeAttachment>> onBugseeAttachmentsRequest(BugseeReport report) {
   var attachments = <BugseeAttachment>[];
   var list = utf8.encode("This is the contents of the attachment!");
-  var data = list is Uint8List ? list : new Uint8List.fromList(list);
+  var data = list is Uint8List ? list : Uint8List.fromList(list);
   attachments.add(BugseeAttachment("testAttachment", "", data));
   return Future.value(attachments);
 }
 
-Future<Null> configureBugsee() async {
+Future<void> configureBugsee() async {
   Bugsee.setLogFilter(onBugseeLogEvent);
   Bugsee.setNetworkFilter(onBugseeNetworkEvent);
   Bugsee.setLifecycleCallback(onBugseeLifecycleEvent);
@@ -48,29 +48,37 @@ Future<Null> configureBugsee() async {
 
 BugseeLaunchOptions? createLaunchOptions() {
   if (Platform.isAndroid) {
-    return new AndroidLaunchOptions();
-  } else if (Platform.isIOS) {
-    return new IOSLaunchOptions();
+    var options = AndroidLaunchOptions();
+    // You can set Android-specific options here
+    return options;
+  }
+
+  if (Platform.isIOS) {
+    var options = IOSLaunchOptions();
+    // You can set iOS-specific options here
+    return options;
   }
 
   return null;
 }
 
-Future<Null> launchBugsee(Function(bool isBugseeLaunched) appRunner) async {
+String getApplicationToken() {
+  return Platform.isAndroid
+      ? '<android-app-token>'
+      : (Platform.isIOS ? '<ios-app-token>' : '');
+}
+
+Future<void> launchBugsee(
+    void Function(bool isBugseeLaunched) appRunner) async {
   var launchOptions = createLaunchOptions();
-  var bugseeToken = "";
 
-  if (Platform.isAndroid) {
-    bugseeToken = "5fd1ecce-2f29-4db8-b22e-78a2ed85402d";
-  } else if (Platform.isIOS) {
-    bugseeToken = "a9920d8b-cb0b-43c0-a360-af68c77b5065";
-  }
+  // Set all the required launch options to the desired state
 
-  await Bugsee.launch(bugseeToken,
+  await Bugsee.launch(getApplicationToken(),
       appRunCallback: appRunner, launchOptions: launchOptions);
 }
 
-Future<Null> main() async {
+Future<void> main() async {
   // This is required to let Bugsee intercept network requests
   HttpOverrides.global = Bugsee.defaultHttpOverrides;
 
@@ -78,19 +86,21 @@ Future<Null> main() async {
     if (isBugseeLaunched) {
       await configureBugsee();
     }
-    runApp(new CrashyApp());
+    runApp(const CrashyApp());
   });
 }
 
 class CrashyApp extends StatelessWidget {
+  const CrashyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return new MaterialApp(
+    return MaterialApp(
       title: 'Crashy',
-      theme: new ThemeData(
+      theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: new MyHomePage(),
+      home: MyHomePage(),
     );
   }
 }
@@ -98,26 +108,26 @@ class CrashyApp extends StatelessWidget {
 class MyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return new Scaffold(
-      appBar: new AppBar(
-        title: new Text('Crashy'),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Crashy'),
       ),
-      body: new SingleChildScrollView(
-          child: new Center(
-        child: new Column(
+      body: SingleChildScrollView(
+          child: Center(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            new ElevatedButton(
-              child: new Text('Dart exception'),
+            ElevatedButton(
+              child: Text('Dart exception'),
               onPressed: () {
-                throw new StateError('This is a Dart exception.');
+                throw StateError('This is a Dart exception.');
               },
             ),
-            new ElevatedButton(
-              child: new Text('async Dart exception'),
+            ElevatedButton(
+              child: Text('async Dart exception'),
               onPressed: () async {
                 foo() async {
-                  throw new StateError('This is an async Dart exception.');
+                  throw StateError('This is an async Dart exception.');
                 }
 
                 bar() async {
@@ -127,35 +137,35 @@ class MyHomePage extends StatelessWidget {
                 await bar();
               },
             ),
-            new ElevatedButton(
-              child: new Text('Java exception'),
+            ElevatedButton(
+              child: Text('Java exception'),
               onPressed: () async {
                 Bugsee.testExceptionCrash();
               },
             ),
-            new ElevatedButton(
-              child: new Text('Handled exception'),
+            ElevatedButton(
+              child: Text('Handled exception'),
               onPressed: () async {
                 try {
-                  throw new FormatException('Expected at least 1 section');
+                  throw FormatException('Expected at least 1 section');
                 } catch (ex, st) {
                   Bugsee.logException(ex, st);
                 }
               },
             ),
-            new ElevatedButton(
-              child: new Text('Handled empty exception'),
+            ElevatedButton(
+              child: Text('Handled empty exception'),
               onPressed: () {
                 Bugsee.logException(
-                    new StateError(
+                    StateError(
                         'This is a Dart exception with empty stack trace.'),
                     '');
               },
             ),
-            new BugseeSecureView(
+            BugseeSecureView(
                 enabled: true,
-                child: new ElevatedButton(
-                  child: new Text('Log messages'),
+                child: ElevatedButton(
+                  child: Text('Log messages'),
                   onPressed: () {
                     print("This is a message posted with print() call");
                     Bugsee.log("This is a test console message");
@@ -169,8 +179,8 @@ class MyHomePage extends StatelessWidget {
                         BugseeLogLevel.warning);
                   },
                 )),
-            new ElevatedButton(
-              child: new Text('Network request'),
+            ElevatedButton(
+              child: Text('Network request'),
               onPressed: () async {
                 // var httpClient = HttpClient();
                 // var request = await httpClient.getUrl(
@@ -194,10 +204,10 @@ class MyHomePage extends StatelessWidget {
                     responseBody.length.toString());
               },
             ),
-            new ElevatedButton(
-              child: new Text('Custom events'),
+            ElevatedButton(
+              child: Text('Custom events'),
               onPressed: () async {
-                dynamic params = <String, dynamic>{};
+                Map<String, dynamic> params = <String, dynamic>{};
                 params['string'] = 'test';
                 params['int'] = 5;
                 params['float'] = 0.55;
@@ -213,85 +223,85 @@ class MyHomePage extends StatelessWidget {
                 Bugsee.setAttribute('married', false);
               },
             ),
-            new ElevatedButton(
-              child: new Text('Show report dialog'),
+            ElevatedButton(
+              child: Text('Show report dialog'),
               onPressed: () {
                 Bugsee.showReportDialog('Test summary', 'Test description');
               },
             ),
-            new TextField(
+            TextField(
                 obscureText: true,
                 decoration: InputDecoration(
                   labelText: 'Password',
                   border: OutlineInputBorder(),
                 )),
-            new ElevatedButton(
-              child: new Text('Upload report'),
+            ElevatedButton(
+              child: Text('Upload report'),
               onPressed: () {
                 Bugsee.upload('Test summary', 'Test description');
               },
             ),
-            new ElevatedButton(
-              child: new Text('Show Feedback'),
+            ElevatedButton(
+              child: Text('Show Feedback'),
               onPressed: () {
                 Bugsee.showFeedbackUI();
               },
             ),
-            new ElevatedButton(
-              child: new Text('Add secure rect'),
+            ElevatedButton(
+              child: Text('Add secure rect'),
               onPressed: () {
-                Bugsee.addSecureRect(new Rectangle(20, 20, 100, 100));
+                Bugsee.addSecureRect(Rectangle(20, 20, 100, 100));
               },
             ),
-            new ElevatedButton(
-              child: new Text('Get all secure rects'),
+            ElevatedButton(
+              child: Text('Get all secure rects'),
               onPressed: () async {
                 dynamic rects = await Bugsee.getAllSecureRects();
                 print(rects);
               },
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
-            new ElevatedButton(
-              child: new Text('Dummy button'),
+            ElevatedButton(
+              child: Text('Dummy button'),
               onPressed: () async {},
             ),
           ],

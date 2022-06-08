@@ -1,4 +1,4 @@
-const String BUGSEE_VERSION = '99.99.99';
+const String bugseeVersion = '99.99.99';
 
 String _applicationVersion = '';
 

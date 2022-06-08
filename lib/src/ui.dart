@@ -33,10 +33,9 @@ class BugseeViewManager {
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
       if (Platform.isAndroid) {
-        this._devicePixelRatio =
-            WidgetsBinding.instance.window.devicePixelRatio;
+        _devicePixelRatio = WidgetsBinding.instance.window.devicePixelRatio;
       } else if (Platform.isIOS) {
-        this._devicePixelRatio = 1;
+        _devicePixelRatio = 1;
       }
     }
   }
@@ -115,7 +114,7 @@ class BugseeViewManager {
 
     _isCollecting = true;
 
-    this._updateDevicePixelRatio();
+    _updateDevicePixelRatio();
 
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
@@ -135,7 +134,7 @@ class BugseeViewManager {
   }
 
   void _sendBoundsData(List<int> boundsData) {
-    if (boundsData.length > 0) {
+    if (boundsData.isNotEmpty) {
       _boundsWasFilled = true;
       _channel.invokeMethod(
           "setSecureRectsInternal", {'bounds': Int32List.fromList(boundsData)});
@@ -218,9 +217,7 @@ class BugseeViewManager {
       // TODO: check whether it's safe to ignore the failure here
     }
 
-    if (bounds == null) {
-      bounds = Rectangle(0, 0, 0, 0);
-    }
+    bounds ??= Rectangle(0, 0, 0, 0);
 
     var className = element.widget.runtimeType.toString();
 
@@ -230,9 +227,7 @@ class BugseeViewManager {
     _createOptionsForElement(element, item);
 
     element.visitChildren((element) {
-      if (item.subitems == null) {
-        item.subitems = [];
-      }
+      item.subitems ??= [];
 
       var subitem = _createViewHierarchyItemFromElement(element);
       if (subitem != null) {
@@ -244,7 +239,7 @@ class BugseeViewManager {
   }
 
   String? dumpViewHierarchy() {
-    this._updateDevicePixelRatio();
+    _updateDevicePixelRatio();
     Element? rootElement;
 
     // ignore: unnecessary_null_comparison
@@ -268,13 +263,13 @@ class BugseeViewManager {
 
   void startViewTracking() {
     if (!_areViewsTracked) {
-      this._areViewsTracked = true;
+      _areViewsTracked = true;
       //_onFrameUpdated(DateTime.now());
     }
   }
 
   void stopViewTracking() {
-    this._areViewsTracked = false;
+    _areViewsTracked = false;
   }
 
   void initialize(BugseeCallbacks callbacks) {
@@ -283,13 +278,13 @@ class BugseeViewManager {
       WidgetsBinding.instance.addPersistentFrameCallback(onFrame);
     }
     onAfterFrame(Duration(seconds: 0));
-    Timer.periodic(new Duration(milliseconds: 500), _onExtraFrameUpdate);
+    Timer.periodic(Duration(milliseconds: 500), _onExtraFrameUpdate);
   }
 }
 
 class BugseeSecureView extends MetaData {
   const BugseeSecureView({Key? key, Widget? child, bool? enabled})
-      : this.enabled = enabled ?? true,
+      : enabled = enabled ?? true,
         super(key: key, child: child);
 
   final bool enabled;
@@ -297,7 +292,7 @@ class BugseeSecureView extends MetaData {
 
 class BugseeIgnoreSecureView extends MetaData {
   const BugseeIgnoreSecureView({Key? key, Widget? child, bool? enabled})
-      : this.enabled = enabled ?? true,
+      : enabled = enabled ?? true,
         super(key: key, child: child);
 
   final bool enabled;

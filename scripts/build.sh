@@ -27,6 +27,7 @@ cp -rf ${WORKSPACE}/analysis_options.yaml .
 cp -rf ${WORKSPACE}/.gitignore .
 
 # update wrapper version
+sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./README.md
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./pubspec.yaml
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./ios/bugsee_flutter.podspec

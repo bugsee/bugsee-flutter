@@ -17,11 +17,12 @@ import 'src/options.dart';
 import 'src/state.dart';
 import 'src/types.dart';
 import 'src/ui.dart';
+import 'src/utils.dart';
 import 'src/version.dart';
 
 export 'src/appearance.dart';
 export 'src/enums.dart';
-export 'src/networking_pre25.dart' show BugseeHttpOverrides;
+export 'src/networking.dart' show BugseeHttpOverrides;
 export 'src/options.dart'
     show AndroidLaunchOptions, IOSLaunchOptions, BugseeLaunchOptions;
 export 'src/types.dart';
@@ -54,6 +55,7 @@ class Bugsee {
       _exceptionHandler = BugseeExceptionHandler(_channel!);
       _callbacks = BugseeCallbacks(_channel!);
       _viewManager = BugseeViewManager(_channel!);
+      _viewManager!.initialize(_callbacks!);
 
       _callbacks!.setAdditionalDataCaptureCallback((kind) {
         if (kind == "vh") {
@@ -76,7 +78,7 @@ class Bugsee {
     if (!isApplicationVersionSet()) {
       var appInfo = await _channel?.invokeMethod("appInfo");
       if (appInfo != null) {
-        setApplicationVersionInternal(appInfo["version"]);
+        setApplicationVersionInternal(tryCast(appInfo["version"], ''));
       }
     }
 
@@ -103,10 +105,10 @@ class Bugsee {
       BugseeLaunchOptions? launchOptions}) async {
     bool launched = false;
 
-    var launchCallback = () async {
+    launchCallback() async {
       launched = await _initAndLaunch(appToken, launchOptions: launchOptions);
       _exceptionHandler?.installGlobalErrorHandler();
-    };
+    }
 
     if (appRunCallback != null) {
       await runZonedGuarded<FutureOr<void>>(() async {
@@ -115,7 +117,7 @@ class Bugsee {
         appRunCallback(launched);
       }, (error, stackTrace) async {
         await Bugsee.logHandledException(error, stackTrace);
-      }, zoneSpecification: new ZoneSpecification(
+      }, zoneSpecification: ZoneSpecification(
           print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
         parent.print(zone, line);
         Bugsee.log(line);
@@ -230,7 +232,7 @@ class Bugsee {
   // Events and traces
   // ----------------------------------------------------------------------------------
 
-  static Future<Null> event(String name,
+  static Future<void> event(String name,
       [Map<String, dynamic>? parameters]) async {
     await _channel?.invokeMethod('event', <String, dynamic>{
       'name': name,
@@ -238,7 +240,7 @@ class Bugsee {
     });
   }
 
-  static Future<Null> trace(String name, dynamic value) async {
+  static Future<void> trace(String name, dynamic value) async {
     await _channel?.invokeMethod('trace', <String, dynamic>{
       'name': name,
       'value': value,
@@ -249,17 +251,18 @@ class Bugsee {
   // Session identifier management
   // ----------------------------------------------------------------------------------
 
-  static Future<Null> setEmail(String email) async {
+  static Future<void> setEmail(String email) async {
     _init();
     await _channel?.invokeMethod('setEmail', <String, dynamic>{'value': email});
   }
 
   static Future<String> getEmail() async {
     _init();
-    return await _channel?.invokeMethod('getEmail', <String, dynamic>{});
+    var result = await _channel?.invokeMethod('getEmail', <String, dynamic>{});
+    return tryCast(result, '');
   }
 
-  static Future<Null> clearEmail() async {
+  static Future<void> clearEmail() async {
     _init();
     await _channel?.invokeMethod('clearEmail', <String, dynamic>{});
   }
@@ -323,7 +326,7 @@ class Bugsee {
   // Secure rectangles
   // ----------------------------------------------------------------------------------
 
-  static Future<Null> addSecureRect(Rectangle<double> rectangle) async {
+  static Future<void> addSecureRect(Rectangle<double> rectangle) async {
     _init();
     await _channel?.invokeMethod('addSecureRect', <String, dynamic>{
       'x': rectangle.left,
@@ -333,7 +336,7 @@ class Bugsee {
     });
   }
 
-  static Future<Null> removeSecureRect(Rectangle<double> rectangle) async {
+  static Future<void> removeSecureRect(Rectangle<double> rectangle) async {
     _init();
     await _channel?.invokeMethod('removeSecureRect', <String, dynamic>{
       'x': rectangle.left,
@@ -343,7 +346,7 @@ class Bugsee {
     });
   }
 
-  static Future<Null> removeAllSecureRects() async {
+  static Future<void> removeAllSecureRects() async {
     _init();
     await _channel?.invokeMethod('removeAllSecureRects', <String, dynamic>{});
   }
@@ -351,7 +354,7 @@ class Bugsee {
   static Future<List<Rectangle<double>>?> getAllSecureRects() async {
     _init();
 
-    List<dynamic>? rawRectangles =
+    List<List<double>>? rawRectangles =
         await _channel?.invokeMethod('getAllSecureRects', <String, dynamic>{});
 
     if (rawRectangles != null) {
@@ -366,18 +369,18 @@ class Bugsee {
   // Exception logging
   // ----------------------------------------------------------------------------------
 
-  static Future<Null> logHandledException(dynamic exception,
+  static Future<void> logHandledException(dynamic exception,
       [dynamic stackTrace]) async {
     await _exceptionHandler?.logException(exception, true, stackTrace);
   }
 
-  static Future<Null> logUnhandledException(dynamic exception,
+  static Future<void> logUnhandledException(dynamic exception,
       [dynamic stackTrace]) async {
     await _exceptionHandler?.logException(exception, false, stackTrace);
   }
 
   /// Alias for logHandledException
-  static Future<Null> logException(dynamic exception,
+  static Future<void> logException(dynamic exception,
       [dynamic stackTrace]) async {
     return logHandledException(exception, stackTrace);
   }
@@ -435,11 +438,11 @@ class Bugsee {
   // Test crash triggers
   // ----------------------------------------------------------------------------------
 
-  static Future<Null> testExceptionCrash() async {
+  static Future<void> testExceptionCrash() async {
     await _channel?.invokeMethod('testExceptionCrash', <String, dynamic>{});
   }
 
-  static Future<Null> testSignalCrash() async {
+  static Future<void> testSignalCrash() async {
     await _channel?.invokeMethod('testSignalCrash', <String, dynamic>{});
   }
 
@@ -449,7 +452,8 @@ class Bugsee {
 
   /// Wraps specified function with automatic errors and exceptions
   /// interception (using runZonedGuarded() with onError handler).
-  static R? runGuarded<R>(R body(), BugseeGenericErrorCallback errorCallback) {
+  static R? runGuarded<R>(
+      R Function() body, BugseeGenericErrorCallback errorCallback) {
     return runZonedGuarded<R>(() {
       return body();
     }, (error, stackTrace) async {
@@ -460,7 +464,7 @@ class Bugsee {
 
   /// Wraps specified method invocation with Chain.capture() which
   /// instructs the VM to capture longer stack traces.
-  static void captureChain(dynamic body()) {
+  static void captureChain(dynamic Function() body) {
     Chain.capture(() {
       body();
     });

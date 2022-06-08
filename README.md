@@ -10,7 +10,7 @@ Install Bugsee plugin into your dart project by adding it to dependecies in your
 
 ```yaml
 dependencies:
-  bugsee_flutter: "3.0.0"
+  bugsee_flutter: ^99.99.99
 ```
 
 ## Launching
@@ -25,25 +25,28 @@ import 'package:bugsee_flutter/bugsee.dart';
 // For Flutter <2.5
 // import 'package:bugsee_flutter/bugsee_pre25.dart';
 
-Future<Null> launchBugsee(Function(bool isBugseeLaunched) appRunner) async {
+Future<void> launchBugsee(void Function(bool isBugseeLaunched) appRunner) async {
   var launchOptions;
   var bugseeToken = "";
 
   if (Platform.isAndroid) {
     bugseeToken = "<android app token>";
-    launchOptions = new AndroidLaunchOptions();
+    launchOptions = AndroidLaunchOptions();
   } else if (Platform.isIOS) {
     bugseeToken = "<ios app token>";
-    launchOptions = new IOSLaunchOptions();
+    launchOptions = IOSLaunchOptions();
   }
 
   await Bugsee.launch(bugseeToken,
       appRunCallback: appRunner, launchOptions: launchOptions);
 }
 
-Future<Null> main() async {
+Future<void> main() async {
+  // This is required to let Bugsee intercept network requests
+  HttpOverrides.global = Bugsee.defaultHttpOverrides;
+
   await launchBugsee((bool isBugseeLaunched) async {
-    runApp(new MyApp());
+    runApp(const MyApp());
   });
 }
 

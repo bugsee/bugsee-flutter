@@ -20,13 +20,13 @@ class BugseeExceptionHandler {
 
   BugseeExceptionHandler(MethodChannel channel) : _channel = channel;
 
-  Future<Null> logException(dynamic exception, bool handled,
+  Future<void> logException(dynamic exception, bool handled,
       [dynamic stackTrace]) async {
     final Chain chain = _getStackTraceChain(stackTrace);
 
     final List<Map<String, dynamic>> frames = <Map<String, dynamic>>[];
 
-    var ds = new AccumulatorSink<Digest>();
+    var ds = AccumulatorSink<Digest>();
     var s = sha1.startChunkedConversion(ds);
 
     // add current application version beforehand
@@ -54,7 +54,7 @@ class BugseeExceptionHandler {
         exception, handled, frames, '${ds.events.single}', stackTrace);
   }
 
-  Future<Null> _sendException(dynamic exception, bool handled,
+  Future<void> _sendException(dynamic exception, bool handled,
       List<Map<String, dynamic>> frames, String signature,
       [dynamic originalStackTrace]) async {
     final dynamic exceptionData = <String, dynamic>{
@@ -92,13 +92,11 @@ class BugseeExceptionHandler {
       user = false;
     }
 
-    if (package == null) {
-      package = (frameUri.scheme == 'dart') ? 'dart' : 'application';
-    }
+    package ??= (frameUri.scheme == 'dart') ? 'dart' : 'application';
 
     return <String, dynamic>{
       'trace': '${frame.member} ($stringUri:${frame.line})',
-      'module': '$package',
+      'module': package,
       'user': user,
       'data': {
         'uri': frame.uri.toString(),
@@ -117,16 +115,16 @@ class BugseeExceptionHandler {
   Chain _getStackTraceChain([dynamic stackTrace]) {
     Chain chain;
 
-    if (stackTrace == null || stackTrace == '') {
+    if (stackTrace is StackTrace) {
+      stackTrace = FlutterError.demangleStackTrace(stackTrace);
+      chain = Chain.forTrace(stackTrace);
+    } else {
       // we instruct the runtime to give us the stack chain with two
       // first frames skipped. This is required to exclude the calls
       // to this method and the one calling it (as this method is
       // marked as internal, it will be called from one of the
       // instance methods of this class)
       chain = Chain.current(2);
-    } else {
-      stackTrace = FlutterError.demangleStackTrace(stackTrace);
-      chain = Chain.forTrace(stackTrace);
     }
 
     return chain;

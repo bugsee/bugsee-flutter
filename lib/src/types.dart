@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'enums.dart';
 
-typedef BugseeGenericErrorCallback = Future<Null> Function(
+typedef BugseeGenericErrorCallback = Future<void> Function(
     Object error, StackTrace stack);
 
 abstract class BugseeNetworkEvent {

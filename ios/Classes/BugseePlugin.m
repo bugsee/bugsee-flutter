@@ -530,12 +530,13 @@ NSMutableSet * activeCallbacks = nil;
     }];
 }
 
--(void) bugseeFilterNetworkEvent:(BugseeNetworkEvent *)event completionHandler:(BugseeNetworkFilterDecisionBlock)decisionBlock {
+-(void) bugseeFilterNetworkEvent:(BugseeNetworkEvent *)event
+               completionHandler:(BugseeNetworkFilterDecisionBlock)decisionBlock {
     if (![activeCallbacks containsObject:@"onNetworkEvent"]) {
         decisionBlock(event);
         return;
     }
-
+    
     NSDictionary * eventData = @{
         @"url": fallbackIfNill(event.url, @""),
         @"body": fallbackIfNill(event.body, @""),
@@ -551,7 +552,25 @@ NSMutableSet * activeCallbacks = nil;
                           result:^(id result) {
         if (result && ![NSNull isEqual:result] && [result isKindOfClass:[NSDictionary class]]) {
             NSDictionary * resultData = result;
-            event.body = unwrapNilIfRequired([resultData objectForKey:@"body"]);
+            // set body to <nil> by default
+            event.body = nil;
+            id eventRawBody = unwrapNilIfRequired([resultData objectForKey:@"body"]);
+            if (eventRawBody && ![NSNull isEqual:eventRawBody]) {
+                if ([eventRawBody isKindOfClass:[FlutterStandardTypedData class]]) {
+                    // this is <FlutterStandardTypedData> - unwrap the
+                    // underlying data
+                    event.body = [eventRawBody data];
+                } else if ([eventRawBody isKindOfClass:[NSData class]]) {
+                    // this is the data itself - use as is
+                    event.body = eventRawBody;
+                } else if ([eventRawBody respondsToSelector:@selector(dataUsingEncoding:)]) {
+                    // looks like this is a string - convert to <NSData>
+                    event.body = [eventRawBody dataUsingEncoding:NSUTF8StringEncoding];
+                } else {
+                    // this is some other case we're not aware of -
+                    // do nothing to avoid any kind of failure
+                }
+            }
             event.url = unwrapNilIfRequired([resultData objectForKey:@"url"]);
             event.redirectedFromURL = unwrapNilIfRequired([resultData objectForKey:@"redirectUrl"]);
             event.headers = unwrapNilIfRequired([resultData objectForKey:@"headers"]);

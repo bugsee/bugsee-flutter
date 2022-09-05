@@ -1,4 +1,6 @@
+import 'dart:ffi';
 import 'dart:math';
+import 'dart:convert';
 
 import 'types.dart';
 import 'utils.dart';
@@ -23,9 +25,46 @@ class BugseeNetworkEventImpl extends BugseeNetworkEvent {
     wrappedEvent._internalMethod = tryCast(event['method'], '');
     wrappedEvent._internalEventType = tryCast(event['type'], '');
     wrappedEvent.url = tryCast(event['url'], '');
-    wrappedEvent.body = tryCast(event['body'], null);
     wrappedEvent.redirectUrl = tryCast(event['redirectUrl'], null);
-    wrappedEvent.headers = tryCast(event['headers'], null);
+    // set <body> and <headers> to <null> by default
+    wrappedEvent.headers = null;
+    wrappedEvent.body = null;
+
+    dynamic rawHeaders = event['headers'];
+    if (rawHeaders != null) {
+      if (rawHeaders is Map) {
+        try {
+          Map<String, dynamic> castMap = rawHeaders.cast<String, dynamic>();
+          // cast operation above creates a wrapper around
+          // original Map (aka <CastMap>), hence to get
+          // the pristine map, we just copy the contents
+          // of the casted map below
+          wrappedEvent.headers = {...castMap};
+          // ignore: unused_catch_clause
+        } catch (e) {
+          wrappedEvent.headers = null;
+        }
+      } else {
+        wrappedEvent.headers = null;
+      }
+    }
+
+    dynamic rawBody = event['body'];
+    if (rawBody != null) {
+      // body may be represented as Uint#List (where #
+      // is either 8, 16, 32 or 64). In this case, try
+      // decoding it as UTF-8 string
+      if (rawBody is List<int>) {
+        try {
+          wrappedEvent.body = utf8.decode(rawBody);
+          // ignore: unused_catch_clause
+        } catch (e) {
+          wrappedEvent.body = null;
+        }
+      } else {
+        wrappedEvent.body = tryCast(rawBody, null);
+      }
+    }
 
     return wrappedEvent;
   }

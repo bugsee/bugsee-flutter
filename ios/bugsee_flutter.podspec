@@ -16,6 +16,6 @@ Bugsee Flutter SDK.
   s.static_framework = true
 
   s.pod_target_xcconfig = { 'OTHER_LDFLAGS' => '"$(inherited)" "-framework" "Flutter" "-framework" "Bugsee"' }
-  s.ios.deployment_target = '8.0'
+  s.ios.deployment_target = '9.0'
 end
 

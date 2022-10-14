@@ -401,8 +401,8 @@ class Bugsee {
       BugseeSeverityLevel? severity,
       List<String>? labels]) async {
     await _channel?.invokeMethod('upload', <String, dynamic>{
-      'summary': summary,
-      'description': description,
+      'summary': summary ?? '',
+      'description': description ?? '',
       'severity': severity != null ? (severity.index + 1) : null,
       'labels': labels
     });
@@ -416,8 +416,8 @@ class Bugsee {
       BugseeSeverityLevel? severity,
       List<String>? labels]) async {
     await _channel?.invokeMethod('showReportDialog', <String, dynamic>{
-      'summary': summary,
-      'description': description,
+      'summary': summary ?? '',
+      'description': description ?? '',
       'severity': severity != null ? (severity.index + 1) : null,
       'labels': labels
     });

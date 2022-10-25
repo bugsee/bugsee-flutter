@@ -2,6 +2,13 @@
 #import "BugseePlugin.h"
 #import "Bugsee/Bugsee.h"
 
+typedef struct _BGSRect {
+    float x;
+    float y;
+    float width;
+    float height;
+} BGSRect;
+
 id wrapNilIfRequired(id value) {
     if (!value) {
         return [NSNull null];
@@ -378,14 +385,17 @@ NSMutableSet * activeCallbacks = nil;
     if (sourceRectangles) {
         finalRectangles = [NSMutableArray arrayWithCapacity:sourceRectangles.count];
         for (NSValue * rectValue in sourceRectangles) {
-            CGRect sourceRect = [rectValue CGRectValue];
-            NSArray * rectBounds = [NSArray arrayWithObjects:
-                                    @(sourceRect.origin.x),
-                                    @(sourceRect.origin.y),
-                                    @(sourceRect.size.width),
-                                    @(sourceRect.size.height),
-                                    nil];
-            [finalRectangles addObject:rectBounds];
+            @try {
+                BGSRect sourceRect;
+                [rectValue getValue:&sourceRect];
+                NSArray * rectBounds = [NSArray arrayWithObjects:
+                                        @(sourceRect.x),
+                                        @(sourceRect.y),
+                                        @(sourceRect.width),
+                                        @(sourceRect.height),
+                                        nil];
+                [finalRectangles addObject:rectBounds];
+            } @catch (NSException * ignore) {}
         }
     }
     result(finalRectangles);

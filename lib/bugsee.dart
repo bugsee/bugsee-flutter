@@ -354,12 +354,23 @@ class Bugsee {
   static Future<List<Rectangle<double>>?> getAllSecureRects() async {
     _init();
 
-    List<List<double>>? rawRectangles =
+    dynamic rawRectangles =
         await _channel?.invokeMethod('getAllSecureRects', <String, dynamic>{});
 
     if (rawRectangles != null) {
-      return List<Rectangle<double>>.from(
-          rawRectangles.map((e) => Rectangle<double>(e[0], e[1], e[2], e[3])));
+      List<Object?> rectangles = rawRectangles as List<Object?>;
+      return List<Rectangle<double>>.from(rectangles.map((e) {
+        dynamic item = e;
+        if (item != null) {
+          double x = item[0] as double;
+          double y = item[1] as double;
+          double w = item[2] as double;
+          double h = item[3] as double;
+          return Rectangle<double>(x, y, w, h);
+        }
+
+        return Rectangle<double>(0, 0, 0, 0);
+      }));
     }
 
     return null;

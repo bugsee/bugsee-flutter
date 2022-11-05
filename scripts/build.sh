@@ -1,17 +1,44 @@
-export PATH=$PATH:/usr/local/bin
+#!/usr/bin/env bash
 
-source ./version.txt
+
+# --------------------------------
+echo "Initializing..."
+# --------------------------------
 
 WORKSPACE=${WORKSPACE-$PWD}
+export PATH=$PATH:/usr/local/bin:${WORKSPACE}/node_modules/.bin
+source ${WORKSPACE}/version.txt
 DEPLOY_DIR=${WORKSPACE}/package/
+GIT_RESET=false
 
-# TODO: should we udpate files from Git here?
+while getopts "cia" flag
+do
+    case "${flag}" in
+        c) GIT_RESET=true;;
+    esac
+done
+
+
+# --------------------------------
+echo "Cleaning..."
+# --------------------------------
 
 # delete extra files and folders from source directories
 rm -rf ./example/ios/.symlinks
 rm -rf ./example/ios/Pods
-
 rm -rf $DEPLOY_DIR
+
+if [[ "$GIT_RESET" == true ]]; then
+    # clean all
+    git reset --hard HEAD
+    git clean -fdx
+fi
+
+
+# --------------------------------
+echo "Copying assets..."
+# --------------------------------
+
 mkdir $DEPLOY_DIR
 cd $DEPLOY_DIR
 
@@ -26,7 +53,11 @@ cp -rf ${WORKSPACE}/pubspec.yaml .
 cp -rf ${WORKSPACE}/analysis_options.yaml .
 cp -rf ${WORKSPACE}/.gitignore .
 
-# update wrapper version
+
+# --------------------------------
+echo "Injecting versions..."
+# --------------------------------
+
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./README.md
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./pubspec.yaml
 sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
@@ -40,3 +71,8 @@ sed -E -i '' "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" ./io
 sed -E -i '' "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" ./android/build.gradle
 
 cd -
+
+
+# --------------------------------
+echo "Build completed."
+# --------------------------------

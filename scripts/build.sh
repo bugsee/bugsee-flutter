@@ -6,7 +6,6 @@ echo "Initializing..."
 # --------------------------------
 
 WORKSPACE=${WORKSPACE-$PWD}
-export PATH=$PATH:/usr/local/bin:${WORKSPACE}/node_modules/.bin
 source ${WORKSPACE}/version.txt
 DEPLOY_DIR=${WORKSPACE}/package/
 GIT_RESET=false

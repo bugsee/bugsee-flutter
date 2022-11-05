@@ -57,17 +57,31 @@ cp -rf ${WORKSPACE}/.gitignore .
 echo "Injecting versions..."
 # --------------------------------
 
-sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./README.md
-sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./pubspec.yaml
-sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
-sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./ios/bugsee_flutter.podspec
-sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./android/build.gradle
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./README.md
+    sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./pubspec.yaml
+    sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
+    sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./ios/bugsee_flutter.podspec
+    sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./android/build.gradle
 
-# put Bugsee iOS SDK version into .podspec file
-sed -E -i '' "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" ./ios/bugsee_flutter.podspec
+    # put Bugsee iOS SDK version into .podspec file
+    sed -E -i '' "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" ./ios/bugsee_flutter.podspec
 
-# put Bugsee Android SDK version into build.gradle
-sed -E -i '' "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" ./android/build.gradle
+    # put Bugsee Android SDK version into build.gradle
+    sed -E -i '' "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" ./android/build.gradle
+else
+    sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./README.md
+    sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./pubspec.yaml
+    sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./lib/src/version.dart
+    sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./ios/bugsee_flutter.podspec
+    sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./android/build.gradle
+
+    # put Bugsee Android SDK version into build.gradle
+    sed -e "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" -i ./ios/bugsee_flutter.podspec
+
+    # put Bugsee Android SDK version into build.gradle
+    sed -e "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" -i ./android/build.gradle
+fi
 
 cd -
 

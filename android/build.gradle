@@ -34,7 +34,7 @@ def bgsGetExtPropSafe(prop, fallback) {
 }
 
 android {
-    compileSdkVersion bgsGetExtPropSafe('compileSdkVersion', '31')
+    compileSdkVersion bgsGetExtPropSafe('compileSdkVersion', 31)
     buildToolsVersion bgsGetExtPropSafe('buildToolsVersion', '31.0.0')
 
     defaultConfig {

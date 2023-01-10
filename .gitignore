@@ -36,5 +36,3 @@ deploy/
 pubspec.lock
 .flutter-plugins-dependencies
 .flutter-plugins
-
-package/

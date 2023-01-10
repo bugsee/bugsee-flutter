@@ -63,6 +63,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./lib/src/version.dart
     sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./ios/bugsee_flutter.podspec
     sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./android/build.gradle
+    sed -E -i '' "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" ./CHANGELOG.md
 
     # put Bugsee iOS SDK version into .podspec file
     sed -E -i '' "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" ./ios/bugsee_flutter.podspec
@@ -75,6 +76,7 @@ else
     sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./lib/src/version.dart
     sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./ios/bugsee_flutter.podspec
     sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./android/build.gradle
+    sed -e "s/99.99.99/${BUGSEE_PLUGIN_VERSION}/" -i ./CHANGELOG.md
 
     # put Bugsee Android SDK version into build.gradle
     sed -e "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" -i ./ios/bugsee_flutter.podspec

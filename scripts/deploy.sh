@@ -9,12 +9,12 @@ cd $DEPLOY_DIR
 
 # make dry run first to check whether assembled package 
 # has any publishing issues
-dart pub publish --dry-run --verbose
+dart pub publish --dry-run
 
 if [ ${RELEASE-false} == true ]
 then
     # PROD: publish built artifacts to the NPM registry
-    dart pub publish --force --verbose
+    dart pub publish --force
 fi
 
 cd -

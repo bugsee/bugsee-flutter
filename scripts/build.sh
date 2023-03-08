@@ -82,7 +82,7 @@ else
     sed -e "s/dependency 'Bugsee'/dependency 'Bugsee', '${IOS_VERSION}'/" -i ./ios/bugsee_flutter.podspec
 
     # put Bugsee Android SDK version into build.gradle
-    sed -e "s/bugsee-android:[^']+/bugsee-android:${ANDROID_VERSION}/" -i ./android/build.gradle
+    sed -e "s/bugsee-android:[^']*/bugsee-android:${ANDROID_VERSION}/" -i ./android/build.gradle
 fi
 
 cd -

@@ -31,6 +31,7 @@ const constOptionMonitorBluetoothStatus = false;
 const constOptionServiceMode = false;
 const constOptionVideoMode = BugseeVideoMode.v3;
 const constOptionForceVideoModeV3 = true;
+const constOptionForceDrawAllSurfaces = true;
 const constOptionNotificationBarTrigger = true;
 
 const constDefaultLogLevel = BugseeLogLevel.info;

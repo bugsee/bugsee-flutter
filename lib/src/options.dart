@@ -277,6 +277,9 @@ class AndroidLaunchOptions extends BugseeLaunchOptions {
     // required for Flutter as it renders its
     // UI onto GL surface
     this["forceVideoModeV3"] = constOptionForceVideoModeV3;
+    // Some widgets, such as InAppWebView, don't draw on FlutterSurfaceView, unlike other standard widgets.
+    // So, to capture everything on screen, we need to do it from a window and from a surfaceView.
+    this["forceDrawAllSurfaces"] = constOptionForceDrawAllSurfaces;
   }
 
   /// Video capture mode

@@ -9,7 +9,7 @@ import 'dart:typed_data';
 import 'dart:io';
 import './callbacks.dart';
 
-class BugseeViewManager {
+class BugseeViewManager with WidgetsBindingObserver {
   final MethodChannel _channel;
 
   BugseeViewManager(MethodChannel channel) : _channel = channel;
@@ -17,6 +17,7 @@ class BugseeViewManager {
   bool _isCollecting = false;
   bool _boundsWasFilled = false;
   bool _areViewsTracked = false;
+  bool _shouldTraverseHierarchy = true;
   double _devicePixelRatio = 1.0;
   int lastUpdateTimestamp = 0;
   // Stopwatch _stopwatch = Stopwatch();
@@ -130,6 +131,12 @@ class BugseeViewManager {
       _sendBoundsData(boundsData);
     }
 
+    if (Platform.isAndroid) {
+      if (_shouldTraverseHierarchy) {
+        _checkHierarchyInternal();
+      }
+    }
+
     _isCollecting = false;
   }
 
@@ -144,6 +151,11 @@ class BugseeViewManager {
       _boundsWasFilled = false;
       _channel.invokeMethod("setSecureRectsInternal", {'bounds': null});
     }
+  }
+
+  void _checkHierarchyInternal() {
+    _shouldTraverseHierarchy = false;
+    _channel.invokeMethod("checkHierarchyInternal", <String, dynamic>{});
   }
 
   void onFrame(timeStamp) {
@@ -276,10 +288,41 @@ class BugseeViewManager {
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
       WidgetsBinding.instance.addPersistentFrameCallback(onFrame);
+      WidgetsBinding.instance.addObserver(this);
     }
     onAfterFrame(Duration(seconds: 0));
     Timer.periodic(Duration(milliseconds: 500), _onExtraFrameUpdate);
   }
+
+// ----------------------------------------------------------------------------------
+// WidgetsBindingObserver methods
+// ----------------------------------------------------------------------------------
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _shouldTraverseHierarchy = true;
+  }
+
+  @override
+  void didChangeMetrics() {
+    _shouldTraverseHierarchy = true;
+  }
+
+  @override
+  Future<bool> didPopRoute() {
+    _shouldTraverseHierarchy = true;
+
+    return super.didPopRoute();
+  }
+
+  @override
+  Future<bool> didPushRoute(String route) {
+    _shouldTraverseHierarchy = true;
+
+    return super.didPushRoute(route);
+  }
+
+// ----------------------------------------------------------------------------------
 }
 
 class BugseeSecureView extends MetaData {

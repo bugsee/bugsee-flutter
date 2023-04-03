@@ -307,6 +307,9 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             case "setSecureRectsInternal":
                 setSecureRectsInternal(call, result);
                 break;
+            case "checkHierarchyInternal":
+                checkHierarchyInternal(call, result);
+                break;
             case "setViewHidden":
                 setViewHidden(call, result);
                 break;
@@ -636,6 +639,12 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         }
 
         result.success(finalRectangles);
+    }
+
+    private void checkHierarchyInternal(MethodCall call, final Result result) {
+        Bugsee.checkHierarchyInternal();
+
+        result.success(null);
     }
 
     private void setSecureRectsInternal(MethodCall call, final Result result) {

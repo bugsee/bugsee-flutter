@@ -466,14 +466,21 @@ NSMutableSet * activeCallbacks = nil;
 // ----------------------------------------------------------------------------------
 
 - (void) setAppearanceProperty:(FlutterMethodCall*)call result:(FlutterResult)result {
-    NSString * colorProperty = call.arguments[@"cP"];
-    NSInteger cR = [call.arguments[@"cR"] integerValue];
-    NSInteger cG = [call.arguments[@"cG"] integerValue];
-    NSInteger cB = [call.arguments[@"cB"] integerValue];
-    NSInteger cA = [call.arguments[@"cA"] integerValue];
-    UIColor * color = [UIColor colorWithRed:cR/255.0 green:cG/255.0 blue:cB/255.0 alpha:cA/255.0];
+    NSString * propertyName = call.arguments[@"cP"];
+    id propertyValue = nil;
+
+    NSString * stringValue = call.arguments[@"cStr"];
+    if (stringValue) {
+        propertyValue = stringValue;
+    } else {
+        NSInteger cR = [call.arguments[@"cR"] integerValue];
+        NSInteger cG = [call.arguments[@"cG"] integerValue];
+        NSInteger cB = [call.arguments[@"cB"] integerValue];
+        NSInteger cA = [call.arguments[@"cA"] integerValue];
+        propertyValue = [UIColor colorWithRed:cR/255.0 green:cG/255.0 blue:cB/255.0 alpha:cA/255.0];
+    }
     
-    [[Bugsee appearance] setValue:color forKey:colorProperty];
+    [[Bugsee appearance] setValue:propertyValue forKey:propertyName];
 
     result(nil);
 }
@@ -482,8 +489,9 @@ NSMutableSet * activeCallbacks = nil;
     NSString * colorProperty = call.arguments[@"cP"];
     
     @try {
-        const UIColor * propertyColor = (UIColor *)[[Bugsee appearance] valueForKey:colorProperty];
-        if (propertyColor) {
+        const id propertyValue = [[Bugsee appearance] valueForKey:colorProperty];
+        if ([propertyValue isKindOfClass:[UIColor class]]) {
+            const UIColor * propertyColor = (UIColor *)propertyValue;
             CGFloat red = 0.0, green = 0.0, blue = 0.0, alpha = 0.0;
             [propertyColor getRed:&red green:&green blue:&blue alpha:&alpha];
             NSDictionary * colorMap = @{
@@ -493,6 +501,12 @@ NSMutableSet * activeCallbacks = nil;
                 @"cA": @(alpha)
             };
             result(colorMap);
+            return;
+        } else if ([propertyValue isKindOfClass:[NSString class]] || propertyValue == nil) {
+            NSDictionary * resultMap = @{
+                @"cStr": (NSString *)propertyValue
+            };
+            result(resultMap);
             return;
         }
     } @catch (NSException * exception) {

@@ -38,6 +38,27 @@ class BugseeAppearanceBase {
 
     return null;
   }
+
+  Future<void> _setPropertyStr(String propertyName, String? value) async {
+    await _channel.invokeMethod('setAppearanceProperty',
+        <String, dynamic>{'cP': propertyName, 'cStr': value});
+  }
+
+  Future<String?> _getPropertyStr(String propertyName) async {
+    Map<String, String>? rawResult =
+        await _channel.invokeMethod('getAppearanceProperty', <String, dynamic>{
+      'cP': propertyName,
+    });
+
+    if (rawResult != null) {
+      Map<String, String> value = Map<String, String>.from(rawResult);
+      if (value.containsKey('cStr')) {
+        return value['cStr'];
+      }
+    }
+
+    return null;
+  }
 }
 
 class BugseeAppearanceIOS extends BugseeAppearanceBase {
@@ -176,6 +197,30 @@ class BugseeAppearanceIOS extends BugseeAppearanceBase {
       _getProperty('feedbackNavigationBarColor');
   Future<void> setFeedbackNavigationBarColor(Color value) async {
     await _setProperty('feedbackNavigationBarColor', value);
+  }
+
+  Future<String?> get reportSummaryPlaceholder =>
+      _getPropertyStr('ReportSummaryPlaceholder');
+  Future<void> setReportSummaryPlaceholder(String value) async {
+    await _setPropertyStr('ReportSummaryPlaceholder', value);
+  }
+
+  Future<String?> get reportDescriptionPlaceholder =>
+      _getPropertyStr('ReportDescriptionPlaceholder');
+  Future<void> setReportDescriptionPlaceholder(String value) async {
+    await _setPropertyStr('ReportDescriptionPlaceholder', value);
+  }
+
+  Future<String?> get reportEmailPlaceholder =>
+      _getPropertyStr('ReportEmailPlaceholder');
+  Future<void> setReportEmailPlaceholder(String value) async {
+    await _setPropertyStr('ReportEmailPlaceholder', value);
+  }
+
+  Future<String?> get reportLabelsPlaceholder =>
+      _getPropertyStr('ReportLabelsPlaceholder');
+  Future<void> setReportLabelsPlaceholder(String value) async {
+    await _setPropertyStr('ReportLabelsPlaceholder', value);
   }
 }
 
@@ -371,6 +416,30 @@ class BugseeAppearanceAndroid extends BugseeAppearanceBase {
       _getProperty('FeedbackVersionChangedTextColor');
   Future<void> setFeedbackVersionChangedTextColor(Color value) async {
     await _setProperty('FeedbackVersionChangedTextColor', value);
+  }
+
+  Future<String?> get reportSummaryPlaceholder =>
+      _getPropertyStr('ReportSummaryPlaceholder');
+  Future<void> setReportSummaryPlaceholder(String value) async {
+    await _setPropertyStr('ReportSummaryPlaceholder', value);
+  }
+
+  Future<String?> get reportDescriptionPlaceholder =>
+      _getPropertyStr('ReportDescriptionPlaceholder');
+  Future<void> setReportDescriptionPlaceholder(String value) async {
+    await _setPropertyStr('ReportDescriptionPlaceholder', value);
+  }
+
+  Future<String?> get reportEmailPlaceholder =>
+      _getPropertyStr('ReportEmailPlaceholder');
+  Future<void> setReportEmailPlaceholder(String value) async {
+    await _setPropertyStr('ReportEmailPlaceholder', value);
+  }
+
+  Future<String?> get reportLabelsPlaceholder =>
+      _getPropertyStr('ReportLabelsPlaceholder');
+  Future<void> setReportLabelsPlaceholder(String value) async {
+    await _setPropertyStr('ReportLabelsPlaceholder', value);
   }
 }
 

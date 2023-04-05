@@ -777,14 +777,20 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
         Field field = getAppearanceField(colorProperty);
         if (field != null) {
-            int cR = call.argument("cR");
-            int cG = call.argument("cG");
-            int cB = call.argument("cB");
-            int cA = call.argument("cA");
-            int colorValue = Color.argb(cA, cR, cG, cB);
+            Object propertyValue = null;
+
+            if (field.getType().getSimpleName().equals("String")) {
+                propertyValue = call.argument("cStr");
+            } else {
+                int cR = call.argument("cR");
+                int cG = call.argument("cG");
+                int cB = call.argument("cB");
+                int cA = call.argument("cA");
+                propertyValue = Color.argb(cA, cR, cG, cB);
+            }
 
             try {
-                field.set(Bugsee.getAppearance(), colorValue);
+                field.set(Bugsee.getAppearance(), propertyValue);
             } catch (Throwable t) {
                 BugseeInternalAdapter.logWarning(TAG, t.toString(), false);
             }
@@ -795,27 +801,37 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
     private void getAppearanceProperty(MethodCall call, final Result result) {
         String colorProperty = call.argument("cP");
-        HashMap<String, Integer> colorComponents = null;
+        HashMap<String, Object> resultMap = null;
 
         Field field = getAppearanceField(colorProperty);
         if (field != null) {
             try {
-                final int colorValue = (int) field.get(Bugsee.getAppearance());
-
-                colorComponents = new HashMap<String, Integer>() {
-                    {
-                        put("cR", Color.red(colorValue));
-                        put("cG", Color.green(colorValue));
-                        put("cB", Color.blue(colorValue));
-                        put("cA", Color.alpha(colorValue));
-                    }
-                };
+                if (field.getType().getName().equals("String")) {
+                    final String value = (String) field.get(Bugsee.getAppearance());
+                    resultMap = new HashMap<String, Object>() { 
+                        {
+                            put("cStr", value);
+                        }
+                    };
+                } else {
+                    
+                        final int colorValue = (int) field.get(Bugsee.getAppearance());
+                        resultMap = new HashMap<String, Object>() {
+                            {
+                                put("cR", Color.red(colorValue));
+                                put("cG", Color.green(colorValue));
+                                put("cB", Color.blue(colorValue));
+                                put("cA", Color.alpha(colorValue));
+                            }
+                        };
+                    
+                }
             } catch (Throwable t) {
                 BugseeInternalAdapter.logWarning(TAG, t.toString(), false);
             }
         }
 
-        result.success(colorComponents);
+        result.success(resultMap);
     }
 
     // endregion

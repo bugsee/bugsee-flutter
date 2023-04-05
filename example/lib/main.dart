@@ -44,6 +44,15 @@ Future<void> configureBugsee() async {
 
   await Bugsee.appearance.iOS.setReportBackgroundColor(bgColor);
   await Bugsee.appearance.android.setReportBackgroundColor(bgColor);
+
+  await Bugsee.appearance.iOS
+      .setReportSummaryPlaceholder('Some summary, please');
+  await Bugsee.appearance.iOS
+      .setReportDescriptionPlaceholder('More, more and more details here');
+  await Bugsee.appearance.iOS
+      .setReportEmailPlaceholder('Identify yourself, please');
+  await Bugsee.appearance.iOS
+      .setReportLabelsPlaceholder('Labels.For.Devs [Comma separated]');
 }
 
 BugseeLaunchOptions? createLaunchOptions() {
@@ -64,8 +73,8 @@ BugseeLaunchOptions? createLaunchOptions() {
 
 String getApplicationToken() {
   return Platform.isAndroid
-      ? '<android-app-token>'
-      : (Platform.isIOS ? '<ios-app-token>' : '');
+      ? 'e1f49c41-30f3-498b-aa7c-620779a32bdc'
+      : (Platform.isIOS ? '1fcf9b8d-92f2-4ca5-b68f-4d6bc3e4b733' : '');
 }
 
 Future<void> launchBugsee(

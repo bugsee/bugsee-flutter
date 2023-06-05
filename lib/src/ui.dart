@@ -256,7 +256,21 @@ class BugseeViewManager with WidgetsBindingObserver {
 
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
-      rootElement = WidgetsBinding.instance.renderViewElement;
+      try {
+        rootElement = WidgetsBinding.instance.rootElement;
+      } catch (e) {
+        // We may get here if rootElement is not defined
+      }
+
+      if (rootElement == null) {
+        try {
+          // fallback to renderViewElement
+          // ignore: deprecated_member_use
+          rootElement = WidgetsBinding.instance.renderViewElement;
+        } catch (e) {
+          // We may get here if rootElement is not defined
+        }
+      }
     }
 
     ViewHierarchyItem? rootItem =

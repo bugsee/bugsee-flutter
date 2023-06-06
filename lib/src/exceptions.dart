@@ -99,7 +99,7 @@ class BugseeExceptionHandler {
       'module': package,
       'user': user,
       'data': {
-        'uri': frame.uri.toString(),
+        'source': frame.uri.toString(),
         'member': frame.member,
         'line': frame.line,
         'column': frame.column,

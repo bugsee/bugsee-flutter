@@ -272,13 +272,15 @@ NSMutableSet * activeCallbacks = nil;
     NSString * name = call.arguments[@"name"];
     NSString * reason = call.arguments[@"reason"];
     BOOL handled = [call.arguments[@"handled"] boolValue];
-    id frames = call.arguments[@"frames"];
 
-    [Bugsee logException:name
-                  reason:reason
-                  frames:frames
-                    type:@"flutter"
-                 handled:handled];
+    if (handled) {
+        [Bugsee logException:name
+                      reason:reason
+                     options:nil];
+    } else {
+        [Bugsee logUnhandledException:name
+                               reason:reason];
+    }
 
     result(nil);
 }

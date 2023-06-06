@@ -1176,10 +1176,15 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     // region Custom logic
 
     private void testExceptionCrash(MethodCall call, final Result result) {
-        int a = 1;
-        int b = a - 1;
-        int c = a / b;
-        result.success(c);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                int a = 1;
+                int b = a - 1;
+                int c = a / b;
+                result.success(c);
+            }
+        }).start();
     }
 
     private void testSignalCrash(MethodCall call, final Result result) {

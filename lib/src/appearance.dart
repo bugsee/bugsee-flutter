@@ -1,6 +1,8 @@
 import 'dart:async';
-
 import 'package:flutter/services.dart';
+
+// ignore: unnecessary_import
+import 'dart:ui';
 
 import 'utils.dart';
 

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'dart:typed_data';
 import 'dart:io';
 import './callbacks.dart';
+import './utils.dart' show tryCast;
 
 class BugseeViewManager with WidgetsBindingObserver {
   final MethodChannel _channel;
@@ -207,7 +208,8 @@ class BugseeViewManager with WidgetsBindingObserver {
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
       try {
-        rootElement = WidgetsBinding.instance.rootElement;
+        dynamic instance = WidgetsBinding.instance;
+        rootElement = tryCast<Element?>(instance.rootElement, null);
       } catch (e) {
         // We may get here if rootElement is not defined
       }

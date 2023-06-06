@@ -207,8 +207,11 @@ class BugseeViewManager with WidgetsBindingObserver {
 
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
+      // we cast to <dynamic> here to avoid compile-time error
+      // and make sure we can use both newer and deprecated
+      // properties
+      dynamic instance = WidgetsBinding.instance;
       try {
-        dynamic instance = WidgetsBinding.instance;
         rootElement = tryCast<Element?>(instance.rootElement, null);
       } catch (e) {
         // We may get here if rootElement is not defined
@@ -218,7 +221,7 @@ class BugseeViewManager with WidgetsBindingObserver {
         try {
           // fallback to renderViewElement on onlder Flutter versions
           // ignore: deprecated_member_use
-          rootElement = WidgetsBinding.instance.renderViewElement;
+          rootElement = tryCast<Element?>(instance.renderViewElement, null);
         } catch (e) {
           // We may get here if rootElement is not defined
         }

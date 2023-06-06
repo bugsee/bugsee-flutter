@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:bugsee_flutter/src/types_internal.dart';
 import 'package:flutter/material.dart';
@@ -34,7 +35,22 @@ class BugseeViewManager with WidgetsBindingObserver {
     // ignore: unnecessary_null_comparison
     if (WidgetsBinding.instance != null) {
       if (Platform.isAndroid) {
-        _devicePixelRatio = WidgetsBinding.instance.window.devicePixelRatio;
+        var views = PlatformDispatcher.instance.views;
+        if (views.isNotEmpty) {
+          var view = views.first;
+          // ignore: unnecessary_null_comparison
+          if (view != null) {
+            _devicePixelRatio = view.devicePixelRatio;
+            return;
+          }
+        }
+
+        try {
+          // ignore: deprecated_member_use
+          _devicePixelRatio = WidgetsBinding.instance.window.devicePixelRatio;
+        } catch (e) {
+          // <window> is deprecated and may not be available in the future
+        }
       } else if (Platform.isIOS) {
         _devicePixelRatio = 1;
       }
@@ -123,8 +139,8 @@ class BugseeViewManager with WidgetsBindingObserver {
 
       // start widgets tree traversal
 
-      WidgetsBinding.instance.renderViewElement
-          ?.visitChildren((Element element) {
+      Element? rootElement = _getRootElement();
+      rootElement?.visitChildren((Element element) {
         _visitChildElements(element, boundsData);
       });
 
@@ -183,6 +199,31 @@ class BugseeViewManager with WidgetsBindingObserver {
     if (WidgetsBinding.instance != null) {
       WidgetsBinding.instance.addPostFrameCallback(onAfterFrame);
     }
+  }
+
+  Element? _getRootElement() {
+    Element? rootElement;
+
+    // ignore: unnecessary_null_comparison
+    if (WidgetsBinding.instance != null) {
+      try {
+        rootElement = WidgetsBinding.instance.rootElement;
+      } catch (e) {
+        // We may get here if rootElement is not defined
+      }
+
+      if (rootElement == null) {
+        try {
+          // fallback to renderViewElement on onlder Flutter versions
+          // ignore: deprecated_member_use
+          rootElement = WidgetsBinding.instance.renderViewElement;
+        } catch (e) {
+          // We may get here if rootElement is not defined
+        }
+      }
+    }
+
+    return rootElement;
   }
 
   void _createOptionsForElement(Element element, ViewHierarchyItem item) {
@@ -252,26 +293,8 @@ class BugseeViewManager with WidgetsBindingObserver {
 
   String? dumpViewHierarchy() {
     _updateDevicePixelRatio();
-    Element? rootElement;
 
-    // ignore: unnecessary_null_comparison
-    if (WidgetsBinding.instance != null) {
-      try {
-        rootElement = WidgetsBinding.instance.rootElement;
-      } catch (e) {
-        // We may get here if rootElement is not defined
-      }
-
-      if (rootElement == null) {
-        try {
-          // fallback to renderViewElement
-          // ignore: deprecated_member_use
-          rootElement = WidgetsBinding.instance.renderViewElement;
-        } catch (e) {
-          // We may get here if rootElement is not defined
-        }
-      }
-    }
+    Element? rootElement = _getRootElement();
 
     ViewHierarchyItem? rootItem =
         _createViewHierarchyItemFromElement(rootElement);

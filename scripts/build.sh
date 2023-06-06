@@ -17,6 +17,9 @@ do
     esac
 done
 
+# printing runtime and environment info
+flutter --version
+
 
 # --------------------------------
 echo "Cleaning..."

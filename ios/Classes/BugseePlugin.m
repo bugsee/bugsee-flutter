@@ -276,10 +276,12 @@ NSMutableSet * activeCallbacks = nil;
     if (handled) {
         [Bugsee logException:name
                       reason:reason
-                     options:nil];
+                     options:nil
+                  completion:nil];
     } else {
         [Bugsee logUnhandledException:name
-                               reason:reason];
+                               reason:reason
+                           completion:nil];
     }
 
     result(nil);

@@ -701,6 +701,16 @@ NSMutableSet * activeCallbacks = nil;
     result(nil);
 }
 
+// ----------------------------------------------------------------------------------
+# pragma mark -
+# pragma mark View hierarchy
+# pragma mark -
+// ----------------------------------------------------------------------------------
+
+- (void) captureViewHierarchy:(FlutterMethodCall*)call result:(FlutterResult)result {
+    [Bugsee captureViewHierarchy];
+    result(nil);
+}
 
 // ----------------------------------------------------------------------------------
 # pragma mark -

@@ -337,6 +337,9 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             case "appInfo":
                 appInfo(call, result);
                 break;
+            case "captureViewHierarchy":
+                captureViewHierarchy(call, result);
+                break;
             default:
                 result.notImplemented();
                 break;
@@ -1336,6 +1339,17 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             // leaked
             Bugsee.setSecureRectsInternal(Collections.singletonList(new Rect(0, 0, 99999, 99999)));
         }
+    }
+
+    // endregion
+    // ----------------------------------------------------------------------------------
+
+    // ----------------------------------------------------------------------------------
+    // region View hierarchy
+
+    private void captureViewHierarchy(MethodCall call, Result result) {
+        Bugsee.captureViewHierarchy();
+        result.success(null);
     }
 
     // endregion

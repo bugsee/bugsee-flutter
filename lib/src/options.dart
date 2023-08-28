@@ -256,6 +256,16 @@ class IOSLaunchOptions extends BugseeLaunchOptions {
   set monitorBluetoothStatus(bool value) {
     this["MonitorBluetoothStatus"] = value;
   }
+
+  /// Controls Video players capture. If set to true,
+  /// Bugsee will capture video in both inline and
+  /// standalone video players. May incur some performance
+  /// penalty.
+  bool get captureAVPlayer =>
+      tryCast(this["CaptureAVPlayer"], constOptionCaptureAVPlayer);
+  set captureAVPlayer(bool value) {
+    this["CaptureAVPlayer"] = value;
+  }
 }
 
 class AndroidLaunchOptions extends BugseeLaunchOptions {

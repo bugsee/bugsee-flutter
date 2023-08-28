@@ -28,6 +28,7 @@ const constOptionStyle = BugseeIosVisualStyle.defaultColors;
 const constOptionScreenshotToReport = constOptionVideoEnabled;
 const constOptionKillDetection = false;
 const constOptionMonitorBluetoothStatus = false;
+const constOptionCaptureAVPlayer = false;
 const constOptionServiceMode = false;
 const constOptionVideoMode = BugseeVideoMode.v3;
 const constOptionForceVideoModeV3 = true;

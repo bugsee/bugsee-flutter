@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:bugsee_flutter/bugsee.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:video_player/video_player.dart';
 
 void onBugseeLifecycleEvent(BugseeLifecycleEventType e) {
   print(e);
@@ -65,6 +66,9 @@ BugseeLaunchOptions? createLaunchOptions() {
   if (Platform.isIOS) {
     var options = IOSLaunchOptions();
     // You can set iOS-specific options here
+
+    // options.captureAVPlayer = true;
+
     return options;
   }
 
@@ -270,12 +274,19 @@ class MyHomePage extends StatelessWidget {
               },
             ),
             ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
+              child: Text('Capture view hierarchy'),
+              onPressed: () async {
+                await Bugsee.captureViewHierarchy();
+              },
             ),
             ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
+              child: Text('Show video'),
+              onPressed: () async {
+                showDialog(
+                    context: context,
+                    builder: (BuildContext context) =>
+                        _buildVideoPopupDialog(context));
+              },
             ),
             ElevatedButton(
               child: Text('Dummy button'),
@@ -317,5 +328,67 @@ class MyHomePage extends StatelessWidget {
         ),
       )),
     );
+  }
+
+  Widget _buildVideoPopupDialog(BuildContext context) {
+    return new Dialog(
+        child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(children: <Widget>[
+              VideoWidget(),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text('Close'),
+              ),
+            ])));
+  }
+}
+
+/// Stateful widget to fetch and then display video content.
+class VideoWidget extends StatefulWidget {
+  const VideoWidget({super.key});
+
+  @override
+  _VideoWidgetState createState() => _VideoWidgetState();
+}
+
+class _VideoWidgetState extends State<VideoWidget> {
+  late VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(
+        'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4'))
+      ..initialize().then((_) {
+        // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
+        setState(() {});
+      });
+
+    _controller.play();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          _controller.value.isInitialized
+              ? AspectRatio(
+                  aspectRatio: _controller.value.aspectRatio,
+                  child: VideoPlayer(_controller),
+                )
+              : Container(),
+        ]);
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    _controller.dispose();
   }
 }

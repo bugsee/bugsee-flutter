@@ -127,7 +127,7 @@ def main():
         
         # we need to provide proper unique UUID here to prevent duplicated debug symbols
         # error from server
-        request_uuid = _get_file_hash(path.join(symbols_dir, symbol_files[0])),
+        request_uuid = _get_file_hash(path.join(symbols_dir, symbol_files[0]))
         raw_response = _send_request(f'{endpoint_base}apps/{app_token}/symbols', 'POST', {
             'uuid': request_uuid,
             'version': application_version,

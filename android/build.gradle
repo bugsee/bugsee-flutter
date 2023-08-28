@@ -46,6 +46,6 @@ android {
     }
 
     dependencies {
-        implementation 'com.bugsee:bugsee-android:1.19.16'
+        implementation 'com.bugsee:bugsee-android:3.10.0'
     }
 }

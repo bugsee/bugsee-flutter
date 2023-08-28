@@ -358,10 +358,10 @@ class BugseeViewManager with WidgetsBindingObserver {
   }
 
   @override
-  Future<bool> didPushRoute(String route) {
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) {
     _shouldTraverseHierarchy = true;
 
-    return super.didPushRoute(route);
+    return super.didPushRouteInformation(routeInformation);
   }
 
 // ----------------------------------------------------------------------------------

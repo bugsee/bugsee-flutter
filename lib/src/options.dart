@@ -292,7 +292,7 @@ class AndroidLaunchOptions extends BugseeLaunchOptions {
     this["forceDrawAllSurfaces"] = constOptionForceDrawAllSurfaces;
   }
 
-  /// Video capture mode
+  /// Video capture mode. Defaults to BugseeVideoMode.v3
   BugseeVideoMode get videoMode => BugseeVideoMode
       .values[tryCast(this["VideoMode"], constOptionVideoMode.index)];
   set videoMode(BugseeVideoMode value) {
@@ -305,11 +305,19 @@ class AndroidLaunchOptions extends BugseeLaunchOptions {
     this["ServiceMode"] = value;
   }
 
-  ///
+  /// Trigger bug report from notification bar
   bool get notificationBarTrigger => tryCast(
       this["NotificationBarTrigger"], constOptionNotificationBarTrigger);
   set notificationBarTrigger(bool value) {
     this["NotificationBarTrigger"] = value;
+  }
+
+  /// Quality of the final encoded video. Default value is
+  /// BugseeVideoQuality.defaultQuality
+  BugseeVideoQuality get videoQuality => BugseeVideoQuality
+      .values[tryCast(this["VideoQuality"], constOptionVideoQuality.index)];
+  set videoQuality(BugseeVideoQuality value) {
+    this["VideoQuality"] = value.index;
   }
 }
 

@@ -52,6 +52,7 @@ import com.bugsee.library.attachment.ReportAttachmentsProvider;
 import com.bugsee.library.data.AdditionalDataCaptureCallback;
 import com.bugsee.library.data.IssueSeverity;
 import com.bugsee.library.data.AdditionalDataCapture;
+import com.bugsee.library.data.VideoQuality;
 import com.bugsee.library.events.BugseeLogLevel;
 import com.bugsee.library.exchange.ExchangeNetworkEvent;
 import com.bugsee.library.feedback.OnNewFeedbackListener;
@@ -367,10 +368,28 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     // ----------------------------------------------------------------------------------
     // region Execution management
 
+    private void preprocessOptions(@Nullable HashMap<String, Object> launchOptions) {
+        if (launchOptions == null) {
+            return;
+        }
+
+        if (launchOptions.containsKey("VideoQuality")) {
+            try {
+                Object rawVQ = launchOptions.get("VideoQuality");
+                if (rawVQ != null) {
+                    int index = (int) rawVQ;
+                    VideoQuality vq = VideoQuality.values()[index];
+                    launchOptions.put("VideoQuality", vq);
+                }
+            } catch (Throwable ignore) {}
+        }
+    }
+
     private void launch(MethodCall call, Result result) {
         int returnValue = 1;
         String appToken = call.argument("token");
         HashMap<String, Object> launchOptions = call.argument("launchOptions");
+        preprocessOptions(launchOptions);
 
         Activity activity = getCurrentActivity();
         if (activity != null) {

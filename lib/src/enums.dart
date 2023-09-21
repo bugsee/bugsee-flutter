@@ -170,3 +170,17 @@ enum BugseeVideoMode {
   /// automatically switched to {@link VideoMode#V1}.
   v3
 }
+
+enum BugseeVideoQuality {
+  /// Default video quality suitable for most scenarios. The resulting video is
+  /// encoded into container with resolution of up to 640x640
+  defaultQuality,
+
+  /// Suitable for visual contents with medium original resolution (up to 2K pixels).
+  /// The resulting video is encoded into container with resolution of up to 960x960
+  medium,
+
+  /// Suitable for visual contents with high original resolution (more than 2K pixels).
+  /// The resulting video is encoded into container with resolution of up to 1280x1280
+  high
+}

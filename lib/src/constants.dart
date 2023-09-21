@@ -34,5 +34,6 @@ const constOptionVideoMode = BugseeVideoMode.v3;
 const constOptionForceVideoModeV3 = true;
 const constOptionForceDrawAllSurfaces = true;
 const constOptionNotificationBarTrigger = true;
+const constOptionVideoQuality = BugseeVideoQuality.defaultQuality;
 
 const constDefaultLogLevel = BugseeLogLevel.info;

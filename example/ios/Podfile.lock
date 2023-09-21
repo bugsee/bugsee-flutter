@@ -1,29 +1,35 @@
 PODS:
-  - Bugsee (1.27.0)
-  - bugsee (2.0.0):
+  - Bugsee (4.0.0)
+  - bugsee_flutter (99.99.99):
     - Bugsee
     - Flutter
   - Flutter (1.0.0)
+  - video_player_avfoundation (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
-  - bugsee (from `.symlinks/plugins/bugsee/ios`)
+  - bugsee_flutter (from `.symlinks/plugins/bugsee_flutter/ios`)
   - Flutter (from `Flutter`)
+  - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/ios`)
 
 SPEC REPOS:
   trunk:
     - Bugsee
 
 EXTERNAL SOURCES:
-  bugsee:
-    :path: ".symlinks/plugins/bugsee/ios"
+  bugsee_flutter:
+    :path: ".symlinks/plugins/bugsee_flutter/ios"
   Flutter:
     :path: Flutter
+  video_player_avfoundation:
+    :path: ".symlinks/plugins/video_player_avfoundation/ios"
 
 SPEC CHECKSUMS:
-  Bugsee: fe151b38b61956faf92788a64136785227d3a125
-  bugsee: 80b3b8596cad7a9b0bfbcae1fb0d70c3f2c6e84f
-  Flutter: 434fef37c0980e73bb6479ef766c45957d4b510c
+  Bugsee: c20cafae42e38393e1b1b8e5dc45e71015a6252c
+  bugsee_flutter: ffe8710dda4bfd6a862e43ed4f283180463f5d5e
+  Flutter: f04841e97a9d0b0a8025694d0796dd46242b2854
+  video_player_avfoundation: 81e49bb3d9fb63dccf9fa0f6d877dc3ddbeac126
 
 PODFILE CHECKSUM: 8e679eca47255a8ca8067c4c67aab20e64cb974d
 
-COCOAPODS: 1.10.1
+COCOAPODS: 1.12.1

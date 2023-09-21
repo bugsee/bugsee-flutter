@@ -60,6 +60,9 @@ BugseeLaunchOptions? createLaunchOptions() {
   if (Platform.isAndroid) {
     var options = AndroidLaunchOptions();
     // You can set Android-specific options here
+
+    options.videoQuality = BugseeVideoQuality.medium;
+
     return options;
   }
 

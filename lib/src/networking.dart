@@ -333,7 +333,7 @@ class BugseeHttpClient implements HttpClient {
   }
 }
 
-class _BugseeHttpClientRequest extends HttpClientRequest {
+class _BugseeHttpClientRequest implements HttpClientRequest {
   final String requestID;
   final int timestamp;
   final HttpClientRequest _httpClientRequest;
@@ -508,9 +508,44 @@ class _BugseeHttpClientRequest extends HttpClientRequest {
       _checkAndResetBufferIfRequired();
     }
   }
+
+  @override
+  bool get bufferOutput => _httpClientRequest.bufferOutput;
+  @override
+  set bufferOutput(bool value) {
+    _httpClientRequest.bufferOutput = value;
+  }
+
+  @override
+  int get contentLength => _httpClientRequest.contentLength;
+  @override
+  set contentLength(int value) {
+    _httpClientRequest.contentLength = value;
+  }
+
+  @override
+  bool get followRedirects => _httpClientRequest.followRedirects;
+  @override
+  set followRedirects(bool value) {
+    _httpClientRequest.followRedirects = value;
+  }
+
+  @override
+  int get maxRedirects => _httpClientRequest.maxRedirects;
+  @override
+  set maxRedirects(int value) {
+    _httpClientRequest.maxRedirects = value;
+  }
+
+  @override
+  bool get persistentConnection => _httpClientRequest.persistentConnection;
+  @override
+  set persistentConnection(bool value) {
+    _httpClientRequest.persistentConnection = value;
+  }
 }
 
-class _BugseeHttpClientResponse extends HttpClientResponse {
+class _BugseeHttpClientResponse implements HttpClientResponse {
   final HttpClientResponse _httpClientResponse;
   final String requestID;
   final String originalUrl;

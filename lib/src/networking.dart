@@ -3,12 +3,10 @@ import 'dart:convert';
 import 'dart:core';
 import 'dart:io';
 
-import 'package:uuid/uuid.dart';
+import 'package:bugsee_flutter/src/utils.dart';
 
 import '../bugsee.dart';
 import 'state.dart';
-
-const Uuid _globalUuid = Uuid();
 
 void _registerBeginEvent(_BugseeHttpClientRequest request,
     [String? noBodyReason, String? body, int? timestamp]) {
@@ -340,7 +338,7 @@ class _BugseeHttpClientRequest implements HttpClientRequest {
   StringBuffer? _sendBuffer = StringBuffer();
 
   _BugseeHttpClientRequest(this._httpClientRequest, [int? eventTimestamp])
-      : requestID = _globalUuid.v4(),
+      : requestID = generateUniqueID(),
         timestamp = eventTimestamp ?? DateTime.now().millisecondsSinceEpoch {
     // subscribe for the completion event right away so we will be notified
     // when request completes

@@ -113,19 +113,21 @@ class BugseeExceptionHandler {
   /// Get the stack chain for the specified stack trace or
   /// retrive current stack chain if no stack trace provided
   Chain _getStackTraceChain([dynamic stackTrace]) {
-    Chain chain;
+    Chain? chain;
 
     if (stackTrace is StackTrace) {
-      stackTrace = FlutterError.demangleStackTrace(stackTrace);
-      chain = Chain.forTrace(stackTrace);
-    } else {
-      // we instruct the runtime to give us the stack chain with two
-      // first frames skipped. This is required to exclude the calls
-      // to this method and the one calling it (as this method is
-      // marked as internal, it will be called from one of the
-      // instance methods of this class)
-      chain = Chain.current(2);
+      if (stackTrace.toString() != "") {
+        stackTrace = FlutterError.demangleStackTrace(stackTrace);
+        chain = Chain.forTrace(stackTrace);
+      }
     }
+
+    // we instruct the runtime to give us the stack chain with our
+    // own frames on top stripped. This is required to exclude the calls
+    // to this method and the one calling it (as this method is
+    // marked as internal, it will be called from one of the
+    // instance methods of this class)
+    chain ??= Chain.current(3);
 
     return chain;
   }

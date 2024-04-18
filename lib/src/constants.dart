@@ -26,6 +26,7 @@ const constOptionReportLabelsEnabled = false;
 const constOptionReportLabelRequired = false;
 const constOptionStyle = BugseeIosVisualStyle.defaultColors;
 const constOptionScreenshotToReport = constOptionVideoEnabled;
+const constOptionMonitorDiskSpace = false;
 const constOptionKillDetection = false;
 const constOptionMonitorBluetoothStatus = false;
 const constOptionCaptureAVPlayer = false;

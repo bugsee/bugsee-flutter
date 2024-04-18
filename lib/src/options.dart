@@ -226,6 +226,7 @@ class IOSLaunchOptions extends BugseeLaunchOptions {
     style = constOptionStyle;
     screenshotToReport = constOptionScreenshotToReport;
     killDetection = constOptionKillDetection;
+    monitorDiskSpace = constOptionMonitorDiskSpace;
     monitorBluetoothStatus = constOptionMonitorBluetoothStatus;
   }
 
@@ -234,6 +235,14 @@ class IOSLaunchOptions extends BugseeLaunchOptions {
       .values[tryCast(this["BugseeStyle"], constOptionStyle.index + 1) - 1];
   set style(BugseeIosVisualStyle value) {
     this["BugseeStyle"] = value.index + 1;
+  }
+
+  /// Enable monitoring of disk space. Disabled by default due to
+  /// privacy limitations.
+  bool get monitorDiskSpace =>
+      tryCast(this["MonitorDiskSpace"], constOptionMonitorDiskSpace);
+  set monitorDiskSpace(bool value) {
+    this["MonitorDiskSpace"] = value;
   }
 
   /// Screenshot key to trigger report

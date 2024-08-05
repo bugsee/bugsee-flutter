@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -80,7 +81,7 @@ BugseeLaunchOptions? createLaunchOptions() {
 
 String getApplicationToken() {
   return Platform.isAndroid
-      ? 'e1f49c41-30f3-498b-aa7c-620779a32bdc'
+      ? 'aad134bc-9944-472e-89b7-b26974d874a9'
       : (Platform.isIOS ? '1fcf9b8d-92f2-4ca5-b68f-4d6bc3e4b733' : '');
 }
 
@@ -176,6 +177,22 @@ class MyHomePage extends StatelessWidget {
                     StateError(
                         'This is a Dart exception with empty stack trace.'),
                     '');
+              },
+            ),
+            ElevatedButton(
+              child: Text('Exception in another isolate'),
+              onPressed: () async {
+                Isolate isolate = await Isolate.spawn((dynamic arg) {
+                  throw StateError('This is an exception in another isolate.');
+                }, "", paused: true, errorsAreFatal: false);
+                isolate.addBugseeErrorListener();
+                if (isolate.pauseCapability != null) {
+                  isolate.resume(isolate.pauseCapability!);
+                }
+
+                // BugseeIsolate.spawn((message) {
+                //   throw StateError('This is an exception in another isolate.');
+                // }, null);
               },
             ),
             BugseeSecureView(

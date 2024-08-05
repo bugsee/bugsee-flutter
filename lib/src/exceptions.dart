@@ -1,24 +1,59 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:stack_trace/stack_trace.dart';
 
 import 'options.dart';
 import 'version.dart';
+import 'exceptions_classifier.dart';
 
 class BugseeExceptionHandler {
-  final MethodChannel _channel;
+  static final BugseeExceptionHandler _defaultHandler =
+      BugseeExceptionHandler();
+
+  final MethodChannel _channel = const MethodChannel('bugsee');
   bool _isInstalled = false;
   bool _isActive = false;
 
   bool get isUnhandledInterceptionActive => _isActive;
 
-  BugseeExceptionHandler(MethodChannel channel) : _channel = channel;
+  static BugseeExceptionHandler get defaultHandler => _defaultHandler;
+
+  RawReceivePort createErrorHandlingPort() {
+    return RawReceivePort(
+      (dynamic error) async {
+        Isolate.current.setErrorsFatal(false);
+        await logIsolateError(error);
+      },
+    );
+  }
+
+  RawReceivePort addIsolateErrorListener(Isolate isolate) {
+    final port = createErrorHandlingPort();
+    isolate.addErrorListener(port.sendPort);
+    return port;
+  }
+
+  /// Log an unhandled error from [Isolate]
+  Future<void> logIsolateError(dynamic error, [bool handled = true]) async {
+    /// Per https://api.dartlang.org/stable/2.7.0/dart-isolate/Isolate/addErrorListener.html
+    /// --------------------------------------------------
+    /// The errors are sent back as two elements lists. The first
+    /// element is a String representation of the error, usually
+    /// reated by calling toString on the error. The second element
+    /// is a String representation of an accompanying stack trace,
+    /// or null if no stack trace was provided. To convert this back
+    /// to a StackTrace object, use StackTrace.fromString.
+
+    if (error is List && error.length == 2) {
+      await logException(error.first, handled, error.last);
+    }
+  }
 
   Future<void> logException(dynamic exception, bool handled,
       [dynamic stackTrace]) async {
@@ -57,9 +92,10 @@ class BugseeExceptionHandler {
   Future<void> _sendException(dynamic exception, bool handled,
       List<Map<String, dynamic>> frames, String signature,
       [dynamic originalStackTrace]) async {
+    String exceptionType = BugseeExceptionsClassifier.classifyType(exception);
     final dynamic exceptionData = <String, dynamic>{
       'internalType': 'FlutterManagedException',
-      'name': '${exception.runtimeType}',
+      'name': exceptionType,
       'reason': '$exception',
       'frames': frames,
       'signature': signature,
@@ -115,10 +151,17 @@ class BugseeExceptionHandler {
   Chain _getStackTraceChain([dynamic stackTrace]) {
     Chain? chain;
 
-    if (stackTrace is StackTrace) {
-      if (stackTrace.toString() != "") {
+    if (stackTrace != null && stackTrace.toString() != "") {
+      if (stackTrace is StackTrace) {
         stackTrace = FlutterError.demangleStackTrace(stackTrace);
         chain = Chain.forTrace(stackTrace);
+      } else if (stackTrace is String) {
+        try {
+          stackTrace = StackTrace.fromString(stackTrace);
+          chain = Chain.forTrace(stackTrace);
+        } catch (e) {
+          // Ignore error here
+        }
       }
     }
 

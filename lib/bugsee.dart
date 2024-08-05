@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:stack_trace/stack_trace.dart';
 
+export 'src/isolate_extension.dart';
+export 'src/bugsee_isolate.dart';
+
 import 'src/appearance.dart';
 import 'src/callbacks.dart';
 import 'src/enums.dart';
@@ -52,7 +55,7 @@ class Bugsee {
       WidgetsFlutterBinding.ensureInitialized();
       _channel = const MethodChannel('bugsee');
       _appearance = BugseeAppearance(_channel!);
-      _exceptionHandler = BugseeExceptionHandler(_channel!);
+      _exceptionHandler = BugseeExceptionHandler.defaultHandler;
       _callbacks = BugseeCallbacks(_channel!);
       _viewManager = BugseeViewManager(_channel!);
       _viewManager!.initialize(_callbacks!);

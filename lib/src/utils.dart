@@ -23,3 +23,11 @@ String generateUniqueID() {
       now.microsecondsSinceEpoch.toString() +
       uKeySuffixString;
 }
+
+int getEqualBeginningLength(String a, String b) {
+  int i = 0;
+  while (i < a.length && i < b.length && a[i] == b[i]) {
+    i++;
+  }
+  return i;
+}

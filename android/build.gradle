@@ -1,8 +1,5 @@
 // package plugin.android
 
-group 'com.bugsee.bugsee'
-version '99.99.99'
-
 buildscript {
     repositories {
         google()
@@ -13,6 +10,13 @@ buildscript {
         classpath 'com.android.tools.build:gradle:7.4.2'
     }
 }
+
+plugins {
+    id 'com.android.library'
+}
+
+group 'com.bugsee.bugsee'
+version '99.99.99'
 
 rootProject.allprojects {
     repositories {
@@ -26,8 +30,6 @@ rootProject.allprojects {
 //        }
 //    }
 }
-
-apply plugin: 'com.android.library'
 
 def bgsGetExtPropSafe(prop, fallback) {
     rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
@@ -46,6 +48,6 @@ android {
     }
 
     dependencies {
-        implementation 'com.bugsee:bugsee-android:4.0.0'
+        implementation 'com.bugsee:bugsee-android:5.4.2'
     }
 }

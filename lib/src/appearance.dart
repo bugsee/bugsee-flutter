@@ -64,7 +64,7 @@ class BugseeAppearanceBase {
 }
 
 class BugseeAppearanceIOS extends BugseeAppearanceBase {
-  const BugseeAppearanceIOS(MethodChannel channel) : super(channel);
+  const BugseeAppearanceIOS(super.channel);
 
   Future<Color?> get reportCellBackgroundColor =>
       _getProperty('reportCellBackgroundColor');
@@ -227,7 +227,7 @@ class BugseeAppearanceIOS extends BugseeAppearanceBase {
 }
 
 class BugseeAppearanceAndroid extends BugseeAppearanceBase {
-  const BugseeAppearanceAndroid(MethodChannel channel) : super(channel);
+  const BugseeAppearanceAndroid(super.channel);
 
   Future<Color?> get reportActionBarColor =>
       _getProperty('ReportActionBarColor');

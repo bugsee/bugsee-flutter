@@ -368,17 +368,15 @@ class BugseeViewManager with WidgetsBindingObserver {
 }
 
 class BugseeSecureView extends MetaData {
-  const BugseeSecureView({Key? key, Widget? child, bool? enabled})
-      : enabled = enabled ?? true,
-        super(key: key, child: child);
+  const BugseeSecureView({super.key, super.child, bool? enabled})
+      : enabled = enabled ?? true;
 
   final bool enabled;
 }
 
 class BugseeIgnoreSecureView extends MetaData {
-  const BugseeIgnoreSecureView({Key? key, Widget? child, bool? enabled})
-      : enabled = enabled ?? true,
-        super(key: key, child: child);
+  const BugseeIgnoreSecureView({super.key, super.child, bool? enabled})
+      : enabled = enabled ?? true;
 
   final bool enabled;
 }

@@ -126,7 +126,7 @@ class BugseeExceptionsClassifier {
               getEqualBeginningLength(exceptionLine, errorLine);
           if (startEqualityLength > 5) {
             result = classifyType(error);
-            if (result != null) break;
+            break;
           }
         }
       }
@@ -138,7 +138,7 @@ class BugseeExceptionsClassifier {
               getEqualBeginningLength(exceptionLine, errorLine);
           if (startEqualityLength > 5) {
             result = classifyType(error);
-            if (result != null) break;
+            break;
           }
         }
       }

@@ -36,6 +36,7 @@ def bgsGetExtPropSafe(prop, fallback) {
 }
 
 android {
+    namespace 'com.bugsee.bugsee'
     compileSdkVersion bgsGetExtPropSafe('compileSdkVersion', 34)
     buildToolsVersion bgsGetExtPropSafe('buildToolsVersion', '34.0.0')
 

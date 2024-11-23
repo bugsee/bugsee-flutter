@@ -320,7 +320,7 @@ class Bugsee {
     });
   }
 
-  static Future<void> clearAllAttributes(String key) async {
+  static Future<void> clearAllAttributes() async {
     _init();
     await _channel?.invokeMethod('clearAllAttributes');
   }

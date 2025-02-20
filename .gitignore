@@ -24,6 +24,7 @@ example/.packages
 example/pubspec.lock
 example/.flutter-plugins-dependencies
 example/.flutter-plugins
+example/android/app/.cxx/
 
 android/.gradle/
 .idea/

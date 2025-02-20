@@ -49,6 +49,6 @@ android {
     }
 
     dependencies {
-        implementation 'com.bugsee:bugsee-android:5.4.2'
+        implementation 'com.bugsee:bugsee-android:5.7.0'
     }
 }

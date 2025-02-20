@@ -14,10 +14,10 @@ class BugseeAppearanceBase {
   Future<void> _setProperty(String propertyName, Color value) async {
     await _channel.invokeMethod('setAppearanceProperty', <String, dynamic>{
       'cP': propertyName,
-      'cR': value.red,
-      'cG': value.green,
-      'cB': value.blue,
-      'cA': value.alpha,
+      'cR': value.r,
+      'cG': value.g,
+      'cB': value.b,
+      'cA': value.a,
     });
   }
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 
 flutter clean
+flutter pub get
 
 pushd ./example
 flutter clean
-popd
-
 flutter pub get
+popd

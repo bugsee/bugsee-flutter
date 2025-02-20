@@ -33,7 +33,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -42,7 +41,6 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.MethodCall;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
 
 import com.bugsee.library.Bugsee;
 import com.bugsee.library.BugseeInternalAdapter;
@@ -130,27 +128,6 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         public static boolean isUiThread() {
             return Looper.getMainLooper().getThread() == Thread.currentThread();
         }
-    }
-
-    // endregion
-    // ----------------------------------------------------------------------------------
-
-    // ----------------------------------------------------------------------------------
-    // region Plugin embedding V1
-
-    public static void registerWith(@NonNull Registrar registrar) {
-        MethodChannel channel = new MethodChannel(registrar.messenger(), CHANNEL_NAME);
-        Activity currentActivity = registrar.activity();
-        BugseePlugin plugin = new BugseePlugin();
-        plugin.activityRef = new WeakReference<>(currentActivity);
-        plugin.channel = channel;
-//        plugin.orientationTracker = new OrientationTracker(registrar.context(), new OrientationTrackerCallback() {
-//            @Override
-//            public void onOrientationChanged(Orientation newOrientation) {
-//                plugin.setNewOrientation(newOrientation);
-//            }
-//        });
-        channel.setMethodCallHandler(plugin);
     }
 
     // endregion
@@ -471,8 +448,13 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
     private void log(MethodCall call, Result result) {
         String name = call.argument("text");
-        BugseeLogLevel level = call.hasArgument("level") ? BugseeLogLevel.fromIntValue((int) call.argument("level"))
-                : BugseeLogLevel.Info;
+        BugseeLogLevel level = BugseeLogLevel.Info;
+        if (call.hasArgument("level")) {
+            Object levelObj = call.argument("level");
+            if (levelObj != null) {
+                level = BugseeLogLevel.fromIntValue((int) levelObj);
+            }
+        }
         Bugsee.log(name, level);
         result.success(null);
     }
@@ -538,10 +520,11 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     private void logException(MethodCall call, final Result result) {
         String reason = call.argument("reason");
         Boolean isHandled = call.argument("handled");
+        boolean isHandledValue = isHandled != null ? isHandled : false;
 
         FlutterManagedException ex = new FlutterManagedException(reason);
 
-        if (isHandled) {
+        if (isHandledValue) {
             Bugsee.logException(ex);
         } else {
             Bugsee.onUncaughtException(Thread.currentThread(), ex);
@@ -569,11 +552,13 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             HashMap<String, Object> options = BugseeInternalAdapter.getLaunchOptions();
             if (options != null && options.containsKey(Bugsee.Option.DefaultBugPriority)) {
                 try {
-                    severity = IssueSeverity.fromIntValue((int) options.get(Bugsee.Option.DefaultBugPriority));
+                    Object valueObj = options.get(Bugsee.Option.DefaultBugPriority);
+                    if (valueObj != null) {
+                        severity = IssueSeverity.fromIntValue((int) valueObj);
+                    }
                 } catch (Throwable t) {
                     // in case when nothing could be received or parsed,
-                    // use Medium as fallback
-                    severity = IssueSeverity.Medium;
+                    // initially set value will be used
                 }
             }
         }
@@ -618,19 +603,27 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     // ----------------------------------------------------------------------------------
     // region Secure rectangles
 
-    private int getRectValue(Object rectValue) {
+    private int getIntValue(@Nullable Object rectValue) {
         if (rectValue instanceof Double) {
             return ((Double) rectValue).intValue();
+        }
+
+        if (rectValue instanceof Integer) {
+            return (int) rectValue;
+        }
+
+        if (rectValue instanceof Long) {
+            return ((Long) rectValue).intValue();
         }
 
         return 0;
     }
 
     private Rect parseSecureRectData(MethodCall call) {
-        int x = getRectValue(call.argument("x"));
-        int y = getRectValue(call.argument("y"));
-        int w = getRectValue(call.argument("width"));
-        int h = getRectValue(call.argument("height"));
+        int x = getIntValue(call.argument("x"));
+        int y = getIntValue(call.argument("y"));
+        int w = getIntValue(call.argument("width"));
+        int h = getIntValue(call.argument("height"));
 
         return new Rect(x, y, x + w, y + h);
     }
@@ -804,10 +797,10 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             if (field.getType().getSimpleName().equals("String")) {
                 propertyValue = call.argument("cStr");
             } else {
-                int cR = call.argument("cR");
-                int cG = call.argument("cG");
-                int cB = call.argument("cB");
-                int cA = call.argument("cA");
+                int cR = getIntValue(call.argument("cR"));
+                int cG = getIntValue(call.argument("cG"));
+                int cB = getIntValue(call.argument("cB"));
+                int cA = getIntValue(call.argument("cA"));
                 propertyValue = Color.argb(cA, cR, cG, cB);
             }
 
@@ -836,17 +829,15 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                         }
                     };
                 } else {
-                    
-                        final int colorValue = (int) field.get(Bugsee.getAppearance());
-                        resultMap = new HashMap<String, Object>() {
-                            {
-                                put("cR", Color.red(colorValue));
-                                put("cG", Color.green(colorValue));
-                                put("cB", Color.blue(colorValue));
-                                put("cA", Color.alpha(colorValue));
-                            }
-                        };
-                    
+                    final int colorValue = getIntValue(field.get(Bugsee.getAppearance()));
+                    resultMap = new HashMap<String, Object>() {
+                        {
+                            put("cR", Color.red(colorValue));
+                            put("cG", Color.green(colorValue));
+                            put("cB", Color.blue(colorValue));
+                            put("cA", Color.alpha(colorValue));
+                        }
+                    };
                 }
             } catch (Throwable t) {
                 BugseeInternalAdapter.logWarning(TAG, t.toString(), false);
@@ -864,7 +855,11 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
     private void setCallbackState(MethodCall call, final Result result) {
         String callbackName = call.argument("callbackName");
-        boolean flagState = call.argument("state");
+        Boolean flagState = call.argument("state");
+        if (flagState == null) {
+            // Undefined state, do nothing
+            return;
+        }
 
         if (flagState) {
             activeCallbacks.add(callbackName);
@@ -895,6 +890,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
             channel.invokeMethod("onNetworkEvent", Collections.singletonList(serializedEvent), new Result() {
                 @Override
+                @SuppressWarnings("unchecked")
                 public void success(@Nullable Object result) {
                     if (result instanceof Map) {
                         try {
@@ -903,7 +899,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                             bugseeNetworkEvent.setUrl((String) resultData.get("url"));
                             bugseeNetworkEvent.setHeaders((Map<String, Object>) resultData.get("headers"));
                             networkEventListener.onEvent(bugseeNetworkEvent);
-                        } catch (Exception e) {
+                        } catch (Throwable e) {
                             BugseeInternalAdapter.logWarning(TAG,
                                     "Failed to handle network event filtering result. Error: " + e.toString(), false);
                         }
@@ -914,7 +910,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                 }
 
                 @Override
-                public void error(String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
+                public void error(@NonNull String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
                     // in case of error, do not log anything to prevent possible
                     // data leakage/disclosure
                     networkEventListener.onEvent(null);
@@ -941,6 +937,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
             channel.invokeMethod("onLogEvent", arguments, new Result() {
                 @Override
+                @SuppressWarnings("unchecked")
                 public void success(@Nullable Object result) {
                     if (result instanceof List) {
                         try {
@@ -959,7 +956,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                 }
 
                 @Override
-                public void error(String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
+                public void error(@NonNull String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
                     // in case of error, do not log anything to prevent possible
                     // data leakage/disclosure
                     logListener.onLog(null);
@@ -986,6 +983,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
             channel.invokeMethod("onAttachmentsForReport", reportArgs, new Result() {
                 @Override
+                @SuppressWarnings("unchecked")
                 public void success(@Nullable Object result) {
                     if (result instanceof List) {
                         try {
@@ -1021,7 +1019,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                 }
 
                 @Override
-                public void error(String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
+                public void error(@NonNull String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
                     // in case of error, just put an empty attachments list
                     BugseeInternalAdapter.setAttachments(new ArrayList<CustomAttachment>());
                 }
@@ -1142,7 +1140,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
                                 }
 
                                 @Override
-                                public void error(String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
+                                public void error(@NonNull String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
                                     additionalDataCaptureCallback.onAdditionalDataCaptured(null);
                                 }
 
@@ -1158,6 +1156,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         });
     }
 
+    @SuppressWarnings("unchecked")
     private <T> T getParamOrDefault(Map<String, Object> params, String paramName, T defaultValue) {
         Object value = params.get(paramName);
         if (value == null) {
@@ -1170,6 +1169,13 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     private void registerNetworkEvent(MethodCall call, final Result result) {
         ExchangeNetworkEvent networkEvent = new ExchangeNetworkEvent();
         Map<String, Object> eventData = call.arguments();
+
+        if (eventData == null) {
+            // There is no data to process, just return
+            BugseeInternalAdapter.logWarning(TAG, "No data to process for network event", false);
+            result.success(null);
+            return;
+        }
 
         networkEvent.id = getParamOrDefault(eventData, "id", "");
         networkEvent.type = getParamOrDefault(eventData, "type", "begin");
@@ -1241,13 +1247,13 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         result.success(null);
     }
 
-    // @Suppress("deprecation")
+    @SuppressWarnings("deprecation")
     private Long getVersionCode(PackageInfo info) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             return info.getLongVersionCode();
         }
 
-        return Long.valueOf(info.versionCode);
+        return (long) info.versionCode;
     }
 
     private enum Orientation {
@@ -1262,7 +1268,7 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         void onOrientationChanged(Orientation newOrientation);
     }
 
-    private class OrientationTracker {
+    private static class OrientationTracker {
         private final WeakReference<Context> contextRef;
         private final OrientationTrackerCallback callback;
         private OrientationEventListener platformListener;
@@ -1352,12 +1358,20 @@ public class BugseePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     private void setNewOrientation(Orientation newOrientation) {
         lastOrientationChangeTimeStamp = System.currentTimeMillis();
 
-        if (mInternalRectsMap.size() > 0) {
+        if (!mInternalRectsMap.isEmpty()) {
             // if we have secure rectangles and device is rotated,
             // obscure the whole screen to make sure nothing is
             // leaked
             Bugsee.setSecureRectsInternal(Collections.singletonList(new Rect(0, 0, 99999, 99999)));
         }
+    }
+
+    private Integer convertToInt(Object value) {
+        if (value == null) {
+            return 0;
+        }
+
+        return Integer.parseInt(value.toString());
     }
 
     // endregion

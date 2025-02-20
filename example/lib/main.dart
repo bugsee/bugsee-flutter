@@ -6,7 +6,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
-import 'dart:typed_data';
 
 // This imports the Bugsee plugin
 import 'package:bugsee_flutter/bugsee.dart';
@@ -19,7 +18,7 @@ void onBugseeLifecycleEvent(BugseeLifecycleEventType e) {
 }
 
 Future<BugseeLogEvent> onBugseeLogEvent(BugseeLogEvent logEvent) {
-  logEvent.text = "Filtered: " + logEvent.text;
+  logEvent.text = "Filtered: ${logEvent.text}";
   return Future.value(logEvent);
 }
 
@@ -31,8 +30,7 @@ Future<BugseeNetworkEvent> onBugseeNetworkEvent(BugseeNetworkEvent e) {
 Future<List<BugseeAttachment>> onBugseeAttachmentsRequest(BugseeReport report) {
   var attachments = <BugseeAttachment>[];
   var list = utf8.encode("This is the contents of the attachment!");
-  var data = list is Uint8List ? list : Uint8List.fromList(list);
-  attachments.add(BugseeAttachment("testAttachment", "", data));
+  attachments.add(BugseeAttachment("testAttachment", "", list));
   return Future.value(attachments);
 }
 
@@ -233,8 +231,8 @@ class MyHomePage extends StatelessWidget {
                 );
                 var responseBody = response.body;
 
-                print('Received network response. Length: ' +
-                    responseBody.length.toString());
+                print(
+                    'Received network response. Length: ${responseBody.length}');
               },
             ),
             ElevatedButton(
@@ -351,7 +349,7 @@ class MyHomePage extends StatelessWidget {
   }
 
   Widget _buildVideoPopupDialog(BuildContext context) {
-    return new Dialog(
+    return Dialog(
         child: Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(children: <Widget>[

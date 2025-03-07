@@ -3,14 +3,20 @@ Pod::Spec.new do |s|
   s.version          = '99.99.99'
   s.summary          = 'Bugsee plugin for Flutter'
   s.description      = <<-DESC
-Bugsee Flutter SDK.
+Bugsee Flutter SDK is a powerful bug and crash reporting tool for
+Flutter applications. It provides real-time insights into your
+app's performance and user experience by capturing detailed
+information about crashes, network requests, user interactions,
+and more. With Bugsee, you can dramatically reduce the time needed
+to identify, reproduce, and fix issues in your Flutter applications.
                        DESC
+  s.license          = { :type => 'MIT' }
   s.homepage         = 'https://www.bugsee.com'
-  s.license          = { :file => '../LICENSE' }
   s.author           = { 'Bugsee' => 'support@bugsee.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
-  s.public_header_files = 'Classes/**/*.h'
+  s.source_files = 'bugsee_flutter/Sources/bugsee_flutter/**/*'
+  s.public_header_files = 'bugsee_flutter/Sources/bugsee_flutter/include/**/*.h'
+  s.resource_bundles = {'bugsee_flutter_privacy' => ['bugsee_flutter/Sources/bugsee_flutter/PrivacyInfo.xcprivacy']}
   s.dependency 'Flutter'
   s.dependency 'Bugsee'
   s.static_framework = true

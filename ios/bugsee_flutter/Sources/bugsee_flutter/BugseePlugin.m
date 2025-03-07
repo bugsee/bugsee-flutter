@@ -422,16 +422,16 @@ NSMutableSet * activeCallbacks = nil;
 // ----------------------------------------------------------------------------------
 
 - (void) setViewHidden:(FlutterMethodCall*)call result:(FlutterResult)result {
-    NSInteger viewId = [call.arguments[@"viewId"] integerValue];
-    BOOL hidden = [call.arguments[@"isHidden"] boolValue];
     // TODO: get view by its ID
+    // NSInteger viewId = [call.arguments[@"viewId"] integerValue];
+    // BOOL hidden = [call.arguments[@"isHidden"] boolValue];
     // [Bugsee setView:hidden];
     result(nil);
 }
 
 - (void) isViewHidden:(FlutterMethodCall*)call result:(FlutterResult)result {
-    NSInteger viewId = [call.arguments[@"viewId"] integerValue];
     // TODO: get view by its ID
+    // NSInteger viewId = [call.arguments[@"viewId"] integerValue];
     result(nil);
 }
 

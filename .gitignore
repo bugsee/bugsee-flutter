@@ -13,6 +13,7 @@ ios/.generated/
 packages
 pubspec.lock
 gen
+.fvmrc
 
 example/android/.gradle/
 example/.dart_tool/

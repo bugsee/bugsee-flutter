@@ -5,6 +5,7 @@ const flagDebug = true;
 const constOptionMaxRecordingTime = 60;
 const constOptionShakeToReport = true;
 const constOptionCrashReport = true;
+const constOptionNdkCrashReport = false;
 const constOptionVideoEnabled = true;
 const constOptionVideoScale = 1.0;
 const constOptionCaptureLogs = true;

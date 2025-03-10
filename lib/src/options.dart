@@ -83,6 +83,13 @@ abstract class BugseeLaunchOptions {
     this["CrashReport"] = value;
   }
 
+  /// Catch and report native (NDK) application crashes
+  bool get ndkCrashReport =>
+      tryCast(this["NdkCrashReport"], constOptionNdkCrashReport);
+  set ndkCrashReport(bool value) {
+    this["NdkCrashReport"] = value;
+  }
+
   /// Enable video recording
   bool get videoEnabled =>
       tryCast(this["VideoEnabled"], constOptionVideoEnabled);

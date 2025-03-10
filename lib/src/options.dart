@@ -83,13 +83,6 @@ abstract class BugseeLaunchOptions {
     this["CrashReport"] = value;
   }
 
-  /// Catch and report native (NDK) application crashes
-  bool get ndkCrashReport =>
-      tryCast(this["NdkCrashReport"], constOptionNdkCrashReport);
-  set ndkCrashReport(bool value) {
-    this["NdkCrashReport"] = value;
-  }
-
   /// Enable video recording
   bool get videoEnabled =>
       tryCast(this["VideoEnabled"], constOptionVideoEnabled);
@@ -306,6 +299,13 @@ class AndroidLaunchOptions extends BugseeLaunchOptions {
     // Some widgets, such as InAppWebView, don't draw on FlutterSurfaceView, unlike other standard widgets.
     // So, to capture everything on screen, we need to do it from a window and from a surfaceView.
     this["forceDrawAllSurfaces"] = constOptionForceDrawAllSurfaces;
+  }
+
+  /// Catch and report native (NDK) application crashes
+  bool get ndkCrashReport =>
+      tryCast(this["NdkCrashReport"], constOptionNdkCrashReport);
+  set ndkCrashReport(bool value) {
+    this["NdkCrashReport"] = value;
   }
 
   /// Video capture mode. Defaults to BugseeVideoMode.v3

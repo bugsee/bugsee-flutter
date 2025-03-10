@@ -11,11 +11,15 @@ let package = Package(
     products: [
         .library(name: "bugsee-flutter", targets: ["bugsee_flutter"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(name: "Bugsee", url: "https://github.com/bugsee/spm", from: "99.99.99")
+    ],
     targets: [
         .target(
             name: "bugsee_flutter",
-            dependencies: [],
+            dependencies: [
+                .product(name: "Bugsee", package: "Bugsee")
+            ],
             resources: [
                 // TODO: If your plugin requires a privacy manifest
                 // (e.g. if it uses any required reason APIs), update the PrivacyInfo.xcprivacy file

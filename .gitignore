@@ -11,6 +11,7 @@
 .gradle/
 ios/.generated/
 packages
+package/
 pubspec.lock
 gen
 .fvmrc

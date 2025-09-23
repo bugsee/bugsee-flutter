@@ -175,7 +175,7 @@ class BugseeViewManager with WidgetsBindingObserver {
     _channel.invokeMethod("checkHierarchyInternal", <String, dynamic>{});
   }
 
-  void onFrame(timeStamp) {
+  void onFrame(Duration timeStamp) {
     if (_areViewsTracked) {
       // we can also check secure views here
       // collectAndSendSecureRectangles();

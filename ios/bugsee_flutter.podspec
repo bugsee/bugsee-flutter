@@ -14,7 +14,7 @@ to identify, reproduce, and fix issues in your Flutter applications.
   s.homepage         = 'https://www.bugsee.com'
   s.author           = { 'Bugsee' => 'support@bugsee.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'bugsee_flutter/Sources/bugsee_flutter/**/*'
+  s.source_files = 'bugsee_flutter/Sources/bugsee_flutter/**/*.{h,m,swift}'
   s.public_header_files = 'bugsee_flutter/Sources/bugsee_flutter/include/**/*.h'
   s.resource_bundles = {'bugsee_flutter_privacy' => ['bugsee_flutter/Sources/bugsee_flutter/PrivacyInfo.xcprivacy']}
   s.dependency 'Flutter'

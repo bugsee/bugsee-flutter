@@ -61,11 +61,29 @@ def _get_file_hash(filename):
     return h.hexdigest()
 
 
+# Flutter names its split-debug-info files after the TARGET PLATFORM, and that
+# vocabulary is not the one symbol files are keyed by: Flutter writes
+# `app.android-x64.symbols` where a symbol file -- and therefore the backend --
+# spells the same architecture `x86_64`. Everything else Flutter can emit
+# (`arm`, `arm64`, `x86`) is already spelled the same way in both, so this table
+# has a single entry and is expected to stay small.
+#
+# Sending an untranslated name is not merely untidy. The architecture recorded
+# on a symbol file is what the backend matches against, so a value outside its
+# vocabulary can never line up with the crash it belongs to.
+#
+# See report-bundle-structure, bundle/crash.md "Architecture vocabulary".
+_ARCH_BY_FLUTTER_NAME = {
+    'x64': 'x86_64',
+}
+
+
 def _extract_info_from_filename(filename):
     matches = re.match(r'(?:.*\.)([^.]+)\-([^\-]+)(\.symbols)$', filename)
+    flutter_arch = matches[2]
     return {
         'platform': matches[1],
-        'arch': matches[2]
+        'arch': _ARCH_BY_FLUTTER_NAME.get(flutter_arch, flutter_arch)
     }
 
 

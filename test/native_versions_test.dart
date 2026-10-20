@@ -10,6 +10,26 @@ import 'package:flutter_test/flutter_test.dart';
 
 String read(String path) => File(path).readAsStringSync();
 
+/// Uncommented lines only.
+String liveOf(String yaml) =>
+    yaml.split('\n').where((l) => !l.trimLeft().startsWith('#')).join('\n');
+
+/// Job id -> body, for a workflow's `jobs:` section (two-space job keys).
+Map<String, String> jobsOf(String live) {
+  final jobs = live.substring(live.indexOf('\njobs:'));
+  final headers = RegExp(
+    r'^  ([a-z0-9-]+):\s*$',
+    multiLine: true,
+  ).allMatches(jobs).toList();
+  return {
+    for (var i = 0; i < headers.length; i++)
+      headers[i].group(1)!: jobs.substring(
+        headers[i].end,
+        i + 1 < headers.length ? headers[i + 1].start : jobs.length,
+      ),
+  };
+}
+
 void main() {
   final pins = jsonDecode(read('native-versions.json')) as Map<String, dynamic>;
   final flutterPin = pins['flutter'] as Map<String, dynamic>;
@@ -42,6 +62,24 @@ void main() {
       final caret = '^${dart.split('.').take(2).join('.')}.0';
       expect(pubspec, contains('sdk: $caret'));
       expect(read('example/pubspec.yaml'), contains('sdk: $caret'));
+    });
+
+    test('version is semver and the CHANGELOG has an entry for it', () {
+      final v = RegExp(
+        r'^version: (\S+)\s*$',
+        multiLine: true,
+      ).firstMatch(pubspec)!.group(1)!;
+      expect(
+        v,
+        matches(
+          RegExp(r'^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'),
+        ),
+      );
+      expect(
+        read('CHANGELOG.md'),
+        startsWith('## $v\n'),
+        reason: 'newest CHANGELOG entry must be the pubspec version',
+      );
     });
 
     test('Flutter floor matches', () {
@@ -205,13 +243,9 @@ void main() {
     );
 
     test('tests the Flutter floor via the matrix', () {
-      expect(
-        RegExp(
-          "^\\s*flutter-version: '${RegExp.escape(flutterPin['min'] as String)}'\\s*\$",
-          multiLine: true,
-        ).hasMatch(live),
-        isTrue,
-        reason: 'no live floor flutter-version in ci.yml',
+      final floor = RegExp(
+        "^\\s*flutter-version: '${RegExp.escape(flutterPin['min'] as String)}'\\s*\$",
+        multiLine: true,
       );
       // Both the macOS test job and the Linux apk job must run the floor.
       expect(
@@ -222,14 +256,16 @@ void main() {
         2,
         reason: 'each job must read the version from its matrix',
       );
-      final floorLines = RegExp(
-        "^\\s*flutter-version: '${RegExp.escape(flutterPin['min'] as String)}'",
-        multiLine: true,
+      // Two matrices plus the format job pinned to the floor.
+      expect(
+        floor.allMatches(live).length,
+        3,
+        reason: 'floor must be in both matrices and in the format job',
       );
       expect(
-        floorLines.allMatches(live).length,
-        2,
-        reason: 'floor must be in both matrices',
+        jobsOf(live)['format'],
+        matches(floor),
+        reason: 'format must run on the floor',
       );
     });
 
@@ -246,6 +282,103 @@ void main() {
         contains(
           'uses: bugsee/.github/.github/workflows/claude-review.yml@main',
         ),
+      );
+    });
+  });
+
+  group('workflows', () {
+    final files = Directory('.github/workflows')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.yml'))
+        .toList();
+    // claude-review.yml is owned by the org's shared workflow.
+    final ours = files.where((f) => !f.path.endsWith('claude-review.yml'));
+
+    test('every workflow is least-privilege', () {
+      for (final f in ours) {
+        final live = liveOf(read(f.path));
+        expect(
+          live,
+          matches(
+            RegExp(r'^permissions:\n  contents: read\n', multiLine: true),
+          ),
+          reason: '${f.path}: top-level permissions must be contents: read',
+        );
+        expect(
+          live,
+          isNot(contains('write')),
+          reason: '${f.path}: no write permission',
+        );
+        expect(
+          live,
+          isNot(contains('secrets.')),
+          reason: '${f.path}: no secrets',
+        );
+        final checkouts = RegExp(
+          r'uses: actions/checkout@v\d+\n\s+with:\n\s+persist-credentials: false',
+        ).allMatches(live).length;
+        expect(
+          checkouts,
+          RegExp(r'uses: actions/checkout@').allMatches(live).length,
+          reason: '${f.path}: every checkout needs persist-credentials: false',
+        );
+      }
+    });
+
+    test('every job has a timeout', () {
+      for (final f in ours) {
+        for (final e in jobsOf(liveOf(read(f.path))).entries) {
+          expect(
+            e.value,
+            contains('timeout-minutes:'),
+            reason: '${f.path} job ${e.key}',
+          );
+        }
+      }
+    });
+
+    test('nothing publishes: pub publish is always a dry run', () {
+      for (final f in files) {
+        for (final l in liveOf(read(f.path)).split('\n')) {
+          if (RegExp(r'(flutter|dart) pub publish').hasMatch(l)) {
+            expect(l, contains('--dry-run'), reason: '${f.path}: $l');
+          }
+        }
+      }
+    });
+
+    test('ci-ok needs every other ci.yml job', () {
+      final jobs = jobsOf(liveOf(read('.github/workflows/ci.yml')));
+      final needs = RegExp(r'needs: \[([^\]]*)\]').firstMatch(jobs['ci-ok']!)!;
+      final listed = needs.group(1)!.split(',').map((e) => e.trim()).toSet();
+      expect(listed, jobs.keys.toSet()..remove('ci-ok'));
+      expect(jobs['ci-ok'], contains('if: always()'));
+    });
+
+    test('format gate is enforced on lib, test, example and scripts', () {
+      expect(
+        liveOf(read('.github/workflows/ci.yml')),
+        contains(
+          'dart format --output=none --set-exit-if-changed lib test example/lib scripts',
+        ),
+      );
+    });
+
+    test('native-pins runs on a schedule, in its own workflow only', () {
+      final pins = liveOf(read('.github/workflows/native-pins.yml'));
+      expect(pins, contains('schedule:'));
+      expect(pins, contains('workflow_dispatch:'));
+      expect(pins, contains('dart scripts/check_native_pins.dart'));
+      expect(
+        pins,
+        contains("sdk: '${flutterPin['dart']}'"),
+        reason: 'Dart SDK must match flutter.dart in native-versions.json',
+      );
+      expect(
+        liveOf(read('.github/workflows/ci.yml')),
+        isNot(contains('check_native_pins')),
+        reason: 'network checks must not run in PR CI',
       );
     });
   });

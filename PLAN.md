@@ -46,6 +46,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
 - Lifecycle: forward by name, strip the `com.bugsee.lifecycle.` prefix once natively, pass
   unknown names through unchanged, handle off-main-thread delivery, status only from
   Launching/Launched/Stopping/Stopped, never treat an event as proof of a report (4.7).
+- Lifecycle delivery limit (3a): guarantees end at the hop into the channel sink. Events sent while the Dart side has no handler (hot restart, torn-down isolate) are dropped by the engine; only the latest status is replayed on re-attach, report events are not. Phase 4/6 consumers must not rely on report events surviving a restart.
 - `requestData`: always answer; unknown type → `null`; never throw.
 - Secure rectangles: pull model, `[version,count,l,t,r,b…]` int32 LE; outward rounding;
   version moves on any change and never on a no-op, per display; **scale to platform unit

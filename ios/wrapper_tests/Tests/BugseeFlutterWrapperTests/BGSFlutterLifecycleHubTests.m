@@ -294,6 +294,38 @@ static void *kQueueKey = &kQueueKey;
   XCTAssertEqual(hub.bufferedCount, 0u, @"nothing is duplicated into the buffer");
 }
 
+/// A queueing sink (the Swift pump) hands back what it took but never sent: that goes to
+/// the front, ahead of what was still waiting for the sink, so order is kept.
+- (void)testUndeliveredEventsHandedBackAtDetachGoFirstInOrder {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  dispatch_suspend(_fakeMain);
+  id token = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+  }];
+  [self raw:hub name:@"E3"];  // still waiting for the sink
+  BGSFlutterLifecycleEvent *e1 = [BGSFlutterLifecycleHub eventForRawName:[P stringByAppendingString:@"E1"] data:nil];
+  BGSFlutterLifecycleEvent *e2 = [BGSFlutterLifecycleHub eventForRawName:[P stringByAppendingString:@"E2"] data:nil];
+  [hub detach:token undelivered:@[ e1, e2 ]];
+  dispatch_resume(_fakeMain);
+  [self drain];
+  NSMutableArray *seen = [self attachNames:hub token:NULL];
+  XCTAssertEqualObjects(seen, (@[ @"E1", @"E2", @"E3" ]));
+}
+
+/// With another receiver still attached, handed-back events are not buffered (it has its own copy).
+- (void)testUndeliveredEventsAreNotBufferedWhileAnotherReceiverRemains {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  id a = [self attachToken:hub];
+  [self attachNames:hub token:NULL];
+  BGSFlutterLifecycleEvent *e1 = [BGSFlutterLifecycleHub eventForRawName:[P stringByAppendingString:@"E1"] data:nil];
+  [hub detach:a undelivered:@[ e1 ]];
+  XCTAssertEqual(hub.bufferedCount, 0u);
+}
+
+- (id)attachToken:(BGSFlutterLifecycleHub *)hub {
+  return [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+  }];
+}
+
 - (void)testDropsAreCountedEvenWhenNotLogged {
   XCTAssertEqual([BGSFlutterLifecycleHub dropLogEvery], 100u);
   BGSFlutterLifecycleHub *hub = [self hub];

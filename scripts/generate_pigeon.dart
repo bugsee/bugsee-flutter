@@ -89,7 +89,11 @@ Future<void> main(List<String> args) async {
       stderr.writeln('stale generated file: ${outputs[i].path}');
     }
     // --check leaves the tree as it found it.
-    if (was != null) outputs[i].writeAsBytesSync(was);
+    if (was != null) {
+      outputs[i].writeAsBytesSync(was);
+    } else if (outputs[i].existsSync()) {
+      outputs[i].deleteSync();
+    }
   }
   if (stale) {
     stderr.writeln('Run `dart scripts/generate_pigeon.dart` and commit.');

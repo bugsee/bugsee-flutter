@@ -40,6 +40,12 @@ import java.util.Set;
  * {@link #DROP_LOG_EVERY}th. The latest status event is also remembered and
  * replayed to every new receiver, so a restarted engine knows the status.
  *
+ * <p><b>Limit.</b> The guarantees end at the main-thread hop into the sink. An event
+ * sent over the channel while the Dart side has no handler (a Dart hot restart, a
+ * torn-down isolate) is dropped by the engine and only logged; only the latest
+ * status is recovered, by replay on the next attach. Report events are not.
+ * Consumers must not rely on them surviving a restart.
+ *
  * <p><b>Names.</b> The {@code com.bugsee.lifecycle.} prefix is stripped once,
  * here. A name the wrapper does not know, or one without the prefix, is
  * forwarded unchanged (4.3): a newer SDK adding an event must reach Dart

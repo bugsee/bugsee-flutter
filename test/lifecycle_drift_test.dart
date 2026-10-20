@@ -255,19 +255,27 @@ void main() {
       },
     );
 
-    test(
-      'the Swift sink sends in order: one consumer, not a Task per event',
-      () {
-        final s = code('$swift/BugseeFlutterPlugin.swift');
-        expect(s, contains('AsyncStream<LifecycleEventMessage>'));
-        expect(s, contains('for await message in stream'));
-        expect(
-          RegExp(r'attachSink \{[^}]*Task').hasMatch(s),
-          isFalse,
-          reason: 'a Task per event does not promise delivery order',
-        );
-      },
-    );
+    test('the Swift pump sends in order and hands unsent events back', () {
+      final s = code('$swift/BugseeFlutterPlugin.swift');
+      // One consumer, queue owned by the plugin; not a Task per event.
+      expect(s, contains('for await _ in wakeups'));
+      expect(s, contains('self.pending.removeFirst()'));
+      expect(
+        RegExp(r'attachSink \{[^}]*Task').hasMatch(s),
+        isFalse,
+        reason: 'a Task per event does not promise delivery order',
+      );
+      // Teardown cancels the pump and gives back what it had not sent.
+      expect(s, contains('pumpTask?.cancel()'));
+      expect(s, contains('while !Task.isCancelled'));
+      expect(
+        s,
+        contains('detach(token, undelivered: unsent)'),
+        reason: 'unsent events must go back to the hub, not be lost or raced',
+      );
+      // The Swift pump cannot be unit tested without Flutter; the hub half is
+      // XCTest testUndeliveredEventsHandedBackAtDetachGoFirstInOrder.
+    });
   });
 
   group('iOS wrapper test package', () {

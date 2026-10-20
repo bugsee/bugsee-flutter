@@ -12,7 +12,11 @@ import Flutter
 public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   private let messenger: FlutterBinaryMessenger
   private var sinkToken: Any?
-  private var pump: AsyncStream<LifecycleEventMessage>.Continuation?
+  // Events the hub handed to the sink that have not been sent to Dart yet. Touched on
+  // the main thread only (the hub's delivery queue, and the main-actor pump).
+  private var pending: [BGSFlutterLifecycleEvent] = []
+  private var pumpTask: Task<Void, Never>?
+  private var wake: AsyncStream<Void>.Continuation?
 
   init(messenger: FlutterBinaryMessenger) {
     self.messenger = messenger
@@ -38,36 +42,50 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   func attachLifecycle() throws {
     stopForwarding()
     let dart = BugseeBridgeFlutterApi(binaryMessenger: messenger)
-    // Pigeon's Swift Flutter API is `async`. One consumer awaits each send before
-    // the next, so events reach Dart strictly in the order the hub delivered them
-    // (separate `Task`s per event would not promise that).
-    var continuation: AsyncStream<LifecycleEventMessage>.Continuation!
-    let stream = AsyncStream<LifecycleEventMessage> { continuation = $0 }
-    pump = continuation
-    Task { @MainActor in
-      for await message in stream {
-        do {
-          try await dart.onLifecycleEvent(event: message)
-        } catch {
-          // Dart not listening (hot restart, teardown): nothing to do; the
-          // status is also kept Dart-side.
+    // Pigeon's Swift Flutter API is `async`. One consumer awaits each send before the
+    // next, so events reach Dart strictly in the order the hub delivered them
+    // (separate `Task`s per event would not promise that). The queue is `pending`, not
+    // the stream: the stream only wakes the consumer, so a teardown can take back
+    // exactly what was not sent (see `stopForwarding`).
+    var signal: AsyncStream<Void>.Continuation!
+    let wakeups = AsyncStream<Void> { signal = $0 }
+    wake = signal
+    pumpTask = Task { @MainActor [weak self] in
+      for await _ in wakeups {
+        while !Task.isCancelled, let self = self, !self.pending.isEmpty {
+          let event = self.pending.removeFirst()
+          do {
+            try await dart.onLifecycleEvent(
+              event: LifecycleEventMessage(
+                name: event.name, reportId: event.reportId, data: event.data))
+          } catch {
+            // Dart not listening (hot restart, teardown): the event is dropped; see
+            // the delivery limit in PLAN.md. The status is also kept Dart-side.
+          }
         }
       }
     }
     // The hub invokes the sink on the main queue, in order.
-    sinkToken = BGSFlutterLifecycleHub.shared().attachSink { event in
-      continuation.yield(
-        LifecycleEventMessage(name: event.name, reportId: event.reportId, data: event.data))
+    sinkToken = BGSFlutterLifecycleHub.shared().attachSink { [weak self] event in
+      self?.pending.append(event)
+      self?.wake?.yield()
     }
   }
 
+  /// Stops the pump and gives back what it had not sent: the hub puts those events at the
+  /// front of its buffer (when no other engine is attached), so a restarted or new
+  /// receiver gets them first and in order rather than losing them or racing an old pump.
   private func stopForwarding() {
+    pumpTask?.cancel()
+    pumpTask = nil
+    wake?.finish()
+    wake = nil
+    let unsent = pending
+    pending = []
     if let token = sinkToken {
-      BGSFlutterLifecycleHub.shared().detach(token)
+      BGSFlutterLifecycleHub.shared().detach(token, undelivered: unsent)
       sinkToken = nil
     }
-    pump?.finish()
-    pump = nil
   }
 
   func setWrapperIdentity(identity: WrapperIdentityMessage) throws {

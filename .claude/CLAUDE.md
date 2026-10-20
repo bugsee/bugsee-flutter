@@ -30,9 +30,9 @@ progress; `PLAN.md` is the source of intent. The authoritative wrapper spec is
 
 ```bash
 flutter analyze && flutter test
-cd example && flutter build apk --debug          # JDK 17 or 21
-flutter build ios --debug --no-codesign
+(cd example && flutter build apk --debug)        # JDK 17 or 21
+(cd example && flutter build ios --debug --no-codesign)
 dart scripts/generate_pigeon.dart --check          # bridge outputs current
-cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest
-cd ios/wrapper_tests && xcodebuild test -scheme bugsee_flutter_wrapper_tests -destination 'platform=iOS Simulator,name=<iPhone>'
+(cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest)
+(cd ios/wrapper_tests && xcodebuild test -scheme bugsee_flutter_wrapper_tests -destination 'platform=iOS Simulator,name=<iPhone>')
 ```

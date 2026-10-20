@@ -25,6 +25,8 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   final StreamController<LifecycleEvent> _events =
       StreamController<LifecycleEvent>.broadcast();
   Future<void>? _started;
+  bool _attached = false;
+  bool _identitySent = false;
   SdkStatus? _status;
 
   /// Every lifecycle event, in the order native delivered them, including names
@@ -54,31 +56,38 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   Future<void> _start(RuntimeFacts facts, String? build) async {
     BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
     // Independent: a failure to attach must not stop the identity from being sent,
-    // nor the other way round.
+    // nor the other way round. A retry repeats only the step that has not succeeded:
+    // attaching again would make native replay events this bridge already got.
     Object? error;
     StackTrace? stack;
-    try {
-      await _host.attachLifecycle();
-    } catch (e, s) {
-      error = e;
-      stack = s;
+    if (!_attached) {
+      try {
+        await _host.attachLifecycle();
+        _attached = true;
+      } catch (e, s) {
+        error = e;
+        stack = s;
+      }
     }
-    final identity = WrapperIdentity.from(facts, build: build);
-    try {
-      await _host.setWrapperIdentity(
-        WrapperIdentityMessage(
-          type: identity.type,
-          version: identity.version,
-          build: identity.build,
-          context: identity.context,
-        ),
-      );
-    } catch (e, s) {
-      error ??= e;
-      stack ??= s;
+    if (!_identitySent) {
+      final identity = WrapperIdentity.from(facts, build: build);
+      try {
+        await _host.setWrapperIdentity(
+          WrapperIdentityMessage(
+            type: identity.type,
+            version: identity.version,
+            build: identity.build,
+            context: identity.context,
+          ),
+        );
+        _identitySent = true;
+      } catch (e, s) {
+        error ??= e;
+        stack ??= s;
+      }
     }
     if (error != null) {
-      // Not cached: a later start() tries again.
+      // Not cached: a later start() tries the failed step again.
       _started = null;
       Error.throwWithStackTrace(error, stack!);
     }

@@ -240,12 +240,13 @@ void main() {
         );
         expect(host.calls, ['attach', 'identity']);
         expect(host.identities, hasLength(1));
-        // Not cached: the next call tries again, and now succeeds.
+        // Not cached: the next call tries again, repeating only the failed step
+        // (the identity already went through).
         await bridge.start(facts: _facts);
-        expect(host.calls, ['attach', 'identity', 'attach', 'identity']);
+        expect(host.calls, ['attach', 'identity', 'attach']);
         // And now it is cached.
         await bridge.start(facts: _facts);
-        expect(host.calls, hasLength(4));
+        expect(host.calls, hasLength(3));
       },
     );
 
@@ -262,6 +263,9 @@ void main() {
       expect(seen, ['Launched']);
       await bridge.start(facts: _facts);
       expect(host.identities, hasLength(1));
+      // Attach had succeeded: the retry must not attach again (native would replay
+      // events this bridge already received).
+      expect(host.calls, ['attach', 'identity', 'identity']);
     });
 
     test('the identity carries versions, engine and build mode', () async {

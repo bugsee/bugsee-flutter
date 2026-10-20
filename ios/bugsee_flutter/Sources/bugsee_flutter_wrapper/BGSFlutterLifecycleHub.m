@@ -180,14 +180,22 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
 /// when no receiver remains they go back to the FRONT of the buffer, in their original
 /// order (older than anything buffered since); other receivers hold their own copies.
 - (void)detach:(id)tokenObject {
+  [self detach:tokenObject undelivered:nil];
+}
+
+- (void)detach:(id)tokenObject undelivered:(NSArray<BGSFlutterLifecycleEvent *> *)undelivered {
   @synchronized(self) {
     BGSFlutterLifecycleSinkToken *token = tokenObject;
     if (![_tokens containsObject:token]) {
       return;
     }
     [_tokens removeObject:token];
-    if (_tokens.count == 0 && token.inFlight.count > 0) {
-      [_buffer replaceObjectsInRange:NSMakeRange(0, 0) withObjectsFromArray:token.inFlight];
+    if (_tokens.count == 0 && (token.inFlight.count > 0 || undelivered.count > 0)) {
+      // `undelivered` (taken from the sink but never sent) is older than what was
+      // still waiting for the sink, so it goes first.
+      NSMutableArray<BGSFlutterLifecycleEvent *> *back = [NSMutableArray arrayWithArray:undelivered ?: @[]];
+      [back addObjectsFromArray:token.inFlight];
+      [_buffer replaceObjectsInRange:NSMakeRange(0, 0) withObjectsFromArray:back];
       while (_buffer.count > BGSFlutterLifecycleBufferCapacity) {
         [_buffer removeObjectAtIndex:0];
         [self noteDropLocked];

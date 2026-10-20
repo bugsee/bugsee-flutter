@@ -61,6 +61,11 @@ typedef void (^BGSFlutterLifecycleSink)(BGSFlutterLifecycleEvent *event);
 /// the front of the buffer when no receiver remains.
 - (void)detach:(id)token;
 
+/// As `-detach:`, also handing back events the sink took but never sent on (a sink that
+/// queues, such as the Swift plugin's pump). When no receiver remains they go to the
+/// front of the buffer, ahead of what was still waiting for the sink, in order.
+- (void)detach:(id)token undelivered:(nullable NSArray<BGSFlutterLifecycleEvent *> *)undelivered;
+
 @property(atomic, readonly) NSUInteger droppedCount;
 @property(atomic, readonly) NSUInteger bufferedCount;
 

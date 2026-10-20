@@ -89,11 +89,14 @@ static BGSFlutterWrapper *gWrapper;
 
 + (void)ensureRegistered {
   @synchronized(self) {
+    // Only the first call registers. Later calls (a second engine's
+    // register(with:)) must not re-submit this placeholder over a richer wrapper
+    // that replaced it once the runtime was up (workbook 2.4.2).
+    if (gWrapper != nil) {
+      return;
+    }
     @try {
-      if (gWrapper == nil) {
-        gWrapper = [BGSFlutterWrapper wrapperAtProcessStart];
-      }
-      // Registering the instance that is already current is a no-op in the SDK.
+      gWrapper = [BGSFlutterWrapper wrapperAtProcessStart];
       [Bugsee setWrapper:(id<BugseeWrapper>)gWrapper];
       NSLog(@"[BugseeFlutter] wrapper registered type=%@ version=%@", gWrapper.wrapperType,
             gWrapper.wrapperVersion);

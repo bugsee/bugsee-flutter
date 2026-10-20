@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 String read(String path) => File(path).readAsStringSync();
 
 String pubspecVersion() => RegExp(
-  r'^version:\s*(\S+)\s*$',
+  r'^version:\s*(\S+)[ \t]*(?:#.*)?$',
   multiLine: true,
 ).firstMatch(read('pubspec.yaml'))!.group(1)!;
 
@@ -97,6 +97,12 @@ void main() {
       ).firstMatch(read('pubspec.yaml'));
       expect(m, isNotNull);
       expect(m!.group(1), dart.wrapperVersion);
+      // A trailing YAML comment must not break the read.
+      final withComment = RegExp(
+        pattern,
+        multiLine: true,
+      ).firstMatch('name: x\nversion: 1.2.3-dev.4 # note\n');
+      expect(withComment?.group(1), '1.2.3-dev.4');
     });
     // The compiled BuildConfig value is asserted by the JUnit test
     // FlutterWrapperTest.buildConfigVersionMatchesPubspec.

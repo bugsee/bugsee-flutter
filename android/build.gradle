@@ -36,7 +36,7 @@ def pubspecFile = new File(projectDir.canonicalFile.parentFile, "pubspec.yaml")
 if (!pubspecFile.isFile()) {
     throw new GradleException("pubspec.yaml not found at ${pubspecFile}")
 }
-def wrapperVersionMatch = (pubspecFile.getText("UTF-8") =~ /(?m)^version:\s*(\S+)\s*$/)
+def wrapperVersionMatch = (pubspecFile.getText("UTF-8") =~ /(?m)^version:\s*(\S+)[ \t]*(?:#.*)?$/)
 if (!wrapperVersionMatch.find()) {
     throw new GradleException("no top-level `version:` in ${pubspecFile}")
 }

@@ -36,7 +36,7 @@ public class FlutterWrapperTest {
         // Unit tests run with the module (android/) as the working directory.
         final File pubspec = new File(new File("").getAbsoluteFile().getParentFile(), "pubspec.yaml");
         final String text = new String(Files.readAllBytes(pubspec.toPath()), StandardCharsets.UTF_8);
-        final Matcher m = Pattern.compile("(?m)^version:\\s*(\\S+)\\s*$").matcher(text);
+        final Matcher m = Pattern.compile("(?m)^version:\\s*(\\S+)[ \\t]*(?:#.*)?$").matcher(text);
         assertTrue(m.find());
         assertEquals(m.group(1), BuildConfig.WRAPPER_VERSION);
     }

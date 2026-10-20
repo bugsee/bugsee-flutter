@@ -118,6 +118,13 @@ void main() {
       );
       expect(m, contains('[Bugsee setWrapper:(id<BugseeWrapper>)gWrapper];'));
       expect(
+        RegExp(r'if \(gWrapper != nil\) \{\s*return;').hasMatch(m),
+        isTrue,
+        reason:
+            'only the first call may register, so a late register(with:) '
+            'cannot replace a richer wrapper with the placeholder',
+      );
+      expect(
         m,
         contains('gWrapper = [BGSFlutterWrapper wrapperAtProcessStart];'),
       );

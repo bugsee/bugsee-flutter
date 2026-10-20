@@ -33,7 +33,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// `application:didFinishLaunchingWithOptions:`, before any engine exists and so
 /// before Flutter registers plugins. A wrapper registered from
 /// `register(with:)` would be missing for that launch (workbook 2.1). `+load`
-/// runs before `main`. `+ensureRegistered` is idempotent and is also called
+/// runs before `main`. `+ensureRegistered` registers only on its first call and is also called
 /// from the Swift plugin class, which keeps this object file linked out of the
 /// static archive.
 @interface BGSFlutterWrapperRegistrar : NSObject

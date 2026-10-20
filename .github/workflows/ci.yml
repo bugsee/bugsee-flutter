@@ -60,6 +60,8 @@ jobs:
             flutter-version: ''
             experimental: false
     steps:
+      # The runner disk fills up during the debug APK build ("No space left on device").
+      - run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost
       - uses: actions/checkout@v5
         with:
           persist-credentials: false

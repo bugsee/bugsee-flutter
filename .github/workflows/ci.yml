@@ -52,6 +52,8 @@ jobs:
           flutter-version: '3.41.0'
           cache: true
       - run: dart scripts/generate_pigeon.dart --check
+      # Excluded from the root analysis (its package needs its own pub get, done by the line above).
+      - run: cd pigeons && dart analyze --fatal-infos
 
   test:
     name: analyze + test + ios build (${{ matrix.channel }})
@@ -91,7 +93,12 @@ jobs:
       - name: iOS wrapper unit tests
         if: matrix.channel == 'stable'
         run: |
-          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("SimRuntime\\.iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid // empty')
+          if [ -z "$UDID" ]; then
+            echo "::error::no available iPhone simulator on this runner"
+            xcrun simctl list devices available
+            exit 1
+          fi
           echo "simulator: $UDID"
           cd ios/wrapper_tests
           xcodebuild test -scheme bugsee_flutter_wrapper_tests -destination "platform=iOS Simulator,id=$UDID"

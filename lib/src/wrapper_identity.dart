@@ -4,7 +4,7 @@
 // Both values are also repeated natively, because the native side registers
 // the wrapper before any Dart exists (workbook 2.4): Android in
 // FlutterWrapper.java (type) and build.gradle (version, read from pubspec.yaml),
-// iOS in WrapperIdentity.swift. test/wrapper_identity_test.dart compares every
+// iOS in BGSFlutterWrapper.m. test/wrapper_identity_test.dart compares every
 // copy; two spellings would register two different wrappers depending on how
 // far start-up got.
 

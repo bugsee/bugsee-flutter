@@ -31,8 +31,13 @@ final class FlutterWrapper implements BugseeWrapper {
 
     static final String UNKNOWN = "unknown";
 
-    /** An empty set with a valid, constant version: nothing ever changes. */
-    private static final int EMPTY_SET_VERSION = 1;
+    /**
+     * {@link BugseeWrapper#SECURE_RECTANGLES_VERSION_UNKNOWN}: the SDK then
+     * compares the rectangles themselves. A constant real version would let a
+     * later wrapper that also starts at that version, with real rectangles, be
+     * ignored: the SDK caches by version per display (unredacted capture).
+     */
+    private static final int EMPTY_SET_VERSION = SECURE_RECTANGLES_VERSION_UNKNOWN;
 
     private final String type;
     private final String version;
@@ -134,7 +139,7 @@ final class FlutterWrapper implements BugseeWrapper {
     @Nullable
     @Override
     public int[] getSecureRectangles(final int display) {
-        // [version, count]: no rectangles.
+        // [version, count]: no rectangles, version unknown.
         return new int[] {EMPTY_SET_VERSION, 0};
     }
 

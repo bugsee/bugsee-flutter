@@ -32,9 +32,12 @@ public final class FlutterWrapperInitProvider extends BugseeExtensionInitProvide
         void set(@Nullable BugseeWrapper wrapper);
     }
 
+    /** The SDK entry point; a seam so a test can see what reaches it. */
+    static volatile Setter sdkSetter = Bugsee::setWrapper;
+
     @Override
     protected boolean onExtensionCreate() {
-        registerEarly(Bugsee::setWrapper);
+        registerEarly(sdkSetter);
         // We expose no content.
         return false;
     }

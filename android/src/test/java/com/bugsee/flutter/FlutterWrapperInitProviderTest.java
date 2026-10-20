@@ -49,6 +49,23 @@ public class FlutterWrapperInitProviderTest {
         assertEquals("flutter", registered.get(0).getWrapperType());
     }
 
+    /** Runs the provider's real entry point; the SDK call is swapped for a recorder. */
+    @Test
+    public void onExtensionCreateHandsAFlutterWrapperToTheSdk() {
+        final List<BugseeWrapper> reached = new ArrayList<>();
+        final FlutterWrapperInitProvider.Setter original = FlutterWrapperInitProvider.sdkSetter;
+        FlutterWrapperInitProvider.sdkSetter = reached::add;
+        try {
+            final boolean result = new FlutterWrapperInitProvider().onExtensionCreate();
+            assertFalse("exposes no content", result);
+        } finally {
+            FlutterWrapperInitProvider.sdkSetter = original;
+        }
+        assertEquals(1, reached.size());
+        assertEquals("flutter", reached.get(0).getWrapperType());
+        assertEquals(BuildConfig.WRAPPER_VERSION, reached.get(0).getWrapperVersion());
+    }
+
     @Test
     public void swallowsAnExceptionFromRegistration() {
         FlutterWrapperInitProvider.registerEarly(w -> {

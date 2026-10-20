@@ -34,11 +34,11 @@ void main() {
     });
 
     test('iOS copy matches Dart', () {
-      final swift = read(
-        'ios/bugsee_flutter/Sources/bugsee_flutter/WrapperIdentity.swift',
+      final objc = read(
+        'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper/BGSFlutterWrapper.m',
       );
-      final m = RegExp(r'static let type = "([^"]*)"').firstMatch(swift);
-      expect(m, isNotNull, reason: 'WrapperIdentity.type not found');
+      final m = RegExp(r'BGSFlutterWrapperType = @"([^"]*)";').firstMatch(objc);
+      expect(m, isNotNull, reason: 'BGSFlutterWrapperType not found');
       expect(m!.group(1), dart.wrapperType);
     });
 
@@ -46,8 +46,8 @@ void main() {
       // The type literal lives only in the constants above.
       for (final f in [
         'android/src/main/java/com/bugsee/flutter/FlutterWrapperInitProvider.java',
-        'ios/bugsee_flutter/Sources/bugsee_flutter/FlutterWrapper.swift',
         'ios/bugsee_flutter/Sources/bugsee_flutter/BugseeFlutterPlugin.swift',
+        'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper/include/BGSFlutterWrapper.h',
       ]) {
         expect(
           read(f),
@@ -64,11 +64,13 @@ void main() {
     });
 
     test('iOS constant equals pubspec.yaml', () {
-      final swift = read(
-        'ios/bugsee_flutter/Sources/bugsee_flutter/WrapperIdentity.swift',
+      final objc = read(
+        'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper/BGSFlutterWrapper.m',
       );
-      final m = RegExp(r'static let version = "([^"]*)"').firstMatch(swift);
-      expect(m, isNotNull, reason: 'WrapperIdentity.version not found');
+      final m = RegExp(
+        r'BGSFlutterWrapperVersion = @"([^"]*)";',
+      ).firstMatch(objc);
+      expect(m, isNotNull, reason: 'BGSFlutterWrapperVersion not found');
       expect(m!.group(1), pubspecVersion());
     });
 

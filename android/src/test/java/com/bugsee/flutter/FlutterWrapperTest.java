@@ -5,6 +5,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.bugsee.library.contracts.internal.BugseeWrapper;
+
 import org.junit.Test;
 
 import java.io.File;
@@ -86,10 +88,12 @@ public class FlutterWrapperTest {
     }
 
     @Test
-    public void secureRectanglesAreEmptyWithAValidVersion() {
+    public void secureRectanglesAreEmptyWithTheUnknownVersion() {
         final int[] a = FlutterWrapper.atProcessStart().getSecureRectangles(0);
         assertEquals(2, a.length);
-        assertTrue("version must be non-negative", a[0] >= 0);
+        assertEquals("a constant real version would be cached by the SDK and could "
+                + "mask a replacement wrapper's rectangles",
+                BugseeWrapper.SECURE_RECTANGLES_VERSION_UNKNOWN, a[0]);
         assertEquals("count", 0, a[1]);
         assertArrayEquals(a, FlutterWrapper.atProcessStart().getSecureRectangles(3));
     }

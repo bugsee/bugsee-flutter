@@ -440,7 +440,11 @@ void main() {
       expect(pins, contains('dart scripts/check_native_pins.dart'));
       expect(
         pins,
-        contains('ref: nextgen'),
+        matches(
+          RegExp(
+            r'uses: actions/checkout@v\d+\n\s+with:\n(?:\s+[a-z-]+: .*\n)*?\s+ref: nextgen\n',
+          ),
+        ),
         reason: 'scheduled runs use the default branch tree, which has no pins',
       );
       expect(

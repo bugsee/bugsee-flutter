@@ -1,13 +1,11 @@
 // The Dart end of the bridge, against mocked channels: stream, status, unknown
 // names, ordering around attach, and the identity that gets sent.
-import 'dart:async';
 
 import 'package:bugsee_flutter/src/bridge/bridge.dart';
 import 'package:bugsee_flutter/src/bridge/lifecycle.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/bridge/runtime_facts.dart';
 import 'package:bugsee_flutter/src/wrapper_identity.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _facts = RuntimeFacts(

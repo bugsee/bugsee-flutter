@@ -416,6 +416,14 @@ void main() {
       },
     );
 
+    test('every dependabot entry targets nextgen', () {
+      final dep = liveOf(read('.github/dependabot.yml'));
+      expect(
+        'package-ecosystem:'.allMatches(dep).length,
+        'target-branch: nextgen'.allMatches(dep).length,
+      );
+    });
+
     test('format gate is enforced on lib, test, example and scripts', () {
       expect(
         liveOf(read('.github/workflows/ci.yml')),

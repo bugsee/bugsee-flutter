@@ -82,6 +82,19 @@ void main() {
       );
     });
 
+    test('repository and issue tracker point at the real repo', () {
+      expect(
+        pubspec,
+        contains('repository: https://github.com/bugsee/bugsee-flutter\n'),
+      );
+      expect(
+        pubspec,
+        contains(
+          'issue_tracker: https://github.com/bugsee/bugsee-flutter/issues\n',
+        ),
+      );
+    });
+
     test('Flutter floor matches', () {
       expect(pubspec, contains('flutter: ">=${flutterPin['min']}"'));
     });
@@ -259,14 +272,17 @@ void main() {
       // Two matrices plus the format job pinned to the floor.
       expect(
         floor.allMatches(live).length,
-        3,
-        reason: 'floor must be in both matrices and in the format job',
+        4,
+        reason:
+            'floor must be in both matrices, the format job and publish-check',
       );
-      expect(
-        jobsOf(live)['format'],
-        matches(floor),
-        reason: 'format must run on the floor',
-      );
+      for (final job in ['format', 'publish-check']) {
+        expect(
+          jobsOf(live)[job],
+          matches(floor),
+          reason: '$job must run on the floor',
+        );
+      }
     });
 
     test('runs on macOS and builds iOS and Android', () {
@@ -312,7 +328,7 @@ void main() {
         );
         expect(
           live,
-          isNot(contains('secrets.')),
+          isNot(contains(RegExp(r'secrets\s*[.\[]'))),
           reason: '${f.path}: no secrets',
         );
         final checkouts = RegExp(
@@ -329,9 +345,10 @@ void main() {
     test('every job has a timeout', () {
       for (final f in ours) {
         for (final e in jobsOf(liveOf(read(f.path))).entries) {
+          // Job level only (4-space indent); a step-level timeout does not count.
           expect(
             e.value,
-            contains('timeout-minutes:'),
+            matches(RegExp(r'^    timeout-minutes: \d+\s*$', multiLine: true)),
             reason: '${f.path} job ${e.key}',
           );
         }
@@ -353,8 +370,51 @@ void main() {
       final needs = RegExp(r'needs: \[([^\]]*)\]').firstMatch(jobs['ci-ok']!)!;
       final listed = needs.group(1)!.split(',').map((e) => e.trim()).toSet();
       expect(listed, jobs.keys.toSet()..remove('ci-ok'));
-      expect(jobs['ci-ok'], contains('if: always()'));
+      final okJob = jobs['ci-ok']!;
+      // Runs even when needed jobs fail or skip (so it can fail), but not when cancelled.
+      expect(okJob, contains(r'if: ${{ !cancelled() }}'));
+      expect(okJob, isNot(contains('always()')));
+      // The step that actually fails the job.
+      expect(
+        okJob,
+        contains('jq -e \'all(.[]; .result == "success")\''),
+        reason: 'ci-ok must fail unless every needed job succeeded',
+      );
+      expect(okJob, contains(r'NEEDS: ${{ toJSON(needs) }}'));
     });
+
+    test(
+      'concurrency: PRs cancel superseded runs, pushes never share a group',
+      () {
+        final ci = liveOf(read('.github/workflows/ci.yml'));
+        expect(
+          ci,
+          contains(
+            r"group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+          ),
+        );
+        expect(
+          ci,
+          contains(
+            r"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+          ),
+        );
+      },
+    );
+
+    test(
+      'dependabot cannot bump Bugsee pins (Gradle entries ignore com.bugsee*)',
+      () {
+        final dep = liveOf(read('.github/dependabot.yml'));
+        final gradle = RegExp(
+          r'package-ecosystem: gradle\n(?:(?!  - package-ecosystem)[\s\S])*',
+        ).allMatches(dep).toList();
+        expect(gradle, hasLength(2));
+        for (final g in gradle) {
+          expect(g.group(0), contains('dependency-name: "com.bugsee*"'));
+        }
+      },
+    );
 
     test('format gate is enforced on lib, test, example and scripts', () {
       expect(

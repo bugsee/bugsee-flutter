@@ -1,8 +1,9 @@
 # CI/CD
 
 Nothing here publishes, tags or deploys. Releases to pub.dev are a separate, human-run
-step (PLAN.md Phase 8). All workflows use `permissions: contents: read` and checkout with
-`persist-credentials: false`.
+step (PLAN.md Phase 8). All workflows except `claude-review.yml` (owned by the org's shared workflow, which needs
+`pull-requests`/`issues` write, `id-token` write and a secret) use `permissions: contents: read`
+and checkout with `persist-credentials: false`.
 
 ## Workflows
 
@@ -19,18 +20,18 @@ step (PLAN.md Phase 8). All workflows use `permissions: contents: read` and chec
 | `format` | `format` | ubuntu | `dart format --set-exit-if-changed` over `lib test example/lib scripts`, run on the floor Flutter because formatter output changes between Dart releases |
 | `test` | `analyze + test + ios build (floor)`, `analyze + test + ios build (stable)` | macOS | `flutter analyze`, `flutter test` (includes the drift guard), debug iOS build with SwiftPM. macOS is required: SwiftPM only exists there |
 | `build-android` | `build apk (floor)`, `build apk (stable)` | ubuntu | Debug APK of the example app. Frees runner disk first (otherwise "No space left on device") |
-| `publish-check` | `pub publish dry-run` | ubuntu | Package validity only. Fails on warnings (e.g. CHANGELOG missing the pubspec version, dirty git tree). Never uploads, needs no credentials |
-| `ci-ok` | `ci-ok` | ubuntu | `if: always()`; fails unless every job above succeeded (cancelled and skipped count as failure) |
+| `publish-check` | `pub publish dry-run` | ubuntu | Runs on the floor Flutter. Package validity only. Fails on warnings (e.g. CHANGELOG missing the pubspec version, dirty git tree). Never uploads, needs no credentials |
+| `ci-ok` | `ci-ok` | ubuntu | `if: ${{ !cancelled() }}`; fails unless every job above succeeded (failed, cancelled and skipped needed jobs all fail it; a superseded run reports cancelled rather than failed) |
 
-Concurrency: PR runs of the same ref cancel superseded runs; pushes to `nextgen`/`main`
-are never cancelled. Every job has a `timeout-minutes`. Flutter SDK and pub cache use
+Concurrency: PR runs of the same ref cancel superseded (running or pending) runs; every
+push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or replaced. Every job has a `timeout-minutes`. Flutter SDK and pub cache use
 `subosito/flutter-action`'s `cache: true`; no build outputs are cached or uploaded.
 
 ## How the floor is tested
 
 `native-versions.json` `flutter.min` (3.41.0) is the Flutter floor and `flutter.dart` its
 Dart. The `test` and `build-android` matrices each have a `floor` leg pinned to that
-version and a `stable` leg. The `format` job also runs on the floor. The drift guard
+version and a `stable` leg. The `format` and `publish-check` jobs also run on the floor. The drift guard
 (`test/native_versions_test.dart`) fails if a workflow's floor version, a `setup-java`
 version or the `native-pins.yml` Dart SDK stops matching the JSON, so bumping the floor
 means editing the JSON and the workflows together.
@@ -57,7 +58,7 @@ is possible later, but only after SwiftPM and Xcode availability on it are confi
 
 `dependabot.yml` bumps GitHub Actions, pub (root and `example`) and Gradle (`android`,
 `example/android`) weekly. Bugsee's own artifacts are pinned in `native-versions.json`,
-which Dependabot cannot read, so those only change by hand, through the JSON.
+which Dependabot cannot read, and `example/android/settings.gradle.kts` repeats the Gradle plugin version literally. Both Gradle entries therefore `ignore` `com.bugsee*`, so Dependabot cannot bump a pin and break the drift guard; pins only change by hand, through the JSON.
 `pull_request_template.md` carries the review checklist. There is no `CODEOWNERS`: the
 org has no team that clearly owns this repo (teams: admin, android, bugsee, ios, web) and
 the Android repo routes to individuals. Add one once an owner is chosen.

@@ -8,10 +8,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same PR supersedes the running one. Pushes to nextgen/main
-# are never cancelled, so every merged commit keeps a complete result.
+# A newer push to the same PR supersedes its running (and pending) run. Every push to
+# nextgen/main gets its own group (its SHA), so a queued run is never replaced by a
+# later commit and every merged commit keeps a complete result.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -110,9 +111,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # On the floor, like `format`: the oldest supported toolchain must accept the package.
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.41.0'
           cache: true
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
@@ -122,7 +125,9 @@ jobs:
   # matrix legs can be renamed or added without touching repository settings.
   ci-ok:
     name: ci-ok
-    if: always()
+    # Not `always()`: a superseded (cancelled) run should report cancelled, not failed.
+    # Failed or skipped needed jobs still run this job and fail it below.
+    if: ${{ !cancelled() }}
     needs: [format, test, build-android, publish-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5

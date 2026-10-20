@@ -141,6 +141,13 @@ Future<Set<String>> _tags(String url) async {
   return parseLsRemoteTags(res.stdout as String);
 }
 
+/// `exit` does not flush; output piped to a log could otherwise be lost.
+Future<Never> _exit(int code) async {
+  await stdout.flush();
+  await stderr.flush();
+  exit(code);
+}
+
 Future<void> main(List<String> args) async {
   final pins =
       jsonDecode(
@@ -166,9 +173,9 @@ Future<void> main(List<String> args) async {
     );
   } catch (e) {
     stdout.writeln('ERROR: could not verify pins: $e');
-    exit(1);
+    await _exit(1);
   }
   report.notes.forEach(stdout.writeln);
   report.errors.forEach(stdout.writeln);
-  exit(report.ok ? 0 : 1);
+  await _exit(report.ok ? 0 : 1);
 }

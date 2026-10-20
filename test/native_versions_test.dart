@@ -102,6 +102,28 @@ void main() {
       expect(targets, {ios['deploymentTarget']});
     });
 
+    test('committed Package.resolved files pin the same SPM version', () {
+      final files = Process.runSync('git', ['ls-files', '*Package.resolved'])
+          .stdout
+          .toString()
+          .trim()
+          .split('\n')
+          .where((f) => f.isNotEmpty)
+          .toList();
+      expect(files, isNotEmpty,
+          reason: 'expected committed Package.resolved files');
+      for (final f in files) {
+        final pins =
+            (jsonDecode(read(f))['pins'] as List).cast<Map<String, dynamic>>();
+        final spm = pins.where((p) =>
+            (p['location'] as String).toLowerCase() ==
+            (ios['spmUrl'] as String).toLowerCase());
+        expect(spm, hasLength(1), reason: '$f must pin ${ios['spmUrl']}');
+        expect(spm.single['state']['version'], ios['sdk'],
+            reason: '$f drifted from native-versions.json');
+      }
+    });
+
     test('has no podspec: Bugsee publishes no pod, so one could not build', () {
       expect(
           Directory('ios')
@@ -158,7 +180,19 @@ void main() {
               .hasMatch(live),
           isTrue,
           reason: 'no live floor flutter-version in ci.yml');
-      expect(live, contains(r'flutter-version: ${{ matrix.flutter-version }}'));
+      // Both the macOS test job and the Linux apk job must run the floor.
+      expect(
+          RegExp(r'^\s*flutter-version: \$\{\{ matrix\.flutter-version \}\}\s*$',
+                  multiLine: true)
+              .allMatches(live)
+              .length,
+          2,
+          reason: 'each job must read the version from its matrix');
+      final floorLines = RegExp(
+          "^\\s*flutter-version: '${RegExp.escape(flutterPin['min'] as String)}'",
+          multiLine: true);
+      expect(floorLines.allMatches(live).length, 2,
+          reason: 'floor must be in both matrices');
     });
 
     test('runs on macOS and builds iOS and Android', () {

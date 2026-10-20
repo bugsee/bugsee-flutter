@@ -47,6 +47,7 @@ flutter {
 // The Bugsee Gradle plugin's injectBugsee<Variant>BuildId task writes into the merged
 // assets that Flutter's copyFlutter<Variant>Assets produces, without declaring that
 // ordering; Gradle 8.14 rejects the build. Declare it here until the plugin does.
+// Tracked at https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33 (see README).
 tasks.matching { it.name.startsWith("injectBugsee") && it.name.endsWith("BuildId") }.configureEach {
     val variant = name.removePrefix("injectBugsee").removeSuffix("BuildId")
     mustRunAfter("copyFlutterAssets$variant")

@@ -25,5 +25,5 @@ progress; `PLAN.md` is the source of intent. The authoritative wrapper spec is
 ```bash
 flutter analyze && flutter test
 cd example && flutter build apk --debug          # JDK 17 or 21
-cd example && flutter build ios --debug --no-codesign
+flutter build ios --debug --no-codesign
 ```

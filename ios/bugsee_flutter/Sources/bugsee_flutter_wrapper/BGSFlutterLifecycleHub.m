@@ -54,14 +54,12 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
 @interface BGSFlutterLifecycleSinkToken : NSObject
 @property(nonatomic, copy, readonly) BGSFlutterLifecycleSink sink;
 @property(nonatomic, strong, readonly) NSMutableArray<BGSFlutterLifecycleEvent *> *inFlight;
-@property(nonatomic, assign) BOOL attached;
 @end
 @implementation BGSFlutterLifecycleSinkToken
 - (instancetype)initWithSink:(BGSFlutterLifecycleSink)sink {
   if ((self = [super init])) {
     _sink = [sink copy];
     _inFlight = [NSMutableArray array];
-    _attached = YES;
   }
   return self;
 }
@@ -188,7 +186,6 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
       return;
     }
     [_tokens removeObject:token];
-    token.attached = NO;
     if (_tokens.count == 0 && token.inFlight.count > 0) {
       [_buffer replaceObjectsInRange:NSMakeRange(0, 0) withObjectsFromArray:token.inFlight];
       while (_buffer.count > BGSFlutterLifecycleBufferCapacity) {
@@ -218,8 +215,8 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
   dispatch_async(_queue, ^{
     BGSFlutterLifecycleEvent *next = nil;
     @synchronized(self) {
-      if (!token.attached || token.inFlight.count == 0) {
-        return;  // detached: -detach: already put its events back
+      if (token.inFlight.count == 0) {
+        return;  // empty once detached: -detach: cleared it after putting the events back
       }
       next = token.inFlight.firstObject;
       [token.inFlight removeObjectAtIndex:0];

@@ -133,7 +133,6 @@ final class LifecycleHub {
     private static final class Entry {
         final Sink sink;
         final ArrayDeque<Event> inFlight = new ArrayDeque<>();
-        boolean attached = true;
 
         Entry(final Sink sink) {
             this.sink = sink;
@@ -224,7 +223,6 @@ final class LifecycleHub {
                     continue;
                 }
                 entries.remove(i);
-                entry.attached = false;
                 if (entries.isEmpty()) {
                     final ArrayList<Event> back = new ArrayList<>(entry.inFlight);
                     for (int k = back.size() - 1; k >= 0; k--) {
@@ -264,9 +262,7 @@ final class LifecycleHub {
     private void deliver(@NonNull final Entry entry) {
         final Event event;
         synchronized (lock) {
-            if (!entry.attached) {
-                return; // detached: detach() already put its events back
-            }
+            // Empty once detached: detach() cleared it after putting the events back.
             event = entry.inFlight.pollFirst();
         }
         if (event == null) {

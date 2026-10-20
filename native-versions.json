@@ -24,5 +24,9 @@
     "feedbackSpmUrl": "https://github.com/bugsee/feedback-spm",
     "deploymentTarget": "15.0",
     "provenance": "Tag 7.0.0-beta7 of bugsee/spm (73ed983) and bugsee/feedback-spm (40dd3b0)."
+  },
+  "pigeon": {
+    "version": "29.0.7",
+    "provenance": "pub.dev, published 2026-10-07 (latest at the time was 29.0.11, 2026-10-20); needs Dart ^3.11.0. Not a dependency of the plugin (it requires meta >=1.18, Flutter 3.41.0 ships 1.17.0): it runs from the pure-Dart package in pigeons/, locked by pigeons/pubspec.lock."
   }
 }

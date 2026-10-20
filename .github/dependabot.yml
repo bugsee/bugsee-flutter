@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pub
+    directory: /example
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # Bugsee's own artifacts are pinned in native-versions.json, which Dependabot does
+  # not read, so these only bump build tooling (AGP, Kotlin, etc.). Never let a bump
+  # edit a Bugsee pin: that goes through native-versions.json and the drift guard.
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: gradle
+    directory: /example/android
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

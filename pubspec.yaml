@@ -8,8 +8,8 @@ issue_tracker: https://github.com/bugsee/flutter-bugsee/issues
 
 environment:
   # Floors come from native-versions.json (flutter.min / flutter.dart).
-  sdk: ^3.6.0
-  flutter: ">=3.27.0"
+  sdk: ^3.11.0
+  flutter: ">=3.41.0"
 
 dependencies:
   flutter:

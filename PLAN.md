@@ -15,7 +15,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
 | D2 | iOS distribution | **Decided:** SPM only (Flutter SPM plugin support). |
 | D3 | Compatibility with 9.x | **Deferred.** Phase 1-3 do not depend on it; decide before Phase 4 (public API). |
 | D4 | Feedback module | **Decided:** separate package. |
-| D5 | Flutter floor | Open. Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase/Datadog >=3.27 (Dart 3.6), Bugsnag/Shake/Embrace >=3.10, Instabug >=1.17. Recommendation: Flutter >=3.27 / Dart ^3.6 (SPM support is well past 3.24 there). |
+| D5 | Flutter floor | **Decided: Flutter >=3.41.0 / Dart ^3.11.0.** The plugin is SwiftPM-only, so `flutter pub get` fails on Linux/Windows with "only Swift Package Manager compatible" before 3.41.0. Measured on CI (Linux): 3.27.0/3.27.4, 3.29.0/3.29.3, 3.32.0/3.32.8, 3.35.0/3.35.7, 3.38.0/3.38.9/3.38.10 fail; 3.41.0, 3.41.9, 3.44.0, 3.44.9, 3.47.7 pass (no stable 3.39/3.40). Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase/Datadog >=3.27, Bugsnag/Shake/Embrace >=3.10, Instabug >=1.17. macOS developers on older Flutter could enable SwiftPM with `flutter config --enable-swift-package-manager`, but that is unsupported. |
 
 ## 1. Phase 1 — Foundations (workbook Part 0–1)
 
@@ -103,6 +103,7 @@ CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app cove
 
 ## Risks / open items
 
+- Flutter floor 3.41 is above several competitors (D5); a podspec was ruled out because Bugsee publishes no pod. Revisit if customers on older Flutter matter.
 - iOS beta-only and unpublished → pinning and CI access (D1/D2).
 - Wrapper-channel and option-manifest specs unimplemented → schedule dependency.
 - Android async-`vh` (#120) and units unification (specs PR #20) in flight.

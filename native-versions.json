@@ -1,9 +1,9 @@
 {
   "_comment": "The single source of every pinned native version. Every other copy (Gradle, Package.swift, example app, CI) is asserted against this file by test/native_versions_test.dart.",
   "flutter": {
-    "min": "3.27.0",
-    "dart": "3.6.0",
-    "provenance": "Matches firebase_core 5 / datadog_flutter_plugin 3.7 floors (pub.dev, 2026-10-20). Sentry is at 3.44; Bugsnag/Embrace at 3.10."
+    "min": "3.41.0",
+    "dart": "3.11.0",
+    "provenance": "The plugin is SwiftPM-only (no podspec), so `flutter pub get` fails on Linux/Windows before 3.41.0 ('only Swift Package Manager compatible'); measured on CI across 3.27-3.38, first passing release 3.41.0. For reference, competitor floors (pub.dev, 2026-10-20): Sentry 3.44, Firebase/Datadog 3.27, Bugsnag/Shake/Embrace 3.10, Instabug 1.17."
   },
   "android": {
     "sdk": "7.4.2",

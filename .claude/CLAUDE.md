@@ -15,6 +15,7 @@ progress; `PLAN.md` is the source of intent. The authoritative wrapper spec is
   a version elsewhere; update the guard when CI content changes.
 - iOS is SwiftPM-only. There is deliberately no podspec (Bugsee publishes no pod). CI
   runs on macOS so SwiftPM can be enabled. Do not add a podspec.
+- Flutter floor is 3.41.0 / Dart 3.11 (SwiftPM-only plugin fails `pub get` on Linux/Windows earlier; measured, see PLAN.md D5).
 - Android builds need JDK 17 or 21. JDK 25 breaks the Gradle version in use.
 - The Android initialization provider must never be named `Bugsee*InitProvider`.
 - Secure-rect units differ per platform (Android pixels, iOS points); convert explicitly.

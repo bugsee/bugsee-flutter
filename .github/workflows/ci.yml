@@ -19,7 +19,7 @@ jobs:
         include:
           # The floor, from native-versions.json (flutter.min); the drift guard asserts it.
           - channel: floor
-            flutter-version: '3.27.0'
+            flutter-version: '3.41.0'
           - channel: stable
             flutter-version: ''
     steps:
@@ -44,21 +44,16 @@ jobs:
   build-android:
     name: build apk (${{ matrix.channel }})
     runs-on: ubuntu-latest
-    # The plugin is SwiftPM-only. Flutter versions before the fix for
-    # https://github.com/flutter/flutter/issues/162594 reject such a plugin in
-    # `flutter pub get` on Linux/Windows, so the floor is allowed to fail here
-    # while the measured Linux floor is decided; the job stays visible.
-    continue-on-error: ${{ matrix.experimental }}
+    # 3.41.0 is the first Flutter where a SwiftPM-only plugin resolves on Linux
+    # (measured across 3.27-3.38; see native-versions.json flutter.provenance).
     strategy:
       fail-fast: false
       matrix:
         include:
           - channel: floor
-            flutter-version: '3.27.0'
-            experimental: true
+            flutter-version: '3.41.0'
           - channel: stable
             flutter-version: ''
-            experimental: false
     steps:
       # The runner disk fills up during the debug APK build ("No space left on device").
       - run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost

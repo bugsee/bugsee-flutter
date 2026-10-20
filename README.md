@@ -5,6 +5,12 @@
 > Existing users should stay on the latest published release until the migration
 > guide is available.
 
+## Requirements
+
+Flutter 3.41.0 or newer (Dart 3.11). Because the plugin is SwiftPM-only, older Flutter
+fails `flutter pub get` on Linux and Windows. macOS developers on older versions could
+enable SwiftPM, but those versions are unsupported.
+
 ## iOS: Swift Package Manager
 
 The iOS side is distributed through Swift Package Manager only (Bugsee publishes

@@ -36,10 +36,11 @@ void main() {
   group('pubspec.yaml', () {
     final pubspec = read('pubspec.yaml');
 
-    test('Dart floor matches', () {
+    test('Dart floor matches (plugin and example)', () {
       final dart = flutterPin['dart'] as String;
       final caret = '^${dart.split('.').take(2).join('.')}.0';
       expect(pubspec, contains('sdk: $caret'));
+      expect(read('example/pubspec.yaml'), contains('sdk: $caret'));
     });
 
     test('Flutter floor matches', () {

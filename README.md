@@ -9,7 +9,7 @@
 
 The iOS side is distributed through Swift Package Manager only (Bugsee publishes
 no CocoaPods pod, and this plugin has no podspec). On Flutter versions where
-SwiftPM is not enabled by default, run this once before `flutter pub get`:
+SwiftPM is not enabled by default, run this once before building for iOS:
 
 ```
 flutter config --enable-swift-package-manager

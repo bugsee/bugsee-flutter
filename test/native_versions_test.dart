@@ -17,8 +17,13 @@ void main() {
   final ios = pins['ios'] as Map<String, dynamic>;
 
   group('native-versions.json', () {
-    test('Android Gradle plugin is >= 4.0.7 (4.0.6 silently unregisters every extension)', () {
-      final parts = (android['gradlePlugin'] as String).split('.').map(int.parse).toList();
+    test(
+        'Android Gradle plugin is >= 4.0.7 (4.0.6 silently unregisters every extension)',
+        () {
+      final parts = (android['gradlePlugin'] as String)
+          .split('.')
+          .map(int.parse)
+          .toList();
       final v = parts[0] * 1000000 + parts[1] * 1000 + parts[2];
       expect(v, greaterThanOrEqualTo(4 * 1000000 + 0 * 1000 + 7));
     });
@@ -49,20 +54,31 @@ void main() {
       expect(gradle, contains('native-versions.json'));
       expect(gradle, contains(r'bugsee-android:${nativeVersions.android.sdk}'));
       expect(gradle, contains('nativeVersions.android.minSdk'));
-      expect(RegExp(r'com\.bugsee:bugsee-android[a-z-]*:\d').hasMatch(gradle), isFalse,
-          reason: 'a literal version here would not be covered by native-versions.json');
+      expect(RegExp(r'com\.bugsee:bugsee-android[a-z-]*:\d').hasMatch(gradle),
+          isFalse,
+          reason:
+              'a literal version here would not be covered by native-versions.json');
     });
 
     test('declares the NDK artefact next to the core (workbook 1.2.1)', () {
-      expect(gradle, contains(r'api "com.bugsee:bugsee-android:${nativeVersions.android.sdk}"'));
-      expect(gradle, contains(r'api "com.bugsee:bugsee-android-ndk:${nativeVersions.android.sdk}"'));
+      expect(
+          gradle,
+          contains(
+              r'api "com.bugsee:bugsee-android:${nativeVersions.android.sdk}"'));
+      expect(
+          gradle,
+          contains(
+              r'api "com.bugsee:bugsee-android-ndk:${nativeVersions.android.sdk}"'));
     });
 
     test('example applies the Gradle plugin at the pinned version', () {
       final settings = read('example/android/settings.gradle.kts');
-      expect(settings,
-          contains('id("com.bugsee.android.gradle") version "${android['gradlePlugin']}"'));
-      expect(read('example/android/app/build.gradle.kts'), contains('id("com.bugsee.android.gradle")'));
+      expect(
+          settings,
+          contains(
+              'id("com.bugsee.android.gradle") version "${android['gradlePlugin']}"'));
+      expect(read('example/android/app/build.gradle.kts'),
+          contains('id("com.bugsee.android.gradle")'));
     });
   });
 
@@ -70,7 +86,10 @@ void main() {
     final manifest = read('ios/bugsee_flutter/Package.swift');
 
     test('pins the SPM package exactly', () {
-      expect(manifest, contains('.package(url: "${ios['spmUrl']}", exact: "${ios['sdk']}")'));
+      expect(
+          manifest,
+          contains(
+              '.package(url: "${ios['spmUrl']}", exact: "${ios['sdk']}")'));
     });
 
     test('deployment target matches', () {
@@ -84,27 +103,68 @@ void main() {
     });
 
     test('has no podspec: Bugsee publishes no pod, so one could not build', () {
-      expect(Directory('ios').listSync().whereType<File>().where((f) => f.path.endsWith('.podspec')), isEmpty);
+      expect(
+          Directory('ios')
+              .listSync()
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.podspec')),
+          isEmpty);
     });
   });
 
   group('CI', () {
-    test('uses a supported JDK', () {
+    final ci = read('.github/workflows/ci.yml');
+    // Live (uncommented) lines only.
+    final live =
+        ci.split('\n').where((l) => !l.trimLeft().startsWith('#')).join('\n');
+
+    test('uses a supported JDK on a live line', () {
       final jdks = ((android['jdk'] as Map)['supported'] as List).cast<int>();
-      final m = RegExp(r"""java-version: ['"](\d+)['"]""").firstMatch(read('.github/workflows/ci.yml'));
-      expect(m, isNotNull, reason: 'java-version not found in ci.yml');
-      expect(jdks, contains(int.parse(m!.group(1)!)));
+      final all =
+          RegExp(r"""^\s*java-version: ['"](\d+)['"]""", multiLine: true)
+              .allMatches(live)
+              .toList();
+      final setups =
+          RegExp(r'uses: actions/setup-java@').allMatches(live).length;
+      expect(all, isNotEmpty, reason: 'no live java-version line in ci.yml');
+      expect(all.length, setups,
+          reason: 'every setup-java step needs a live java-version');
+      for (final m in all) {
+        expect(jdks, contains(int.parse(m.group(1)!)));
+      }
     });
 
-    test('enables SwiftPM before pub get (the plugin has no podspec)', () {
-      final ci = read('.github/workflows/ci.yml');
-      final enable = ci.indexOf('flutter config --enable-swift-package-manager');
-      expect(enable, isNonNegative);
-      expect(enable, lessThan(ci.indexOf('flutter pub get')));
+    test(
+        'enables SwiftPM before pub get in the same job (the plugin has no podspec)',
+        () {
+      final enable = RegExp(
+          r'^\s*- run: flutter config --enable-swift-package-manager\s*$\n(?:.*\n)*?\s*- run: flutter pub get\s*$',
+          multiLine: true);
+      // Every job that runs pub get must enable SwiftPM first.
+      for (final job in live
+          .split(RegExp(r'^  (?=[a-z-]+:\s*$)', multiLine: true))
+          .where((j) => j.contains('flutter pub get'))) {
+        expect(enable.hasMatch(job), isTrue,
+            reason:
+                'job lacks a live SwiftPM enable step before pub get:\n$job');
+      }
+      expect(enable.hasMatch(live), isTrue);
     });
 
-    test('tests the Flutter floor', () {
-      expect(read('.github/workflows/ci.yml'), contains("flutter-version: '${flutterPin['min']}'"));
+    test('tests the Flutter floor via the matrix', () {
+      expect(
+          RegExp("^\\s*flutter-version: '${RegExp.escape(flutterPin['min'] as String)}'\\s*\$",
+                  multiLine: true)
+              .hasMatch(live),
+          isTrue,
+          reason: 'no live floor flutter-version in ci.yml');
+      expect(live, contains(r'flutter-version: ${{ matrix.flutter-version }}'));
+    });
+
+    test('runs on macOS and builds iOS and Android', () {
+      expect(live, contains('runs-on: macos-latest'));
+      expect(live, contains('flutter build ios --debug --no-codesign'));
+      expect(live, contains('flutter build apk --debug'));
     });
   });
 }

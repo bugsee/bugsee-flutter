@@ -5,12 +5,12 @@ import XCTest
 @testable import bugsee_flutter
 
 // Phase 1 skeleton: the plugin has no method channel yet (Phases 2-3), so the
-// only thing to assert is that it still conforms to FlutterPlugin.
+// only check is a compile-time one: the plugin must still conform to FlutterPlugin.
+// There is deliberately no runtime assertion.
 class RunnerTests: XCTestCase {
 
-  func testPluginConformsToFlutterPlugin() {
-    let plugin: FlutterPlugin = BugseeFlutterPlugin()
-    XCTAssertNotNil(plugin)
+  func testPluginCompilesAsFlutterPlugin() {
+    let _: FlutterPlugin = BugseeFlutterPlugin()
   }
 
 }

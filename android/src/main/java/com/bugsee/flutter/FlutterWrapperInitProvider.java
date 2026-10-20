@@ -58,4 +58,33 @@ public final class FlutterWrapperInitProvider extends BugseeExtensionInitProvide
                     + t.getClass().getName());
         }
     }
+
+    /**
+     * Replaces the process-start placeholder with the full identity once the
+     * Dart runtime is up (workbook 2.4.2). Never throws. The wrapper object is
+     * replaced; everything that must survive that lives outside it
+     * ({@link LifecycleHub}, {@link SecureRectangleStore}).
+     *
+     * @return whether the SDK accepted the new wrapper
+     */
+    static boolean registerRefined(
+            @NonNull final Setter register,
+            @Nullable final Object type,
+            @Nullable final Object version,
+            @Nullable final Object build,
+            @Nullable final Object context
+    ) {
+        try {
+            final FlutterWrapper wrapper = FlutterWrapper.create(type, version, build, context);
+            register.set(wrapper);
+            Log.i(TAG, "wrapper refined type=" + wrapper.getWrapperType()
+                    + " version=" + wrapper.getWrapperVersion()
+                    + " context=" + wrapper.getContext());
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "could not register the refined Flutter wrapper: "
+                    + t.getClass().getName());
+            return false;
+        }
+    }
 }

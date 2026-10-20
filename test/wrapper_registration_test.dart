@@ -117,9 +117,17 @@ void main() {
             'didFinishLaunching still finds a wrapper',
       );
       expect(m, contains('[Bugsee setWrapper:(id<BugseeWrapper>)gWrapper];'));
+      final body = RegExp(
+        r'\+ \(void\)ensureRegistered \{(.*?)\n\}',
+        dotAll: true,
+      ).firstMatch(m)!.group(1)!;
+      final guard = RegExp(
+        r'if \(gWrapper != nil\) \{\s*return;',
+      ).firstMatch(body);
+      expect(guard, isNotNull, reason: 'guard missing inside ensureRegistered');
       expect(
-        RegExp(r'if \(gWrapper != nil\) \{\s*return;').hasMatch(m),
-        isTrue,
+        guard!.start,
+        lessThan(body.indexOf('[Bugsee setWrapper:')),
         reason:
             'only the first call may register, so a late register(with:) '
             'cannot replace a richer wrapper with the placeholder',

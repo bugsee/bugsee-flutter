@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 String read(String path) => File(path).readAsStringSync();
 
 String pubspecVersion() => RegExp(
-  r'^version:\s*(\S+)[ \t]*(?:#.*)?$',
+  r'^version:[ \t]*(?!#)(\S+)[ \t]*(?:#.*)?$',
   multiLine: true,
 ).firstMatch(read('pubspec.yaml'))!.group(1)!;
 
@@ -103,6 +103,14 @@ void main() {
         multiLine: true,
       ).firstMatch('name: x\nversion: 1.2.3-dev.4 # note\n');
       expect(withComment?.group(1), '1.2.3-dev.4');
+      // An empty value must not consume the next line as the version.
+      for (final bad in ['version:\n#note\n', 'version: # note\n']) {
+        expect(
+          RegExp(pattern, multiLine: true).firstMatch(bad),
+          isNull,
+          reason: bad,
+        );
+      }
     });
     // The compiled BuildConfig value is asserted by the JUnit test
     // FlutterWrapperTest.buildConfigVersionMatchesPubspec.

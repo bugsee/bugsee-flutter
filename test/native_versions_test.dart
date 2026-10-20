@@ -166,5 +166,13 @@ void main() {
       expect(live, contains('flutter build ios --debug --no-codesign'));
       expect(live, contains('flutter build apk --debug'));
     });
+
+    test('claude-review.yml calls the shared workflow', () {
+      final review = read('.github/workflows/claude-review.yml');
+      expect(
+          review,
+          contains(
+              'uses: bugsee/.github/.github/workflows/claude-review.yml@main'));
+    });
   });
 }

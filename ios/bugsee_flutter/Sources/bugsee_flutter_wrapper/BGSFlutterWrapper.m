@@ -1,5 +1,8 @@
 #import "BGSFlutterWrapper.h"
 
+#import "BGSFlutterLifecycleHub.h"
+#import "BGSFlutterSecureRectangleStore.h"
+
 @import Bugsee;
 
 // The wrapper identity on iOS, in one place. The type is the backend's
@@ -19,7 +22,12 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
 @interface BGSFlutterWrapper () <BugseeWrapper>
 @end
 
-@implementation BGSFlutterWrapper
+@implementation BGSFlutterWrapper {
+  // Process-wide objects, held by reference: this wrapper is replaced when Dart
+  // refines the identity, so nothing that must survive that lives in it (5.4.2).
+  BGSFlutterLifecycleHub *_hub;
+  BGSFlutterSecureRectangleStore *_secureRectangles;
+}
 
 + (instancetype)wrapperAtProcessStart {
   return [self wrapperWithType:BGSFlutterWrapperType
@@ -29,7 +37,23 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
 }
 
 + (instancetype)wrapperWithType:(id)type version:(id)version build:(id)build context:(id)context {
+  return [self wrapperWithType:type
+                       version:version
+                         build:build
+                       context:context
+                           hub:[BGSFlutterLifecycleHub shared]
+              secureRectangles:[BGSFlutterSecureRectangleStore shared]];
+}
+
++ (instancetype)wrapperWithType:(id)type
+                        version:(id)version
+                          build:(id)build
+                        context:(id)context
+                            hub:(BGSFlutterLifecycleHub *)hub
+               secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles {
   BGSFlutterWrapper *wrapper = [[BGSFlutterWrapper alloc] init];
+  wrapper->_hub = hub;
+  wrapper->_secureRectangles = secureRectangles;
   wrapper->_wrapperType = [BGSFlutterStringOr(type, BGSFlutterUnknown) copy];
   wrapper->_wrapperVersion = [BGSFlutterStringOr(version, BGSFlutterUnknown) copy];
   wrapper->_wrapperBuild = [build isKindOfClass:[NSString class]] ? [build copy] : nil;
@@ -54,15 +78,14 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
 }
 
 - (void)onLifecycleEvent:(NSString *)eventType data:(id)data {
+  // The SDK's serial queue. The hub strips the prefix, hops to the main queue
+  // and never throws.
+  [_hub dispatchRawName:eventType data:data];
 }
 
 - (NSData *)secureRectanglesForDisplay:(NSInteger)display {
-  // [version, count] as int32: no rectangles. Version 0 is the contract's
-  // "unknown": the SDK then compares the rectangles themselves. A constant
-  // version here would let a later wrapper that also starts at the same
-  // version and carries real rectangles be ignored (unredacted capture).
-  int32_t ints[2] = {0, 0};
-  return [NSData dataWithBytes:ints length:sizeof(ints)];
+  // From the store, not from this object: this wrapper is replaced.
+  return [_secureRectangles snapshotForDisplay:display];
 }
 
 - (void)onBeforeReportCreated:(id<BGSReportContract>)report
@@ -82,6 +105,7 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
 @implementation BGSFlutterWrapperRegistrar
 
 static BGSFlutterWrapper *gWrapper;
+static void (^gRegister)(id);
 
 + (void)load {
   [self ensureRegistered];
@@ -97,12 +121,48 @@ static BGSFlutterWrapper *gWrapper;
     }
     @try {
       gWrapper = [BGSFlutterWrapper wrapperAtProcessStart];
-      [Bugsee setWrapper:(id<BugseeWrapper>)gWrapper];
+      [self submit:(id<BugseeWrapper>)gWrapper];
       NSLog(@"[BugseeFlutter] wrapper registered type=%@ version=%@", gWrapper.wrapperType,
             gWrapper.wrapperVersion);
     } @catch (NSException *exception) {
       NSLog(@"[BugseeFlutter] could not register the wrapper: %@", exception.name);
     }
+  }
+}
+
++ (BOOL)replaceWithType:(id)type version:(id)version build:(id)build context:(id)context {
+  @synchronized(self) {
+    @try {
+      BGSFlutterWrapper *refined = [BGSFlutterWrapper wrapperWithType:type
+                                                              version:version
+                                                                build:build
+                                                              context:context];
+      // Replaces the object only. The lifecycle hub and the secure-rectangle store
+      // are process-wide and keep their state (5.4.2).
+      gWrapper = refined;
+      [self submit:(id<BugseeWrapper>)refined];
+      NSLog(@"[BugseeFlutter] wrapper refined type=%@ version=%@ context=%@", refined.wrapperType,
+            refined.wrapperVersion, refined.context);
+      return YES;
+    } @catch (NSException *exception) {
+      NSLog(@"[BugseeFlutter] could not register the refined wrapper: %@", exception.name);
+      return NO;
+    }
+  }
+}
+
++ (void)submit:(id<BugseeWrapper>)wrapper {
+  void (^seam)(id) = gRegister;
+  if (seam != nil) {
+    seam(wrapper);
+  } else {
+    [Bugsee setWrapper:wrapper];
+  }
+}
+
++ (void)setRegistrationHandlerForTests:(void (^)(id))handler {
+  @synchronized(self) {
+    gRegister = [handler copy];
   }
 }
 

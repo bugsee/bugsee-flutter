@@ -1,13 +1,22 @@
 #import <Foundation/Foundation.h>
 
+@class BGSFlutterLifecycleHub;
+@class BGSFlutterSecureRectangleStore;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /// The Flutter wrapper registered with the Bugsee SDK, and the one place its iOS
 /// identity lives. Declared without conforming to `BugseeWrapper` here so the
 /// header needs no SDK import; the conformance is declared in the .m.
 ///
-/// Identity is real (workbook Part 3). Everything else is a deliberately inert
-/// stub until Phase 3 gives it behaviour. None of it throws.
+/// Identity is real (workbook Part 3) and lifecycle events are forwarded (Part 4).
+/// The rest is a deliberately inert stub until Phase 3 gives it behaviour. None of
+/// it throws.
+///
+/// This object is replaced mid-session when Dart refines the identity, so it holds
+/// no state that must survive: lifecycle events go to the process-wide
+/// `BGSFlutterLifecycleHub` and secure rectangles come from the process-wide
+/// `BGSFlutterSecureRectangleStore` (5.4.2).
 @interface BGSFlutterWrapper : NSObject
 
 @property(nonatomic, copy, readonly) NSString *wrapperType;
@@ -25,6 +34,14 @@ NS_ASSUME_NONNULL_BEGIN
                           build:(nullable id)build
                         context:(nullable id)context;
 
+/// As above with the process-wide collaborators supplied; for tests.
++ (instancetype)wrapperWithType:(nullable id)type
+                        version:(nullable id)version
+                          build:(nullable id)build
+                        context:(nullable id)context
+                            hub:(BGSFlutterLifecycleHub *)hub
+               secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles;
+
 @end
 
 /// Registers the wrapper at image load, independent of the Flutter engine.
@@ -38,6 +55,17 @@ NS_ASSUME_NONNULL_BEGIN
 /// static archive.
 @interface BGSFlutterWrapperRegistrar : NSObject
 + (void)ensureRegistered;
+
+/// Replaces the placeholder with the full identity once the Dart runtime is up
+/// (workbook 2.4.2). Never throws. Returns whether a wrapper was submitted.
++ (BOOL)replaceWithType:(nullable id)type
+                version:(nullable id)version
+                  build:(nullable id)build
+                context:(nullable id)context;
+
+/// For tests only: receives every wrapper in place of `+[Bugsee setWrapper:]`;
+/// nil restores the SDK call.
++ (void)setRegistrationHandlerForTests:(nullable void (^)(id wrapper))handler;
 @end
 
 NS_ASSUME_NONNULL_END

@@ -5,6 +5,9 @@ on:
     branches: [nextgen, main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: analyze + test (${{ matrix.channel }})
@@ -20,6 +23,8 @@ jobs:
             flutter-version: ''
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: zulu
@@ -28,6 +33,8 @@ jobs:
         with:
           channel: stable
           flutter-version: ${{ matrix.flutter-version }}
+      # The plugin is SwiftPM-only (Bugsee publishes no pod); older Flutter needs it enabled.
+      - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test

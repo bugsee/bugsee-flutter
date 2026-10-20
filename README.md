@@ -1,15 +1,18 @@
 # bugsee_flutter
 
-A new Flutter plugin project.
+> **Status: Phase 1 foundation of the 7.x rewrite. This is not a usable SDK yet.**
+> The Bugsee launch API and SDK behaviour are not implemented in this revision.
+> Existing users should stay on the latest published release until the migration
+> guide is available.
 
-## Getting Started
+## iOS: Swift Package Manager
 
-This project is a starting point for a Flutter
-[plug-in package](https://flutter.dev/to/develop-plugins),
-a specialized package that includes platform-specific implementation code for
-Android and/or iOS.
+The iOS side is distributed through Swift Package Manager only (Bugsee publishes
+no CocoaPods pod, and this plugin has no podspec). On Flutter versions where
+SwiftPM is not enabled by default, run this once before `flutter pub get`:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```
+flutter config --enable-swift-package-manager
+```
 
+See [PLAN.md](PLAN.md) for the implementation plan.

@@ -91,8 +91,16 @@ void main() {
   group('CI', () {
     test('uses a supported JDK', () {
       final jdks = ((android['jdk'] as Map)['supported'] as List).cast<int>();
-      final m = RegExp(r"java-version: '(\d+)'").firstMatch(read('.github/workflows/ci.yml'));
+      final m = RegExp(r"""java-version: ['"](\d+)['"]""").firstMatch(read('.github/workflows/ci.yml'));
+      expect(m, isNotNull, reason: 'java-version not found in ci.yml');
       expect(jdks, contains(int.parse(m!.group(1)!)));
+    });
+
+    test('enables SwiftPM before pub get (the plugin has no podspec)', () {
+      final ci = read('.github/workflows/ci.yml');
+      final enable = ci.indexOf('flutter config --enable-swift-package-manager');
+      expect(enable, isNonNegative);
+      expect(enable, lessThan(ci.indexOf('flutter pub get')));
     });
 
     test('tests the Flutter floor', () {

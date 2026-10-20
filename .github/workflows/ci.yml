@@ -125,9 +125,9 @@ jobs:
   # matrix legs can be renamed or added without touching repository settings.
   ci-ok:
     name: ci-ok
-    # Not `always()`: a superseded (cancelled) run should report cancelled, not failed.
-    # Failed or skipped needed jobs still run this job and fail it below.
-    if: ${{ !cancelled() }}
+    # Must be `always()`, not `!cancelled()`: a skipped required check counts as passing,
+    # so on a cancelled run ci-ok has to run and fail (cancelled needed jobs fail it below).
+    if: always()
     needs: [format, test, build-android, publish-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5

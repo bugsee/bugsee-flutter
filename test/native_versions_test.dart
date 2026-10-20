@@ -371,9 +371,9 @@ void main() {
       final listed = needs.group(1)!.split(',').map((e) => e.trim()).toSet();
       expect(listed, jobs.keys.toSet()..remove('ci-ok'));
       final okJob = jobs['ci-ok']!;
-      // Runs even when needed jobs fail or skip (so it can fail), but not when cancelled.
-      expect(okJob, contains(r'if: ${{ !cancelled() }}'));
-      expect(okJob, isNot(contains('always()')));
+      // Must run (and fail) on a cancelled run too: a skipped required check passes.
+      expect(okJob, contains('if: always()'));
+      expect(okJob, isNot(contains('cancelled()')));
       // The step that actually fails the job.
       expect(
         okJob,

@@ -21,7 +21,7 @@ and checkout with `persist-credentials: false`.
 | `test` | `analyze + test + ios build (floor)`, `analyze + test + ios build (stable)` | macOS | `flutter analyze`, `flutter test` (includes the drift guard), debug iOS build with SwiftPM. macOS is required: SwiftPM only exists there |
 | `build-android` | `build apk (floor)`, `build apk (stable)` | ubuntu | Debug APK of the example app. Frees runner disk first (otherwise "No space left on device") |
 | `publish-check` | `pub publish dry-run` | ubuntu | Runs on the floor Flutter. Package validity only. Fails on warnings (e.g. CHANGELOG missing the pubspec version, dirty git tree). Never uploads, needs no credentials |
-| `ci-ok` | `ci-ok` | ubuntu | `if: ${{ !cancelled() }}`; fails unless every job above succeeded (failed, cancelled and skipped needed jobs all fail it; a superseded run reports cancelled rather than failed) |
+| `ci-ok` | `ci-ok` | ubuntu | `if: always()`; fails unless every job above succeeded (failed, cancelled and skipped needed jobs all fail it). Deliberately not `!cancelled()`: that would skip `ci-ok` on a cancelled run, and a skipped required check counts as passing |
 
 Concurrency: PR runs of the same ref cancel superseded (running or pending) runs; every
 push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or replaced. Every job has a `timeout-minutes`. Flutter SDK and pub cache use
@@ -53,6 +53,15 @@ superseded PR runs are cancelled. The Android repo uses a single shared self-hos
 for its CI (see `bugsee/bugsee-android` `.github/CI.md`); this repo does not, so it
 neither competes for that slot nor inherits its dirty workspace. Moving the iOS leg there
 is possible later, but only after SwiftPM and Xcode availability on it are confirmed.
+
+## Default branch caveat
+
+The default branch is `main`, but this rewrite lives on `nextgen`. GitHub reads
+`dependabot.yml` and fires `schedule:` triggers only from the default branch, and shows
+the `workflow_dispatch` button only for workflows present there. So `native-pins.yml` and
+`dependabot.yml` must also exist on `main` (or `nextgen` must become the default) before
+the weekly check and Dependabot do anything. Every Dependabot entry sets
+`target-branch: nextgen` so its PRs land on the rewrite.
 
 ## Dependabot, templates
 

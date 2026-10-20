@@ -108,17 +108,31 @@ PinReport evaluate(
   return r;
 }
 
+class _Permanent implements Exception {
+  _Permanent(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 Future<String> _get(String url) async {
   Object? last;
   for (var attempt = 1; attempt <= 3; attempt++) {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 20);
     try {
-      final req = await client.getUrl(Uri.parse(url));
-      final res = await req.close().timeout(const Duration(seconds: 60));
-      final body = await utf8.decodeStream(res);
-      if (res.statusCode == 200) return body;
-      last = 'HTTP ${res.statusCode}';
+      // One timeout over request, headers and body, so a stalled body is retried.
+      final (status, body) = await () async {
+        final req = await client.getUrl(Uri.parse(url));
+        final res = await req.close();
+        return (res.statusCode, await utf8.decodeStream(res));
+      }().timeout(const Duration(seconds: 60));
+      if (status == 200) return body;
+      // A missing metadata file will not appear by retrying.
+      if (status == 404) throw _Permanent('GET $url: HTTP 404');
+      last = 'HTTP $status';
+    } on _Permanent {
+      rethrow;
     } catch (e) {
       last = e;
     } finally {
@@ -149,15 +163,15 @@ Future<Never> _exit(int code) async {
 }
 
 Future<void> main(List<String> args) async {
-  final pins =
-      jsonDecode(
-            File(
-              args.isNotEmpty ? args.first : 'native-versions.json',
-            ).readAsStringSync(),
-          )
-          as Map<String, dynamic>;
   final PinReport report;
   try {
+    final pins =
+        jsonDecode(
+              File(
+                args.isNotEmpty ? args.first : 'native-versions.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
     final ios = pins['ios'] as Map<String, dynamic>;
     report = evaluate(
       pins,

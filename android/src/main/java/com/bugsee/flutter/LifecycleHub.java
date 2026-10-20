@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -27,13 +28,17 @@ import java.util.Set;
  * the platform (main) thread, so every delivery to the sink is posted through
  * {@link MainThread}; the sink itself is therefore always invoked on it.
  *
- * <p><b>Buffering.</b> Until Dart attaches there is no sink, and the first
- * events of a launch ({@code Launching}, {@code Launched}) happen long before
- * a Dart isolate can listen. Events are kept, in order, in a buffer of at most
- * {@link #BUFFER_CAPACITY} entries and flushed on {@link #attach}. When full the
- * <b>oldest</b> event is dropped (the freshest state matters most) and counted
- * in {@link #droppedCount()}; a drop is logged. With the cap far above the number
- * of events one launch produces, a drop means Dart never attached.
+ * <p><b>Receivers.</b> Any number may be attached (a UI engine and a background
+ * engine); each gets every event, and detaching one leaves the others alone.
+ *
+ * <p><b>Buffering.</b> While NO receiver is attached, and the first events of a
+ * launch ({@code Launching}, {@code Launched}) happen long before a Dart isolate
+ * can listen, events are kept, in order, in a buffer of at most
+ * {@link #BUFFER_CAPACITY} entries and flushed to the next receiver. When full the
+ * <b>oldest</b> event is dropped (the freshest state matters most) and counted in
+ * {@link #droppedCount()}; the first drop is logged, then every
+ * {@link #DROP_LOG_EVERY}th. The latest status event is also remembered and
+ * replayed to every new receiver, so a restarted engine knows the status.
  *
  * <p><b>Names.</b> The {@code com.bugsee.lifecycle.} prefix is stripped once,
  * here. A name the wrapper does not know, or one without the prefix, is
@@ -49,6 +54,16 @@ final class LifecycleHub {
 
     /** At most this many events are kept while no Dart side is attached. */
     static final int BUFFER_CAPACITY = 64;
+
+    /** Drops are always counted; a warning is logged for the first and then every Nth. */
+    static final int DROP_LOG_EVERY = 100;
+
+    /**
+     * The only events that are status transitions (4.6). Repeated in Dart
+     * ({@code statusTransitionEvents}) and Objective-C; the drift guard compares them.
+     */
+    private static final Set<String> STATUS_EVENTS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("Launching", "Launched", "Stopping", "Stopped")));
 
     /**
      * The events whose payload is the report's id (4.5). Repeated in Dart
@@ -114,11 +129,24 @@ final class LifecycleHub {
         return hub;
     }
 
+    /** One attached receiver and the events posted to it that have not run yet. */
+    private static final class Entry {
+        final Sink sink;
+        final ArrayDeque<Event> inFlight = new ArrayDeque<>();
+        boolean attached = true;
+
+        Entry(final Sink sink) {
+            this.sink = sink;
+        }
+    }
+
     private final Object lock = new Object();
     private final MainThread mainThread;
     private final ArrayDeque<Event> buffer = new ArrayDeque<>();
+    private final ArrayList<Entry> entries = new ArrayList<>();
+    /** The latest Launching/Launched/Stopping/Stopped event, replayed to every new receiver. */
     @Nullable
-    private Sink sink;
+    private Event lastStatus;
     private int dropped;
 
     LifecycleHub(@NonNull final MainThread mainThread) {
@@ -136,11 +164,15 @@ final class LifecycleHub {
         try {
             final Event event = parse(rawName, data);
             synchronized (lock) {
-                final Sink current = sink;
-                if (current == null) {
+                if (STATUS_EVENTS.contains(event.name)) {
+                    lastStatus = event;
+                }
+                if (entries.isEmpty()) {
                     buffer(event);
                 } else {
-                    post(current, event);
+                    for (final Entry e : new ArrayList<>(entries)) {
+                        post(e, event);
+                    }
                 }
             }
         } catch (final Throwable t) {
@@ -149,28 +181,62 @@ final class LifecycleHub {
     }
 
     /**
-     * Makes {@code newSink} the receiver and flushes the buffer to it, in
-     * order, ahead of any event dispatched afterwards.
+     * Adds {@code newSink} as a receiver (every attached receiver gets every
+     * event: a background engine must not take events from the UI engine).
+     * Attaching a sink that is already attached does nothing, so nothing is
+     * delivered to it twice.
+     *
+     * <p>The new receiver first gets what it missed, in order: the events
+     * buffered while nobody was attached, preceded by the latest status event
+     * when the buffer does not already contain it (a receiver that attaches late,
+     * or after a restart, still learns the status).
      */
     void attach(@NonNull final Sink newSink) {
         synchronized (lock) {
-            sink = newSink;
+            for (final Entry e : entries) {
+                if (e.sink == newSink) {
+                    return;
+                }
+            }
+            final Entry entry = new Entry(newSink);
+            entries.add(entry);
+            if (lastStatus != null && !buffer.contains(lastStatus)) {
+                post(entry, lastStatus);
+            }
             Event pending;
             while ((pending = buffer.pollFirst()) != null) {
-                post(newSink, pending);
+                post(entry, pending);
             }
         }
     }
 
     /**
-     * Detaches {@code stale} only while it is still the receiver: a second
-     * engine may have attached already. Events buffer again until the next
-     * {@link #attach}.
+     * Removes only {@code stale}. Events posted to it that have not run yet are
+     * not lost: when no receiver remains they go back to the FRONT of the
+     * buffer, in their original order (they are older than anything buffered
+     * since); other receivers already hold their own copies.
      */
     void detach(@NonNull final Sink stale) {
         synchronized (lock) {
-            if (sink == stale) {
-                sink = null;
+            for (int i = 0; i < entries.size(); i++) {
+                final Entry entry = entries.get(i);
+                if (entry.sink != stale) {
+                    continue;
+                }
+                entries.remove(i);
+                entry.attached = false;
+                if (entries.isEmpty()) {
+                    final ArrayList<Event> back = new ArrayList<>(entry.inFlight);
+                    for (int k = back.size() - 1; k >= 0; k--) {
+                        buffer.addFirst(back.get(k));
+                    }
+                    while (buffer.size() > BUFFER_CAPACITY) {
+                        buffer.removeFirst();
+                        noteDrop();
+                    }
+                }
+                entry.inFlight.clear();
+                return;
             }
         }
     }
@@ -189,21 +255,25 @@ final class LifecycleHub {
     }
 
     /** Caller holds {@link #lock}. */
-    private void post(@NonNull final Sink target, @NonNull final Event event) {
-        mainThread.post(() -> deliver(target, event));
+    private void post(@NonNull final Entry entry, @NonNull final Event event) {
+        entry.inFlight.addLast(event);
+        mainThread.post(() -> deliver(entry));
     }
 
-    private void deliver(@NonNull final Sink target, @NonNull final Event event) {
+    /** Runs on the main thread, once per posted event, in posting order. */
+    private void deliver(@NonNull final Entry entry) {
+        final Event event;
         synchronized (lock) {
-            if (sink != target) {
-                // Detached between the post and now: keep it for the next
-                // attach rather than send into a dead engine.
-                buffer(event);
-                return;
+            if (!entry.attached) {
+                return; // detached: detach() already put its events back
             }
+            event = entry.inFlight.pollFirst();
+        }
+        if (event == null) {
+            return;
         }
         try {
-            target.onEvent(event);
+            entry.sink.onEvent(event);
         } catch (final Throwable t) {
             Log.w(TAG, "lifecycle sink threw for " + event.name + ": " + t.getClass().getName());
         }
@@ -214,7 +284,14 @@ final class LifecycleHub {
         buffer.addLast(event);
         if (buffer.size() > BUFFER_CAPACITY) {
             buffer.removeFirst();
-            dropped++;
+            noteDrop();
+        }
+    }
+
+    /** Caller holds {@link #lock}. Counts every drop; logs the first and then every Nth. */
+    private void noteDrop() {
+        dropped++;
+        if (dropped == 1 || dropped % DROP_LOG_EVERY == 0) {
             Log.w(TAG, "lifecycle buffer full (" + BUFFER_CAPACITY
                     + "), dropped the oldest event; total dropped " + dropped);
         }

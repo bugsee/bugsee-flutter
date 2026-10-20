@@ -38,6 +38,28 @@ static NSData *Ints(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32
   XCTAssertEqualObjects(w.context, @{@"flutter" : @"3.41.0"});
 }
 
+/// Both the placeholder and a refined wrapper must feed the SAME process-wide hub.
+- (void)testEveryWrapperFeedsTheSharedHub {
+  BGSFlutterLifecycleHub *shared = [BGSFlutterLifecycleHub shared];
+  NSMutableArray *registered = [NSMutableArray array];
+  [BGSFlutterWrapperRegistrar setRegistrationHandlerForTests:^(id w) {
+    [registered addObject:w];
+  }];
+  [registered addObject:[BGSFlutterWrapper wrapperAtProcessStart]];
+  [BGSFlutterWrapperRegistrar replaceWithType:@"flutter"
+                                      version:@"1"
+                                        build:nil
+                                      context:@{@"a" : @"b"}];
+  XCTAssertEqual(registered.count, 2u);
+  for (id w in registered) {
+    // No receiver is attached in a unit test, so the event lands in the buffer (or, when
+    // that is full, in the drop counter).
+    NSUInteger before = shared.bufferedCount + shared.droppedCount;
+    [(id<BugseeWrapper>)w onLifecycleEvent:@"com.bugsee.lifecycle.Launched" data:nil];
+    XCTAssertEqual(shared.bufferedCount + shared.droppedCount, before + 1);
+  }
+}
+
 - (void)testLifecycleEventsGoToTheHub {
   dispatch_queue_t q = dispatch_queue_create("t", DISPATCH_QUEUE_SERIAL);
   BGSFlutterLifecycleHub *hub = [[BGSFlutterLifecycleHub alloc] initWithDeliveryQueue:q];

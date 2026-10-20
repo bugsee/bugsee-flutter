@@ -149,26 +149,158 @@ static void *kQueueKey = &kQueueKey;
                         ([NSString stringWithFormat:@"E%lu", (unsigned long)(cap + 4)]));
 }
 
-- (void)testDetachedHubBuffersAgainAndAStaleDetachIsIgnored {
+- (NSMutableArray<NSString *> *)attachNames:(BGSFlutterLifecycleHub *)hub token:(id *)token {
+  NSMutableArray *names = [NSMutableArray array];
+  id t = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+    [names addObject:e.name];
+  }];
+  if (token) {
+    *token = t;
+  }
+  [self drain];
+  return names;
+}
+
+- (void)raw:(BGSFlutterLifecycleHub *)hub name:(NSString *)n {
+  [hub dispatchRawName:[P stringByAppendingString:n] data:nil];
+}
+
+- (void)testDetachedHubBuffersAgain {
   BGSFlutterLifecycleHub *hub = [self hub];
-  NSMutableArray *first = [NSMutableArray array];
-  NSMutableArray *second = [NSMutableArray array];
-  id a = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
-    [first addObject:e];
-  }];
-  id b = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
-    [second addObject:e];
-  }];
-  [hub detach:a];  // the first engine goes away: must not silence b
-  [hub dispatchRawName:[P stringByAppendingString:@"Launched"] data:nil];
+  id token;
+  NSMutableArray *seen = [self attachNames:hub token:&token];
+  [hub detach:token];
+  [self raw:hub name:@"Stopped"];
   [self drain];
-  XCTAssertEqual(first.count, 0u);
-  XCTAssertEqual(second.count, 1u);
-  [hub detach:b];
-  [hub dispatchRawName:[P stringByAppendingString:@"Stopped"] data:nil];
-  [self drain];
-  XCTAssertEqual(second.count, 1u);
+  XCTAssertEqual(seen.count, 0u);
   XCTAssertEqual(hub.bufferedCount, 1u);
+}
+
+/// A background engine must not take events from the UI engine.
+- (void)testEveryAttachedReceiverGetsEveryEventAndDetachRemovesOnlyItsOwn {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  id uiToken, bgToken;
+  NSMutableArray *ui = [self attachNames:hub token:&uiToken];
+  NSMutableArray *bg = [self attachNames:hub token:&bgToken];
+  [self raw:hub name:@"A"];
+  [self drain];
+  XCTAssertEqualObjects(ui, @[ @"A" ]);
+  XCTAssertEqualObjects(bg, @[ @"A" ]);
+  [hub detach:bgToken];
+  [self raw:hub name:@"B"];
+  [self drain];
+  XCTAssertEqualObjects(ui, (@[ @"A", @"B" ]));
+  XCTAssertEqualObjects(bg, @[ @"A" ]);
+  XCTAssertEqual(hub.bufferedCount, 0u);
+  [hub detach:bgToken];  // detaching twice is harmless
+  [hub detach:uiToken];
+  [self raw:hub name:@"C"];
+  XCTAssertEqual(hub.bufferedCount, 1u);
+}
+
+- (void)testASecondReceiverThatAttachesLateGetsTheBufferOnlyOnce {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  [self raw:hub name:@"A"];
+  NSMutableArray *first = [self attachNames:hub token:NULL];
+  NSMutableArray *second = [self attachNames:hub token:NULL];
+  XCTAssertEqualObjects(first, @[ @"A" ]);
+  XCTAssertEqual(second.count, 0u, @"the buffer went to the first receiver only");
+}
+
+/// A restarted engine learns the status even though the hub already flushed it.
+- (void)testTheLatestStatusIsReplayedFirstToEveryNewReceiver {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  [self raw:hub name:@"Launching"];
+  [self raw:hub name:@"Launched"];
+  id token;
+  [self attachNames:hub token:&token];
+  [hub detach:token];
+  [self raw:hub name:@"BlackoutStarted"];  // buffered, not a status
+  NSMutableArray *again = [self attachNames:hub token:NULL];
+  XCTAssertEqualObjects(again, (@[ @"Launched", @"BlackoutStarted" ]));
+  [self raw:hub name:@"Stopping"];
+  [self raw:hub name:@"Stopped"];
+  NSMutableArray *joined = [self attachNames:hub token:NULL];
+  XCTAssertEqualObjects(joined, @[ @"Stopped" ]);
+}
+
+- (void)testOnlyTheFourTransitionsAreReplayedAsStatus {
+  for (NSString *n in @[ @"BlackoutStarted", @"RelaunchedAfterCrash", @"Whatever" ]) {
+    BGSFlutterLifecycleHub *hub = [self hub];
+    [self raw:hub name:n];
+    id token;
+    [self attachNames:hub token:&token];
+    [hub detach:token];
+    XCTAssertEqual([self attachNames:hub token:NULL].count, 0u, @"%@", n);
+  }
+}
+
+/// Re-attach with an event in flight: posted to the old receiver, which went away
+/// before the queue ran it. The new receiver gets it, once, before later events.
+- (void)testAnEventInFlightWhenTheReceiverIsReplacedReachesTheNewOneInOrder {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  dispatch_suspend(_fakeMain);
+  NSMutableArray *oldSeen = [NSMutableArray array];
+  id oldToken = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+    [oldSeen addObject:e.name];
+  }];
+  [self raw:hub name:@"E1"];
+  [hub detach:oldToken];
+  NSMutableArray *newSeen = [NSMutableArray array];
+  [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+    [newSeen addObject:e.name];
+  }];
+  [self raw:hub name:@"E2"];
+  dispatch_resume(_fakeMain);
+  [self drain];
+  XCTAssertEqual(oldSeen.count, 0u);
+  XCTAssertEqualObjects(newSeen, (@[ @"E1", @"E2" ]));
+}
+
+/// Detaching with several events in flight keeps their order, ahead of newer ones.
+- (void)testEventsInFlightAtDetachGoBackToTheFrontInOrder {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  dispatch_suspend(_fakeMain);
+  id token = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+  }];
+  [self raw:hub name:@"E1"];
+  [self raw:hub name:@"E2"];
+  [hub detach:token];
+  [self raw:hub name:@"E3"];
+  dispatch_resume(_fakeMain);
+  [self drain];
+  NSMutableArray *seen = [self attachNames:hub token:NULL];
+  XCTAssertEqualObjects(seen, (@[ @"E1", @"E2", @"E3" ]));
+}
+
+/// The in-flight copies belong to the detached receiver, not to the others.
+- (void)testDetachingOneOfTwoReceiversDropsOnlyItsOwnInFlightEvents {
+  BGSFlutterLifecycleHub *hub = [self hub];
+  dispatch_suspend(_fakeMain);
+  NSMutableArray *a = [NSMutableArray array];
+  NSMutableArray *b = [NSMutableArray array];
+  id ta = [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+    [a addObject:e.name];
+  }];
+  [hub attachSink:^(BGSFlutterLifecycleEvent *e) {
+    [b addObject:e.name];
+  }];
+  [self raw:hub name:@"E1"];
+  [hub detach:ta];
+  dispatch_resume(_fakeMain);
+  [self drain];
+  XCTAssertEqual(a.count, 0u);
+  XCTAssertEqualObjects(b, @[ @"E1" ]);
+  XCTAssertEqual(hub.bufferedCount, 0u, @"nothing is duplicated into the buffer");
+}
+
+- (void)testDropsAreCountedEvenWhenNotLogged {
+  XCTAssertEqual([BGSFlutterLifecycleHub dropLogEvery], 100u);
+  BGSFlutterLifecycleHub *hub = [self hub];
+  for (NSUInteger i = 0; i < [BGSFlutterLifecycleHub bufferCapacity] + 250; i++) {
+    [self raw:hub name:[NSString stringWithFormat:@"E%lu", (unsigned long)i]];
+  }
+  XCTAssertEqual(hub.droppedCount, 250u);
 }
 
 /// Workbook 4.4: events arrive off the main thread; the sink must be on the delivery queue.

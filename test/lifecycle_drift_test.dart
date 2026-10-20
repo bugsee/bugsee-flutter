@@ -36,7 +36,7 @@ void main() {
       final objcSet = RegExp(r'@"([A-Za-z]+)"')
           .allMatches(
             RegExp(
-              r'events = \[NSSet setWithObjects:([^;]*?)nil\];',
+              r'events = \[NSSet setWithObjects:(@"BeforeReportAssembled"[^;]*?)nil\];',
               dotAll: true,
             ).firstMatch(m)!.group(1)!,
           )
@@ -46,6 +46,32 @@ void main() {
       expect(objcSet, reportIdEvents);
       // Workbook 4.5: exactly these seven.
       expect(reportIdEvents, hasLength(7));
+    });
+
+    test('status transition events: Dart == Java == Objective-C', () {
+      final j = code('$java/LifecycleHub.java');
+      final javaSet = quoted(
+        RegExp(
+          r'STATUS_EVENTS = [^;]*?asList\(([^;]*?)\)\)\);',
+          dotAll: true,
+        ).firstMatch(j)!.group(1)!,
+      );
+      final m = code('$objc/BGSFlutterLifecycleHub.m');
+      final objcSet = RegExp(r'@"([A-Za-z]+)"')
+          .allMatches(
+            RegExp(
+              r'events = \[NSSet setWithObjects:@"Launching"([^;]*?)nil\];',
+              dotAll: true,
+            ).firstMatch(m)!.group(0)!,
+          )
+          .map((x) => x.group(1)!)
+          .toSet();
+      expect(javaSet, statusTransitionEvents);
+      expect(objcSet, statusTransitionEvents);
+      expect(statusTransitionEvents, hasLength(4));
+      for (final n in statusTransitionEvents) {
+        expect(statusForEvent(LifecycleEvent(n)), isNotNull, reason: n);
+      }
     });
 
     test('the prefix is the SDKs and is stripped natively, once', () {
@@ -79,6 +105,17 @@ void main() {
       expect(
         read('$objc/BGSFlutterLifecycleHub.m'),
         contains('BGSFlutterLifecycleBufferCapacity = 64;'),
+      );
+    });
+
+    test('drop logging is rate-limited the same way on both platforms', () {
+      expect(
+        read('$java/LifecycleHub.java'),
+        contains('DROP_LOG_EVERY = 100;'),
+      );
+      expect(
+        read('$objc/BGSFlutterLifecycleHub.m'),
+        contains('BGSFlutterLifecycleDropLogEvery = 100;'),
       );
     });
 
@@ -147,6 +184,27 @@ void main() {
         expect(c, isNot(contains('.delegate =')), reason: f);
         expect(c, isNot(contains('bugseeDidChangeStatus')), reason: f);
       }
+    });
+
+    test('both wrappers feed the process-wide hub, not one of their own', () {
+      expect(
+        code('$java/FlutterWrapper.java'),
+        contains('LifecycleHub.shared(), SecureRectangleStore.shared()'),
+      );
+      expect(
+        code('$objc/BGSFlutterWrapper.m'),
+        contains('hub:[BGSFlutterLifecycleHub shared]'),
+      );
+      // The plugins attach to that same hub.
+      expect(
+        code('$java/BugseeFlutterPlugin.java'),
+        contains('LifecycleHub.shared().attach(fresh)'),
+      );
+      expect(
+        code('$swift/BugseeFlutterPlugin.swift'),
+        contains('BGSFlutterLifecycleHub.shared().attachSink'),
+      );
+      // Behavioural twins: JUnit everyWrapperFeedsTheSharedHub, XCTest testEveryWrapperFeedsTheSharedHub.
     });
 
     test('secure rectangles come from the process-wide store (5.4.2)', () {

@@ -6,6 +6,7 @@ import 'package:bugsee_flutter/src/bridge/lifecycle.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/bridge/runtime_facts.dart';
 import 'package:bugsee_flutter/src/wrapper_identity.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 
 const _facts = RuntimeFacts(
@@ -20,16 +21,26 @@ class FakeHost extends BugseeBridgeHostApi {
   final List<String> calls = [];
   final List<WrapperIdentityMessage> identities = [];
   Future<void> Function()? onAttach;
+  int failAttach = 0;
+  int failIdentity = 0;
 
   @override
   Future<void> attachLifecycle() async {
     calls.add('attach');
+    if (failAttach > 0) {
+      failAttach--;
+      throw PlatformException(code: 'channel-error');
+    }
     await onAttach?.call();
   }
 
   @override
   Future<void> setWrapperIdentity(WrapperIdentityMessage identity) async {
     calls.add('identity');
+    if (failIdentity > 0) {
+      failIdentity--;
+      throw PlatformException(code: 'channel-error');
+    }
     identities.add(identity);
   }
 }
@@ -217,6 +228,40 @@ void main() {
       await bridge.start(facts: _facts);
       await bridge.start();
       expect(host.calls, ['attach', 'identity']);
+    });
+
+    test(
+      'a failed attach still sends the identity, and start() can be retried',
+      () async {
+        host.failAttach = 1;
+        await expectLater(
+          bridge.start(facts: _facts),
+          throwsA(isA<PlatformException>()),
+        );
+        expect(host.calls, ['attach', 'identity']);
+        expect(host.identities, hasLength(1));
+        // Not cached: the next call tries again, and now succeeds.
+        await bridge.start(facts: _facts);
+        expect(host.calls, ['attach', 'identity', 'attach', 'identity']);
+        // And now it is cached.
+        await bridge.start(facts: _facts);
+        expect(host.calls, hasLength(4));
+      },
+    );
+
+    test('a failed identity does not stop events, and is retried', () async {
+      host.failIdentity = 1;
+      final seen = <String>[];
+      bridge.lifecycleEvents.listen((e) => seen.add(e.name));
+      await expectLater(
+        bridge.start(facts: _facts),
+        throwsA(isA<PlatformException>()),
+      );
+      await nativeSends(messenger, LifecycleEventMessage(name: 'Launched'));
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, ['Launched']);
+      await bridge.start(facts: _facts);
+      expect(host.identities, hasLength(1));
     });
 
     test('the identity carries versions, engine and build mode', () async {

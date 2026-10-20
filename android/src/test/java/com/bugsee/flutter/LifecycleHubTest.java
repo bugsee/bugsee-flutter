@@ -155,22 +155,185 @@ public class LifecycleHubTest {
     }
 
     @Test
-    public void detachedHubBuffersAgainAndAStaleDetachIsIgnored() {
+    public void detachedHubBuffersAgain() {
         final LifecycleHub hub = inline();
-        final List<LifecycleHub.Event> first = new ArrayList<>();
-        final List<LifecycleHub.Event> second = new ArrayList<>();
-        final LifecycleHub.Sink a = first::add;
-        final LifecycleHub.Sink b = second::add;
+        final List<LifecycleHub.Event> seen = new ArrayList<>();
+        final LifecycleHub.Sink a = seen::add;
         hub.attach(a);
-        hub.attach(b); // a second engine
-        hub.detach(a); // the first engine goes away: must not silence b
-        hub.dispatch(P + "Launched", null);
-        assertEquals(0, first.size());
-        assertEquals(1, second.size());
-        hub.detach(b);
+        hub.detach(a);
         hub.dispatch(P + "Stopped", null);
-        assertEquals(1, second.size());
+        assertEquals(0, seen.size());
         assertEquals(1, hub.bufferedCount());
+    }
+
+    /** A background engine must not take events from the UI engine. */
+    @Test
+    public void everyAttachedReceiverGetsEveryEventAndDetachRemovesOnlyItsOwn() {
+        final LifecycleHub hub = inline();
+        final List<String> ui = new ArrayList<>();
+        final List<String> bg = new ArrayList<>();
+        final LifecycleHub.Sink uiSink = e -> ui.add(e.name);
+        final LifecycleHub.Sink bgSink = e -> bg.add(e.name);
+        hub.attach(uiSink);
+        hub.attach(bgSink);
+        hub.dispatch(P + "A", null);
+        assertEquals(Collections.singletonList("A"), ui);
+        assertEquals(Collections.singletonList("A"), bg);
+        hub.detach(bgSink); // the background engine goes away: the UI engine keeps receiving
+        hub.dispatch(P + "B", null);
+        assertEquals(java.util.Arrays.asList("A", "B"), ui);
+        assertEquals(Collections.singletonList("A"), bg);
+        assertEquals(0, hub.bufferedCount());
+        hub.detach(bgSink); // detaching twice is harmless
+        hub.detach(uiSink);
+        hub.dispatch(P + "C", null);
+        assertEquals(1, hub.bufferedCount());
+    }
+
+    @Test
+    public void aSecondReceiverThatAttachesLateGetsTheBufferOnlyOnce() {
+        final LifecycleHub hub = inline();
+        hub.dispatch(P + "A", null);
+        final List<String> first = new ArrayList<>();
+        final List<String> second = new ArrayList<>();
+        hub.attach(e -> first.add(e.name));
+        hub.attach(e -> second.add(e.name));
+        assertEquals(Collections.singletonList("A"), first);
+        assertTrue("the buffer went to the first receiver only", second.isEmpty());
+    }
+
+    @Test
+    public void attachingTheSameSinkTwiceDoesNotDeliverTwice() {
+        final LifecycleHub hub = inline();
+        hub.dispatch(P + "Launched", null);
+        final List<String> seen = new ArrayList<>();
+        final LifecycleHub.Sink s = e -> seen.add(e.name);
+        hub.attach(s);
+        hub.attach(s);
+        hub.dispatch(P + "Stopping", null);
+        assertEquals(java.util.Arrays.asList("Launched", "Stopping"), seen);
+    }
+
+    /** A restarted engine learns the status even though the hub already flushed it. */
+    @Test
+    public void theLatestStatusIsReplayedFirstToEveryNewReceiver() {
+        final LifecycleHub hub = inline();
+        hub.dispatch(P + "Launching", null);
+        hub.dispatch(P + "Launched", null);
+        final LifecycleHub.Sink first = e -> { };
+        hub.attach(first);
+        hub.detach(first);
+        hub.dispatch(P + "BlackoutStarted", null); // buffered, not a status
+        final List<String> again = new ArrayList<>();
+        hub.attach(e -> again.add(e.name));
+        assertEquals(java.util.Arrays.asList("Launched", "BlackoutStarted"), again);
+        // And a receiver joining a running hub gets it too, only the latest.
+        hub.dispatch(P + "Stopping", null);
+        hub.dispatch(P + "Stopped", null);
+        final List<String> joined = new ArrayList<>();
+        hub.attach(e -> joined.add(e.name));
+        assertEquals(Collections.singletonList("Stopped"), joined);
+    }
+
+    @Test
+    public void noStatusIsReplayedWhenNoneHappened() {
+        final LifecycleHub hub = inline();
+        hub.dispatch(P + "BlackoutStarted", null);
+        final List<String> seen = new ArrayList<>();
+        hub.attach(e -> seen.add(e.name));
+        assertEquals(Collections.singletonList("BlackoutStarted"), seen);
+    }
+
+    @Test
+    public void onlyTheFourTransitionsAreReplayedAsStatus() {
+        for (final String n : new String[] {"BlackoutStarted", "RelaunchedAfterCrash", "Whatever"}) {
+            final LifecycleHub hub = inline();
+            hub.dispatch(P + n, null);
+            final LifecycleHub.Sink s = e -> { };
+            hub.attach(s);
+            hub.detach(s);
+            final List<String> seen = new ArrayList<>();
+            hub.attach(e -> seen.add(e.name));
+            assertTrue(n, seen.isEmpty());
+        }
+    }
+
+    /**
+     * Re-attach with an event in flight: it was posted to the old receiver, which
+     * went away before the main thread ran it. The new receiver must get it, once,
+     * and before anything dispatched later.
+     */
+    @Test
+    public void anEventInFlightWhenTheReceiverIsReplacedReachesTheNewOneInOrder() {
+        final List<Runnable> queue = new ArrayList<>();
+        final LifecycleHub hub = new LifecycleHub(queue::add);
+        final List<String> oldSeen = new ArrayList<>();
+        final List<String> newSeen = new ArrayList<>();
+        final LifecycleHub.Sink oldSink = e -> oldSeen.add(e.name);
+        hub.attach(oldSink);
+        hub.dispatch(P + "E1", null);
+        hub.detach(oldSink);
+        hub.attach(e -> newSeen.add(e.name));
+        hub.dispatch(P + "E2", null);
+        for (final Runnable r : new ArrayList<>(queue)) {
+            r.run();
+        }
+        assertTrue(oldSeen.isEmpty());
+        assertEquals(java.util.Arrays.asList("E1", "E2"), newSeen);
+    }
+
+    /** Detaching with several events in flight keeps their order, ahead of newer ones. */
+    @Test
+    public void eventsInFlightAtDetachGoBackToTheFrontInOrder() {
+        final List<Runnable> queue = new ArrayList<>();
+        final LifecycleHub hub = new LifecycleHub(queue::add);
+        final LifecycleHub.Sink sink = e -> { };
+        hub.attach(sink);
+        hub.dispatch(P + "E1", null);
+        hub.dispatch(P + "E2", null);
+        hub.detach(sink);
+        hub.dispatch(P + "E3", null);
+        for (final Runnable r : new ArrayList<>(queue)) {
+            r.run();
+        }
+        final List<String> seen = new ArrayList<>();
+        hub.attach(e -> seen.add(e.name));
+        for (final Runnable r : new ArrayList<>(queue)) {
+            r.run();
+        }
+        assertEquals(java.util.Arrays.asList("E1", "E2", "E3"), seen);
+    }
+
+    /** The in-flight copies belong to the receiver that was detached, not to the others. */
+    @Test
+    public void detachingOneOfTwoReceiversDropsOnlyItsOwnInFlightEvents() {
+        final List<Runnable> queue = new ArrayList<>();
+        final LifecycleHub hub = new LifecycleHub(queue::add);
+        final List<String> a = new ArrayList<>();
+        final List<String> b = new ArrayList<>();
+        final LifecycleHub.Sink sa = e -> a.add(e.name);
+        final LifecycleHub.Sink sb = e -> b.add(e.name);
+        hub.attach(sa);
+        hub.attach(sb);
+        hub.dispatch(P + "E1", null);
+        hub.detach(sa);
+        for (final Runnable r : new ArrayList<>(queue)) {
+            r.run();
+        }
+        assertTrue(a.isEmpty());
+        assertEquals(Collections.singletonList("E1"), b);
+        assertEquals("nothing is duplicated into the buffer", 0, hub.bufferedCount());
+    }
+
+    @Test
+    public void dropsAreCountedEvenWhenNotLogged() {
+        final LifecycleHub hub = inline();
+        final int total = LifecycleHub.BUFFER_CAPACITY + 250;
+        for (int i = 0; i < total; i++) {
+            hub.dispatch(P + "E" + i, null);
+        }
+        assertEquals(250, hub.droppedCount());
+        assertEquals(100, LifecycleHub.DROP_LOG_EVERY);
     }
 
     /** Workbook 4.4: events arrive off the main thread; the sink must be on it. */

@@ -2,6 +2,19 @@
 
 static NSString *const BGSFlutterLifecyclePrefix = @"com.bugsee.lifecycle.";
 static const NSUInteger BGSFlutterLifecycleBufferCapacity = 64;
+/// Drops are always counted; a warning is logged for the first and then every Nth.
+static const NSUInteger BGSFlutterLifecycleDropLogEvery = 100;
+
+/// The only events that are status transitions (workbook 4.6). Repeated in Dart
+/// (`statusTransitionEvents`) and Java; test/lifecycle_drift_test.dart compares them.
+static NSSet<NSString *> *BGSFlutterStatusEvents(void) {
+  static NSSet<NSString *> *events;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    events = [NSSet setWithObjects:@"Launching", @"Launched", @"Stopping", @"Stopped", nil];
+  });
+  return events;
+}
 
 /// The events whose payload is the report's id (workbook 4.5). Repeated in Dart
 /// (`reportIdEvents`) and Java; test/lifecycle_drift_test.dart compares them.
@@ -36,14 +49,19 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
 }
 @end
 
-/// Identity-compared handle returned by -attachSink:.
+/// One attached receiver, and the events posted to it that have not run yet. It is
+/// also the token returned by -attachSink:.
 @interface BGSFlutterLifecycleSinkToken : NSObject
 @property(nonatomic, copy, readonly) BGSFlutterLifecycleSink sink;
+@property(nonatomic, strong, readonly) NSMutableArray<BGSFlutterLifecycleEvent *> *inFlight;
+@property(nonatomic, assign) BOOL attached;
 @end
 @implementation BGSFlutterLifecycleSinkToken
 - (instancetype)initWithSink:(BGSFlutterLifecycleSink)sink {
   if ((self = [super init])) {
     _sink = [sink copy];
+    _inFlight = [NSMutableArray array];
+    _attached = YES;
   }
   return self;
 }
@@ -52,7 +70,9 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
 @implementation BGSFlutterLifecycleHub {
   dispatch_queue_t _queue;
   NSMutableArray<BGSFlutterLifecycleEvent *> *_buffer;
-  BGSFlutterLifecycleSinkToken *_token;
+  NSMutableArray<BGSFlutterLifecycleSinkToken *> *_tokens;
+  // The latest Launching/Launched/Stopping/Stopped event, replayed to every new receiver.
+  BGSFlutterLifecycleEvent *_lastStatus;
   NSUInteger _dropped;
 }
 
@@ -62,6 +82,10 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
 
 + (NSUInteger)bufferCapacity {
   return BGSFlutterLifecycleBufferCapacity;
+}
+
++ (NSUInteger)dropLogEvery {
+  return BGSFlutterLifecycleDropLogEvery;
 }
 
 + (instancetype)shared {
@@ -77,6 +101,7 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
   if ((self = [super init])) {
     _queue = queue;
     _buffer = [NSMutableArray array];
+    _tokens = [NSMutableArray array];
   }
   return self;
 }
@@ -117,10 +142,15 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
   @try {
     BGSFlutterLifecycleEvent *event = [BGSFlutterLifecycleHub eventForRawName:rawName data:data];
     @synchronized(self) {
-      if (_token == nil) {
+      if ([BGSFlutterStatusEvents() containsObject:event.name]) {
+        _lastStatus = event;
+      }
+      if (_tokens.count == 0) {
         [self bufferLocked:event];
       } else {
-        [self postLocked:_token event:event];
+        for (BGSFlutterLifecycleSinkToken *token in [_tokens copy]) {
+          [self postLocked:token event:event];
+        }
       }
     }
   } @catch (NSException *exception) {
@@ -128,10 +158,17 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
   }
 }
 
+/// Adds a receiver: every attached receiver gets every event (a background engine must
+/// not take events from the UI engine). The new receiver first gets what it missed, in
+/// order: the events buffered while nobody was attached, preceded by the latest status
+/// event when the buffer does not already hold it.
 - (id)attachSink:(BGSFlutterLifecycleSink)sink {
   BGSFlutterLifecycleSinkToken *token = [[BGSFlutterLifecycleSinkToken alloc] initWithSink:sink];
   @synchronized(self) {
-    _token = token;
+    [_tokens addObject:token];
+    if (_lastStatus != nil && ![_buffer containsObject:_lastStatus]) {
+      [self postLocked:token event:_lastStatus];
+    }
     NSArray<BGSFlutterLifecycleEvent *> *pending = [_buffer copy];
     [_buffer removeAllObjects];
     for (BGSFlutterLifecycleEvent *event in pending) {
@@ -141,11 +178,25 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
   return token;
 }
 
-- (void)detach:(id)token {
+/// Removes only this receiver. Events posted to it that have not run yet are not lost:
+/// when no receiver remains they go back to the FRONT of the buffer, in their original
+/// order (older than anything buffered since); other receivers hold their own copies.
+- (void)detach:(id)tokenObject {
   @synchronized(self) {
-    if (_token == token) {
-      _token = nil;
+    BGSFlutterLifecycleSinkToken *token = tokenObject;
+    if (![_tokens containsObject:token]) {
+      return;
     }
+    [_tokens removeObject:token];
+    token.attached = NO;
+    if (_tokens.count == 0 && token.inFlight.count > 0) {
+      [_buffer replaceObjectsInRange:NSMakeRange(0, 0) withObjectsFromArray:token.inFlight];
+      while (_buffer.count > BGSFlutterLifecycleBufferCapacity) {
+        [_buffer removeObjectAtIndex:0];
+        [self noteDropLocked];
+      }
+    }
+    [token.inFlight removeAllObjects];
   }
 }
 
@@ -163,23 +214,20 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
 
 /// Caller holds the lock. Queued while holding it, so flush and live events keep order.
 - (void)postLocked:(BGSFlutterLifecycleSinkToken *)token event:(BGSFlutterLifecycleEvent *)event {
+  [token.inFlight addObject:event];
   dispatch_async(_queue, ^{
-    BOOL stillCurrent;
+    BGSFlutterLifecycleEvent *next = nil;
     @synchronized(self) {
-      stillCurrent = (self->_token == token);
-      if (!stillCurrent) {
-        // Detached between the post and now: keep it for the next attach
-        // rather than send into a dead engine.
-        [self bufferLocked:event];
+      if (!token.attached || token.inFlight.count == 0) {
+        return;  // detached: -detach: already put its events back
       }
-    }
-    if (!stillCurrent) {
-      return;
+      next = token.inFlight.firstObject;
+      [token.inFlight removeObjectAtIndex:0];
     }
     @try {
-      token.sink(event);
+      token.sink(next);
     } @catch (NSException *exception) {
-      NSLog(@"[BugseeFlutter] lifecycle sink threw for %@: %@", event.name, exception.name);
+      NSLog(@"[BugseeFlutter] lifecycle sink threw for %@: %@", next.name, exception.name);
     }
   });
 }
@@ -189,7 +237,14 @@ static NSSet<NSString *> *BGSFlutterReportIdEvents(void) {
   [_buffer addObject:event];
   if (_buffer.count > BGSFlutterLifecycleBufferCapacity) {
     [_buffer removeObjectAtIndex:0];
-    _dropped += 1;
+    [self noteDropLocked];
+  }
+}
+
+/// Caller holds the lock. Counts every drop; logs the first and then every Nth.
+- (void)noteDropLocked {
+  _dropped += 1;
+  if (_dropped == 1 || _dropped % BGSFlutterLifecycleDropLogEvery == 0) {
     NSLog(@"[BugseeFlutter] lifecycle buffer full (%lu), dropped the oldest event; total dropped %lu",
           (unsigned long)BGSFlutterLifecycleBufferCapacity, (unsigned long)_dropped);
   }

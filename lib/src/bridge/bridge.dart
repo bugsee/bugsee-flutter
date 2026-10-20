@@ -42,8 +42,9 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   /// broadcast event. `null` means unknown, not stopped.
   SdkStatus? get status => _status;
 
-  /// Attaches to native and refines the wrapper identity. Idempotent: later
-  /// calls return the first call's future.
+  /// Attaches to native and refines the wrapper identity. Idempotent while it
+  /// succeeds: later calls return the first call's future. If either step fails
+  /// the error is thrown (after both were tried) and the next call retries.
   ///
   /// The handler is registered BEFORE native is told to flush, or the flushed
   /// events would arrive at nothing.
@@ -52,16 +53,35 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
 
   Future<void> _start(RuntimeFacts facts, String? build) async {
     BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
-    await _host.attachLifecycle();
+    // Independent: a failure to attach must not stop the identity from being sent,
+    // nor the other way round.
+    Object? error;
+    StackTrace? stack;
+    try {
+      await _host.attachLifecycle();
+    } catch (e, s) {
+      error = e;
+      stack = s;
+    }
     final identity = WrapperIdentity.from(facts, build: build);
-    await _host.setWrapperIdentity(
-      WrapperIdentityMessage(
-        type: identity.type,
-        version: identity.version,
-        build: identity.build,
-        context: identity.context,
-      ),
-    );
+    try {
+      await _host.setWrapperIdentity(
+        WrapperIdentityMessage(
+          type: identity.type,
+          version: identity.version,
+          build: identity.build,
+          context: identity.context,
+        ),
+      );
+    } catch (e, s) {
+      error ??= e;
+      stack ??= s;
+    }
+    if (error != null) {
+      // Not cached: a later start() tries again.
+      _started = null;
+      Error.throwWithStackTrace(error, stack!);
+    }
   }
 
   @override

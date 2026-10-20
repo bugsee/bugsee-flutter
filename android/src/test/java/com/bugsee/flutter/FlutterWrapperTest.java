@@ -152,6 +152,23 @@ public class FlutterWrapperTest {
         }
     }
 
+    /** Both the placeholder and the refined wrapper must feed the SAME process-wide hub. */
+    @Test
+    public void everyWrapperFeedsTheSharedHub() {
+        final LifecycleHub shared = LifecycleHub.shared();
+        final List<BugseeWrapper> registered = new ArrayList<>();
+        FlutterWrapperInitProvider.registerEarly(registered::add);
+        FlutterWrapperInitProvider.registerRefined(
+                registered::add, "flutter", "1", null, Collections.singletonMap("a", "b"));
+        for (final BugseeWrapper w : registered) {
+            // No receiver is attached in a unit test, so the event lands in the buffer
+            // (or, when that is full, in the drop counter).
+            final int before = shared.bufferedCount() + shared.droppedCount();
+            w.onLifecycleEvent("com.bugsee.lifecycle.Launched", null);
+            assertEquals(before + 1, shared.bufferedCount() + shared.droppedCount());
+        }
+    }
+
     @Test
     public void refiningNeverThrowsEvenWhenTheSdkDoes() {
         assertFalse(FlutterWrapperInitProvider.registerRefined(

@@ -24,11 +24,16 @@ typedef void (^BGSFlutterLifecycleSink)(BGSFlutterLifecycleEvent *event);
 /// thread (4.4). Flutter channels must be used on the platform thread, so every
 /// delivery is dispatched to the delivery queue (the main queue in production).
 ///
-/// Buffering: until Dart attaches there is no sink, and the first events of a
-/// launch happen long before a Dart isolate can listen. Events are kept in order
-/// in a buffer of at most `+bufferCapacity` entries and flushed on attach. When
-/// full the OLDEST event is dropped (the freshest state matters most) and counted
-/// in `droppedCount`.
+/// Receivers: any number may be attached (a UI engine and a background engine);
+/// each gets every event, and detaching one leaves the others alone.
+///
+/// Buffering: while NO receiver is attached, and the first events of a launch happen
+/// long before a Dart isolate can listen, events are kept in order in a buffer of at
+/// most `+bufferCapacity` entries and flushed to the next receiver. When full the
+/// OLDEST event is dropped (the freshest state matters most) and counted in
+/// `droppedCount`; the first drop is logged, then every `+dropLogEvery`th. The latest
+/// status event is also remembered and replayed to every new receiver, so a restarted
+/// engine knows the status.
 ///
 /// Names: prefix stripped once; unknown names and names without the prefix are
 /// forwarded unchanged (4.3).
@@ -38,6 +43,8 @@ typedef void (^BGSFlutterLifecycleSink)(BGSFlutterLifecycleEvent *event);
 + (NSString *)prefix;
 /// At most this many events are kept while no Dart side is attached.
 + (NSUInteger)bufferCapacity;
+/// Drops are always counted; a warning is logged for the first and then every Nth.
++ (NSUInteger)dropLogEvery;
 
 + (instancetype)shared;
 - (instancetype)initWithDeliveryQueue:(dispatch_queue_t)queue NS_DESIGNATED_INITIALIZER;
@@ -46,12 +53,12 @@ typedef void (^BGSFlutterLifecycleSink)(BGSFlutterLifecycleEvent *event);
 /// Called by the wrapper from the SDK's queue. Never throws.
 - (void)dispatchRawName:(nullable NSString *)rawName data:(nullable id)data;
 
-/// Makes `sink` the receiver and flushes the buffer to it, in order, ahead of
-/// any event dispatched afterwards. Returns a token for `-detach:`.
+/// Adds `sink` as a receiver; it first gets what it missed (see above), in order,
+/// ahead of any event dispatched afterwards. Returns a token for `-detach:`.
 - (id)attachSink:(BGSFlutterLifecycleSink)sink;
 
-/// Detaches only while `token` is still the receiver (a second engine may have
-/// attached). Events buffer again until the next attach.
+/// Removes only this receiver. Events posted to it that have not run yet go back to
+/// the front of the buffer when no receiver remains.
 - (void)detach:(id)token;
 
 @property(atomic, readonly) NSUInteger droppedCount;

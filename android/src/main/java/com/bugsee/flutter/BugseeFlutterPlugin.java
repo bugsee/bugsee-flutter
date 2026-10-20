@@ -47,8 +47,14 @@ public class BugseeFlutterPlugin implements FlutterPlugin, Messages.BugseeBridge
         }
         final Messages.BugseeBridgeFlutterApi dart = new Messages.BugseeBridgeFlutterApi(messenger);
         final LifecycleHub.Sink fresh = event -> dart.onLifecycleEvent(toMessage(event), RESULT);
+        // A second attach from the same engine (Dart hot restart) replaces this
+        // engine's receiver only; other engines' receivers are untouched.
+        final LifecycleHub.Sink previous = sink;
+        if (previous != null) {
+            LifecycleHub.shared().detach(previous);
+        }
         sink = fresh;
-        // Replaces any earlier receiver; flushes what was buffered, in order.
+        // Gets what was buffered, in order, and the latest status first if it is not in it.
         LifecycleHub.shared().attach(fresh);
     }
 

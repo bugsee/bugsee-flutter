@@ -14,6 +14,15 @@ const Set<String> reportIdEvents = {
   'ReportUploadFailedWithFutureRetry',
 };
 
+/// The only events that are status transitions (4.6). Repeated natively (the hub
+/// replays the latest one to a new receiver); the drift guard compares the copies.
+const Set<String> statusTransitionEvents = {
+  'Launching',
+  'Launched',
+  'Stopping',
+  'Stopped',
+};
+
 /// A lifecycle event from the SDK, with the `com.bugsee.lifecycle.` prefix
 /// already stripped natively.
 ///

@@ -130,6 +130,7 @@ public class SecureRectangleStoreTest {
         publish(5, 5, 5, 10, // zero width
                 5, 5, 10, 5, // zero height
                 10, 10, 5, 20, // inverted
+                1.25, 1, 1.25, 2, // zero width at a fractional edge: rounding outward must not make it 1px
                 1, 1, 2, 2);
         assertArrayEquals(new int[] {1, 3, 3, 6, 6}, withoutVersion(store.snapshot(0)));
     }
@@ -329,9 +330,12 @@ public class SecureRectangleStoreTest {
         store.setPlacement(1, 0, Placement.known(0, 0, 0));
         store.setPlacement(2, 0, Placement.known(1, 0, 0));
         store.publish(1, 1, 1, view(1, 1, 2, 2));
-        store.publish(2, 1, 1, view(1, 1, 2, 2));
+        store.publish(2, 1, 1, view(4, 4, 5, 5));
         final int d0 = store.snapshot(0)[0];
         final int d1 = store.snapshot(1)[0];
+        // Reading one display again after the other changes nothing.
+        assertEquals(d0, store.snapshot(0)[0]);
+        assertEquals(d1, store.snapshot(1)[0]);
         // A change on display 1 leaves display 0's version alone.
         store.publish(2, 1, 2, view(1, 1, 5, 5));
         assertEquals(d0, store.snapshot(0)[0]);

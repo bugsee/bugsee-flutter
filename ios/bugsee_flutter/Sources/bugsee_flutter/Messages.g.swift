@@ -292,6 +292,106 @@ struct WrapperIdentityMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// The rectangles of one Flutter view, flat `[l, t, r, b, l, t, r, b, ...]`, in
+/// the view's own LOGICAL pixels (Flutter logical pixels: iOS points, Android
+/// dp), origin at the view's top-left, right/bottom exclusive. Native converts
+/// them to the SDK's unit and places the view on the screen.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct SecureViewRectanglesMessage: Hashable, CustomStringConvertible {
+  /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
+  var viewId: Int64
+  var rectangles: [Double]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> SecureViewRectanglesMessage? {
+    let viewId = pigeonVar_list[0] as! Int64
+    let rectangles = pigeonVar_list[1] as! [Double]
+
+    return SecureViewRectanglesMessage(
+      viewId: viewId,
+      rectangles: rectangles
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      viewId,
+      rectangles,
+    ]
+  }
+  static func == (lhs: SecureViewRectanglesMessage, rhs: SecureViewRectanglesMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.viewId, rhs.viewId) && MessagesPigeonInternal.deepEquals(lhs.rectangles, rhs.rectangles)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("SecureViewRectanglesMessage")
+    MessagesPigeonInternal.deepHash(value: viewId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: rectangles, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "SecureViewRectanglesMessage(viewId: \(String(describing: viewId)), rectangles: \(String(describing: rectangles)))"
+  }
+}
+
+/// The COMPLETE set of secure rectangles of this Dart isolate: a view that is
+/// absent from [views] has none. Whole-state, not a delta, so a lost or late
+/// message can never leave a rectangle behind.
+///
+/// Ordering: `(epoch, sequence)` is compared lexicographically and native
+/// ignores a message that is not newer than the newest it accepted. `epoch`
+/// identifies the Dart isolate (a hot restart starts a new one, whose counter
+/// restarts at 0, so it must still win); `sequence` counts publishes within it.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct SecureRectanglesMessage: Hashable, CustomStringConvertible {
+  var epoch: Int64
+  var sequence: Int64
+  var views: [SecureViewRectanglesMessage]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> SecureRectanglesMessage? {
+    let epoch = pigeonVar_list[0] as! Int64
+    let sequence = pigeonVar_list[1] as! Int64
+    let views = pigeonVar_list[2] as! [SecureViewRectanglesMessage]
+
+    return SecureRectanglesMessage(
+      epoch: epoch,
+      sequence: sequence,
+      views: views
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      epoch,
+      sequence,
+      views,
+    ]
+  }
+  static func == (lhs: SecureRectanglesMessage, rhs: SecureRectanglesMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.epoch, rhs.epoch) && MessagesPigeonInternal.deepEquals(lhs.sequence, rhs.sequence) && MessagesPigeonInternal.deepEquals(lhs.views, rhs.views)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("SecureRectanglesMessage")
+    MessagesPigeonInternal.deepHash(value: epoch, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: sequence, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: views, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "SecureRectanglesMessage(epoch: \(String(describing: epoch)), sequence: \(String(describing: sequence)), views: \(String(describing: views)))"
+  }
+}
+
 private class MessagesPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -299,6 +399,10 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
       return LifecycleEventMessage.fromList(self.readValue() as! [Any?])
     case 130:
       return WrapperIdentityMessage.fromList(self.readValue() as! [Any?])
+    case 131:
+      return SecureViewRectanglesMessage.fromList(self.readValue() as! [Any?])
+    case 132:
+      return SecureRectanglesMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -312,6 +416,12 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
       super.writeValue(value.toList())
     } else if let value = value as? WrapperIdentityMessage {
       super.writeByte(130)
+      super.writeValue(value.toList())
+    } else if let value = value as? SecureViewRectanglesMessage {
+      super.writeByte(131)
+      super.writeValue(value.toList())
+    } else if let value = value as? SecureRectanglesMessage {
+      super.writeByte(132)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -343,6 +453,11 @@ protocol BugseeBridgeHostApi {
   /// Replaces the natively registered placeholder wrapper with the full
   /// identity. Never throws on malformed content: facts become "unknown".
   func setWrapperIdentity(identity: WrapperIdentityMessage) throws
+  /// Publishes the secure rectangles (see [SecureRectanglesMessage]). Never
+  /// throws on content: an unusable value fails closed natively. Returns
+  /// whether the message was applied (`false`: it was older than one already
+  /// applied, which is not an error).
+  func setSecureRectangles(state: SecureRectanglesMessage) throws -> Bool
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -382,6 +497,25 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       setWrapperIdentityChannel.setMessageHandler(nil)
+    }
+    /// Publishes the secure rectangles (see [SecureRectanglesMessage]). Never
+    /// throws on content: an unusable value fails closed natively. Returns
+    /// whether the message was applied (`false`: it was older than one already
+    /// applied, which is not an error).
+    let setSecureRectanglesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setSecureRectangles\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setSecureRectanglesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let stateArg = args[0] as! SecureRectanglesMessage
+        do {
+          let result = try api.setSecureRectangles(state: stateArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      setSecureRectanglesChannel.setMessageHandler(nil)
     }
   }
 }

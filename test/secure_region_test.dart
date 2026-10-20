@@ -1,0 +1,669 @@
+// Secure regions (workbook Part 5, Dart side): what is measured, when it is
+// published, and that every ambiguous case covers more, never less.
+
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:bugsee_flutter/src/bridge/messages.g.dart';
+import 'package:bugsee_flutter/src/secure/secure_region.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter_test/flutter_test.dart';
+
+/// Stands in for native: records every message, optionally failing.
+class Recorder {
+  final List<SecureRectanglesMessage> sent = [];
+  final List<Completer<bool>> pending = [];
+  int failNext = 0;
+  bool hold = false;
+
+  Future<bool> call(SecureRectanglesMessage m) {
+    sent.add(m);
+    if (failNext > 0) {
+      failNext--;
+      return Future<bool>.error(PlatformException(code: 'channel-error'));
+    }
+    if (hold) {
+      final c = Completer<bool>();
+      pending.add(c);
+      return c.future;
+    }
+    return Future<bool>.value(true);
+  }
+
+  /// The latest message as `{viewId: [l, t, r, b, ...]}`.
+  Map<int, List<double>> get latest => {
+    for (final v in sent.last.views) v.viewId: v.rectangles,
+  };
+}
+
+SecureRegionRegistry registryFor(Recorder r, {Duration? retry}) =>
+    SecureRegionRegistry(publish: r.call, epoch: 7, retryDelay: retry);
+
+Widget app(SecureRegionRegistry registry, Widget child) =>
+    Directionality(textDirection: TextDirection.ltr, child: child);
+
+Widget region(
+  SecureRegionRegistry registry, {
+  double w = 100,
+  double h = 50,
+  bool enabled = true,
+}) => BugseeSecureRegion(
+  registry: registry,
+  enabled: enabled,
+  child: SizedBox(width: w, height: h),
+);
+
+/// Places a [w] x [h] region at ([x], [y]) in the view.
+Widget at(
+  SecureRegionRegistry registry,
+  double x,
+  double y, {
+  double w = 100,
+  double h = 50,
+}) => Stack(
+  children: [
+    Positioned(
+      left: x,
+      top: y,
+      child: region(registry, w: w, h: h),
+    ),
+  ],
+);
+
+void main() {
+  late Recorder native;
+  late SecureRegionRegistry registry;
+
+  setUp(() {
+    native = Recorder();
+    registry = registryFor(native);
+  });
+  tearDown(() => registry.dispose());
+
+  group('what is published', () {
+    testWidgets('a region is published in logical pixels, once', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      expect(native.sent, hasLength(1));
+      expect(native.sent.single.epoch, 7);
+      expect(native.sent.single.sequence, 1);
+      expect(native.latest, {
+        0: [10.0, 20.0, 110.0, 70.0],
+      });
+    });
+
+    testWidgets('the device pixel ratio does not change the logical rect', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(app(registry, at(registry, 10.5, 20.25)));
+      expect(native.latest, {
+        0: [10.5, 20.25, 110.5, 70.25],
+      });
+    });
+
+    testWidgets('several regions are sent together, in a canonical order', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Stack(
+            children: [
+              Positioned(left: 200, top: 0, child: region(registry)),
+              Positioned(left: 0, top: 100, child: region(registry)),
+              Positioned(left: 0, top: 0, child: region(registry)),
+            ],
+          ),
+        ),
+      );
+      expect(native.sent, hasLength(1));
+      expect(native.latest[0], [
+        0, 0, 100, 50, //
+        0, 100, 100, 150, //
+        200, 0, 300, 50,
+      ]);
+    });
+
+    testWidgets('a zero-area region is not published', (tester) async {
+      await tester.pumpWidget(
+        app(registry, Stack(children: [region(registry, w: 0, h: 50)])),
+      );
+      expect(native.sent, isEmpty);
+    });
+  });
+
+  group('coalescing and no-ops', () {
+    testWidgets('many changes inside one frame are one publish', (
+      tester,
+    ) async {
+      final x = ValueNotifier<double>(0);
+      await tester.pumpWidget(
+        app(
+          registry,
+          ValueListenableBuilder<double>(
+            valueListenable: x,
+            builder: (_, v, _) => Stack(
+              children: [
+                Positioned(left: v, top: 0, child: region(registry)),
+                Positioned(left: 0, top: v, child: region(registry)),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(native.sent, hasLength(1));
+      x.value = 5;
+      x.value = 6;
+      x.value = 7;
+      await tester.pump();
+      expect(native.sent, hasLength(2));
+      expect(native.latest[0], [0, 7, 100, 57, 7, 0, 107, 50]);
+    });
+
+    testWidgets('frames that change nothing publish nothing', (tester) async {
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      expect(native.sent, hasLength(1));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // A rebuild with an equal tree, and a relayout, are not changes either.
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      expect(native.sent, hasLength(1));
+    });
+
+    testWidgets('reordering regions is not a change', (tester) async {
+      Widget two(bool flip) => Stack(
+        children: [
+          Positioned(
+            key: ValueKey(flip ? 'b' : 'a'),
+            left: 0,
+            top: 0,
+            child: region(registry),
+          ),
+          Positioned(
+            key: ValueKey(flip ? 'a' : 'b'),
+            left: 200,
+            top: 0,
+            child: region(registry),
+          ),
+        ],
+      );
+      await tester.pumpWidget(app(registry, two(false)));
+      await tester.pumpWidget(app(registry, two(true)));
+      expect(native.sent, hasLength(1));
+    });
+
+    testWidgets('a real change is published with a larger sequence', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await tester.pumpWidget(app(registry, at(registry, 11, 20)));
+      expect(native.sent.map((m) => m.sequence), [1, 2]);
+      expect(native.latest[0], [11, 20, 111, 70]);
+    });
+
+    testWidgets('a changed size is a change', (tester) async {
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await tester.pumpWidget(app(registry, at(registry, 10, 20, w: 101)));
+      expect(native.sent, hasLength(2));
+      expect(native.latest[0], [10, 20, 111, 70]);
+    });
+  });
+
+  group('transforms', () {
+    testWidgets('Transform.translate moves the rect', (tester) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: Transform.translate(
+              offset: const Offset(30, 40),
+              child: region(registry),
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [30, 40, 130, 90]);
+    });
+
+    testWidgets('Transform.scale reports the scaled box', (tester) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: Transform.scale(
+              scale: 2,
+              alignment: Alignment.topLeft,
+              child: region(registry),
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [0, 0, 200, 100]);
+    });
+
+    testWidgets('a rotated region is reported as its bounding box (larger)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: Transform.rotate(
+              angle: math.pi / 4,
+              child: region(registry, w: 100, h: 100),
+            ),
+          ),
+        ),
+      );
+      final r = native.latest[0]!;
+      // The 100x100 box rotated 45 degrees about its centre (50, 50): its
+      // bounding box is 141.42 wide, centred on the same point.
+      final half = 50 * math.sqrt2;
+      expect(r[0], closeTo(50 - half, 1e-9));
+      expect(r[1], closeTo(50 - half, 1e-9));
+      expect(r[2], closeTo(50 + half, 1e-9));
+      expect(r[3], closeTo(50 + half, 1e-9));
+      // Never less than the region itself.
+      expect(r[0] <= 0 && r[1] <= 0 && r[2] >= 100 && r[3] >= 100, isTrue);
+    });
+
+    testWidgets('RotatedBox swaps the extent', (tester) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: RotatedBox(
+              quarterTurns: 1,
+              child: region(registry, w: 100, h: 30),
+            ),
+          ),
+        ),
+      );
+      final r = native.latest[0]!;
+      expect(r[0], closeTo(0, 1e-9));
+      expect(r[1], closeTo(0, 1e-9));
+      expect(r[2], closeTo(30, 1e-9));
+      expect(r[3], closeTo(100, 1e-9));
+    });
+
+    for (final broken in ['nan', 'throws']) {
+      testWidgets('an unmeasurable region ($broken) covers the whole view', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          app(
+            registry,
+            Align(
+              alignment: Alignment.topLeft,
+              child: BrokenRegion(registry: registry, mode: broken),
+            ),
+          ),
+        );
+        final view = tester.view;
+        expect(native.latest[0], [
+          0,
+          0,
+          view.physicalSize.width / view.devicePixelRatio,
+          view.physicalSize.height / view.devicePixelRatio,
+        ]);
+      });
+    }
+  });
+
+  group('clipping and scrolling', () {
+    testWidgets('a clipped region is reported whole, never less', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 40,
+              height: 20,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  maxWidth: 100,
+                  maxHeight: 50,
+                  child: region(registry),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [0, 0, 100, 50]);
+    });
+
+    testWidgets('a scrolling region follows, leaves, and comes back', (
+      tester,
+    ) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        app(
+          registry,
+          SizedBox(
+            width: 400,
+            height: 300,
+            child: ListView(
+              controller: controller,
+              cacheExtent: 0,
+              children: [
+                const SizedBox(height: 100),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: region(registry, h: 100),
+                ),
+                const SizedBox(height: 1000),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [0, 100, 100, 200]);
+      final before = native.sent.length;
+
+      controller.jumpTo(30);
+      await tester.pump();
+      expect(native.sent.length, before + 1);
+      expect(native.latest[0], [0, 70, 100, 170]);
+
+      // Scrolled out of the viewport: not painted, so not reported, and no
+      // stale position stays behind.
+      controller.jumpTo(500);
+      await tester.pump();
+      expect(native.sent.last.views, isEmpty);
+
+      controller.jumpTo(0);
+      await tester.pump();
+      expect(native.latest[0], [0, 100, 100, 200]);
+    });
+
+    testWidgets('scrolling inside a repaint boundary is still tracked', (
+      tester,
+    ) async {
+      // ListView wraps every child in a RepaintBoundary: scrolling re-composites
+      // cached layers without painting the region again.
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        app(
+          registry,
+          SizedBox(
+            width: 400,
+            height: 300,
+            child: ListView.builder(
+              controller: controller,
+              itemCount: 20,
+              itemExtent: 100,
+              itemBuilder: (_, i) => i == 1
+                  ? Align(
+                      alignment: Alignment.topLeft,
+                      child: region(registry, w: 50, h: 100),
+                    )
+                  : const SizedBox(),
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [0, 100, 50, 200]);
+      for (var i = 1; i <= 4; i++) {
+        controller.jumpTo(i * 10.0);
+        await tester.pump();
+        expect(native.latest[0], [0, 100.0 - i * 10, 50, 200.0 - i * 10]);
+      }
+    });
+  });
+
+  group('lifecycle', () {
+    testWidgets('disposing the region clears it, once, then goes quiet', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      expect(registry.regionCount, 1);
+      await tester.pumpWidget(app(registry, const SizedBox()));
+      expect(registry.regionCount, 0);
+      expect(native.sent, hasLength(2));
+      expect(native.sent.last.views, isEmpty);
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(native.sent, hasLength(2));
+    });
+
+    testWidgets('enabled: false removes the region, true brings it back', (
+      tester,
+    ) async {
+      Widget build(bool on) => Stack(
+        children: [
+          Positioned(left: 5, top: 5, child: region(registry, enabled: on)),
+        ],
+      );
+      await tester.pumpWidget(app(registry, build(true)));
+      expect(native.latest[0], [5, 5, 105, 55]);
+      await tester.pumpWidget(app(registry, build(false)));
+      expect(native.sent.last.views, isEmpty);
+      await tester.pumpWidget(app(registry, build(true)));
+      expect(native.latest[0], [5, 5, 105, 55]);
+    });
+
+    testWidgets('an offstage region is not reported, and returns when shown', (
+      tester,
+    ) async {
+      Widget build(bool hidden) =>
+          Offstage(offstage: hidden, child: at(registry, 10, 20));
+      await tester.pumpWidget(app(registry, build(false)));
+      expect(native.latest[0], [10, 20, 110, 70]);
+      await tester.pumpWidget(app(registry, build(true)));
+      expect(native.sent.last.views, isEmpty);
+      await tester.pumpWidget(app(registry, build(false)));
+      expect(native.latest[0], [10, 20, 110, 70]);
+    });
+
+    testWidgets('a hidden route does not leave a ghost over the next page', (
+      tester,
+    ) async {
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          home: Scaffold(body: at(registry, 10, 20)),
+        ),
+      );
+      expect(native.latest[0], isNotNull);
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+      );
+      await tester.pumpAndSettle();
+      expect(native.sent.last.views, isEmpty);
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(native.latest[0], [10, 20, 110, 70]);
+    });
+
+    testWidgets('moving the same region between parents is one region', (
+      tester,
+    ) async {
+      final key = GlobalKey();
+      Widget build(bool left) => Stack(
+        children: [
+          Positioned(
+            left: left ? 0 : 200,
+            top: 0,
+            child: BugseeSecureRegion(
+              key: key,
+              registry: registry,
+              child: const SizedBox(width: 10, height: 10),
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(app(registry, build(true)));
+      await tester.pumpWidget(app(registry, build(false)));
+      expect(registry.regionCount, 1);
+      expect(native.latest[0], [200, 0, 210, 10]);
+    });
+  });
+
+  group('view changes', () {
+    testWidgets('a resize that re-lays-out the region is published', (
+      tester,
+    ) async {
+      Widget fill() => Align(
+        alignment: Alignment.bottomRight,
+        child: region(registry, w: 100, h: 50),
+      );
+      tester.view.physicalSize = const Size(900, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(app(registry, fill()));
+      expect(native.latest[0], [800, 550, 900, 600]);
+      // Orientation change.
+      tester.view.physicalSize = const Size(600, 900);
+      await tester.pump();
+      expect(native.latest[0], [500, 850, 600, 900]);
+    });
+
+    testWidgets('a pixel-ratio change with no relayout republishes nothing', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      expect(native.sent, hasLength(1));
+      // Logical rects are unchanged by the ratio; native rescales them with its
+      // own, per-call, scale.
+      tester.view.devicePixelRatio = 1;
+      await tester.pump();
+      expect(native.sent, hasLength(1));
+    });
+
+    testWidgets('regions in two views are published per view', (tester) async {
+      final second = OtherView(tester);
+      await tester.pumpWidget(
+        ViewCollection(
+          views: [
+            View(view: tester.view, child: app(registry, at(registry, 1, 2))),
+            View(
+              view: second,
+              child: app(registry, at(registry, 30, 40, w: 10, h: 10)),
+            ),
+          ],
+        ),
+        wrapWithView: false,
+      );
+      expect(native.latest[tester.view.viewId], [1, 2, 101, 52]);
+      expect(native.latest[second.viewId], [30, 40, 40, 50]);
+      // Removing the second view removes only its rectangles.
+      await tester.pumpWidget(
+        ViewCollection(
+          views: [
+            View(view: tester.view, child: app(registry, at(registry, 1, 2))),
+          ],
+        ),
+        wrapWithView: false,
+      );
+      expect(native.latest.keys, [tester.view.viewId]);
+    });
+  });
+
+  group('publishing', () {
+    testWidgets('a failed publish is retried and then goes quiet', (
+      tester,
+    ) async {
+      registry.dispose();
+      registry = registryFor(native, retry: const Duration(milliseconds: 100));
+      native.failNext = 1;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await tester.pump(); // deliver the failure
+      expect(native.sent, hasLength(1));
+      await tester.pump(const Duration(milliseconds: 150)); // retry timer
+      await tester.pump();
+      expect(native.sent, hasLength(2));
+      expect(native.sent.last.sequence, 2);
+      expect(native.latest[0], [10, 20, 110, 70]);
+      await tester.pump(const Duration(seconds: 1));
+      expect(native.sent, hasLength(2));
+    });
+
+    testWidgets('a failed clear is sent again, even though it is empty', (
+      tester,
+    ) async {
+      registry.dispose();
+      registry = registryFor(native, retry: const Duration(milliseconds: 100));
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      native.failNext = 1;
+      await tester.pumpWidget(app(registry, const SizedBox()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump();
+      expect(native.sent, hasLength(3));
+      expect(native.sent.last.views, isEmpty);
+    });
+
+    testWidgets('sequences only ever grow, one per publish', (tester) async {
+      native.hold = true; // nothing is acknowledged
+      for (var i = 0; i < 5; i++) {
+        await tester.pumpWidget(app(registry, at(registry, i * 1.0, 0)));
+      }
+      final seq = native.sent.map((m) => m.sequence).toList();
+      expect(seq, [1, 2, 3, 4, 5]);
+      expect(native.sent.map((m) => m.epoch).toSet(), {7});
+    });
+  });
+}
+
+/// A second view, with an id of its own, sharing the test view's geometry.
+class OtherView extends TestFlutterView {
+  OtherView(WidgetTester tester)
+    : super(
+        view: tester.view,
+        platformDispatcher: tester.platformDispatcher,
+        display: tester.view.display,
+      );
+
+  @override
+  int get viewId => 99;
+}
+
+/// A region whose measurement goes wrong, to prove the failure covers more.
+class BrokenRegion extends SingleChildRenderObjectWidget {
+  const BrokenRegion({super.key, required this.registry, required this.mode});
+  final SecureRegionRegistry registry;
+  final String mode;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderBroken(mode, registry);
+}
+
+class _RenderBroken extends RenderSecureRegion {
+  _RenderBroken(this.mode, SecureRegionRegistry registry)
+    : super(enabled: true, registry: registry);
+  final String mode;
+
+  @override
+  void performLayout() {
+    size = const Size(100, 50);
+  }
+
+  @override
+  Matrix4 getTransformTo(RenderObject? target) {
+    if (mode == 'throws') throw StateError('measurement failed');
+    return Matrix4.diagonal3Values(double.nan, 1, 1);
+  }
+}

@@ -487,6 +487,238 @@ public class Messages {
     }
   }
 
+  /**
+   * The rectangles of one Flutter view, flat `[l, t, r, b, l, t, r, b, ...]`, in
+   * the view's own LOGICAL pixels (Flutter logical pixels: iOS points, Android
+   * dp), origin at the view's top-left, right/bottom exclusive. Native converts
+   * them to the SDK's unit and places the view on the screen.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class SecureViewRectanglesMessage {
+    /** `FlutterView.viewId`. Mobile engines have only the implicit view (0). */
+    private @NonNull Long viewId;
+
+    public @NonNull Long getViewId() {
+      return viewId;
+    }
+
+    public void setViewId(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"viewId\" is null.");
+      }
+      this.viewId = setterArg;
+    }
+
+    private @NonNull List<Double> rectangles;
+
+    public @NonNull List<Double> getRectangles() {
+      return rectangles;
+    }
+
+    public void setRectangles(@NonNull List<Double> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"rectangles\" is null.");
+      }
+      this.rectangles = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    SecureViewRectanglesMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      SecureViewRectanglesMessage that = (SecureViewRectanglesMessage) o;
+      return pigeonDeepEquals(viewId, that.viewId) && pigeonDeepEquals(rectangles, that.rectangles);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), viewId, rectangles};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "SecureViewRectanglesMessage{" + "viewId=" + viewId + ", " + "rectangles=" + rectangles + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable Long viewId;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setViewId(@NonNull Long setterArg) {
+        this.viewId = setterArg;
+        return this;
+      }
+
+      private @Nullable List<Double> rectangles;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setRectangles(@NonNull List<Double> setterArg) {
+        this.rectangles = setterArg;
+        return this;
+      }
+
+      public @NonNull SecureViewRectanglesMessage build() {
+        SecureViewRectanglesMessage pigeonReturn = new SecureViewRectanglesMessage();
+        pigeonReturn.setViewId(viewId);
+        pigeonReturn.setRectangles(rectangles);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(2);
+      toListResult.add(viewId);
+      toListResult.add(rectangles);
+      return toListResult;
+    }
+
+    static @NonNull SecureViewRectanglesMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      SecureViewRectanglesMessage pigeonResult = new SecureViewRectanglesMessage();
+      Object viewId = pigeonVar_list.get(0);
+      pigeonResult.setViewId((Long) viewId);
+      Object rectangles = pigeonVar_list.get(1);
+      pigeonResult.setRectangles((List<Double>) rectangles);
+      return pigeonResult;
+    }
+  }
+
+  /**
+   * The COMPLETE set of secure rectangles of this Dart isolate: a view that is
+   * absent from [views] has none. Whole-state, not a delta, so a lost or late
+   * message can never leave a rectangle behind.
+   *
+   * Ordering: `(epoch, sequence)` is compared lexicographically and native
+   * ignores a message that is not newer than the newest it accepted. `epoch`
+   * identifies the Dart isolate (a hot restart starts a new one, whose counter
+   * restarts at 0, so it must still win); `sequence` counts publishes within it.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class SecureRectanglesMessage {
+    private @NonNull Long epoch;
+
+    public @NonNull Long getEpoch() {
+      return epoch;
+    }
+
+    public void setEpoch(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"epoch\" is null.");
+      }
+      this.epoch = setterArg;
+    }
+
+    private @NonNull Long sequence;
+
+    public @NonNull Long getSequence() {
+      return sequence;
+    }
+
+    public void setSequence(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"sequence\" is null.");
+      }
+      this.sequence = setterArg;
+    }
+
+    private @NonNull List<SecureViewRectanglesMessage> views;
+
+    public @NonNull List<SecureViewRectanglesMessage> getViews() {
+      return views;
+    }
+
+    public void setViews(@NonNull List<SecureViewRectanglesMessage> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"views\" is null.");
+      }
+      this.views = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    SecureRectanglesMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      SecureRectanglesMessage that = (SecureRectanglesMessage) o;
+      return pigeonDeepEquals(epoch, that.epoch) && pigeonDeepEquals(sequence, that.sequence) && pigeonDeepEquals(views, that.views);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), epoch, sequence, views};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "SecureRectanglesMessage{" + "epoch=" + epoch + ", " + "sequence=" + sequence + ", " + "views=" + views + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable Long epoch;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setEpoch(@NonNull Long setterArg) {
+        this.epoch = setterArg;
+        return this;
+      }
+
+      private @Nullable Long sequence;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSequence(@NonNull Long setterArg) {
+        this.sequence = setterArg;
+        return this;
+      }
+
+      private @Nullable List<SecureViewRectanglesMessage> views;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setViews(@NonNull List<SecureViewRectanglesMessage> setterArg) {
+        this.views = setterArg;
+        return this;
+      }
+
+      public @NonNull SecureRectanglesMessage build() {
+        SecureRectanglesMessage pigeonReturn = new SecureRectanglesMessage();
+        pigeonReturn.setEpoch(epoch);
+        pigeonReturn.setSequence(sequence);
+        pigeonReturn.setViews(views);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(3);
+      toListResult.add(epoch);
+      toListResult.add(sequence);
+      toListResult.add(views);
+      return toListResult;
+    }
+
+    static @NonNull SecureRectanglesMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      SecureRectanglesMessage pigeonResult = new SecureRectanglesMessage();
+      Object epoch = pigeonVar_list.get(0);
+      pigeonResult.setEpoch((Long) epoch);
+      Object sequence = pigeonVar_list.get(1);
+      pigeonResult.setSequence((Long) sequence);
+      Object views = pigeonVar_list.get(2);
+      pigeonResult.setViews((List<SecureViewRectanglesMessage>) views);
+      return pigeonResult;
+    }
+  }
+
   private static class PigeonCodec extends StandardMessageCodec {
     public static final PigeonCodec INSTANCE = new PigeonCodec();
 
@@ -499,6 +731,10 @@ public class Messages {
           return LifecycleEventMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 130:
           return WrapperIdentityMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 131:
+          return SecureViewRectanglesMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 132:
+          return SecureRectanglesMessage.fromList((ArrayList<Object>) readValue(buffer));
         default:
           return super.readValueOfType(type, buffer);
       }
@@ -512,6 +748,12 @@ public class Messages {
       } else if (value instanceof WrapperIdentityMessage) {
         stream.write(130);
         writeValue(stream, ((WrapperIdentityMessage) value).toList());
+      } else if (value instanceof SecureViewRectanglesMessage) {
+        stream.write(131);
+        writeValue(stream, ((SecureViewRectanglesMessage) value).toList());
+      } else if (value instanceof SecureRectanglesMessage) {
+        stream.write(132);
+        writeValue(stream, ((SecureRectanglesMessage) value).toList());
       } else {
         super.writeValue(stream, value);
       }
@@ -559,6 +801,14 @@ public class Messages {
      * identity. Never throws on malformed content: facts become "unknown".
      */
     void setWrapperIdentity(@NonNull WrapperIdentityMessage identity);
+    /**
+     * Publishes the secure rectangles (see [SecureRectanglesMessage]). Never
+     * throws on content: an unusable value fails closed natively. Returns
+     * whether the message was applied (`false`: it was older than one already
+     * applied, which is not an error).
+     */
+    @NonNull 
+    Boolean setSecureRectangles(@NonNull SecureRectanglesMessage state);
 
     /** The codec used by BugseeBridgeHostApi. */
     static @NonNull MessageCodec<Object> getCodec() {
@@ -604,6 +854,29 @@ public class Messages {
                 try {
                   api.setWrapperIdentity(identityArg);
                   wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setSecureRectangles" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                SecureRectanglesMessage stateArg = (SecureRectanglesMessage) args.get(0);
+                try {
+                  Boolean output = api.setSecureRectangles(stateArg);
+                  wrapped.add(0, output);
                 }
  catch (Throwable exception) {
                   wrapped = wrapError(exception);

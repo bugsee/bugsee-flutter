@@ -52,6 +52,38 @@ class WrapperIdentityMessage {
   Map<String, String> context;
 }
 
+/// The rectangles of one Flutter view, flat `[l, t, r, b, l, t, r, b, ...]`, in
+/// the view's own LOGICAL pixels (Flutter logical pixels: iOS points, Android
+/// dp), origin at the view's top-left, right/bottom exclusive. Native converts
+/// them to the SDK's unit and places the view on the screen.
+class SecureViewRectanglesMessage {
+  SecureViewRectanglesMessage({required this.viewId, required this.rectangles});
+
+  /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
+  int viewId;
+  List<double> rectangles;
+}
+
+/// The COMPLETE set of secure rectangles of this Dart isolate: a view that is
+/// absent from [views] has none. Whole-state, not a delta, so a lost or late
+/// message can never leave a rectangle behind.
+///
+/// Ordering: `(epoch, sequence)` is compared lexicographically and native
+/// ignores a message that is not newer than the newest it accepted. `epoch`
+/// identifies the Dart isolate (a hot restart starts a new one, whose counter
+/// restarts at 0, so it must still win); `sequence` counts publishes within it.
+class SecureRectanglesMessage {
+  SecureRectanglesMessage({
+    required this.epoch,
+    required this.sequence,
+    required this.views,
+  });
+
+  int epoch;
+  int sequence;
+  List<SecureViewRectanglesMessage> views;
+}
+
 /// Dart calls native.
 @HostApi()
 abstract class BugseeBridgeHostApi {
@@ -62,6 +94,12 @@ abstract class BugseeBridgeHostApi {
   /// Replaces the natively registered placeholder wrapper with the full
   /// identity. Never throws on malformed content: facts become "unknown".
   void setWrapperIdentity(WrapperIdentityMessage identity);
+
+  /// Publishes the secure rectangles (see [SecureRectanglesMessage]). Never
+  /// throws on content: an unusable value fails closed natively. Returns
+  /// whether the message was applied (`false`: it was older than one already
+  /// applied, which is not an error).
+  bool setSecureRectangles(SecureRectanglesMessage state);
 }
 
 /// Native calls Dart. Always from the platform (main) thread.

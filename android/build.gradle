@@ -1,0 +1,66 @@
+group = "com.bugsee.flutter"
+version = "1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.11.1")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+// The single source of every native pin. It sits at the package root, one level
+// above this module, both in this repo and in an app's pub cache.
+def nativeVersionsFile = new File(projectDir.canonicalFile.parentFile, "native-versions.json")
+if (!nativeVersionsFile.isFile()) {
+    throw new GradleException("native-versions.json not found at ${nativeVersionsFile}")
+}
+def nativeVersions = new groovy.json.JsonSlurper().parse(nativeVersionsFile)
+
+android {
+    namespace = "com.bugsee.flutter"
+
+    compileSdk = 35
+
+    compileOptions {
+        // The SDK compiles at 1.8; a wrapper must not emit newer bytecode than the
+        // library it bridges to.
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        // The SDK's own floor; a wrapper must not raise it.
+        minSdk = nativeVersions.android.minSdk
+    }
+
+    dependencies {
+        api "com.bugsee:bugsee-android:${nativeVersions.android.sdk}"
+        // Native crash detection is a SEPARATE artefact. Without it the SDK looks
+        // correctly integrated, builds green, and reports no native crash at all
+        // (workbook 1.2). `api`, like the core, so apps can configure NdkOptions.
+        api "com.bugsee:bugsee-android-ndk:${nativeVersions.android.sdk}"
+
+        testImplementation("junit:junit:4.13.2")
+    }
+
+    testOptions {
+        unitTests.all {
+            testLogging {
+               events "passed", "skipped", "failed"
+            }
+        }
+    }
+}

@@ -1,0 +1,113 @@
+# Bugsee Flutter SDK 7.x — implementation plan
+
+Branch `nextgen`, rewritten from scratch. The previous working tree is preserved on
+local branch `backup/nextgen-wip-2026-10-20` (a reference only, not a base).
+
+Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-data-requests`,
+`wrapper-channel`, `report-contract`, `options`, `report-identity`; reference implementation
+`cross/react-native` (design: `docs/superpowers/specs/2026-09-15-bugsee-react-native-7x-design.md`).
+
+## 0. Decisions needed before Phase 1
+
+| # | Question | Recommendation |
+|---|---|---|
+| D1 | Native pins | **Decided:** Android 7.4.2 (Maven Central); iOS 7.0.0-beta7 via SPM `github.com/bugsee/spm`. |
+| D2 | iOS distribution | **Decided:** SPM only (Flutter SPM plugin support). |
+| D3 | Compatibility with 9.x | **Deferred.** Phase 1-3 do not depend on it; decide before Phase 4 (public API). |
+| D4 | Feedback module | **Decided:** separate package. |
+| D5 | Flutter floor | Open. Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase/Datadog >=3.27 (Dart 3.6), Bugsnag/Shake/Embrace >=3.10, Instabug >=1.17. Recommendation: Flutter >=3.27 / Dart ^3.6 (SPM support is well past 3.24 there). |
+
+## 1. Phase 1 — Foundations (workbook Part 0–1)
+
+1. Read `BugseeWrapper.java`, `BGSContracts.h` and the callers (workbook 0.2); note spec gaps.
+2. `native-versions.json` (single source, with provenance): Android core + NDK + feedback,
+   Gradle plugin, iOS ref, options-manifest URLs.
+3. Drift guard test: Dart pubspec/constants, `android/build.gradle`, SPM `Package.swift`,
+   example app, CI matrix all asserted against the JSON. Mutation-check it (1.1.3).
+4. Android: declare `bugsee-android` **and `bugsee-android-ndk`** (test asserts it, 1.2.2);
+   Gradle plugin **≥ 4.0.7** (1.4); `minSdk 21`; AGP/Gradle compatible with Flutter's template.
+5. iOS: deployment target 15.0; privacy manifest.
+6. Repo layout: single plugin package + `example/`; CI (analyze, test, drift, option-manifest check).
+
+## 2. Phase 2 — Wrapper registration before launch (Part 2–3) — critical
+
+- **Android:** `ContentProvider` at `initOrder="200"` extending `BugseeExtensionInitProviderBase`;
+  calls `Bugsee.setWrapper()` in `onExtensionCreate()`. **Name must not match
+  `^.*\.Bugsee[A-Za-z0-9_]+InitProvider$`** (e.g. `FlutterWrapperRegistrar`); regex in a test.
+- **iOS:** `+setWrapper:` from the plugin's native construction, before `launchWithToken:`.
+- Register type (`flutter`) + version natively; refine with Flutter/Dart/engine/build mode once
+  the engine is up. Wrapper type string in one place per platform, with a test that native and
+  Dart copies agree. Secure-rect set held **outside** the wrapper object (5.4.2).
+- Identity: type/version/build/context (`String→String`, `"unknown"` for missing).
+- Verify: relaunch-after-crash run (the only run that exposes a late registration).
+
+## 3. Phase 3 — Minimum viable wrapper (Appendix B, Parts 4–5, 7.1)
+
+- Lifecycle: forward by name, strip the `com.bugsee.lifecycle.` prefix once natively, pass
+  unknown names through unchanged, handle off-main-thread delivery, status only from
+  Launching/Launched/Stopping/Stopped, never treat an event as proof of a report (4.7).
+- `requestData`: always answer; unknown type → `null`; never throw.
+- Secure rectangles: pull model, `[version,count,l,t,r,b…]` int32 LE; outward rounding;
+  version moves on any change and never on a no-op, per display; **scale to platform unit
+  (iOS points, Android px) before rounding**; immutable snapshots. Dart side: `Bugsee.secure`
+  widget/`RenderObject` publishing global rects (including clipped/scrolling cases).
+  Tests: mutation (hold version constant), non-1 scale on iOS.
+- Report handlers: always call completion; `isTerminating=true` → synchronous native-only
+  work, no round-trip to Dart.
+
+## 4. Phase 4 — Public API and options (Part 8)
+
+- Dart facade mirroring the converged 7.x API (launch, attributes, identity, events/traces,
+  breadcrumbs, notify, APM, logging/network, status, blackout, exceptions).
+- Options: use `com.bugsee.option.*` from the generated registry, not literals; one place
+  normalises the endpoint asymmetry (iOS flat key *with* version, Android `$$ENDPOINT`
+  without); hidden options not exposed; `getLaunchOptions` semantics differ per platform.
+- Vendored option manifests + CI diff (strict on keys/types/enums). Note: SDKs do not publish
+  manifests yet (spec "Proposed") — until they do, generate from `OptionsRegistry` /
+  `BGSOptionsRegistry` or track as a blocker.
+- Bridge: Pigeon (typed) for method channels + typed event channels; enums by internal value,
+  generated from SDK source, compared across **both** platforms (7.4).
+
+## 5. Phase 5 — Dart-side capture and data channels
+
+- Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
+  wrapper, filters chained ahead of app filters) — spec is **Proposed, unimplemented on both
+  SDKs**; build against the interface, gate on SDK support.
+- Dart exceptions: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
+  obfuscation symbolication (debug-info) — port the useful parts of the 9.x `exceptions*`
+  and `symbols.py` approach, as new code.
+- Network: HttpClient/`HttpOverrides` and package interceptors (dio/http).
+- View hierarchy (`vh`): Flutter semantic/render tree → JSON, **no text content or free-text
+  labels on secure nodes**, bounds in screen coords in platform units.
+  **Blocker (6.7):** Dart runs off the platform thread, so Android's async-reply fix
+  (`bugsee-android` PR #120) is required; track it.
+
+## 6. Phase 6 — Reports (Part 7, report-contract)
+
+- `Report` proxy (opaque handle + operations), not flattened; path-first attachments
+  (native does the file work); severity by value (Android `VeryLow=1`, iOS `Low=1`);
+  `onBefore` at-most-once, `onAfter` idempotent; deadline is the SDK's; no recovery inference.
+- Recovered-report identity (`identity_source`) passes through untouched.
+
+## 7. Phase 7 — Device verification (Part 9)
+
+Harness-level assertions (build SHA banner, SDK launched, precondition took, event happened).
+Recipes: native `SIGSEGV` (4 distinct `libbugsee*.so`, report produced), airplane-mode bundle
+retention + `request.json` read, crash across update, Dart exception, secure-rect redaction on a
+3× device, relaunch-after-crash with handlers, release-build/obfuscation symbolication.
+
+## 8. Phase 8 — Feedback package, docs, release
+
+`bugsee_flutter_feedback`; README/migration guide (9.x→7.x API, since it is a clean break);
+CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app covering all screens.
+
+## Risks / open items
+
+- iOS beta-only and unpublished → pinning and CI access (D1/D2).
+- Wrapper-channel and option-manifest specs unimplemented → schedule dependency.
+- Android async-`vh` (#120) and units unification (specs PR #20) in flight.
+- Flutter's Android template/AGP may conflict with Gradle plugin 4.0.7 constraints — spike early.
+
+## Suggested order
+
+P1 → P2 → P3 (ship a correct MVP, then device-verify) → P4 → P6 → P5 → P7 → P8.

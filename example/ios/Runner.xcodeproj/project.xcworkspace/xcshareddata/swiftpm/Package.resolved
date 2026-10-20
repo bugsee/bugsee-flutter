@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/bugsee/spm",
+      "state" : {
+        "revision" : "73ed98341d1243ffa7985f871417adcd0ad19799",
+        "version" : "7.0.0-beta7"
+      }
+    }
+  ],
+  "version" : 2
+}

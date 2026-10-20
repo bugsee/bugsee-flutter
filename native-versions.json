@@ -1,0 +1,28 @@
+{
+  "_comment": "The single source of every pinned native version. Every other copy (Gradle, Package.swift, example app, CI) is asserted against this file by test/native_versions_test.dart.",
+  "flutter": {
+    "min": "3.27.0",
+    "dart": "3.6.0",
+    "provenance": "Matches firebase_core 5 / datadog_flutter_plugin 3.7 floors (pub.dev, 2026-10-20). Sentry is at 3.44; Bugsnag/Embrace at 3.10."
+  },
+  "android": {
+    "sdk": "7.4.2",
+    "gradlePlugin": "4.0.8",
+    "minSdk": 21,
+    "provenance": "Maven Central latest, 2026-10-20. Gradle plugin must be >= 4.0.7 (workbook 1.4).",
+    "jdk": {
+      "supported": [
+        17,
+        21
+      ],
+      "provenance": "Gradle 8.14 in the Flutter template cannot parse JDK 25 (Android Studio's bundled JBR); use 17 or 21."
+    }
+  },
+  "ios": {
+    "sdk": "7.0.0-beta7",
+    "spmUrl": "https://github.com/bugsee/spm",
+    "feedbackSpmUrl": "https://github.com/bugsee/feedback-spm",
+    "deploymentTarget": "15.0",
+    "provenance": "Tag 7.0.0-beta7 of bugsee/spm (73ed983) and bugsee/feedback-spm (40dd3b0)."
+  }
+}

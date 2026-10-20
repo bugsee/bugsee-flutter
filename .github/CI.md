@@ -61,7 +61,7 @@ The default branch is `main`, but this rewrite lives on `nextgen`. GitHub reads
 the `workflow_dispatch` button only for workflows present there. So `native-pins.yml` and
 `dependabot.yml` must also exist on `main` (or `nextgen` must become the default) before
 the weekly check and Dependabot do anything. Every Dependabot entry sets
-`target-branch: nextgen` so its PRs land on the rewrite.
+`target-branch: nextgen` so its PRs land on the rewrite, and `native-pins.yml` checks out `ref: nextgen` because a scheduled run would otherwise use `main`'s tree, which has neither `native-versions.json` nor the script. Dependabot *security* updates ignore `target-branch` and use the default branch, where the `com.bugsee*` ignore does not apply; `main` does not hold these pins, so this is not a risk today.
 
 ## Dependabot, templates
 

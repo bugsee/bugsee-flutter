@@ -440,6 +440,11 @@ void main() {
       expect(pins, contains('dart scripts/check_native_pins.dart'));
       expect(
         pins,
+        contains('ref: nextgen'),
+        reason: 'scheduled runs use the default branch tree, which has no pins',
+      );
+      expect(
+        pins,
         contains("sdk: '${flutterPin['dart']}'"),
         reason: 'Dart SDK must match flutter.dart in native-versions.json',
       );

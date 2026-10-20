@@ -1,2 +1,28 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          Registers the Flutter wrapper with the SDK before the SDK can launch.
+
+          A ContentProvider runs BEFORE Application.onCreate, before any app code
+          and long before Dart. Under auto-init the SDK launches from its own
+          BugseeInitProvider (initOrder 100); providers start in DESCENDING
+          initOrder, so 200 puts the wrapper ahead of it. Registering from Dart
+          is too late and fails only on a relaunch after a crash.
+
+          The class is NOT called Bugsee*InitProvider: the Bugsee Gradle plugin
+          strips every provider matching ^.*\.Bugsee[A-Za-z0-9_]+InitProvider$
+          and compensates by injecting a register<Name>Extension() call we do
+          not have, so a matching name would silently never register.
+          test/wrapper_registration_test.dart asserts both the name and these
+          attributes.
+        -->
+        <provider
+            android:name="com.bugsee.flutter.FlutterWrapperInitProvider"
+            android:authorities="${applicationId}.bugseeflutterwrapperinit"
+            android:directBootAware="true"
+            android:exported="false"
+            android:initOrder="200" />
+    </application>
+
 </manifest>

@@ -20,6 +20,7 @@ import 'lifecycle_event.dart';
 import 'options/bugsee_options.g.dart';
 import 'options/launch_options.dart';
 import 'options/option_registry.dart';
+import 'report/created_report.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
@@ -511,6 +512,43 @@ final class BugseeRuntime {
       null,
       () => host.upload(summary, description, severity?.value, checked),
       argument: 'severity',
+    );
+  }
+
+  /// The shortest and longest time a created report is held.
+  static const Duration minCreatedReportTimeToLive = Duration(seconds: 1);
+  static const Duration maxCreatedReportTimeToLive = Duration(hours: 1);
+
+  Future<CreatedReport?> createReport({required Duration timeToLive}) async {
+    if (timeToLive < minCreatedReportTimeToLive ||
+        timeToLive > maxCreatedReportTimeToLive) {
+      throw BugseeArgumentException(
+        'timeToLive',
+        'must be between ${minCreatedReportTimeToLive.inSeconds} second and '
+            '${maxCreatedReportTimeToLive.inHours} hour',
+      );
+    }
+    final handle = await _call<String?>('createReport', null, () async {
+      try {
+        return await host.createReport(timeToLive.inMilliseconds);
+      } on PlatformException catch (e) {
+        throw createReportFailure(e) ?? e;
+      }
+    });
+    if (handle == null) return null;
+    final CreatedReportSnapshotMessage? first;
+    try {
+      first = await host.createdReportRead(handle);
+    } on PlatformException catch (e) {
+      throw mapFacadeError('createReport', e);
+    }
+    if (first == null) return null;
+    return createCreatedReport(
+      reportId: first.reportId.isEmpty ? null : first.reportId,
+      typeName: first.type,
+      handle: handle,
+      host: host,
+      timeToLive: timeToLive,
     );
   }
 

@@ -1,6 +1,7 @@
 // A native end for the facade tests: records every call with its arguments and answers as
 // scripted. Everything the lifecycle/launch side needs is a no-op.
 import 'dart:async';
+import 'dart:typed_data' show Uint8List;
 
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:flutter/services.dart' show PlatformException;
@@ -26,6 +27,27 @@ class FacadeFake extends BugseeBridgeHostApi {
   bool exceptionAccepted = true;
 
   Phases? phases;
+
+  // ---- Report files (Phase 6) and created reports: scripted answers, calls recorded --------
+  /// What the file operations answer (null = applied; `not-live` or a failure code otherwise).
+  String? fileReply;
+
+  /// What `createReport` answers (a handle, or null when the SDK made none).
+  String? createdHandle = 'cr-1';
+
+  /// What `createdReportRead` answers; null = not live.
+  CreatedReportSnapshotMessage? createdSnapshot = CreatedReportSnapshotMessage(
+    reportId: 'created-1',
+    type: 'bug',
+    labels: [],
+    attributes: {},
+    attachmentNames: [],
+    screenshotDisplayIds: [],
+  );
+  bool createdApplied = true;
+  bool createdUploadResult = true;
+  Completer<void>? createGate;
+  Completer<void>? fileGate;
 
   /// Once true, `failing['setReportHandlerPhases']` applies (the attach-time call is exempt).
   bool phasesArmed = false;
@@ -178,6 +200,133 @@ class FacadeFake extends BugseeBridgeHostApi {
     severity,
     labels,
   ], null);
+
+  @override
+  Future<String?> reportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+    bool move,
+  ) async {
+    await fileGate?.future;
+    return _record('reportAddAttachment', [
+      handle,
+      path,
+      name,
+      mimeType,
+      move,
+    ], fileReply);
+  }
+
+  @override
+  Future<String?> reportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  ) async => _record('reportAddAttachmentBytes', [
+    handle,
+    data.length,
+    name,
+    mimeType,
+  ], fileReply);
+
+  @override
+  Future<String?> reportClearAttachments(String handle) async =>
+      _record('reportClearAttachments', [handle], fileReply);
+
+  @override
+  Future<String?> reportSetScreenshot(
+    String handle,
+    String path,
+    int displayId,
+    bool annotated,
+  ) async => _record('reportSetScreenshot', [
+    handle,
+    path,
+    displayId,
+    annotated,
+  ], fileReply);
+
+  @override
+  Future<String?> reportRemoveScreenshot(String handle, int displayId) async =>
+      _record('reportRemoveScreenshot', [handle, displayId], fileReply);
+
+  @override
+  Future<String?> createReport(int ttlMs) async {
+    await createGate?.future;
+    return _record('createReport', [ttlMs], createdHandle);
+  }
+
+  @override
+  Future<CreatedReportSnapshotMessage?> createdReportRead(
+    String handle,
+  ) async => _record('createdReportRead', [handle], createdSnapshot);
+
+  @override
+  Future<bool> createdReportApply(
+    String handle,
+    CreatedReportPatchMessage patch,
+  ) async => _record('createdReportApply', [
+    handle,
+    'summary=${patch.setSummary ? patch.summary : '-'}',
+    'description=${patch.setDescription ? patch.reportDescription : '-'}',
+    'severity=${patch.severity}',
+    'labels=${patch.labels}',
+    'clear=${patch.clearAttributes}',
+    'attributes=${patch.attributes}',
+    'remove=${patch.removeAttributes}',
+  ], createdApplied);
+
+  @override
+  Future<String?> createdReportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+  ) async => _record('createdReportAddAttachment', [
+    handle,
+    path,
+    name,
+    mimeType,
+  ], fileReply);
+
+  @override
+  Future<String?> createdReportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  ) async => _record('createdReportAddAttachmentBytes', [
+    handle,
+    data.length,
+    name,
+    mimeType,
+  ], fileReply);
+
+  @override
+  Future<String?> createdReportClearAttachments(String handle) async =>
+      _record('createdReportClearAttachments', [handle], fileReply);
+
+  @override
+  Future<String?> createdReportSetScreenshot(
+    String handle,
+    String path,
+    bool annotated,
+  ) async => _record('createdReportSetScreenshot', [
+    handle,
+    path,
+    annotated,
+  ], fileReply);
+
+  @override
+  Future<bool> createdReportUpload(String handle) async =>
+      _record('createdReportUpload', [handle], createdUploadResult);
+
+  @override
+  Future<void> createdReportDiscard(String handle) async =>
+      _record('createdReportDiscard', [handle], null);
 
   @override
   Future<void> upload(

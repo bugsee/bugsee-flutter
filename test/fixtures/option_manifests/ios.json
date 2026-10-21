@@ -1,0 +1,580 @@
+{
+  "buildConfiguration" : "release",
+  "generatedAt" : "2026-10-18T04:41:18Z",
+  "manifestVersion" : 1,
+  "options" : [
+    {
+      "default" : null,
+      "hidden" : true,
+      "key" : "com.bugsee.option.$$ENDPOINT",
+      "module" : "Bugsee",
+      "type" : "string"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.avplayer",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.bluetooth-status",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.breadcrumbs",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.breadcrumbs.extras",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.camera-preview",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : "MachAndBSD",
+      "enum" : {
+        "name" : "BugseeCrashHandlerType",
+        "values" : {
+          "BSD" : 1,
+          "Mach" : 2,
+          "MachAndBSD" : 3
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.crash-handler-type",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : 128,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.crash-signals",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.device-network-names",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.disk-space",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.logs",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : "Verbose",
+      "enum" : {
+        "name" : "BugseeLogLevel",
+        "values" : {
+          "Debug" : 4,
+          "Error" : 1,
+          "Info" : 3,
+          "Verbose" : 5,
+          "Warning" : 2
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.logs.level",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.logs.oslog",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.network",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : 20480,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.network.body-size-limit",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.network.body-without-type",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.network.default-sanitizer",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.network.on-launch",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.on-device-symbolication",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.sample-buffer-display-layer",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.screenshot",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : 1,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.screenshot.scale",
+      "module" : "Bugsee",
+      "type" : "float"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.status-bar-info",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.adaptive",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : "High",
+      "enum" : {
+        "name" : "BugseeFrameRate",
+        "values" : {
+          "High" : 3,
+          "Low" : 1,
+          "Medium" : 2
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.frame-rate",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : 0,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.max-frame-rate",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 0,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.min-frame-rate",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.privacy-blur",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : "Default",
+      "enum" : {
+        "name" : "BugseeVideoQuality",
+        "values" : {
+          "Default" : 0,
+          "High" : 2,
+          "Medium" : 1
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.quality",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : 1,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.video.scale",
+      "module" : "Bugsee",
+      "type" : "float"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.view-hierarchy",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.websocket",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.webview.advanced",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.capture.webview.report-trigger",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : null,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.build-target",
+      "module" : "Bugsee",
+      "type" : "string"
+    },
+    {
+      "default" : null,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.build-type",
+      "module" : "Bugsee",
+      "type" : "string"
+    },
+    {
+      "default" : "None",
+      "enum" : {
+        "name" : "BugseeDataEncryptionMode",
+        "values" : {
+          "EndToEnd" : 2,
+          "None" : 0,
+          "OnDevice" : 1
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.data-encryption",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : 60,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.duration",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 50,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.max-data-size",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 0,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.notify-flush-delay",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.wifi-only-upload",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.anomaly",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.crash",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.crash.fill_empty_exception_stacks",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.crash.swift_async_stacktraces",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.early-crash",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.exit",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.frustration",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.hang",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : 3000,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.hang.level.fair",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 5000,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.hang.level.medium",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 10000,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.hang.level.severe",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.http-errors",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.detect.main_thread_misuse",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.performance.adaptive-sampling",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.performance.enabled",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : 0.01,
+      "hidden" : false,
+      "key" : "com.bugsee.option.performance.sample-rate",
+      "module" : "Bugsee",
+      "type" : "float"
+    },
+    {
+      "default" : "High",
+      "enum" : {
+        "name" : "BugseeSeverityLevel",
+        "values" : {
+          "Blocker" : 5,
+          "Critical" : 4,
+          "High" : 3,
+          "Low" : 1,
+          "Medium" : 2
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.defaults.bug-priority",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : "Blocker",
+      "enum" : {
+        "name" : "BugseeSeverityLevel",
+        "values" : {
+          "Blocker" : 5,
+          "Critical" : 4,
+          "High" : 3,
+          "Low" : 1,
+          "Medium" : 2
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.defaults.crash-priority",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : "High",
+      "enum" : {
+        "name" : "BugseeSeverityLevel",
+        "values" : {
+          "Blocker" : 5,
+          "Critical" : 4,
+          "High" : 3,
+          "Low" : 1,
+          "Medium" : 2
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.defaults.error-priority",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.triggers.screenshot",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : true,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.triggers.shake",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.description-required",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.email-required",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.labels-enabled",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.labels-required",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.priority-selector-enabled",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    },
+    {
+      "default" : "System",
+      "enum" : {
+        "name" : "BugseeStyle",
+        "values" : {
+          "BasedOnStatusBar" : 2,
+          "Dusk" : 1,
+          "Light" : 0,
+          "System" : 3
+        }
+      },
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.style",
+      "module" : "Bugsee",
+      "type" : "enum"
+    },
+    {
+      "default" : false,
+      "hidden" : false,
+      "key" : "com.bugsee.option.reporting.ui.summary-required",
+      "module" : "Bugsee",
+      "type" : "boolean"
+    }
+  ],
+  "sdk" : "ios",
+  "sdkVersion" : "7.0.0-beta7"
+}

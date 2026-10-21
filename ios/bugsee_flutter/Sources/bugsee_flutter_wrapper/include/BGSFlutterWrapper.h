@@ -3,6 +3,7 @@
 @class BGSFlutterLifecycleHub;
 @class BGSFlutterReportHandlerPipeline;
 @class BGSFlutterSecureRectangleStore;
+@class BGSFlutterViewHierarchyStore;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -12,12 +13,14 @@ NS_ASSUME_NONNULL_BEGIN
 ///
 /// Identity is real (workbook Part 3), lifecycle events are forwarded (Part 4), report
 /// handlers go through `BGSFlutterReportHandlerPipeline` (Part 7), and data requests are
-/// answered with nil until Phase 5. None of it throws.
+/// answered (Part 6: `vh` from `BGSFlutterViewHierarchyStore`, everything else with nil). None of it
+/// throws.
 ///
 /// This object is replaced mid-session when Dart refines the identity, so it holds
 /// no state that must survive: lifecycle events go to the process-wide
 /// `BGSFlutterLifecycleHub` and secure rectangles come from the process-wide
-/// `BGSFlutterSecureRectangleStore` (5.4.2).
+/// `BGSFlutterSecureRectangleStore` (5.4.2), the managed view hierarchy from the process-wide
+/// `BGSFlutterViewHierarchyStore`.
 @interface BGSFlutterWrapper : NSObject
 
 @property(nonatomic, copy, readonly) NSString *wrapperType;
@@ -51,6 +54,16 @@ NS_ASSUME_NONNULL_BEGIN
                             hub:(BGSFlutterLifecycleHub *)hub
                secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles
                         reports:(BGSFlutterReportHandlerPipeline *)reports;
+
+/// As above with every process-wide collaborator supplied; for tests.
++ (instancetype)wrapperWithType:(nullable id)type
+                        version:(nullable id)version
+                          build:(nullable id)build
+                        context:(nullable id)context
+                            hub:(BGSFlutterLifecycleHub *)hub
+               secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles
+                        reports:(BGSFlutterReportHandlerPipeline *)reports
+                  viewHierarchy:(BGSFlutterViewHierarchyStore *)views;
 
 @end
 

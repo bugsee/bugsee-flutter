@@ -3,6 +3,7 @@
 #import "BGSFlutterLifecycleHub.h"
 #import "BGSFlutterReportHandlerPipeline.h"
 #import "BGSFlutterSecureRectangleStore.h"
+#import "BGSFlutterViewHierarchyStore.h"
 
 @import Bugsee;
 
@@ -29,6 +30,7 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
   BGSFlutterLifecycleHub *_hub;
   BGSFlutterSecureRectangleStore *_secureRectangles;
   BGSFlutterReportHandlerPipeline *_reports;
+  BGSFlutterViewHierarchyStore *_views;
 }
 
 + (instancetype)wrapperAtProcessStart {
@@ -70,7 +72,26 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
                             hub:(BGSFlutterLifecycleHub *)hub
                secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles
                         reports:(BGSFlutterReportHandlerPipeline *)reports {
+  return [self wrapperWithType:type
+                       version:version
+                         build:build
+                       context:context
+                           hub:hub
+              secureRectangles:secureRectangles
+                       reports:reports
+                 viewHierarchy:[BGSFlutterViewHierarchyStore shared]];
+}
+
++ (instancetype)wrapperWithType:(id)type
+                        version:(id)version
+                          build:(id)build
+                        context:(id)context
+                            hub:(BGSFlutterLifecycleHub *)hub
+               secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles
+                        reports:(BGSFlutterReportHandlerPipeline *)reports
+                  viewHierarchy:(BGSFlutterViewHierarchyStore *)views {
   BGSFlutterWrapper *wrapper = [[BGSFlutterWrapper alloc] init];
+  wrapper->_views = views;
   wrapper->_hub = hub;
   wrapper->_secureRectangles = secureRectangles;
   wrapper->_reports = reports;
@@ -89,13 +110,18 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
   return wrapper;
 }
 
-// Always answers, and always with nil for now: the one flow that exists is `vh` (the managed
-// view hierarchy, Phase 5), and an unknown type is answered with nil (workbook 6.1). Silence
-// would cost the SDK the whole 500 ms budget, so even a `vh` request is answered, with nil,
-// until Phase 5 produces a payload. Never throws, whatever the SDK or its callback does.
+// Always answers, exactly once, and never throws (workbook 6.1): `vh` (the managed view
+// hierarchy) from BGSFlutterViewHierarchyStore, SYNCHRONOUSLY, on whatever thread the SDK asks
+// (the main thread: a reply that waited for Dart would deadlock it), and every other type, and
+// `vh` when there is nothing to say, with nil. The SDK stores a non-nil reply byte for byte, so
+// the store has already made it safe to store (privacy is Dart's: no text; fail closed here).
 - (void)requestDataWithType:(NSString *)dataType callback:(id<BGSDataRequestResultCallback>)callback {
   @try {
-    [callback onResult:nil];
+    NSString *answer = nil;
+    if ([[BGSFlutterViewHierarchyStore dataType] isEqualToString:dataType]) {
+      answer = [_views answer];
+    }
+    [callback onResult:answer];
   } @catch (NSException *exception) {
     // The SDK must never see a throw from a wrapper.
   }

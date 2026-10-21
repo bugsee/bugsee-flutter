@@ -11,6 +11,11 @@ import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
 
+/// Replaces the native side (and everything else the facade uses). For tests only: not exported
+/// from package:bugsee_flutter, so `BugseeRuntime` is not part of the public signature.
+@visibleForTesting
+void debugSetBugseeRuntime(BugseeRuntime runtime) => Bugsee._runtime = runtime;
+
 /// The Bugsee SDK.
 ///
 /// ```dart
@@ -23,11 +28,6 @@ import 'status.dart';
 /// Android and iOS are two SDKs behind one set of options (`BugseeOptions`). Launching is
 /// asynchronous in both: [launch] completes once the SDK reports that capture started; follow
 /// the transitions with [statusChanges].
-/// Replaces the native side (and everything else the facade uses). For tests only: not exported
-/// from package:bugsee_flutter, so `BugseeRuntime` is not part of the public signature.
-@visibleForTesting
-void debugSetBugseeRuntime(BugseeRuntime runtime) => Bugsee._runtime = runtime;
-
 abstract final class Bugsee {
   static BugseeRuntime _runtime = BugseeRuntime();
 

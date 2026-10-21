@@ -160,10 +160,14 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     try {
       await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
     } catch (_) {
-      // Native still has the old phases, so the old handlers keep running: one truth.
-      _onBefore = previousBefore;
-      _onAfter = previousAfter;
-      _phasesSent = previousPhasesSent;
+      // Native still has the old phases, so the old handlers keep running: one truth. Only if no
+      // later call has installed its own since (overlapping calls: that one is what native will
+      // hold if it succeeds, and rolling back over it would split Dart from native).
+      if (identical(_onBefore, onBefore) && identical(_onAfter, onAfter)) {
+        _onBefore = previousBefore;
+        _onAfter = previousAfter;
+        _phasesSent = previousPhasesSent;
+      }
       rethrow;
     }
     _phasesSent = true;

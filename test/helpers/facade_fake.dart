@@ -1,5 +1,7 @@
 // A native end for the facade tests: records every call with its arguments and answers as
 // scripted. Everything the lifecycle/launch side needs is a no-op.
+import 'dart:async';
+
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:flutter/services.dart' show PlatformException;
 
@@ -26,6 +28,11 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   /// Once true, `failing['setReportHandlerPhases']` applies (the attach-time call is exempt).
   bool phasesArmed = false;
+  int armedPhaseCalls = 0;
+
+  /// The (1-based, once armed) phase calls that fail; the first waits on [firstPhasesGate] if set.
+  final Set<int> failPhaseCalls = {};
+  Completer<void>? firstPhasesGate;
 
   /// How many times the plugin was attached (the lifecycle channel).
   int attachCount = 0;
@@ -54,6 +61,11 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   @override
   Future<void> setReportHandlerPhases(bool before, bool after) async {
+    if (phasesArmed) {
+      final n = ++armedPhaseCalls;
+      if (n == 1) await firstPhasesGate?.future;
+      if (failPhaseCalls.contains(n)) throw refusal('sdk-error');
+    }
     final failure = failing['setReportHandlerPhases'];
     if (failure != null && phasesArmed) throw failure;
     phases = Phases(before, after);

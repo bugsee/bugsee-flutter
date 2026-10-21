@@ -140,6 +140,19 @@ void main() {
     say('rejected overwrite kept the previous value');
     await Bugsee.clearAllAttributes();
 
+    // A whole double stays a double (Android may persist it as a float: it must not come back as an
+    // int, and must not be reported as rejected).
+    for (final whole in [0.0, 1.0, 3.0, -2.0, 1e10]) {
+      await Bugsee.setAttribute('whole', whole);
+      final back = await Bugsee.getAttribute('whole');
+      expect(back, whole);
+      expect(back, isA<double>(), reason: 'whole double $whole');
+      expect((await Bugsee.getAllAttributes())['whole'], isA<double>());
+    }
+    await Bugsee.setAttribute('whole', 3); // and an int stays an int
+    expect(await Bugsee.getAttribute('whole'), isA<int>());
+    await Bugsee.clearAllAttributes();
+
     // Both getters answer the same for a double (Android persists a float, so it narrows).
     await Bugsee.setAttribute('pi2', 3.141592653589793);
     expect(

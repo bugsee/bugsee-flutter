@@ -1,6 +1,7 @@
 // The facade methods other than launch/stop/status, against a fake native side: what is
 // validated in Dart before anything crosses, what crosses and how it is encoded, and how every
 // native failure maps to a BugseeException subclass.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
@@ -818,6 +819,47 @@ void main() {
         );
         await expectLater(Bugsee.event('e'), throwsA(isA<BugseeException>()));
         expect(failing.calls, isNot(contains('event(e, null)')));
+      },
+    );
+
+    test(
+      'overlapping handler changes: a failure of the first does not undo the second',
+      () async {
+        final seen = <String>[];
+        native.failPhaseCalls.add(1);
+        native.firstPhasesGate = Completer<void>();
+        final h1 = BugseeReportHandler(
+          onAfterReportCreated: (r) async => seen.add('h1'),
+        );
+        final h2 = BugseeReportHandler(
+          onAfterReportCreated: (r) async => seen.add('h2'),
+        );
+        // The runtime has to be started before the calls overlap, as in an app.
+        await Bugsee.isBlackout();
+        native.phasesArmed = true;
+        final first = Bugsee.setReportHandler(h1);
+        final firstOutcome = expectLater(
+          first,
+          throwsA(isA<BugseeException>()),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await Bugsee.setReportHandler(h2);
+        native.firstPhasesGate!.complete();
+        await firstOutcome;
+        expect(Bugsee.reportHandler, same(h2));
+        expect(native.phases.toString(), 'Phases(false, true)');
+        runtime.bridge.onReportHandlerRequest(
+          ReportHandlerRequestMessage(
+            handle: 'h',
+            deliveryId: 'after:r',
+            after: true,
+            reportId: 'r',
+            type: 'bug',
+            deadlineMs: 5000,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(seen, ['h2'], reason: 'Dart and native agree on h2');
       },
     );
 

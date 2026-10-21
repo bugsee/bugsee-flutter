@@ -7,6 +7,9 @@ import 'dart:typed_data' show ByteData;
 
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/secure/secure_region.dart';
+// `cacheExtent` is deprecated on stable, but the floor (3.41.0) has no
+// `scrollCacheExtent` yet.
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
@@ -432,7 +435,7 @@ void main() {
   group('page transitions keep the region covered (pixels are on screen)', () {
     Future<void> run(
       WidgetTester tester,
-      PageTransitionsBuilder builder, {
+      PageTransitionsBuilder? builder, {
       bool hero = false,
     }) async {
       final navigator = GlobalKey<NavigatorState>();
@@ -453,11 +456,15 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           navigatorKey: navigator,
-          theme: ThemeData(
-            pageTransitionsTheme: PageTransitionsTheme(
-              builders: {for (final p in TargetPlatform.values) p: builder},
-            ),
-          ),
+          theme: builder == null
+              ? ThemeData(platform: TargetPlatform.iOS) // the platform default
+              : ThemeData(
+                  pageTransitionsTheme: PageTransitionsTheme(
+                    builders: {
+                      for (final p in TargetPlatform.values) p: builder,
+                    },
+                  ),
+                ),
           home: page('one'),
         ),
       );
@@ -492,8 +499,8 @@ void main() {
     testWidgets('FadeForwards', (tester) async {
       await run(tester, const FadeForwardsPageTransitionsBuilder());
     });
-    testWidgets('Cupertino', (tester) async {
-      await run(tester, const CupertinoPageTransitionsBuilder());
+    testWidgets('the iOS default (Cupertino)', (tester) async {
+      await run(tester, null);
     });
     testWidgets('Hero in flight', (tester) async {
       await run(tester, const FadeUpwardsPageTransitionsBuilder(), hero: true);

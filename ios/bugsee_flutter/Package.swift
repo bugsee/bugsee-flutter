@@ -1,39 +1,31 @@
 // swift-tools-version: 5.9
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+//
+// iOS is delivered through Swift Package Manager only: Bugsee stopped publishing
+// CocoaPods in September 2026, so there is no podspec. The Bugsee version below
+// is a literal because a manifest cannot read native-versions.json; the drift
+// guard in test/native_versions_test.dart asserts it matches.
 
 import PackageDescription
 
 let package = Package(
     name: "bugsee_flutter",
     platforms: [
-        .iOS("11.0"),
+        .iOS("15.0")
     ],
     products: [
         .library(name: "bugsee-flutter", targets: ["bugsee_flutter"])
     ],
     dependencies: [
-        .package(name: "Bugsee", url: "https://github.com/bugsee/spm", from: "99.99.99")
+        .package(url: "https://github.com/bugsee/spm", exact: "7.0.0-beta7")
     ],
     targets: [
         .target(
             name: "bugsee_flutter",
             dependencies: [
-                .product(name: "Bugsee", package: "Bugsee")
+                .product(name: "Bugsee", package: "spm")
             ],
             resources: [
-                // TODO: If your plugin requires a privacy manifest
-                // (e.g. if it uses any required reason APIs), update the PrivacyInfo.xcprivacy file
-                // to describe your plugin's privacy impact, and then uncomment this line.
-                // For more information, see:
-                // https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-                .process("PrivacyInfo.xcprivacy"),
-
-                // TODO: If you have other resources that need to be bundled with your plugin, refer to
-                // the following instructions to add them:
-                // https://developer.apple.com/documentation/xcode/bundling-resources-with-a-swift-package
-            ],
-            cSettings: [
-                .headerSearchPath("include/bugsee_flutter")
+                .process("PrivacyInfo.xcprivacy")
             ]
         )
     ]

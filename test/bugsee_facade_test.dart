@@ -4,6 +4,7 @@
 import 'dart:async';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
+import 'package:bugsee_flutter/src/bugsee.dart' show debugSetBugseeRuntime;
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/bugsee_runtime.dart';
 import 'package:bugsee_flutter/src/launch.dart';
@@ -110,7 +111,7 @@ void main() {
       platform: () => platform,
       warn: warnings.add,
     );
-    Bugsee.debugSetRuntime(runtime);
+    debugSetBugseeRuntime(runtime);
   });
 
   group('launch', () {
@@ -424,7 +425,7 @@ void main() {
           ensureBinding: () =>
               throw StateError('Binding has not yet been initialized'),
         );
-        Bugsee.debugSetRuntime(r);
+        debugSetBugseeRuntime(r);
         await expectLater(
           Bugsee.launch('tok'),
           throwsA(
@@ -458,7 +459,7 @@ void main() {
         platform: () => OptionPlatform.ios,
         warn: warnings.add,
       );
-      Bugsee.debugSetRuntime(r);
+      debugSetBugseeRuntime(r);
       await expectLater(
         Bugsee.launch('tok'),
         throwsA(

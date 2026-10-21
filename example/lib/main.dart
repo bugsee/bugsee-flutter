@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/material.dart';
 
+import 'facade_screen.dart';
+
 /// The application token from the Bugsee dashboard. Pass your own with
 /// `--dart-define=BUGSEE_TOKEN=...`; the default is a placeholder, so the SDK launches but its
 /// reports are not delivered anywhere.
@@ -23,6 +25,8 @@ BugseeOptions exampleOptions() => BugseeOptions(
   captureNetwork: true,
   captureLogs: true,
   captureLogsLevel: LogLevel.info,
+  captureBreadcrumbs:
+      true, // off by default on both SDKs; Bugsee.addBreadcrumb needs it
   captureVideoFrameRate: FrameRate.medium,
   configDuration: 45,
   configWifiOnlyUpload: false,
@@ -32,7 +36,27 @@ BugseeOptions exampleOptions() => BugseeOptions(
   captureAvPlayer: true, // iOS only
 );
 
-void main() => runApp(const ExampleApp());
+/// What the example does with a report before and after the SDK builds it. Idempotent, as
+/// `onAfterReportCreated` must be: it may run again for the same report.
+const exampleReportHandler = BugseeReportHandler(
+  onBeforeReportCreated: _beforeReport,
+  onAfterReportCreated: _afterReport,
+);
+
+Future<void> _beforeReport(ReportProxy report) =>
+    report.setAttribute('example.phase', 'before');
+
+Future<void> _afterReport(ReportProxy report) async {
+  await report.replaceLabels(['flutter-example']);
+  await report.setAttribute('example.phase', 'after');
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Before launch, so reports the SDK recovers while launching are seen too.
+  await Bugsee.setReportHandler(exampleReportHandler);
+  runApp(const ExampleApp());
+}
 
 class ExampleApp extends StatelessWidget {
   const ExampleApp({super.key});
@@ -41,7 +65,42 @@ class ExampleApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Bugsee example',
     theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-    home: const LaunchScreen(),
+    home: const HomeScreen(),
+  );
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: IndexedStack(
+      index: _page,
+      children: const [LaunchScreen(), FacadeScreen()],
+    ),
+    bottomNavigationBar: NavigationBar(
+      selectedIndex: _page,
+      onDestinationSelected: (i) => setState(() => _page = i),
+      destinations: const [
+        NavigationDestination(
+          key: Key('tab-launch'),
+          icon: Icon(Icons.power_settings_new),
+          label: 'Launch',
+        ),
+        NavigationDestination(
+          key: Key('tab-facade'),
+          icon: Icon(Icons.bug_report_outlined),
+          label: 'Data',
+        ),
+      ],
+    ),
   );
 }
 

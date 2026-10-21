@@ -1,12 +1,16 @@
 /// Bugsee for Flutter: video, network traffic, console logs and other traces on every bug and
 /// crash report. Android and iOS.
 ///
-/// Start with [Bugsee.launch] and [BugseeOptions].
+/// Start with [Bugsee.launch] and [BugseeOptions]. Mark sensitive UI with [BugseeSecureView].
 library;
 
 export 'src/bugsee.dart' show Bugsee;
+export 'src/errors.dart'
+    show AttributeFailure, BugseeArgumentException, BugseeAttributeException;
+export 'src/facade/breadcrumb.dart' show BreadcrumbLevel, BugseeBreadcrumb;
 export 'src/launch.dart'
     show BugseeException, BugseeLaunchException, LaunchFailure, LaunchResult;
+export 'src/lifecycle_event.dart' show LifecycleEvent;
 export 'src/options/bugsee_options.g.dart'
     show
         BugseeOptions,
@@ -17,5 +21,9 @@ export 'src/options/bugsee_options.g.dart'
         LogLevel,
         VideoMode,
         VideoQuality;
-export 'src/report/report_enums.dart' show ReportSeverity;
+export 'src/report/report_enums.dart' show ReportSeverity, ReportType;
+export 'src/report/report_handler.dart' show BugseeReportHandler, ReportHandler;
+export 'src/report/report_proxy.dart'
+    show ReportClosedError, ReportProxy, ReportSnapshot;
+export 'src/secure/bugsee_secure_view.dart' show BugseeSecureView;
 export 'src/status.dart' show BugseeStatus;

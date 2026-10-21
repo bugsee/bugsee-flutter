@@ -121,6 +121,16 @@ final class LaunchOptionValues {
         }
     };
 
+    /**
+     * The SDK's {@code LogLevel} for its internal value ({@code Bugsee.log}'s level uses the same
+     * enum as the {@code capture.logs.level} option), or {@code null}.
+     */
+    @Nullable
+    static LogLevel logLevel(final int value) {
+        final Object constant = LOG_LEVEL.fromValue(value);
+        return constant instanceof LogLevel ? (LogLevel) constant : null;
+    }
+
     /** Option key to codec. Compared with the manifest by the test named above. */
     static final Map<String, EnumCodec> ENUM_OPTIONS;
 

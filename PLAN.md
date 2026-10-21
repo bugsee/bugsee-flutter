@@ -98,7 +98,7 @@ The first public API: `Bugsee.launch(token, {options})`, `stop()`, `status`, `st
 `getStatus()`, `isLaunched()`, `getLaunchOptions()`, `getHostLaunchOptions()`, `BugseeOptions` (100
 typed fields), `waitUntilLaunched()`, `LaunchResult`, `LaunchFailure`, `BugseeException`/`BugseeLaunchException`,
 `BugseeStatus`, the option enums and `ReportSeverity`. The report-handler registration API and the
-secure-region widget stay internal (4b).
+secure-region widget were made public in 4b.
 
 - **The SDKs publish manifests now** (the options spec still says "Proposed"): Android
   `download.bugsee.com/sdk/options/android/7.4.2.json` (generated 2026-10-19; also the golden file in the
@@ -134,6 +134,56 @@ secure-region widget stay internal (4b).
   app that is not yet active (engine started in `didFinishLaunching`); not reproduced.
 - Not verified at runtime: launch refused while stopping (a race, covered by JUnit/XCTest/Dart with fakes), iOS background deferral,
   token rejection by the SDK itself (a placeholder token launches), the leak module, tvOS/visionOS.
+
+### 4b — the rest of the public facade (done)
+
+Full inventory of both SDKs (Android 7.4.2, iOS 7.0.0-beta7), per-method decisions with reasons, the before-launch
+behaviour table with source line references, value rules, errors and threading: **`doc/api-surface.md`**.
+
+- **Added** (all `Bugsee.` statics, all `async`): `setAttribute`/`getAttribute`/`getAllAttributes`/`clearAttribute`/`clearAllAttributes`,
+  `setUserIdentifier`/`getUserIdentifier`/`clearUserIdentifier`, `event`, `trace`, `log`, `addBreadcrumb` (+ `BugseeBreadcrumb`,
+  `BreadcrumbLevel`), `notify`, `startBlackout`/`endBlackout`/`isBlackout`, `showReportDialog`, `upload`, `setReportHandler`/`reportHandler`
+  (+ `BugseeReportHandler`, `ReportProxy`, `ReportSnapshot`, `ReportClosedError`, `ReportType`), `lifecycleEvents` (+ `LifecycleEvent`,
+  unknown names preserved), and the widget `BugseeSecureView`. Errors: `BugseeArgumentException`, `BugseeAttributeException`
+  (`AttributeFailure`). 17 new Pigeon methods + `BreadcrumbMessage`; still no Pigeon enum.
+- **Skipped, with reasons** (in the doc): APM transactions/spans (native handle registry + per-thread active span, a design of its own),
+  appearance (huge per-property system that differs per platform), `relaunch`, secure rectangles/activities (the wrapper IS the
+  rectangle provider), `deleteCollectedDataOnDevice`, `resetVideoCapturePermission`, `testCrash`; Phase 5 (filters, network events,
+  exceptions, `captureViewHierarchy`) and Phase 6 (`createReport`, attachments).
+- **The wrapper queues and gates nothing before `launch`** (source-verified, then device-verified): attributes, user identifier and blackout
+  work on both platforms (blackout is HELD on Android 7.4.2 and applied at launch: the RN doc that says Android ignores it is stale);
+  event/trace/log/breadcrumb/notify/upload/dialog are dropped by the SDKs (Android logs `You need to call Bugsee.launch() ...` for
+  notify/upload/dialog; iOS logs `Bugsee.uploadWithSummary ignored: SDK is not launched`). `addBreadcrumb` answers `false` when capture is off
+  (default off on both) or the SDK is not Launching/Launched (before launch AND after stop: gated natively, the SDKs' own gates differ). A platform with no SDK: no-ops, only `launch` throws.
+- **An attribute the SDK dropped is only knowable by reading it back** (Android `setAttribute` is void; iOS's `BOOL` is YES for a value it
+  ignored): native sets, reads back and reports `attribute-rejected`. The limits differ and were measured on device: Android keeps a
+  1024-char string and 42 x 600 chars in all; iOS rejects the 1024-char string (1124-byte archive) and takes 40 x 600. Dart refuses
+  > 1024 UTF-16 units on both (Android's hard cap, so a value is not accepted on one platform and dropped on the other).
+- **Source findings worth keeping**: Android stores a non-integer attribute as a 32-bit float (in memory the double survives until a
+  restart); `Bugsee.event/trace` have no launch gate on Android but their consumer only exists after launch and is cached for good, so a call
+  after `stop` may still reach the last provider (iOS gates on Launching/Launched); iOS `upload`/dialog without a severity must use the
+  SDK's two-argument form (the four-argument form stores 0); breadcrumb levels differ (Android debug 1..fatal 5, iOS error 1..debug 4, no fatal), so the name crosses.
+- **Runtime evidence** (`example/integration_test/facade_test.dart`, Android emulator-5562 API 33; iPhone 17 simulator iOS 26.5; plus
+  `launch_test` and `cold_start_test` still green on both): attributes (5 types) and the user identifier read back from the SDKs before
+  launch, `getAllAttributes` and the bool/int/double types survive the channel, limits above, blackout read back before launch and the
+  `BlackoutStarted`/`BlackoutEnded` events while launched, breadcrumbs `taken: true` for all five levels when launched with capture on
+  (and `false` before), the public `BugseeSecureView` mounted while launched, and a **real `Bugsee.upload` with the public report handler
+  on both SDKs**: `before:bug`, `after:bug` delivered, the handler's `setAttribute`/`replaceLabels` visible on the live report via `read()`
+  with the global attribute and `critical` severity, and the SDK's own `BeforeReportAssembled`/`AfterReportAssembled`/`BeforeReportUploaded` events.
+- **What could not be verified**: write-only calls (`event`, `trace`, `log`, `notify`) have no SDK readback, so on device they are shown to
+  complete without error with the SDK launched (JUnit/XCTest show what reaches the SDK seam); iOS stops a placeholder token itself after the
+  first refused upload (`ReportUploadFailedWithFutureRetry`, `Stopping`, `Stopped`) and a fourth launch/stop cycle with it in one process was
+  refused by the SDK (reason in its log, not investigated), so the integration test uploads first and tolerates it; no valid token, so no
+  server-side confirmation that events/breadcrumbs arrive; secure rectangles reaching the SDK were verified in Phase 3b, not again; notify fields
+  order on the wire; `deferred` iOS launches; tvOS/visionOS.
+- **Tests** (every new test was mutation-checked: the behaviour broken, the test seen failing, the code restored): 46 Dart facade tests with a
+  mocked bridge (validation, encoding, error mapping, unsupported platform, handler lifecycle, lifecycle stream), 5 widget tests of the public
+  `BugseeSecureView` through the real registry and the real generated channel codec, 13 drift tests (failure codes, attribute limits,
+  breadcrumb names, log range, bridge methods wired in both natives), 10 public-API-surface tests (pinned exports, `Bugsee` members, no
+  pause/resume shim, internals hidden, no re-export), 29 JUnit and 25 XCTest seams. Mutations killed: 18+2 Dart, 19 Android (one survived
+  until its test was strengthened), 17 iOS (one survived until strengthened), 7 drift, 20 Dart/native second batch; the survivors found and fixed:
+  an unsorted Set (test used an already-sorted HashSet), the raw iOS `getAttribute` (no test of the single read filter), the drift guard's
+  prefix match (`FacadeOps::isBlackoutZ` passed), and the code-string test pinned only by symbol.
 
 ## 5. Phase 5 — Dart-side capture and data channels
 

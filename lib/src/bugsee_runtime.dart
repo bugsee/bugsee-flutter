@@ -9,12 +9,18 @@ import 'package:flutter/services.dart'
 import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 
 import 'bridge/bridge.dart';
-import 'status.dart';
 import 'bridge/messages.g.dart';
+import 'errors.dart';
+import 'facade/breadcrumb.dart';
+import 'facade/validation.dart';
 import 'launch.dart';
+import 'lifecycle_event.dart';
 import 'options/bugsee_options.g.dart';
 import 'options/launch_options.dart';
 import 'options/option_registry.dart';
+import 'report/report_enums.dart';
+import 'report/report_handler.dart';
+import 'status.dart';
 
 /// The platform this runs on, as the options registry knows it; `null` for any other.
 OptionPlatform? currentOptionPlatform() => switch (defaultTargetPlatform) {
@@ -52,16 +58,7 @@ final class BugseeRuntime {
   /// phases). Idempotent while it succeeds; an error is a [BugseeException] and the next call
   /// tries again.
   Future<void> ensureStarted() async {
-    try {
-      _ensureBinding();
-    } catch (e) {
-      // A background isolate has no binding and no platform channels of its own.
-      throw BugseeException(
-        'Bugsee can only be used from the root isolate (the one that runs main); call it there '
-        'and pass results to other isolates. ($e)',
-        cause: e,
-      );
-    }
+    _requireBinding();
     try {
       await bridge.start();
     } on MissingPluginException catch (e) {
@@ -73,6 +70,19 @@ final class BugseeRuntime {
     } on PlatformException catch (e) {
       throw BugseeException(
         'could not attach to the native Bugsee SDK: ${e.message ?? e.code}',
+        cause: e,
+      );
+    }
+  }
+
+  void _requireBinding() {
+    try {
+      _ensureBinding();
+    } catch (e) {
+      // A background isolate has no binding and no platform channels of its own.
+      throw BugseeException(
+        'Bugsee can only be used from the root isolate (the one that runs main); call it there '
+        'and pass results to other isolates. ($e)',
         cause: e,
       );
     }
@@ -242,4 +252,289 @@ final class BugseeRuntime {
   Stream<BugseeStatus> get statusChanges => bridge.statusChanges;
 
   BugseeStatus get status => bridge.status ?? BugseeStatus.stopped;
+
+  // ---- The rest of the facade (Phase 4b) --------------------------------------------------------
+
+  bool _warnedUnsupported = false;
+
+  /// Runs one native call for the facade.
+  ///
+  /// On a platform with no SDK (anything but Android and iOS) the call is a no-op returning
+  /// [neutral], with one debug warning: code that logs and traces must not break a desktop run, and
+  /// nothing can have been launched there ([launch] is the call that throws). A failure to reach
+  /// native, or one native reports, is a [BugseeException]; [argument] names the parameter an
+  /// `invalid-argument` refusal is about.
+  Future<T> _call<T>(
+    String what,
+    T neutral,
+    Future<T> Function() send, {
+    String argument = 'argument',
+  }) async {
+    if (_platform() == null) {
+      if (!_warnedUnsupported) {
+        _warnedUnsupported = true;
+        _warn(
+          'Bugsee runs on Android and iOS only; calls to it do nothing here',
+        );
+      }
+      return neutral;
+    }
+    // Attaches to native on the first call (lifecycle channel, wrapper identity, report phases), so
+    // events the SDK raised earlier are replayed whichever method comes first; a failure to attach
+    // is the BugseeException ensureStarted documents.
+    await ensureStarted();
+    try {
+      return await send();
+    } on MissingPluginException catch (e) {
+      throw BugseeException(
+        '$what: the native Bugsee plugin is not registered (a missing rebuild after adding the '
+        'dependency, or an engine without it): ${e.message}',
+        cause: e,
+      );
+    } on PlatformException catch (e) {
+      throw mapFacadeError(what, e, argument: argument);
+    }
+  }
+
+  /// A native refusal as the exception the facade documents.
+  static BugseeException mapFacadeError(
+    String what,
+    PlatformException e, {
+    String argument = 'argument',
+  }) {
+    final message = e.message ?? e.code;
+    return switch (e.code) {
+      FacadeWire.invalidArgument => BugseeArgumentException(
+        argument,
+        '$what: $message',
+        cause: e,
+      ),
+      FacadeWire.attributeRejected => BugseeAttributeException(
+        AttributeFailure.rejected,
+        'value',
+        '$what: $message',
+        cause: e,
+      ),
+      _ => BugseeException('$what: $message', cause: e),
+    };
+  }
+
+  /// A value the SDK holds, as the public API returns it: a String, bool, int, double or a list of
+  /// strings; `null` for anything else (native already filters, this is the second line).
+  static Object? readableAttribute(Object? raw) {
+    if (raw is String || raw is bool || raw is int || raw is double) return raw;
+    if (raw is List && raw.every((e) => e is String)) {
+      return List<String>.unmodifiable(raw.cast<String>());
+    }
+    return null;
+  }
+
+  Future<void> setAttribute(String name, Object? value) async {
+    checkAttributeName(name);
+    final checked = checkAttributeValue(value);
+    try {
+      await _call<void>(
+        'setAttribute',
+        null,
+        () => host.setAttribute(name, checked),
+        argument: 'value',
+      );
+    } on BugseeArgumentException catch (e) {
+      // Native defends again; the attribute calls speak BugseeAttributeException throughout.
+      throw BugseeAttributeException(
+        AttributeFailure.invalidValue,
+        e.argument,
+        e.message,
+        cause: e.cause,
+      );
+    }
+  }
+
+  Future<Object?> getAttribute(String name) async {
+    checkAttributeName(name);
+    final raw = await _call<Object?>(
+      'getAttribute',
+      null,
+      () => host.getAttribute(name),
+    );
+    return readableAttribute(raw);
+  }
+
+  Future<Map<String, Object>> getAllAttributes() async {
+    final raw = await _call<Map<String, Object>>(
+      'getAllAttributes',
+      const {},
+      () => host.getAllAttributes(),
+    );
+    return Map.unmodifiable({
+      for (final e in raw.entries)
+        if (readableAttribute(e.value) case final Object v) e.key: v,
+    });
+  }
+
+  Future<void> clearAttribute(String name) async {
+    checkAttributeName(name);
+    await _call<void>('clearAttribute', null, () => host.clearAttribute(name));
+  }
+
+  Future<void> clearAllAttributes() =>
+      _call<void>('clearAllAttributes', null, () => host.clearAllAttributes());
+
+  Future<void> setUserIdentifier(String? identifier) => _call<void>(
+    'setUserIdentifier',
+    null,
+    // An empty identifier is a clear on both platforms (Android alone would store it).
+    () => host.setUserIdentifier(
+      identifier == null || identifier.isEmpty ? null : identifier,
+    ),
+  );
+
+  Future<String?> getUserIdentifier() =>
+      _call<String?>('getUserIdentifier', null, () => host.getUserIdentifier());
+
+  Future<void> trace(String name, Object? value) async {
+    checkDataName('trace', name);
+    final checked = checkTraceValue(value);
+    await _call<void>(
+      'trace',
+      null,
+      () => host.trace(name, checked),
+      argument: 'value',
+    );
+  }
+
+  Future<void> event(String name, Map<String, Object?>? params) async {
+    checkDataName('event', name);
+    final copy = params == null ? null : copyEventParams(params);
+    await _call<void>(
+      'event',
+      null,
+      () => host.event(name, copy),
+      argument: 'params',
+    );
+  }
+
+  Future<void> log(String message, LogLevel level) => _call<void>(
+    'log',
+    null,
+    () => host.log(message, level.value),
+    argument: 'level',
+  );
+
+  Future<bool> addBreadcrumb(BugseeBreadcrumb crumb) async {
+    final data = crumb.data == null
+        ? null
+        : copyEventParams(crumb.data!, path: 'data');
+    return _call<bool>(
+      'addBreadcrumb',
+      false,
+      () => host.addBreadcrumb(
+        BreadcrumbMessage(
+          category: crumb.category,
+          level: crumb.level.name,
+          message: crumb.message,
+          type: crumb.type,
+          data: data,
+        ),
+      ),
+      argument: 'breadcrumb',
+    );
+  }
+
+  Future<void> notify(
+    String title, {
+    String? body,
+    ReportSeverity? severity,
+    Map<String, String>? fields,
+    bool urgent = false,
+  }) async {
+    if (title.trim().isEmpty) {
+      // Both SDKs drop it and only log.
+      throw const BugseeArgumentException(
+        'title',
+        'a notification needs a non-empty title',
+      );
+    }
+    // Pairs, in the map's order: a map would lose it crossing the bridge.
+    final flat = fields == null
+        ? null
+        : [
+            for (final e in fields.entries) ...[e.key, e.value],
+          ];
+    await _call<void>(
+      'notify',
+      null,
+      () => host.relayNotification(title, body, severity?.value, flat, urgent),
+      argument: 'severity',
+    );
+  }
+
+  Future<void> startBlackout() =>
+      _call<void>('startBlackout', null, () => host.startBlackout());
+
+  Future<void> endBlackout() =>
+      _call<void>('endBlackout', null, () => host.endBlackout());
+
+  Future<bool> isBlackout() =>
+      _call<bool>('isBlackout', false, () => host.isBlackout());
+
+  Future<void> showReportDialog({
+    String? summary,
+    String? description,
+    ReportSeverity? severity,
+    List<String>? labels,
+  }) async {
+    final checked = labels == null ? null : checkLabels(labels);
+    await _call<void>(
+      'showReportDialog',
+      null,
+      () =>
+          host.showReportDialog(summary, description, severity?.value, checked),
+      argument: 'severity',
+    );
+  }
+
+  Future<void> upload(
+    String summary,
+    String description, {
+    ReportSeverity? severity,
+    List<String>? labels,
+  }) async {
+    final checked = labels == null ? null : checkLabels(labels);
+    await _call<void>(
+      'upload',
+      null,
+      () => host.upload(summary, description, severity?.value, checked),
+      argument: 'severity',
+    );
+  }
+
+  // ---- Report handler and lifecycle events ------------------------------------------------------
+
+  BugseeReportHandler? _reportHandler;
+
+  BugseeReportHandler? get reportHandler => _reportHandler;
+
+  /// Registers (or, with `null` or an empty handler, clears) the report handler. Completes when
+  /// native knows which phases have a Dart handler.
+  Future<void> setReportHandler(BugseeReportHandler? handler) async {
+    final active = handler == null || handler.isEmpty ? null : handler;
+    if (_platform() == null) {
+      // No SDK here, so no report will ever be handed over.
+      _reportHandler = active;
+      return;
+    }
+    await ensureStarted();
+    try {
+      await bridge.setReportHandlers(
+        onBefore: active?.onBeforeReportCreated,
+        onAfter: active?.onAfterReportCreated,
+      );
+    } on PlatformException catch (e) {
+      throw mapFacadeError('setReportHandler', e);
+    }
+    _reportHandler = active;
+  }
+
+  Stream<LifecycleEvent> get lifecycleEvents => bridge.lifecycleEvents;
 }

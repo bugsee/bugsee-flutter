@@ -210,6 +210,101 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
       fromSdk: BGSFlutterRealBugsee().launchOptionsHostOnly(hostOnly))
   }
 
+  // MARK: Facade (Phase 4b; see BGSFlutterFacadeOps)
+  //
+  // Pigeon runs these handlers on the platform (main) thread, the thread the SDK's public API
+  // is used from. The plugin keeps no state for them; an SDK exception is caught in Objective-C
+  // (it would crash Swift) and comes back as a failure with the bridge's code.
+
+  private let facadeSdk = BGSFlutterRealFacade()
+
+  func setAttribute(name: String, value: Any) throws {
+    _ = try unwrap(BGSFlutterFacadeOps.setAttribute(sdk: facadeSdk, name: name, value: value))
+  }
+
+  func getAttribute(name: String) throws -> Any? {
+    try unwrap(BGSFlutterFacadeOps.getAttribute(sdk: facadeSdk, name: name))
+  }
+
+  func getAllAttributes() throws -> [String: Any] {
+    (try unwrap(BGSFlutterFacadeOps.getAllAttributes(sdk: facadeSdk)) as? [String: Any]) ?? [:]
+  }
+
+  func clearAttribute(name: String) throws {
+    _ = try unwrap(BGSFlutterFacadeOps.clearAttribute(sdk: facadeSdk, name: name))
+  }
+
+  func clearAllAttributes() throws {
+    _ = try unwrap(BGSFlutterFacadeOps.clearAllAttributes(sdk: facadeSdk))
+  }
+
+  func setUserIdentifier(identifier: String?) throws {
+    _ = try unwrap(BGSFlutterFacadeOps.setUserIdentifier(sdk: facadeSdk, identifier: identifier))
+  }
+
+  func getUserIdentifier() throws -> String? {
+    try unwrap(BGSFlutterFacadeOps.getUserIdentifier(sdk: facadeSdk)) as? String
+  }
+
+  func trace(name: String, value: Any) throws {
+    _ = try unwrap(BGSFlutterFacadeOps.trace(sdk: facadeSdk, name: name, value: value))
+  }
+
+  func event(name: String, params: [String: Any?]?) throws {
+    // A null member must arrive as null (NSNull), not be dropped.
+    let converted = params?.mapValues { $0 ?? NSNull() }
+    _ = try unwrap(BGSFlutterFacadeOps.event(sdk: facadeSdk, name: name, params: converted))
+  }
+
+  func addBreadcrumb(breadcrumb: BreadcrumbMessage) throws -> Bool {
+    let data = breadcrumb.data?.mapValues { $0 ?? NSNull() }
+    let result = BGSFlutterFacadeOps.addBreadcrumb(
+      sdk: facadeSdk, category: breadcrumb.category, level: breadcrumb.level,
+      message: breadcrumb.message, type: breadcrumb.type, data: data)
+    return (try unwrap(result) as? NSNumber)?.boolValue ?? false
+  }
+
+  func relayNotification(
+    title: String, body: String?, severity: Int64?, fields: [String]?, urgent: Bool
+  ) throws {
+    _ = try unwrap(
+      BGSFlutterFacadeOps.relayNotification(
+        sdk: facadeSdk, title: title, body: body, severity: severity.map { NSNumber(value: $0) },
+        fields: fields, urgent: urgent))
+  }
+
+  func log(message: String, level: Int64) throws {
+    _ = try unwrap(BGSFlutterFacadeOps.log(sdk: facadeSdk, message: message, level: level))
+  }
+
+  func startBlackout() throws {
+    _ = try unwrap(BGSFlutterFacadeOps.startBlackout(sdk: facadeSdk))
+  }
+
+  func endBlackout() throws {
+    _ = try unwrap(BGSFlutterFacadeOps.endBlackout(sdk: facadeSdk))
+  }
+
+  func isBlackout() throws -> Bool {
+    (try unwrap(BGSFlutterFacadeOps.isBlackout(sdk: facadeSdk)) as? NSNumber)?.boolValue ?? false
+  }
+
+  func showReportDialog(
+    summary: String?, description: String?, severity: Int64?, labels: [String]?
+  ) throws {
+    _ = try unwrap(
+      BGSFlutterFacadeOps.showReportDialog(
+        sdk: facadeSdk, summary: summary, description: description,
+        severity: severity.map { NSNumber(value: $0) }, labels: labels))
+  }
+
+  func upload(summary: String, description: String, severity: Int64?, labels: [String]?) throws {
+    _ = try unwrap(
+      BGSFlutterFacadeOps.upload(
+        sdk: facadeSdk, summary: summary, description: description,
+        severity: severity.map { NSNumber(value: $0) }, labels: labels))
+  }
+
   // MARK: Report handlers
 
   func resetReportHandlers() throws {
@@ -320,6 +415,14 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     @unknown default: return false
     }
   }
+}
+
+/// A failed facade operation crosses as a PlatformException carrying the bridge's code.
+private func unwrap(_ result: BGSFlutterFacadeResult) throws -> Any? {
+  if let code = result.errorCode {
+    throw PigeonError(code: code, message: result.errorMessage ?? code, details: nil)
+  }
+  return result.value
 }
 
 /// A launch or stop that threw crosses as a PlatformException `launch-failed` (never the token or

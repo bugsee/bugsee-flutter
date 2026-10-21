@@ -6,18 +6,14 @@ import 'package:flutter/foundation.dart'
     show ErrorDescription, FlutterError, FlutterErrorDetails;
 import 'package:flutter/services.dart' show BinaryMessenger;
 
+import '../report/report_handler.dart';
 import '../report/report_proxy.dart';
 import '../status.dart';
 import 'lifecycle.dart';
 import 'messages.g.dart';
 import 'runtime_facts.dart';
 
-/// A report handler (`onBeforeReportCreated` / `onAfterReportCreated`).
-///
-/// The [report] is live only until the returned future completes (or the SDK's
-/// deadline passes, whichever is first): await every edit. An error it throws is
-/// reported through [FlutterError.reportError] and the report still proceeds.
-typedef ReportHandler = FutureOr<void> Function(ReportProxy report);
+export '../report/report_handler.dart' show ReportHandler;
 
 /// Receives the SDK's lifecycle events from native, delivers report-handler
 /// requests, and refines the wrapper identity.
@@ -169,13 +165,40 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   Future<void> setReportHandlers({
     ReportHandler? onBefore,
     ReportHandler? onAfter,
-  }) async {
+  }) {
+    // One at a time, in call order: the snapshot, the native call and the rollback of one
+    // registration must not interleave with another's, or a failure could restore handlers an
+    // earlier call installed and split Dart from native (which holds the last SUCCESSFUL call's).
+    final run = _handlerChain.then(
+      (_) => _setReportHandlers(onBefore, onAfter),
+    );
+    _handlerChain = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<void> _handlerChain = Future<void>.value();
+
+  Future<void> _setReportHandlers(
+    ReportHandler? onBefore,
+    ReportHandler? onAfter,
+  ) async {
+    final previousBefore = _onBefore;
+    final previousAfter = _onAfter;
+    final previousPhasesSent = _phasesSent;
     _onBefore = onBefore;
     _onAfter = onAfter;
     // The receiver first, then the flag: native must not call before Dart can answer.
     BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
-    await _sweepPreviousIsolate();
-    await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
+    try {
+      await _sweepPreviousIsolate();
+      await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
+    } catch (_) {
+      // Native still has the old phases, so the old handlers keep running: one truth.
+      _onBefore = previousBefore;
+      _onAfter = previousAfter;
+      _phasesSent = previousPhasesSent;
+      rethrow;
+    }
     _phasesSent = true;
   }
 
@@ -194,7 +217,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       await _complete(request.handle);
       return;
     }
-    final proxy = ReportProxy.internal(
+    final proxy = createReportProxy(
       id: request.reportId,
       typeName: request.type,
       deliveryId: request.deliveryId,
@@ -207,7 +230,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     var overran = false;
     final deadline = Timer(Duration(milliseconds: request.deadlineMs), () {
       overran = true;
-      proxy.markCompleted();
+      closeReportProxy(proxy);
     });
     try {
       await handler(proxy);
@@ -239,7 +262,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       }
       // Closed BEFORE the completion crosses, so nothing a stray continuation does
       // afterwards can be sent as if it were still live.
-      proxy.markCompleted();
+      closeReportProxy(proxy);
       await _complete(request.handle);
     }
   }

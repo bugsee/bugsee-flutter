@@ -1,5 +1,5 @@
 // The report enums, by VALUE (workbook 7.4). `ReportSeverity` is public (it types the three
-// default-priority launch options); `ReportType` stays internal until Phase 4b exposes the handlers.
+// default-priority launch options); `ReportType` is public too (it types `ReportProxy.type`).
 //
 // Neither enum's `index` ever crosses the bridge: ordinals differ between
 // platforms and shift between releases, and Pigeon would send an enum as its

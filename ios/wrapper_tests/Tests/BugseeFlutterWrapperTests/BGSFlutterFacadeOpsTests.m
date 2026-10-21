@@ -219,6 +219,9 @@
   XCTAssertNil(([BGSFlutterFacadeOps dartValueFromStored:@[ @"a", @1 ]]));
   XCTAssertNil([BGSFlutterFacadeOps dartValueFromStored:@(NAN)]);
   XCTAssertNil([BGSFlutterFacadeOps dartValueFromStored:nil]);
+  // ... and the read of a single attribute goes through the same filter.
+  _sdk.attributes[@"date"] = [NSDate date];
+  XCTAssertNil([BGSFlutterFacadeOps getAttributeWithSdk:_sdk name:@"date"].value);
   NSArray *strings = @[ @"a", @"b" ];
   XCTAssertEqualObjects([BGSFlutterFacadeOps dartValueFromStored:strings], strings);
 }

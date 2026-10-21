@@ -215,18 +215,13 @@ void main() {
         'ios/bugsee_flutter/Sources/bugsee_flutter/BugseeFlutterPlugin.swift',
       );
       for (final m in methods) {
-        final op = m == 'relayNotification' ? 'relayNotification' : m;
         expect(
           plugin,
-          contains('FacadeOps::$op').or(contains('FacadeOps.$op(')),
+          contains(RegExp('FacadeOps(::$m\\)|\\.$m\\()')),
           reason: 'java $m',
         );
-        expect(swift, contains('BGSFlutterFacadeOps.$op('), reason: 'swift $m');
+        expect(swift, contains('BGSFlutterFacadeOps.$m('), reason: 'swift $m');
       }
     });
   });
-}
-
-extension on Matcher {
-  Matcher or(Matcher other) => anyOf(this, other);
 }

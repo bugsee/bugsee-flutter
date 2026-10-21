@@ -877,6 +877,19 @@ void main() {
       await sub.cancel();
     });
 
+    test(
+      'the first access attaches the plugin, so earlier events are replayed',
+      () async {
+        Bugsee.debugSetRuntime(
+          BugseeRuntime(host: native, platform: () => platform),
+        );
+        expect(native.attachCount, 0);
+        Bugsee.lifecycleEvents;
+        await Future<void>.delayed(Duration.zero);
+        expect(native.attachCount, 1);
+      },
+    );
+
     test('the stream is a broadcast stream (many listeners)', () {
       Bugsee.debugSetRuntime(
         BugseeRuntime(host: native, platform: () => platform),

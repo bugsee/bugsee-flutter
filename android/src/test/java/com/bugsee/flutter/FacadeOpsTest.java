@@ -279,7 +279,8 @@ public class FacadeOpsTest {
 
     @Test
     public void aStoredSetOfStringsIsReadAsASortedList() {
-        final Set<String> set = new HashSet<>(Arrays.asList("b", "a", "c"));
+        // Insertion order c, b, a: only an actual sort gives a, b, c.
+        final Set<String> set = new java.util.LinkedHashSet<>(Arrays.asList("c", "b", "a"));
         assertEquals(Arrays.asList("a", "b", "c"), FacadeOps.toDartValue(set));
         assertNull(FacadeOps.toDartValue(new HashSet<>(Arrays.asList("a", 1))));
     }
@@ -292,6 +293,13 @@ public class FacadeOpsTest {
         // A float is the shortest decimal that names it, not the widened binary value.
         assertEquals(0.1, (Double) FacadeOps.toDartValue(0.1f), 0.0);
         assertEquals(3.0, (Double) FacadeOps.toDartValue(3.0f), 0.0);
+    }
+
+    @Test
+    public void aSingleAttributeDartCannotHoldReadsAsAbsent() throws Exception {
+        final FakeSdk sdk = new FakeSdk();
+        sdk.attributes.put("when", new java.util.Date());
+        assertNull(FacadeOps.getAttribute(sdk, "when"));
     }
 
     @Test

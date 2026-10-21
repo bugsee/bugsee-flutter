@@ -24,6 +24,9 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   Phases? phases;
 
+  /// How many times the plugin was attached (the lifecycle channel).
+  int attachCount = 0;
+
   T _record<T>(String name, List<Object?> args, T result) {
     calls.add('$name(${args.join(', ')})');
     last[name] = args;
@@ -36,7 +39,9 @@ class FacadeFake extends BugseeBridgeHostApi {
   }
 
   @override
-  Future<void> attachLifecycle() async {}
+  Future<void> attachLifecycle() async {
+    attachCount++;
+  }
 
   @override
   Future<void> resetReportHandlers() async {}

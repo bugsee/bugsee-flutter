@@ -66,8 +66,23 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   (paintsChild, IndexedStack, a clipping viewport); neither a disabled TickerMode nor a detached layer counts as such evidence. An unmeasurable region covers the whole view.
   First-frame exposure of a newly appearing region remains.
   Known limits: see "Secure rectangle limits" in `.claude/CLAUDE.md`.
-- Report handlers: always call completion; `isTerminating=true` → synchronous native-only
-  work, no round-trip to Dart.
+- Report handlers (3c, done): native pipeline (`ReportHandlerPipeline` / `BGSFlutterReportHandlerPipeline`) + a Dart
+  `ReportProxy` (internal, `lib/src/report`; Phase 4 exposes it). The SDK's completion runs EXACTLY ONCE on every path; the
+  pipeline NEVER WAITS (the SDK already waits on its own timer; a native wait for Dart's reply deadlocks when the handler runs
+  on the platform thread, which iOS's live path does). `isTerminating` never reaches Dart and the report is not even read.
+  No Dart handler registered, or Dart not attached: complete at once. The deadline sits inside the SDK's, from SDK source:
+  Android 7.4.2 waits `ReportHandlerCallbackTimeout` (30 s, option) per handler on thread `BugseeReportHandlerThread`, ours
+  25 s; its recovery/terminating paths run on other threads, wait 3 s for the handler to RETURN and never for the completion,
+  so Android completes at once there. iOS (nextgen = beta7 headers): live = MAIN thread, 30 s per handler, ours 25 s;
+  recovery = worker thread, 3 s cap, a late completion re-persists the report, ours 2 s. The path is told apart by thread
+  (Android: name, iOS: main or not) for the time budget ONLY, never passed to Dart, never "this is a recovered crash" (7.2.3).
+  The workbook's table says Android recovery runs on main and is waited for; 7.4.2 source says a spawned thread, not awaited
+  (inline on the launching thread only when no thread can be started): source wins, spec gap to report.
+  Dart: edits are operations keyed by a handle; a late edit throws `ReportClosedError` (a `StateError`) and native ignores it.
+  `onAfter` is at-least-once: each delivery carries a stable `deliveryId` (`before|after:<reportId>`) and Dart skips a repeat
+  within the isolate (128 remembered). Enums cross by value (the bridge has none; severity is the SDK integer; Dart
+  `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (TODO seam in `ReportProxy`).
+- `requestData` (3c): the stub answers null/nil for every type incl. `vh`, also on the replaced wrapper; tested on both platforms.
 
 ## 4. Phase 4 — Public API and options (Part 8)
 

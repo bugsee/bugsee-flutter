@@ -435,6 +435,7 @@
   }];
   [pipeline setPhasesForOwner:owner before:YES after:YES];
 
+  CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
   [pipeline dispatchPhase:BGSFlutterReportPhaseBefore
                    report:_report
             isTerminating:NO
@@ -443,6 +444,8 @@
                  completions++;
                  [completed fulfill];
                }];
+  // A wait that gave up after a timeout would still "return", so time it.
+  XCTAssertLessThan(CFAbsoluteTimeGetCurrent() - start, 0.5, @"dispatch returned at once");
   XCTAssertEqual(completions, 0u, @"dispatch returned before the completion ran");
   [self waitForExpectations:@[ completed ] timeout:5];
   XCTAssertEqual(completions, 1u);

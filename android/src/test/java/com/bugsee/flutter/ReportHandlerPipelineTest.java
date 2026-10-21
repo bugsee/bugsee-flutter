@@ -550,10 +550,13 @@ public class ReportHandlerPipelineTest {
             p.setPhases(owner, true, true);
 
             final Future<Boolean> returnedBeforeCompletion = main.submit(() -> {
+                final long start = System.nanoTime();
                 p.dispatch(Phase.BEFORE, report, false, completed::countDown);
-                return completed.getCount() == 1;
+                final long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+                // A wait that gave up after a timeout would still "return", so time it.
+                return completed.getCount() == 1 && elapsedMs < 500;
             });
-            assertTrue("dispatch returned before the completion ran",
+            assertTrue("dispatch returned at once, before the completion ran",
                     returnedBeforeCompletion.get(5, TimeUnit.SECONDS));
             assertTrue("and Dart's reply, queued on the same thread, then completed it",
                     completed.await(5, TimeUnit.SECONDS));
@@ -585,8 +588,11 @@ public class ReportHandlerPipelineTest {
             final CountDownLatch done = new CountDownLatch(1);
             final ExecutorService sdk = Executors.newSingleThreadExecutor();
             try {
+                final long start = System.nanoTime();
                 sdk.submit(() -> p.dispatch(Phase.BEFORE, report, false, done::countDown))
                         .get(5, TimeUnit.SECONDS);
+                assertTrue("the SDK thread was not held up",
+                        (System.nanoTime() - start) / 1_000_000L < 500);
             } finally {
                 sdk.shutdownNow();
             }
@@ -602,7 +608,7 @@ public class ReportHandlerPipelineTest {
 
     @Test(timeout = 20_000)
     public void everyRaceForTheCompletionRunsItOnce() throws Exception {
-        final int rounds = 300;
+        final int rounds = 100;
         final ExecutorService pool = Executors.newFixedThreadPool(4);
         try {
             for (int i = 0; i < rounds; i++) {

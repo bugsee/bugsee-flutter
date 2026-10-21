@@ -11,7 +11,16 @@
 //   # iOS: the headers the pinned xcframework ships (Bugsee.framework/Headers)
 //   dart scripts/extract_report_enums.dart --android-severity /tmp/IssueSeverity.java \
 //     --android-type /tmp/IssueType.java --ios-constants .../BugseeConstants.h \
-//     --ios-contracts .../BGSContracts.h [--check]
+//     --ios-contracts .../BGSContracts.h \
+//     --android-coordinator /tmp/BugseeIssueReportingCoordinator.java \
+//     --android-chain /tmp/ReportHandlerChain.java --android-options /tmp/OptionsDescriptors.java \
+//     --ios-coordinator /tmp/BGSIssueReportingCoordinator.m --ios-source-ref origin/nextgen@0581aa02c [--check]
+//
+// The same fixture also carries the SDKs' report-handler TIMINGS (workbook 7.3.5), read from
+// source, so the wrapper's deadlines are compared with the SDK's real numbers and not with
+// copies of themselves. The iOS timings are constants of a .m that the shipped binary does not
+// expose: they come from the nextgen commit named by --ios-source-ref (no 7.0.0-beta7 tag exists
+// in the iOS SDK repository; the shipped headers equal nextgen's).
 //
 // `--check` compares with the committed fixture instead of writing it. The fixture
 // records the pins it was extracted at; test/report_enum_parity_test.dart fails when
@@ -50,6 +59,33 @@ String _javaEnumBody(String clean, String enumName) {
   final rest = clean.substring(start.end);
   final end = rest.indexOf(';');
   return end < 0 ? rest : rest.substring(0, end + 1);
+}
+
+/// `NAME = 3000L;` / `NAME = 60_000L;` in Java.
+int javaLong(String source, String name) {
+  final m = RegExp(
+    '$name\\s*=\\s*([\\d_]+)L',
+  ).firstMatch(stripComments(source));
+  if (m == null) throw FormatException('no constant $name');
+  return int.parse(m.group(1)!.replaceAll('_', ''));
+}
+
+/// The default of `OptionDescriptor.createAndRegister(Options.NAME, Integer.class, 30)`.
+int javaOptionDefault(String source, String option) {
+  final m = RegExp(
+    'Options\\.$option\\s*,\\s*Integer\\.class\\s*,\\s*(\\d+)',
+  ).firstMatch(stripComments(source));
+  if (m == null) throw FormatException('no option $option');
+  return int.parse(m.group(1)!);
+}
+
+/// `static const NSTimeInterval NAME = 30.0;` in Objective-C.
+num objcSeconds(String source, String name) {
+  final m = RegExp(
+    '$name\\s*=\\s*([\\d.]+)\\s*;',
+  ).firstMatch(stripComments(source));
+  if (m == null) throw FormatException('no constant $name');
+  return num.parse(m.group(1)!);
 }
 
 /// `typedef enum : T { A = 1, B = 2 } Name;` and `typedef NS_ENUM(T, Name) { ... };`.
@@ -99,6 +135,11 @@ Map<String, Object?> extract({
   required String androidType,
   required String iosConstants,
   required String iosContracts,
+  required String androidCoordinator,
+  required String androidChain,
+  required String androidOptions,
+  required String iosCoordinator,
+  required String iosSourceRef,
   required Map<String, Object?> pins,
 }) => {
   '_comment':
@@ -108,10 +149,36 @@ Map<String, Object?> extract({
   'android': {
     'IssueSeverity': javaIntEnum(androidSeverity, 'IssueSeverity'),
     'IssueType': javaStringEnum(androidType, 'IssueType'),
+    'reportHandlerTimings': {
+      'terminatingCapMs': javaLong(
+        androidCoordinator,
+        'TERMINATING_HANDLER_CAP_MILLIS',
+      ),
+      'chainCapMs': javaLong(androidChain, 'HANDLER_CHAIN_CAP_MILLIS'),
+      'handlerTimeoutDefaultSeconds': javaOptionDefault(
+        androidOptions,
+        'ReportHandlerCallbackTimeout',
+      ),
+    },
   },
   'ios': {
     'BugseeSeverityLevel': objcEnum(iosConstants, 'BugseeSeverityLevel'),
     'issueTypeStrings': iosTypeStrings(iosContracts),
+    'reportHandlerTimings': {
+      'source': iosSourceRef,
+      'handlerTimeoutSeconds': objcSeconds(
+        iosCoordinator,
+        'kBGSReportHandlerCallbackTimeoutSeconds',
+      ),
+      'chainTimeoutSeconds': objcSeconds(
+        iosCoordinator,
+        'kBGSReportHandlerChainTimeoutSeconds',
+      ),
+      'boundedCapSeconds': objcSeconds(
+        iosCoordinator,
+        'kBGSBoundedReportHandlerCapSeconds',
+      ),
+    },
   },
 };
 
@@ -133,6 +200,13 @@ void main(List<String> args) {
     androidType: File(arg(args, '--android-type')).readAsStringSync(),
     iosConstants: File(arg(args, '--ios-constants')).readAsStringSync(),
     iosContracts: File(arg(args, '--ios-contracts')).readAsStringSync(),
+    androidCoordinator: File(
+      arg(args, '--android-coordinator'),
+    ).readAsStringSync(),
+    androidChain: File(arg(args, '--android-chain')).readAsStringSync(),
+    androidOptions: File(arg(args, '--android-options')).readAsStringSync(),
+    iosCoordinator: File(arg(args, '--ios-coordinator')).readAsStringSync(),
+    iosSourceRef: arg(args, '--ios-source-ref'),
     pins: {
       'android': (versions['android'] as Map)['sdk'],
       'ios': (versions['ios'] as Map)['sdk'],

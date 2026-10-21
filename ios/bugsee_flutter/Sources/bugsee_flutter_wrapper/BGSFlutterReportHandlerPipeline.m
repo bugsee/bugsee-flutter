@@ -6,10 +6,18 @@
 
 @import Bugsee;
 
-const int64_t BGSFlutterReportLiveDeadlineMs = 25000;
+const int64_t BGSFlutterReportLiveDeadlineMs = 20000;
 const int64_t BGSFlutterReportRecoveryDeadlineMs = 2000;
 const int64_t BGSFlutterReportSdkLiveHandlerTimeoutMs = 30000;
 const int64_t BGSFlutterReportSdkBoundedCapMs = 3000;
+
+int64_t BGSFlutterReportMarginMs(int64_t sdkMs) {
+  return MIN(10000, sdkMs / 3);
+}
+
+int64_t BGSFlutterReportRemainingMs(int64_t budgetMs, int64_t elapsedMs) {
+  return MAX(0, budgetMs - MAX(0, elapsedMs));
+}
 
 int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
   return onMainThread ? BGSFlutterReportLiveDeadlineMs : BGSFlutterReportRecoveryDeadlineMs;
@@ -53,8 +61,10 @@ int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
 @implementation BGSFlutterReportRegistration
 @end
 
-/// One dispatch that reached Dart. `done`, `timer`, `report` and `completion` are guarded by
-/// the pipeline's lock; everything else is immutable.
+/// One dispatch that reached Dart. `done`, `timer`, `report` and `completion` are changed only
+/// under the pipeline's lock AND (for `done`, `report`, `completion`) the handle's `editLock`;
+/// everything else is immutable. Lock order: `editLock`, then the pipeline's lock; no lock is held
+/// across a call into the SDK's completion, Dart, the scheduler or the log.
 @interface BGSFlutterReportHandle : NSObject
 @property(nonatomic, copy, readonly) NSString *handleId;
 /// Nilled by finish, with `completion`: the deadline task captures the handle, and a cancelled
@@ -62,17 +72,26 @@ int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
 @property(nonatomic, strong, nullable) id report;
 @property(nonatomic, copy, nullable) dispatch_block_t completion;
 @property(nonatomic, strong, readonly) id owner;
-/// The exactly-once guard. Whoever flips it runs the completion.
+/// The exactly-once guard. Whoever flips it runs the completion (after unlocking).
 @property(nonatomic) BOOL done;
+/// Held by an edit across "is it live" + the change, and by finishing across flipping `done`.
+@property(nonatomic, strong, readonly) NSLock *editLock;
+@property(nonatomic, readonly) int64_t enteredAtMs;
+@property(nonatomic, readonly) int64_t deadlineMs;
 @property(nonatomic, strong, nullable) id timer;
 @end
 @implementation BGSFlutterReportHandle
 - (instancetype)initWithId:(NSString *)handleId
                     report:(id)report
                 completion:(dispatch_block_t)completion
-                     owner:(id)owner {
+                     owner:(id)owner
+               enteredAtMs:(int64_t)enteredAtMs
+                deadlineMs:(int64_t)deadlineMs {
   self = [super init];
   if (self) {
+    _editLock = [[NSLock alloc] init];
+    _enteredAtMs = enteredAtMs;
+    _deadlineMs = deadlineMs;
     _handleId = [handleId copy];
     _report = report;
     _completion = [completion copy];
@@ -112,6 +131,7 @@ static NSString *SafeReportId(id report) {
   BGSFlutterReportCancel _cancel;
   BGSFlutterReportPlatformPost _platformPost;
   BGSFlutterReportLog _log;
+  BGSFlutterReportClock _clock;
 
   /// Guards everything below. The SDK dispatches on main (live) or its own threads (recovery),
   /// Dart completes on main, deadlines fire on the scheduler's queue: all of them meet here.
@@ -158,8 +178,23 @@ static NSString *SafeReportId(id report) {
                            cancel:(BGSFlutterReportCancel)cancel
                      platformPost:(BGSFlutterReportPlatformPost)platformPost
                               log:(BGSFlutterReportLog)log {
+  return [self initWithScheduler:scheduler
+                          cancel:cancel
+                    platformPost:platformPost
+                             log:log
+                           clock:^int64_t {
+                             return (int64_t)([[NSProcessInfo processInfo] systemUptime] * 1000.0);
+                           }];
+}
+
+- (instancetype)initWithScheduler:(BGSFlutterReportScheduler)scheduler
+                           cancel:(BGSFlutterReportCancel)cancel
+                     platformPost:(BGSFlutterReportPlatformPost)platformPost
+                              log:(BGSFlutterReportLog)log
+                            clock:(BGSFlutterReportClock)clock {
   self = [super init];
   if (self) {
+    _clock = [clock copy];
     _schedule = [scheduler copy];
     _cancel = [cancel copy];
     _platformPost = [platformPost copy];
@@ -189,6 +224,21 @@ static NSString *SafeReportId(id report) {
     ((BGSFlutterReportRegistration *)owner).after = after;
   }
   os_unfair_lock_unlock(&_lock);
+}
+
+- (void)resetOwner:(id)owner {
+  [self setPhasesForOwner:owner before:NO after:NO];
+  NSMutableArray<BGSFlutterReportHandle *> *stale = [NSMutableArray array];
+  os_unfair_lock_lock(&_lock);
+  for (BGSFlutterReportHandle *handle in _handles.allValues) {
+    if (handle.owner == owner) {
+      [stale addObject:handle];
+    }
+  }
+  os_unfair_lock_unlock(&_lock);
+  for (BGSFlutterReportHandle *handle in stale) {
+    [self finish:handle by:@"reset"];
+  }
 }
 
 - (void)detachOwner:(id)owner {
@@ -276,7 +326,9 @@ static NSString *SafeReportId(id report) {
   BGSFlutterReportHandle *handle = [[BGSFlutterReportHandle alloc] initWithId:handleId
                                                                        report:report
                                                                    completion:completion
-                                                                        owner:target];
+                                                                        owner:target
+                                                                  enteredAtMs:_clock()
+                                                                   deadlineMs:deadlineMs];
   _handles[handleId] = handle;
   // A detach that ran after the lookup above removed the registration, and swept the table
   // before this handle was in it; whichever side comes second catches the handle.
@@ -340,8 +392,24 @@ static NSString *SafeReportId(id report) {
   if (over) {
     return;
   }
+  // What is observable of the SDK's own wait: how long this request sat before the main queue took
+  // it. Deduct it; a window that is already over is not offered to Dart.
+  const int64_t gapMs = MAX(0, _clock() - handle.enteredAtMs);
+  const int64_t remainingMs = BGSFlutterReportRemainingMs(handle.deadlineMs, gapMs);
+  _log([NSString stringWithFormat:@"[BugseeFlutter] report handler %@ delivery gap=%lld ms remaining=%lld ms",
+                                  handle.handleId, gapMs, remainingMs]);
+  if (remainingMs <= 0) {
+    [self finish:handle by:@"expired"];
+    return;
+  }
+  BGSFlutterReportRequest *live = [[BGSFlutterReportRequest alloc] initWithHandle:request.handle
+                                                                       deliveryId:request.deliveryId
+                                                                            after:request.after
+                                                                         reportId:request.reportId
+                                                                             type:request.type
+                                                                       deadlineMs:remainingMs];
   @try {
-    target.sink(request, ^{
+    target.sink(live, ^{
       [self finish:handle by:@"unreachable"];
     });
   } @catch (NSException *exception) {
@@ -375,20 +443,37 @@ static NSString *SafeReportId(id report) {
 - (BGSFlutterReportEditResult)editHandle:(NSString *)handleId
                                     edit:(BGSFlutterReportEdit)edit
                                    error:(NSError **)error {
-  id report = [self reportForHandle:handleId];
-  if (report == nil) {
+  if (handleId == nil) {
     return BGSFlutterReportEditNotLive;
   }
-  return edit(report, error) ? BGSFlutterReportEditApplied : BGSFlutterReportEditRefused;
+  os_unfair_lock_lock(&_lock);
+  BGSFlutterReportHandle *handle = _handles[handleId];
+  os_unfair_lock_unlock(&_lock);
+  if (handle == nil) {
+    return BGSFlutterReportEditNotLive;
+  }
+  // Check and apply under the handle's lock: finishing flips `done` under the same one, so a
+  // deadline cannot fall between the check and the apply and leave an edit "applied" after the
+  // SDK's completion ran (and the report's fields are not written from two threads at once).
+  [handle.editLock lock];
+  if (handle.done) {
+    [handle.editLock unlock];
+    return BGSFlutterReportEditNotLive;
+  }
+  const BOOL applied = edit(handle.report, error);
+  [handle.editLock unlock];
+  return applied ? BGSFlutterReportEditApplied : BGSFlutterReportEditRefused;
 }
 
 #pragma mark - Private
 
 /// @return YES only for the call that ran the SDK completion.
 - (BOOL)finish:(BGSFlutterReportHandle *)handle by:(NSString *)by {
+  [handle.editLock lock];
   os_unfair_lock_lock(&_lock);
   if (handle.done) {
     os_unfair_lock_unlock(&_lock);
+    [handle.editLock unlock];
     return NO;
   }
   handle.done = YES;
@@ -401,8 +486,9 @@ static NSString *SafeReportId(id report) {
   handle.completion = nil;
   handle.report = nil;
   os_unfair_lock_unlock(&_lock);
+  [handle.editLock unlock];
 
-  // Outside the lock from here: the completion re-enters the SDK, and a cancel or a log line
+  // Outside the locks from here: the completion re-enters the SDK, and a cancel or a log line
   // has no business holding up every other handle.
   if (timer != nil) {
     [self cancelQuietly:timer];

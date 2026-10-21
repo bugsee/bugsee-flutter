@@ -16,6 +16,11 @@
       "Bug": "bug",
       "Crash": "crash",
       "Error": "error"
+    },
+    "reportHandlerTimings": {
+      "terminatingCapMs": 3000,
+      "chainCapMs": 60000,
+      "handlerTimeoutDefaultSeconds": 30
     }
   },
   "ios": {
@@ -30,6 +35,12 @@
       "bug",
       "crash",
       "error"
-    ]
+    ],
+    "reportHandlerTimings": {
+      "source": "origin/nextgen@0581aa02c",
+      "handlerTimeoutSeconds": 30.0,
+      "chainTimeoutSeconds": 60.0,
+      "boundedCapSeconds": 3.0
+    }
   }
 }

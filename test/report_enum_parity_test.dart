@@ -238,6 +238,31 @@ typedef enum : NSUInteger {
       expect(() => extract.objcEnum(ns, 'Other'), throwsFormatException);
     });
 
+    test('timings: Java constants, the option default and Objective-C seconds', () {
+      expect(
+        extract.javaLong('static final long A_MS = 3000L; // 1L', 'A_MS'),
+        3000,
+      );
+      expect(extract.javaLong('X_CAP = 60_000L;', 'X_CAP'), 60000);
+      expect(() => extract.javaLong('nothing', 'X_CAP'), throwsFormatException);
+      const options =
+          'createAndRegister(Options.ReportHandlerCallbackTimeout, Integer.class, 30);'
+          ' // Options.Other, Integer.class, 99';
+      expect(
+        extract.javaOptionDefault(options, 'ReportHandlerCallbackTimeout'),
+        30,
+      );
+      expect(
+        () => extract.javaOptionDefault(options, 'Nope'),
+        throwsFormatException,
+      );
+      const m =
+          'static const NSTimeInterval kA = 30.0;\n// kB = 9.0;\nstatic const NSTimeInterval kB = 3.0;';
+      expect(extract.objcSeconds(m, 'kA'), 30.0);
+      expect(extract.objcSeconds(m, 'kB'), 3.0);
+      expect(() => extract.objcSeconds(m, 'kC'), throwsFormatException);
+    });
+
     test('the iOS type strings come from the property documentation', () {
       const header =
           '/// The issue type: `@"bug"`, `@"crash"` or `@"error"`. Readonly.\n'

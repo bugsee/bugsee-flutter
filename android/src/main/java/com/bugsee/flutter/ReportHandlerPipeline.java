@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Every dispatch ends in exactly ONE run of the SDK's completion, whichever gets
  * there first: Dart completing the handle, the handle's deadline, the engine
  * detaching, a failure to reach Dart, or an error in here (7.1.2). The guard is one
- * {@link AtomicBoolean} per handle plus one around the SDK's completion itself, so
+ * lock-guarded flag per handle plus an {@link AtomicBoolean} around the SDK's completion itself, so
  * even a path this class did not think of cannot run it twice. Nothing in here throws
  * into the SDK.
  *
@@ -48,6 +48,22 @@ import java.util.concurrent.atomic.AtomicLong;
  * either), no registered Dart handler for the phase (no waiting), a dispatch the SDK
  * does not wait on (see {@link ReportHandlerDeadlines}), or a deadline too short to fit
  * a round trip: the completion runs at once.
+ *
+ * <h3>The window, and what it cannot know</h3>
+ * Dart's window is the SDK's budget less a margin ({@link ReportHandlerDeadlines}), measured from
+ * the handler's ENTRY. The SDK starts its own timer when it QUEUES the handler, which cannot be
+ * observed, so an edit made after the SDK has moved on (the handler queued behind another report's
+ * slow handler for longer than the margin) can still be accepted: this class guarantees only that
+ * an accepted edit was applied BEFORE this class ran the completion. The wait for the platform
+ * thread after entry is observed and deducted: Dart is told what is left ({@code Request.deadlineMs}),
+ * and a window that is already over is not offered to Dart at all.
+ *
+ * <h3>Check and apply are one step</h3>
+ * An edit holds the handle's lock while it checks that the handle is live AND applies the change,
+ * and the deadline (or Dart, or a detach) flips {@code done} under the same lock. So an edit that
+ * was reported as applied really landed before the completion ran. The lock covers only the report's
+ * own setters (short, they never call back into this class or Dart); the SDK's completion, Dart and
+ * the scheduler are always called OUTSIDE it, and nothing else is locked while it is held.
  *
  * <h3>A late Dart edit</h3>
  * The proxy is live only until the completion runs (7.3.4). {@link #reportFor} answers
@@ -132,6 +148,11 @@ final class ReportHandlerPipeline {
         Integer read();
     }
 
+    /** Milliseconds on a monotonic clock; injectable so a test controls time. */
+    interface Clock {
+        long nowMs();
+    }
+
     interface ThreadName {
         @Nullable
         String current();
@@ -159,15 +180,31 @@ final class ReportHandlerPipeline {
         final Report report;
         final Runnable sdkCompletion;
         final Object owner;
-        /** The exactly-once guard of this handle. Whoever flips it runs the completion. */
-        final AtomicBoolean done = new AtomicBoolean();
+        /** {@link Clock#nowMs} when the SDK called us; the window is measured from here. */
+        final long enteredAtMs;
+        final long deadlineMs;
+        /**
+         * The exactly-once guard of this handle. Flipped only while holding the handle's monitor
+         * (the same one an edit holds across check-and-apply); whoever flips it runs the completion,
+         * after releasing it.
+         */
+        volatile boolean done;
         volatile Cancellable timer;
 
-        Handle(final String id, final Report report, final Runnable sdkCompletion, final Object owner) {
+        Handle(
+                final String id,
+                final Report report,
+                final Runnable sdkCompletion,
+                final Object owner,
+                final long enteredAtMs,
+                final long deadlineMs
+        ) {
             this.id = id;
             this.report = report;
             this.sdkCompletion = sdkCompletion;
             this.owner = owner;
+            this.enteredAtMs = enteredAtMs;
+            this.deadlineMs = deadlineMs;
         }
     }
 
@@ -177,7 +214,8 @@ final class ReportHandlerPipeline {
                 new MainThread(),
                 ReportHandlerPipeline::optionFromLaunchOptions,
                 () -> Thread.currentThread().getName(),
-                message -> Log.i(TAG, message));
+                message -> Log.i(TAG, message),
+                () -> System.nanoTime() / 1_000_000L);
     }
 
     @NonNull
@@ -190,6 +228,7 @@ final class ReportHandlerPipeline {
     private final OptionSeconds option;
     private final ThreadName threadName;
     private final OutcomeLog outcomes;
+    private final Clock clock;
     /** Most recently attached first. */
     private final List<Registration> registrations = new CopyOnWriteArrayList<>();
     private final Map<String, Handle> handles = new ConcurrentHashMap<>();
@@ -202,6 +241,18 @@ final class ReportHandlerPipeline {
             @NonNull final ThreadName threadName,
             @NonNull final OutcomeLog outcomes
     ) {
+        this(scheduler, platform, option, threadName, outcomes, () -> System.nanoTime() / 1_000_000L);
+    }
+
+    ReportHandlerPipeline(
+            @NonNull final Scheduler scheduler,
+            @NonNull final PlatformThread platform,
+            @NonNull final OptionSeconds option,
+            @NonNull final ThreadName threadName,
+            @NonNull final OutcomeLog outcomes,
+            @NonNull final Clock clock
+    ) {
+        this.clock = clock;
         this.scheduler = scheduler;
         this.platform = platform;
         this.option = option;
@@ -221,6 +272,20 @@ final class ReportHandlerPipeline {
             if (r.owner == owner) {
                 r.before = before;
                 r.after = after;
+            }
+        }
+    }
+
+    /**
+     * A new Dart isolate is up on this engine (a hot restart): nothing in it knows the deliveries
+     * handed to the previous one, so complete them now instead of leaving each report to wait for
+     * its deadline, and forget which phases had a handler.
+     */
+    void reset(@NonNull final Object owner) {
+        setPhases(owner, false, false);
+        for (final Handle handle : handles.values()) {
+            if (handle.owner == owner) {
+                finish(handle, "reset");
             }
         }
     }
@@ -303,7 +368,8 @@ final class ReportHandlerPipeline {
                 reportId,
                 ReportOps.typeOf(report),
                 deadlineMs);
-        final Handle handle = new Handle(handleId, report, completion, target.owner);
+        final Handle handle = new Handle(
+                handleId, report, completion, target.owner, clock.nowMs(), deadlineMs);
         handles.put(handleId, handle);
         // A detach that ran after the lookup above swept the table before this handle was in
         // it: detach removes the registration first and sweeps second, so whichever side comes
@@ -315,7 +381,7 @@ final class ReportHandlerPipeline {
         try {
             final Cancellable timer = scheduler.schedule(() -> finish(handle, "deadline"), deadlineMs);
             handle.timer = timer;
-            if (handle.done.get()) {
+            if (handle.done) {
                 cancelQuietly(timer);
                 return;
             }
@@ -340,11 +406,24 @@ final class ReportHandlerPipeline {
             @NonNull final Registration target,
             @NonNull final Request request
     ) {
-        if (handle.done.get()) {
+        if (handle.done) {
             return;
         }
+        // What is observable of the SDK's own wait: how long this request sat before the platform
+        // thread took it. Deduct it; a window that is already over is not offered to Dart.
+        final long gapMs = Math.max(0L, clock.nowMs() - handle.enteredAtMs);
+        final long remainingMs = ReportHandlerDeadlines.remainingMs(handle.deadlineMs, gapMs);
+        outcomes.line("report handler " + handle.id + " delivery gap=" + gapMs
+                + " ms remaining=" + remainingMs + " ms");
+        if (remainingMs <= 0L) {
+            finish(handle, "expired");
+            return;
+        }
+        final Request live = new Request(
+                request.handle, request.deliveryId, request.after, request.reportId,
+                request.type, remainingMs);
         try {
-            target.sink.deliver(request, () -> finish(handle, "unreachable"));
+            target.sink.deliver(live, () -> finish(handle, "unreachable"));
         } catch (final Throwable t) {
             // A dead bridge throws from the send. Dart will never answer, so answer for it.
             Log.w(TAG, "report handler " + handle.id + " could not reach Dart: "
@@ -366,7 +445,7 @@ final class ReportHandlerPipeline {
             return null;
         }
         final Handle handle = handles.get(handleId);
-        return handle == null || handle.done.get() ? null : handle.report;
+        return handle == null || handle.done ? null : handle.report;
     }
 
     /** One change to a live report; may refuse its argument before touching anything. */
@@ -383,18 +462,31 @@ final class ReportHandlerPipeline {
      */
     boolean edit(@Nullable final String handleId, @NonNull final Edit edit)
             throws ReportOps.BadArgument {
-        final Report report = reportFor(handleId);
-        if (report == null) {
+        final Handle handle = handleId == null ? null : handles.get(handleId);
+        if (handle == null) {
             return false;
         }
-        edit.apply(report);
-        return true;
+        // Check and apply under the handle's lock: finish() flips `done` under the same one, so a
+        // deadline cannot fall between the check and the apply and leave an edit "applied" after
+        // the SDK's completion ran.
+        synchronized (handle) {
+            if (handle.done) {
+                return false;
+            }
+            edit.apply(handle.report);
+            return true;
+        }
     }
 
     private boolean finish(@NonNull final Handle handle, @NonNull final String by) {
-        if (!handle.done.compareAndSet(false, true)) {
-            return false;
+        synchronized (handle) {
+            if (handle.done) {
+                return false;
+            }
+            handle.done = true;
         }
+        // Outside the lock from here: the SDK's completion, the timer and the log never run
+        // while an edit could be waiting on it.
         handles.remove(handle.id, handle);
         final Cancellable timer = handle.timer;
         if (timer != null) {

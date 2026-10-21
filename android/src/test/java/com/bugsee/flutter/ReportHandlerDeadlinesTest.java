@@ -10,20 +10,41 @@ public class ReportHandlerDeadlinesTest {
 
     @Test
     public void liveDeadlineSitsInsideTheSdksDefault() {
-        assertEquals(25_000L, ReportHandlerDeadlines.liveMs(null));
-        assertEquals(25_000L, ReportHandlerDeadlines.liveMs(0));
-        assertEquals(25_000L, ReportHandlerDeadlines.liveMs(-1));
-        assertEquals(25_000L, ReportHandlerDeadlines.liveMs(30));
+        assertEquals(20_000L, ReportHandlerDeadlines.liveMs(null));
+        assertEquals(20_000L, ReportHandlerDeadlines.liveMs(0));
+        assertEquals(20_000L, ReportHandlerDeadlines.liveMs(-1));
+        assertEquals(20_000L, ReportHandlerDeadlines.liveMs(30));
         assertTrue(ReportHandlerDeadlines.LIVE_DEADLINE_MS
                 < ReportHandlerDeadlines.SDK_DEFAULT_HANDLER_TIMEOUT_MS);
     }
 
     @Test
     public void aShorterOptionShortensTheDeadlineAndALongerOneDoesNotLengthenIt() {
-        assertEquals(9_000L, ReportHandlerDeadlines.liveMs(10));
-        assertEquals(1_000L, ReportHandlerDeadlines.liveMs(2));
-        assertEquals(0L, ReportHandlerDeadlines.liveMs(1));
-        assertEquals(25_000L, ReportHandlerDeadlines.liveMs(120));
+        // The margin is a third of the SDK's budget, at most 10 s.
+        assertEquals(6_667L, ReportHandlerDeadlines.liveMs(10));
+        assertEquals(1_334L, ReportHandlerDeadlines.liveMs(2));
+        assertEquals(667L, ReportHandlerDeadlines.liveMs(1));
+        assertEquals(20_000L, ReportHandlerDeadlines.liveMs(120));
+    }
+
+    @Test
+    public void theMarginIsAThirdOfTheBudgetAtMostTenSeconds() {
+        assertEquals(10_000L, ReportHandlerDeadlines.marginMs(30_000L));
+        assertEquals(10_000L, ReportHandlerDeadlines.marginMs(120_000L));
+        assertEquals(1_000L, ReportHandlerDeadlines.marginMs(3_000L));
+        assertEquals(0L, ReportHandlerDeadlines.marginMs(0L));
+        assertEquals(ReportHandlerDeadlines.LIVE_DEADLINE_MS,
+                ReportHandlerDeadlines.SDK_DEFAULT_HANDLER_TIMEOUT_MS
+                        - ReportHandlerDeadlines.marginMs(ReportHandlerDeadlines.SDK_DEFAULT_HANDLER_TIMEOUT_MS));
+    }
+
+    @Test
+    public void whatIsLeftOfAWindowNeverGoesNegative() {
+        assertEquals(15_000L, ReportHandlerDeadlines.remainingMs(20_000L, 5_000L));
+        assertEquals(0L, ReportHandlerDeadlines.remainingMs(20_000L, 20_000L));
+        assertEquals(0L, ReportHandlerDeadlines.remainingMs(20_000L, 99_000L));
+        assertEquals("a clock that went backwards costs nothing",
+                20_000L, ReportHandlerDeadlines.remainingMs(20_000L, -5L));
     }
 
     @Test
@@ -41,7 +62,7 @@ public class ReportHandlerDeadlinesTest {
         assertEquals(0L, ReportHandlerDeadlines.deadlineMs("bugsee-report-handler-bounded", false, null));
         assertEquals(0L, ReportHandlerDeadlines.deadlineMs(
                 ReportHandlerDeadlines.LIVE_HANDLER_THREAD, false, 1));
-        assertEquals(25_000L, ReportHandlerDeadlines.deadlineMs(
+        assertEquals(20_000L, ReportHandlerDeadlines.deadlineMs(
                 ReportHandlerDeadlines.LIVE_HANDLER_THREAD, false, null));
     }
 

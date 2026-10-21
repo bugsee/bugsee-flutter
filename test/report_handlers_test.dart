@@ -32,6 +32,7 @@ class FakeNative {
   }
 
   static const _methods = [
+    'resetReportHandlers',
     'setReportHandlerPhases',
     'completeReportHandler',
     'reportRead',
@@ -65,6 +66,10 @@ class FakeNative {
 
   Object? _handle(String method, List<Object?> args) {
     calls.add('$method(${args.join(', ')})');
+    if (method == 'resetReportHandlers') {
+      before = after = false;
+      return null;
+    }
     if (method == 'setReportHandlerPhases') {
       before = args[0]! as bool;
       after = args[1]! as bool;
@@ -478,6 +483,44 @@ void main() {
       await native.deliver(handle: 'h1', after: true);
       await settle();
       expect(native.completions, 1);
+    });
+  });
+
+  group('the budget', () {
+    test(
+      'a handler that overruns it is reported even if it edits nothing more',
+      () async {
+        final reported = <FlutterErrorDetails>[];
+        final old = FlutterError.onError;
+        FlutterError.onError = reported.add;
+        addTearDown(() => FlutterError.onError = old);
+        await bridge.setReportHandlers(
+          onBefore: (r) async {
+            await r.setSummary('early');
+            await Future<void>.delayed(const Duration(milliseconds: 120));
+            // No further edit: nothing else would say that the handler ran long.
+          },
+        );
+        await native.deliver(handle: 'h1', deadlineMs: 40);
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        expect(reported, hasLength(1));
+        expect(
+          reported.single.exception.toString(),
+          contains('ran past its 40 ms budget'),
+        );
+        expect(native.completions, 1);
+      },
+    );
+
+    test('a handler inside the budget is not reported', () async {
+      final reported = <FlutterErrorDetails>[];
+      final old = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = old);
+      await bridge.setReportHandlers(onBefore: (r) => r.setSummary('x'));
+      await native.deliver(handle: 'h1', deadlineMs: 5000);
+      await settle();
+      expect(reported, isEmpty);
     });
   });
 

@@ -169,6 +169,12 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
 
   // MARK: Report handlers
 
+  func resetReportHandlers() throws {
+    if let owner = reportOwner {
+      BGSFlutterReportHandlerPipeline.shared().resetOwner(owner)
+    }
+  }
+
   func setReportHandlerPhases(before: Bool, after: Bool) throws {
     if let owner = reportOwner {
       BGSFlutterReportHandlerPipeline.shared().setPhasesForOwner(owner, before: before, after: after)

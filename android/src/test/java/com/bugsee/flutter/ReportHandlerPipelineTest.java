@@ -355,9 +355,11 @@ public class ReportHandlerPipelineTest {
         dispatch(Phase.BEFORE, false);
         assertEquals(1, scheduler.tasks.size());
         final long delay = scheduler.tasks.get(0).delayMs;
-        assertEquals(25_000L, delay);
+        assertEquals(20_000L, delay);
         assertTrue(delay < ReportHandlerDeadlines.SDK_DEFAULT_HANDLER_TIMEOUT_MS);
-        assertEquals(delay, delivered().deadlineMs);
+        // Dart is told what is left of the window after the hop to the platform thread.
+        final long told = delivered().deadlineMs;
+        assertTrue(told <= delay && told > delay - 2_000L);
     }
 
     @Test
@@ -391,10 +393,10 @@ public class ReportHandlerPipelineTest {
     public void anUnreadableOptionOrOneThatIsDisabledUsesTheDefault() {
         option.set(0);
         dispatch(Phase.BEFORE, false);
-        assertEquals(25_000L, scheduler.tasks.get(0).delayMs);
+        assertEquals(20_000L, scheduler.tasks.get(0).delayMs);
         option.set(-5);
         dispatch(Phase.BEFORE, false);
-        assertEquals(25_000L, scheduler.tasks.get(1).delayMs);
+        assertEquals(20_000L, scheduler.tasks.get(1).delayMs);
         final ReportHandlerPipeline throwing = new ReportHandlerPipeline(
                 scheduler, platform, () -> {
                     throw new IllegalStateException("not launched");
@@ -402,7 +404,148 @@ public class ReportHandlerPipelineTest {
         throwing.attach(owner, sink);
         throwing.setPhases(owner, true, true);
         throwing.dispatch(Phase.BEFORE, report, false, () -> { });
-        assertEquals(25_000L, scheduler.tasks.get(2).delayMs);
+        assertEquals(20_000L, scheduler.tasks.get(2).delayMs);
+    }
+
+    // ---- the window is measured, and what is observable of the SDK's wait is deducted ----------
+
+    private static final class FakeClock implements ReportHandlerPipeline.Clock {
+        long now;
+
+        @Override
+        public long nowMs() {
+            return now;
+        }
+    }
+
+    private ReportHandlerPipeline withClock(final FakeClock clock) {
+        final ReportHandlerPipeline p = new ReportHandlerPipeline(
+                scheduler, platform, option::get, thread::get, log::add, clock);
+        p.attach(owner, sink);
+        p.setPhases(owner, true, true);
+        return p;
+    }
+
+    @Test
+    public void dartIsToldWhatIsLeftOfTheWindowNotTheWholeOfIt() {
+        final FakeClock clock = new FakeClock();
+        final ReportHandlerPipeline p = withClock(clock);
+        p.dispatch(Phase.BEFORE, report, false, completions::incrementAndGet);
+        clock.now = 7_000; // the platform thread was busy for 7 s
+        platform.drain();
+        assertEquals(1, sink.requests.size());
+        assertEquals(13_000L, sink.requests.get(0).deadlineMs);
+        assertTrue("the gap is logged", log.toString().contains("delivery gap=7000"));
+    }
+
+    @Test
+    public void aWindowThatIsAlreadyOverIsNotOfferedToDart() {
+        final FakeClock clock = new FakeClock();
+        final ReportHandlerPipeline p = withClock(clock);
+        p.dispatch(Phase.BEFORE, report, false, completions::incrementAndGet);
+        clock.now = 20_000; // the whole window passed waiting for the platform thread
+        platform.drain();
+        assertEquals("completed, not delivered", 1, completions.get());
+        assertTrue(sink.requests.isEmpty());
+        assertNull(p.reportFor("rh-1"));
+        assertTrue(log.toString().contains("completed by=expired"));
+    }
+
+    // ---- hot restart ---------------------------------------------------------------------------
+
+    @Test
+    public void aNewIsolateCompletesWhatWasHandedToThePreviousOneAndForgetsItsPhases() {
+        dispatch(Phase.BEFORE, false);
+        delivered();
+        assertEquals(0, completions.get());
+        pipeline.reset(owner);
+        assertEquals("completed now, not at its deadline", 1, completions.get());
+        scheduler.fireEvenIfCancelled();
+        assertEquals(1, completions.get());
+        dispatch(Phase.AFTER, false);
+        assertEquals("no phase is registered until the new isolate says so", 2, completions.get());
+        assertTrue(log.toString().contains("completed by=reset"));
+    }
+
+    @Test
+    public void resettingOneEngineLeavesTheOthersHandlesAlone() {
+        final Object second = new Object();
+        final RecordingSink secondSink = new RecordingSink();
+        pipeline.attach(second, secondSink);
+        pipeline.setPhases(second, true, true);
+        dispatch(Phase.BEFORE, false);
+        platform.drain();
+        pipeline.reset(owner);
+        assertEquals(0, completions.get());
+        pipeline.reset(second);
+        assertEquals(1, completions.get());
+    }
+
+    // ---- check-and-apply is one step ------------------------------------------------------------
+
+    /**
+     * An edit that was reported as applied must have landed BEFORE the completion ran. The report
+     * is slow to apply (the window the old check-then-apply race lived in) while the deadline
+     * fires on another thread, many times over.
+     */
+    @Test(timeout = 60_000)
+    public void anEditReportedAppliedNeverLandsAfterTheCompletion() throws Exception {
+        final ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            int applied = 0;
+            int refused = 0;
+            for (int i = 0; i < 1500; i++) {
+                final ManualScheduler s = new ManualScheduler();
+                final AtomicInteger completed = new AtomicInteger();
+                final AtomicInteger landedAfterCompletion = new AtomicInteger();
+                final FakeReports.State st = new FakeReports.State();
+                st.beforeSetSummary = () -> {
+                    // Widen the window between "the handle is live" and "the setter ran".
+                    final long until = System.nanoTime() + 30_000;
+                    while (System.nanoTime() < until) {
+                        Thread.yield();
+                    }
+                };
+                final ReportHandlerPipeline p = new ReportHandlerPipeline(
+                        s, task -> {
+                            task.run();
+                            return true;
+                        }, option::get, thread::get, log::add);
+                final RecordingSink rs = new RecordingSink();
+                final Object o = new Object();
+                p.attach(o, rs);
+                p.setPhases(o, true, true);
+                st.onSummarySet = () -> {
+                    if (completed.get() > 0) {
+                        landedAfterCompletion.incrementAndGet();
+                    }
+                };
+                p.dispatch(Phase.BEFORE, FakeReports.create(st), false, completed::incrementAndGet);
+                final String handle = rs.requests.get(0).handle;
+                final CountDownLatch go = new CountDownLatch(1);
+                final Future<Boolean> edit = pool.submit(() -> {
+                    await(go);
+                    return p.edit(handle, r -> r.setSummary("x"));
+                });
+                final Future<?> deadline = pool.submit(() -> {
+                    await(go);
+                    s.fireEvenIfCancelled();
+                });
+                go.countDown();
+                deadline.get(5, TimeUnit.SECONDS);
+                if (edit.get(5, TimeUnit.SECONDS)) {
+                    applied++;
+                } else {
+                    refused++;
+                }
+                assertEquals("round " + i, 0, landedAfterCompletion.get());
+                assertEquals(1, completed.get());
+            }
+            assertTrue("the race was actually exercised both ways: applied=" + applied
+                    + " refused=" + refused, applied > 0 && refused > 0);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     // ---- the proxy is live only until the completion runs (7.3.4) -------------------------

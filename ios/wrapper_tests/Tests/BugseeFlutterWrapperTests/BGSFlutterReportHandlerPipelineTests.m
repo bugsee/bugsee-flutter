@@ -1,4 +1,5 @@
 #import <XCTest/XCTest.h>
+#import <sched.h>
 
 #import "BGSFlutterFakeReport.h"
 #import "BGSFlutterReportHandlerPipeline.h"
@@ -285,9 +286,9 @@
 - (void)testTheLiveDeadlineIsInsideTheSdksThirtySeconds {
   [self dispatch:BGSFlutterReportPhaseBefore terminating:NO main:YES];
   XCTAssertEqual(_tasks.count, 1u);
-  XCTAssertEqual(_tasks.firstObject.delayMs, 25000);
+  XCTAssertEqual(_tasks.firstObject.delayMs, 20000);
   XCTAssertLessThan(_tasks.firstObject.delayMs, BGSFlutterReportSdkLiveHandlerTimeoutMs);
-  XCTAssertEqual([self delivered].deadlineMs, 25000);
+  XCTAssertLessThanOrEqual([self delivered].deadlineMs, 20000);
 }
 
 - (void)testTheRecoveryDeadlineIsInsideTheSdksBoundedCap {
@@ -310,6 +311,194 @@
   XCTAssertFalse([_pipeline completeHandle:request.handle]);
   XCTAssertEqual(_completions, 1u);
   XCTAssertNil([_pipeline reportForHandle:request.handle]);
+}
+
+#pragma mark - the window is measured, and what is observable of the SDK's wait is deducted
+
+- (BGSFlutterReportHandlerPipeline *)pipelineWithClock:(int64_t *)clock owner:(id *)owner {
+  __weak typeof(self) weakSelf = self;
+  BGSFlutterReportHandlerPipeline *p = [[BGSFlutterReportHandlerPipeline alloc]
+      initWithScheduler:^id(dispatch_block_t task, int64_t delayMs) {
+        typeof(self) strongSelf = weakSelf;
+        BGSManualTask *t = [[BGSManualTask alloc] init];
+        t.block = task;
+        t.delayMs = delayMs;
+        @synchronized(strongSelf->_tasks) {
+          [strongSelf->_tasks addObject:t];
+        }
+        return t;
+      }
+      cancel:^(id token) {
+        ((BGSManualTask *)token).cancelled = YES;
+      }
+      platformPost:^(dispatch_block_t task) {
+        typeof(self) strongSelf = weakSelf;
+        @synchronized(strongSelf->_platformQueue) {
+          [strongSelf->_platformQueue addObject:[task copy]];
+        }
+      }
+      log:^(NSString *line) {
+        typeof(self) strongSelf = weakSelf;
+        @synchronized(strongSelf->_log) {
+          [strongSelf->_log addObject:line];
+        }
+      }
+      clock:^int64_t {
+        return *clock;
+      }];
+  *owner = [p attachSink:^(BGSFlutterReportRequest *request, dispatch_block_t unreachable) {
+    typeof(self) strongSelf = weakSelf;
+    [strongSelf->_requests addObject:request];
+  }];
+  [p setPhasesForOwner:*owner before:YES after:YES];
+  return p;
+}
+
+- (void)testDartIsToldWhatIsLeftOfTheWindowNotTheWholeOfIt {
+  int64_t clock = 0;
+  id owner = nil;
+  BGSFlutterReportHandlerPipeline *p = [self pipelineWithClock:&clock owner:&owner];
+  [p dispatchPhase:BGSFlutterReportPhaseBefore report:_report isTerminating:NO onMainThread:YES completion:^{ self->_completions++; }];
+  clock = 7000;  // main was busy for 7 s
+  [self drainPlatform];
+  XCTAssertEqual(_requests.count, 1u);
+  XCTAssertEqual(_requests.firstObject.deadlineMs, 13000);
+  XCTAssertTrue([[_log componentsJoinedByString:@"\n"] containsString:@"delivery gap=7000"], @"the gap is logged");
+}
+
+- (void)testAWindowThatIsAlreadyOverIsNotOfferedToDart {
+  int64_t clock = 0;
+  id owner = nil;
+  BGSFlutterReportHandlerPipeline *p = [self pipelineWithClock:&clock owner:&owner];
+  [p dispatchPhase:BGSFlutterReportPhaseBefore report:_report isTerminating:NO onMainThread:YES completion:^{ self->_completions++; }];
+  clock = 20000;
+  [self drainPlatform];
+  XCTAssertEqual(_completions, 1u, @"completed, not delivered");
+  XCTAssertEqual(_requests.count, 0u);
+  XCTAssertNil([p reportForHandle:@"rh-1"]);
+  XCTAssertTrue([[_log componentsJoinedByString:@"\n"] containsString:@"completed by=expired"]);
+}
+
+- (void)testTheBudgetHelpers {
+  XCTAssertEqual(BGSFlutterReportMarginMs(30000), 10000);
+  XCTAssertEqual(BGSFlutterReportMarginMs(120000), 10000);
+  XCTAssertEqual(BGSFlutterReportMarginMs(3000), 1000);
+  XCTAssertEqual(BGSFlutterReportLiveDeadlineMs, BGSFlutterReportSdkLiveHandlerTimeoutMs - BGSFlutterReportMarginMs(BGSFlutterReportSdkLiveHandlerTimeoutMs));
+  XCTAssertEqual(BGSFlutterReportRecoveryDeadlineMs, BGSFlutterReportSdkBoundedCapMs - BGSFlutterReportMarginMs(BGSFlutterReportSdkBoundedCapMs));
+  XCTAssertEqual(BGSFlutterReportRemainingMs(20000, 5000), 15000);
+  XCTAssertEqual(BGSFlutterReportRemainingMs(20000, 99000), 0);
+  XCTAssertEqual(BGSFlutterReportRemainingMs(20000, -5), 20000);
+}
+
+#pragma mark - hot restart
+
+- (void)testANewIsolateCompletesWhatWasHandedToThePreviousOneAndForgetsItsPhases {
+  [self dispatch:BGSFlutterReportPhaseBefore terminating:NO main:YES];
+  [self delivered];
+  XCTAssertEqual(_completions, 0u);
+  [_pipeline resetOwner:_owner];
+  XCTAssertEqual(_completions, 1u, @"completed now, not at its deadline");
+  [self fireDueEvenIfCancelled:YES];
+  XCTAssertEqual(_completions, 1u);
+  [self dispatch:BGSFlutterReportPhaseAfter terminating:NO main:YES];
+  XCTAssertEqual(_completions, 2u, @"no phase is registered until the new isolate says so");
+  XCTAssertTrue([[_log componentsJoinedByString:@"\n"] containsString:@"completed by=reset"]);
+}
+
+- (void)testResettingOneEngineLeavesTheOthersHandlesAlone {
+  id owner2 = [_pipeline attachSink:^(BGSFlutterReportRequest *request, dispatch_block_t unreachable) {
+  }];
+  [_pipeline setPhasesForOwner:owner2 before:YES after:YES];
+  [self dispatch:BGSFlutterReportPhaseBefore terminating:NO main:YES];
+  [self drainPlatform];
+  [_pipeline resetOwner:_owner];
+  XCTAssertEqual(_completions, 0u);
+  [_pipeline resetOwner:owner2];
+  XCTAssertEqual(_completions, 1u);
+}
+
+#pragma mark - check-and-apply is one step
+
+/// An edit reported as applied must have landed BEFORE the completion ran. The report is slow to
+/// apply (the window the old check-then-apply race lived in) while the deadline fires on another
+/// thread, many times over. The summary is `nonatomic, copy`, so the old race was also a data race.
+- (void)testAnEditReportedAppliedNeverLandsAfterTheCompletion {
+  NSUInteger applied = 0, refused = 0;
+  for (NSUInteger i = 0; i < 1500; i++) {
+    __block dispatch_block_t deadline = nil;
+    __block BGSFlutterReportRequest *request = nil;
+    NSObject *lock = [[NSObject alloc] init];
+    __block NSUInteger completed = 0;
+    __block NSUInteger landedAfter = 0;
+    BGSFlutterFakeReport *report = [[BGSFlutterFakeReport alloc] init];
+    report.beforeSetSummary = ^{
+      CFAbsoluteTime until = CFAbsoluteTimeGetCurrent() + 0.00003;
+      while (CFAbsoluteTimeGetCurrent() < until) {
+        sched_yield();
+      }
+    };
+    report.onSummarySet = ^{
+      @synchronized(lock) {
+        if (completed > 0) {
+          landedAfter++;
+        }
+      }
+    };
+    BGSFlutterReportHandlerPipeline *p = [[BGSFlutterReportHandlerPipeline alloc]
+        initWithScheduler:^id(dispatch_block_t task, int64_t delayMs) {
+          deadline = [task copy];
+          return @"t";
+        }
+        cancel:^(id token) {
+        }
+        platformPost:^(dispatch_block_t task) {
+          task();
+        }
+        log:^(NSString *line) {
+        }];
+    id owner = [p attachSink:^(BGSFlutterReportRequest *r, dispatch_block_t u) {
+      request = r;
+    }];
+    [p setPhasesForOwner:owner before:YES after:YES];
+    [p dispatchPhase:BGSFlutterReportPhaseBefore
+              report:report
+       isTerminating:NO
+        onMainThread:YES
+          completion:^{
+            @synchronized(lock) {
+              completed++;
+            }
+          }];
+    __block BGSFlutterReportEditResult result = BGSFlutterReportEditNotLive;
+    dispatch_group_t group = dispatch_group_create();
+    dispatch_queue_t q = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+    dispatch_semaphore_t go = dispatch_semaphore_create(0);
+    dispatch_group_async(group, q, ^{
+      dispatch_semaphore_wait(go, DISPATCH_TIME_FOREVER);
+      result = [p editHandle:request.handle
+                        edit:^BOOL(id r, NSError **e) {
+                          ((id<BGSReportContract>)r).summary = @"x";
+                          return YES;
+                        }
+                       error:NULL];
+    });
+    dispatch_group_async(group, q, ^{
+      dispatch_semaphore_wait(go, DISPATCH_TIME_FOREVER);
+      deadline();
+    });
+    dispatch_semaphore_signal(go);
+    dispatch_semaphore_signal(go);
+    XCTAssertEqual(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0);
+    if (result == BGSFlutterReportEditApplied) {
+      applied++;
+    } else {
+      refused++;
+    }
+    XCTAssertEqual(landedAfter, 0u, @"round %lu", (unsigned long)i);
+    XCTAssertEqual(completed, 1u);
+  }
+  XCTAssertTrue(applied > 0 && refused > 0, @"the race was exercised both ways: applied=%lu refused=%lu",
+                (unsigned long)applied, (unsigned long)refused);
 }
 
 #pragma mark - the proxy is live only until the completion runs (7.3.4)

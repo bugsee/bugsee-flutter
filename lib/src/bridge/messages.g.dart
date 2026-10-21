@@ -392,9 +392,12 @@ class ReportHandlerRequestMessage {
   /// evidence that the report is a recovered crash (7.2.3).
   String type;
 
-  /// How long native keeps the report live for this delivery: it runs the SDK's
-  /// completion itself when this has passed (always inside the SDK's own deadline,
-  /// 7.3.5), after which every operation on the handle is refused.
+  /// How much longer native keeps the report live, measured when this message is
+  /// SENT (so time spent queueing for the platform thread is already deducted): it
+  /// runs the SDK's completion itself when this has passed, after which every
+  /// operation on the handle is refused (7.3.5). The window is the SDK's budget less a
+  /// margin; the time the SDK spent queueing the handler before native saw it cannot be
+  /// observed, so the margin, not this number, is what absorbs it.
   int deadlineMs;
 
   List<Object?> _toList() {
@@ -672,6 +675,27 @@ class BugseeBridgeHostApi {
       isNullValid: false,
     );
     return pigeonVar_replyValue! as bool;
+  }
+
+  /// A new Dart isolate is up (`BugseeBridge.start` calls it once, first): native completes
+  /// every delivery still outstanding to the previous isolate (a hot restart would otherwise
+  /// leave each report waiting for its deadline) and forgets which phases had a handler.
+  Future<void> resetReportHandlers() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.resetReportHandlers$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// Tells native whether a Dart handler exists for each phase. With none, native

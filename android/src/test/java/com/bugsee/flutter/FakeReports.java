@@ -38,6 +38,9 @@ final class FakeReports {
         IssueSeverity severity = IssueSeverity.Medium;
         final List<String> labels = new ArrayList<>();
         final Map<String, Serializable> attributes = new LinkedHashMap<>();
+        /** Runs before / after the summary is stored; lets a test widen or observe the window. */
+        Runnable beforeSetSummary;
+        Runnable onSummarySet;
         /** Every method called, by name, in order. */
         final List<String> calls = new ArrayList<>();
 
@@ -86,7 +89,13 @@ final class FakeReports {
             case "getSummary":
                 return s.summary;
             case "setSummary":
+                if (s.beforeSetSummary != null) {
+                    s.beforeSetSummary.run();
+                }
                 s.summary = (String) args[0];
+                if (s.onSummarySet != null) {
+                    s.onSummarySet.run();
+                }
                 return null;
             case "getDescription":
                 return s.description;

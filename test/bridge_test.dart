@@ -34,7 +34,15 @@ class FakeHost extends BugseeBridgeHostApi {
     await onAttach?.call();
   }
 
+  int resets = 0;
   final List<(bool, bool)> phases = [];
+
+  @override
+  Future<void> resetReportHandlers() async {
+    calls.add('reset');
+    resets++;
+  }
+
   int failPhases = 0;
 
   @override
@@ -240,7 +248,7 @@ void main() {
       await bridge.start(facts: _facts);
       await bridge.start(facts: _facts);
       await bridge.start();
-      expect(host.calls, ['attach', 'phases', 'identity']);
+      expect(host.calls, ['attach', 'reset', 'phases', 'identity']);
       // A new isolate has no report handler yet: native must not wait on one.
       expect(host.phases, [(false, false)]);
     });
@@ -253,15 +261,15 @@ void main() {
           bridge.start(facts: _facts),
           throwsA(isA<PlatformException>()),
         );
-        expect(host.calls, ['attach', 'phases', 'identity']);
+        expect(host.calls, ['attach', 'reset', 'phases', 'identity']);
         expect(host.identities, hasLength(1));
         // Not cached: the next call tries again, repeating only the failed step
         // (the identity already went through).
         await bridge.start(facts: _facts);
-        expect(host.calls, ['attach', 'phases', 'identity', 'attach']);
+        expect(host.calls, ['attach', 'reset', 'phases', 'identity', 'attach']);
         // And now it is cached.
         await bridge.start(facts: _facts);
-        expect(host.calls, hasLength(4));
+        expect(host.calls, hasLength(5));
       },
     );
 
@@ -280,7 +288,7 @@ void main() {
       expect(host.identities, hasLength(1));
       // Attach had succeeded: the retry must not attach again (native would replay
       // events this bridge already received).
-      expect(host.calls, ['attach', 'phases', 'identity', 'identity']);
+      expect(host.calls, ['attach', 'reset', 'phases', 'identity', 'identity']);
     });
 
     test('the identity carries versions, engine and build mode', () async {
@@ -321,6 +329,15 @@ void main() {
         },
       );
       messenger.setMockMessageHandler(
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.resetReportHandlers',
+        (m) async {
+          calls.add('reset');
+          return BugseeBridgeHostApi.pigeonChannelCodec.encodeMessage(<Object?>[
+            null,
+          ]);
+        },
+      );
+      messenger.setMockMessageHandler(
         'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setReportHandlerPhases',
         (m) async {
           calls.add('phases');
@@ -330,6 +347,10 @@ void main() {
         },
       );
       addTearDown(() {
+        messenger.setMockMessageHandler(
+          'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.resetReportHandlers',
+          null,
+        );
         messenger.setMockMessageHandler(
           'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setReportHandlerPhases',
           null,
@@ -344,7 +365,7 @@ void main() {
         );
       });
       await BugseeBridge().start(facts: _facts);
-      expect(calls, ['attach', 'phases', 'flutter']);
+      expect(calls, ['attach', 'reset', 'phases', 'flutter']);
     });
   });
 

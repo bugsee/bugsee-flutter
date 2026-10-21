@@ -8,13 +8,18 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportPhase) {
   BGSFlutterReportPhaseAfter = 1,
 };
 
-/// How long Dart gets, per path. From the iOS SDK (`origin/nextgen`,
+/// How long Dart gets, per path. Ours is the SDK's budget LESS A MARGIN of a third of it (at most
+/// 10 s), never more (workbook 7.3.5). From the iOS SDK (`origin/nextgen`,
 /// `BGSIssueReportingCoordinator.{h,m}`, `BGSContracts.h` `BGSReportHandler`):
 ///
 /// - LIVE (a report raised by the running app): handlers are called on the MAIN thread, one
 ///   after another, and each completion is waited for, up to `reportHandlerCallbackTimeout`
 ///   (30 s; iOS has no option for it) per handler and `reportHandlerChainTimeout` (60 s) for
-///   the chain. Ours is 25 s, inside the 30 s.
+///   the chain. The SDK starts that timer when it QUEUES the handler (`timedCallbackWithContinuation`,
+///   before the hop to main); ours starts when the handler is entered, and the wait in between (main busy)
+///   cannot be observed, so the margin absorbs it: a handler that waited for main longer than the margin
+///   can still overrun the SDK's deadline, and an edit then is accepted here although the SDK has moved
+///   on. Ours is 20 s of the 30 s.
 /// - RECOVERY (next launch): handlers are called on a GCD worker, NEVER main, the caller
 ///   waits at most `boundedReportHandlerCap` (3 s) for the handler to RETURN, and the
 ///   completion is not waited for; one that arrives later re-persists the report, until the
@@ -33,6 +38,11 @@ FOUNDATION_EXPORT const int64_t BGSFlutterReportSdkBoundedCapMs;
 
 /// The deadline for a dispatch on the main thread (live) or off it (recovery).
 FOUNDATION_EXPORT int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread);
+/// The margin kept under an SDK budget: a third of it, at most 10 s.
+FOUNDATION_EXPORT int64_t BGSFlutterReportMarginMs(int64_t sdkMs);
+/// What is left of `budgetMs` once `elapsedMs` has passed; never negative. Zero means "already over":
+/// complete the SDK's callback instead of asking Dart.
+FOUNDATION_EXPORT int64_t BGSFlutterReportRemainingMs(int64_t budgetMs, int64_t elapsedMs);
 
 /// What reaches Dart for one delivery.
 @interface BGSFlutterReportRequest : NSObject
@@ -57,6 +67,8 @@ typedef void (^BGSFlutterReportCancel)(id token);
 /// Runs a block on the platform (main) thread, never inline.
 typedef void (^BGSFlutterReportPlatformPost)(dispatch_block_t task);
 typedef void (^BGSFlutterReportLog)(NSString *line);
+/// Milliseconds on a monotonic clock; injectable so a test controls time.
+typedef int64_t (^BGSFlutterReportClock)(void);
 
 /// One change to a live report. Return NO with `*error` set to refuse the argument
 /// (nothing may have changed).
@@ -88,6 +100,16 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportEditResult) {
 /// runtime may be gone; nothing is even read from the report), no registered Dart handler for
 /// the phase (no waiting), or no attached Dart: the completion runs at once.
 ///
+/// THE WINDOW: the SDK's budget less a margin, measured from the handler's entry. What is observable
+/// of the SDK's wait, the time between entry and the platform thread taking the request, is deducted
+/// before Dart is asked (`BGSFlutterReportRequest.deadlineMs` is what is LEFT), and a window already
+/// over is completed instead of offered. What is not observable (the SDK's own queueing before entry)
+/// is the margin's job.
+///
+/// CHECK AND APPLY ARE ONE STEP: an edit holds the handle's lock across "is it live" and the change,
+/// and finishing flips `done` under the same lock, so an edit reported as applied landed BEFORE the
+/// SDK's completion ran. The SDK's completion, Dart and the scheduler are never called with a lock held.
+///
 /// A LATE EDIT: the proxy is live only until the completion runs (7.3.4). `-editHandle:` and
 /// `-reportForHandle:` refuse from then on, and the Dart side raises an error for it.
 @interface BGSFlutterReportHandlerPipeline : NSObject
@@ -98,13 +120,21 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportEditResult) {
 - (instancetype)initWithScheduler:(BGSFlutterReportScheduler)scheduler
                            cancel:(BGSFlutterReportCancel)cancel
                      platformPost:(BGSFlutterReportPlatformPost)platformPost
-                              log:(BGSFlutterReportLog)log NS_DESIGNATED_INITIALIZER;
+                              log:(BGSFlutterReportLog)log;
+- (instancetype)initWithScheduler:(BGSFlutterReportScheduler)scheduler
+                           cancel:(BGSFlutterReportCancel)cancel
+                     platformPost:(BGSFlutterReportPlatformPost)platformPost
+                              log:(BGSFlutterReportLog)log
+                            clock:(BGSFlutterReportClock)clock NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
 /// Attaches one engine's Dart end. It registers no phase until `-setPhasesForOwner:...`.
 /// Returns the owner token the other calls take.
 - (id)attachSink:(BGSFlutterReportSink)sink;
 - (void)setPhasesForOwner:(id)owner before:(BOOL)before after:(BOOL)after;
+/// A new Dart isolate is up on this engine (a hot restart): completes the deliveries handed to the
+/// previous one (nothing in the new one knows them) and forgets which phases had a handler.
+- (void)resetOwner:(id)owner;
 /// The engine is gone: completes every handle emitted to it (nothing else knows them).
 - (void)detachOwner:(id)owner;
 

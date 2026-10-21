@@ -92,6 +92,9 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     }
     if (!_phasesSent) {
       try {
+        // This isolate is new (a hot restart makes a fresh one): native completes what it had
+        // handed to the previous isolate instead of leaving each report to wait for its deadline.
+        await _host.resetReportHandlers();
         await _host.setReportHandlerPhases(_onBefore != null, _onAfter != null);
         _phasesSent = true;
       } catch (e, s) {
@@ -181,11 +184,13 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       host: _host,
     );
     // Native closes the report at its deadline whatever Dart does; closing here too
-    // makes a late edit fail without a round trip.
-    final deadline = Timer(
-      Duration(milliseconds: request.deadlineMs),
-      proxy.markCompleted,
-    );
+    // makes a late edit fail without a round trip. `deadlineMs` is what native had left
+    // when it sent the request, so this closes no later than native does.
+    var overran = false;
+    final deadline = Timer(Duration(milliseconds: request.deadlineMs), () {
+      overran = true;
+      proxy.markCompleted();
+    });
     try {
       await handler(proxy);
     } catch (error, stack) {
@@ -199,6 +204,21 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       );
     } finally {
       deadline.cancel();
+      if (overran) {
+        // Not only an edit that failed: a handler that ran past the budget and made no further
+        // edit would otherwise look like a success.
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: StateError(
+              'A Bugsee report handler for report ${request.reportId} ran past its '
+              '${request.deadlineMs} ms budget (the SDK deadline less a margin). The SDK '
+              'carried on without it and any edit it made after that was not applied.',
+            ),
+            library: 'bugsee_flutter',
+            context: ErrorDescription('while running a Bugsee report handler'),
+          ),
+        );
+      }
       // Closed BEFORE the completion crosses, so nothing a stray continuation does
       // afterwards can be sent as if it were still live.
       proxy.markCompleted();

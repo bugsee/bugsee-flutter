@@ -220,6 +220,11 @@ public class BugseeFlutterPlugin
     }
 
     @Override
+    public void resetReportHandlers() {
+        ReportHandlerPipeline.shared().reset(reportOwner);
+    }
+
+    @Override
     public void setReportHandlerPhases(@NonNull final Boolean before, @NonNull final Boolean after) {
         ReportHandlerPipeline.shared().setPhases(reportOwner, before, after);
     }

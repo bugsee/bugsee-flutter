@@ -25,6 +25,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) NSMutableDictionary<NSString *, id> *fakeAttributes;
 /// Every mutating selector called, in order.
 @property(nonatomic, readonly) NSMutableArray<NSString *> *mutations;
+/// Run before / after the summary is stored; lets a test widen or observe the window.
+@property(nonatomic, copy, nullable) dispatch_block_t beforeSetSummary;
+@property(nonatomic, copy, nullable) dispatch_block_t onSummarySet;
 /// How many times `reportId` / `type` were read.
 @property(nonatomic) NSUInteger reads;
 @end

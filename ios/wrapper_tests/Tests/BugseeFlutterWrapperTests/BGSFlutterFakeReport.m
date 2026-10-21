@@ -39,7 +39,13 @@ static void Unmodeled(SEL selector) {
 - (NSString *)summary { return _fakeSummary; }
 - (void)setSummary:(NSString *)summary {
   [self record:_cmd];
+  if (_beforeSetSummary != nil) {
+    _beforeSetSummary();
+  }
   _fakeSummary = [summary copy];
+  if (_onSummarySet != nil) {
+    _onSummarySet();
+  }
 }
 
 - (NSString *)reportDescription { return _fakeDescription; }

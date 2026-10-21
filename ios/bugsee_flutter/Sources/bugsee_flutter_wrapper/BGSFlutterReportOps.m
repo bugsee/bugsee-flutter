@@ -66,7 +66,30 @@ static BOOL IsBoolean(NSNumber *number) {
     }
   }];
   s.attributes = attributes;
+  [self readFilesOf:report into:s];
   return s;
+}
+
+/// The attachments' metadata and the screenshots' ids and flags; never content.
++ (void)readFilesOf:(id<BGSReportContract>)report into:(BGSFlutterReportSnapshot *)s {
+  NSMutableArray<NSArray *> *attachments = [NSMutableArray array];
+  for (id<BGSAttachmentContract> attachment in report.attachments) {  // a snapshot, under the lock
+    NSString *name = attachment.name;
+    NSString *mimeType = attachment.mimeType;
+    NSString *fileName = attachment.fileName;
+    [attachments addObject:@[
+      [name isKindOfClass:[NSString class]] ? name : (id)NSNull.null,
+      [mimeType isKindOfClass:[NSString class]] ? mimeType : (id)NSNull.null,
+      [fileName isKindOfClass:[NSString class]] ? fileName : (id)NSNull.null,
+    ]];
+  }
+  s.attachments = attachments;
+  NSMutableArray<NSArray<NSNumber *> *> *screenshots = [NSMutableArray array];
+  for (NSNumber *displayId in report.screenshotDisplayIds) {
+    NSDictionary *attributes = [report screenshotAttributesForDisplayId:displayId.integerValue];
+    [screenshots addObject:@[ displayId, @([attributes[@"annotated"] boolValue]) ]];
+  }
+  s.screenshots = screenshots;
 }
 
 + (void)setSummary:(NSString *)summary onReport:(id<BGSReportContract>)report {

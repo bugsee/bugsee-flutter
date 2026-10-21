@@ -21,6 +21,9 @@
       "terminatingCapMs": 3000,
       "chainCapMs": 60000,
       "handlerTimeoutDefaultSeconds": 30
+    },
+    "attachments": {
+      "maxPerReport": 1000
     }
   },
   "ios": {
@@ -41,6 +44,12 @@
       "handlerTimeoutSeconds": 30.0,
       "chainTimeoutSeconds": 60.0,
       "boundedCapSeconds": 3.0
+    },
+    "attachments": {
+      "source": "origin/nextgen@0581aa02c",
+      "maxPerReport": 1000,
+      "legacyCreatedReportMaxCount": 3,
+      "legacyCreatedReportMaxBytes": 3145728
     }
   }
 }

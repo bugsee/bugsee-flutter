@@ -276,7 +276,17 @@ class SecureRegionRegistry {
     this.retryDelay = const Duration(seconds: 1),
     this.maxRetryDelay = const Duration(seconds: 30),
     this.maxRetries = 5,
-  }) : epoch = epoch ?? _randomEpoch();
+    Duration Function()? clock,
+  }) : epoch = epoch ?? _randomEpoch(),
+       _now = clock ?? _stopwatchClock();
+
+  /// Monotonic time since the registry was made; replaced in tests.
+  static Duration Function() _stopwatchClock() {
+    final watch = Stopwatch()..start();
+    return () => watch.elapsed;
+  }
+
+  final Duration Function() _now;
 
   /// A random id for this isolate, never a clock (a clock can go backwards
   /// before a hot restart, and native would then reject the new isolate).
@@ -315,9 +325,12 @@ class SecureRegionRegistry {
   final Duration maxRetryDelay;
 
   /// After this many consecutive failures the transport counts as known bad:
-  /// with a [retryDelay] nothing but the retry timer sends (a changed state is
-  /// held for the timer, which sends the latest one); without one, only the
-  /// resend of the very same failed state is suppressed.
+  /// with a [retryDelay], at most one message per [retryDelay] is sent (the
+  /// same failed state waits for the backoff timer; a CHANGED state, the only
+  /// kind that can add a region, waits only until [retryDelay] has passed since
+  /// the last attempt, so a transport that came back is not waited on for the
+  /// whole backoff, and one that did not is never hit per frame); without a
+  /// [retryDelay], only the resend of the very same failed state is suppressed.
   final int maxRetries;
 
   final Set<RenderSecureRegion> _regions = <RenderSecureRegion>{};
@@ -326,6 +339,8 @@ class SecureRegionRegistry {
   int _failures = 0;
   Timer? _retry;
   bool _retryDue = false;
+  bool _expedited = false;
+  Duration _lastSend = Duration.zero;
   bool _disposed = false;
   SecureState? _failedState;
 
@@ -383,9 +398,18 @@ class SecureRegionRegistry {
       final bool sameAsFailed = failed != null && sameState(failed, state);
       if (_retry != null) {
         // A retry timer is pending: it resends, frames do not. A changed state
-        // is still tried at once, unless the transport is known bad (then the
-        // timer sends the latest state, so an animation cannot flood it).
-        if (sameAsFailed || _failures > maxRetries) return;
+        // is still tried at once, unless the transport is known bad: then it
+        // goes out once `retryDelay` has passed since the last attempt (an
+        // animation cannot flood a dead transport, a recovered one is not
+        // waited on for the whole backoff).
+        if (sameAsFailed) return;
+        if (_failures > maxRetries) {
+          final Duration wait = retryDelay! - (_now() - _lastSend);
+          if (wait > Duration.zero) {
+            _expedite(wait);
+            return;
+          }
+        }
       } else if (_failures > maxRetries && sameAsFailed) {
         // No timer (frame-driven mode): stop resending this very state every
         // frame. A changed state is still sent, and a success resets the count.
@@ -417,6 +441,8 @@ class SecureRegionRegistry {
   void _send(SecureState state) {
     final sequence = ++_sequence;
     _retryDue = false;
+    _expedited = false;
+    _lastSend = _now();
     _retry?.cancel();
     _retry = null;
     final message = SecureRectanglesMessage(
@@ -465,16 +491,26 @@ class SecureRegionRegistry {
         _failures++;
         lastError = error;
         final delay = retryDelay;
-        if (delay != null && !_disposed) {
-          _retry?.cancel();
-          _retry = Timer(_backoff(delay), () {
-            _retry = null;
-            _retryDue = true;
-            _schedule();
-          });
-        }
+        if (delay != null && !_disposed) _armRetry(_backoff(delay));
       },
     );
+  }
+
+  void _armRetry(Duration wait) {
+    _retry?.cancel();
+    _retry = Timer(wait, () {
+      _retry = null;
+      _retryDue = true;
+      _schedule();
+    });
+  }
+
+  /// A changed state is waiting out the throttle: bring the retry forward to the end of it
+  /// (once; the frames in between would only move it to the same instant).
+  void _expedite(Duration wait) {
+    if (_expedited || _disposed) return;
+    _expedited = true;
+    _armRetry(wait);
   }
 
   /// The wait after the current run of failures: [base] doubled per failure

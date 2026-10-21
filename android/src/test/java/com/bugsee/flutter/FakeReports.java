@@ -1,10 +1,17 @@
 package com.bugsee.flutter;
 
+import android.graphics.Bitmap;
+
 import com.bugsee.library.contracts.options.IssueSeverity;
 import com.bugsee.library.contracts.options.IssueType;
+import com.bugsee.library.contracts.reporting.Attachment;
 import com.bugsee.library.contracts.reporting.Report;
 
+import java.io.File;
 import java.io.Serializable;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.TreeMap;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
@@ -44,6 +51,18 @@ final class FakeReports {
         /** Every method called, by name, in order. */
         final List<String> calls = new ArrayList<>();
 
+        // ---- Attachments and screenshots: a model of what the SDK does (v7.4.2) ----------------
+        /** The attachments the report holds (Attachment proxies). */
+        final List<Attachment> attachments = new ArrayList<>();
+        /** What each add received: {File or byte[], name, mime, move}. */
+        final List<Object[]> adds = new ArrayList<>();
+        /** The SDK declines every add (null), as it does for a report that is no longer live. */
+        boolean refuseAdds;
+        /** Where the model SDK stores what it was given; null: it stores nothing. */
+        File storage;
+        /** displayId -> {Bitmap, Boolean annotated}, ascending like the SDK's. */
+        final TreeMap<Integer, Object[]> screenshots = new TreeMap<>();
+
         /** Everything but getters. */
         List<String> mutations() {
             final List<String> result = new ArrayList<>();
@@ -61,6 +80,60 @@ final class FakeReports {
                 Report.class.getClassLoader(),
                 new Class<?>[] {Report.class},
                 (proxy, method, args) -> invoke(state, proxy, method, args));
+    }
+
+    private static Object addAttachment(final State s, final Object[] args) {
+        // (File, name, mime, move) or (byte[], name, mime): the SDK's two overloads.
+        final boolean file = args[0] instanceof File;
+        s.adds.add(file
+                ? new Object[] {args[0], args[1], args[2], args[3]}
+                : new Object[] {args[0], args[1], args[2], Boolean.FALSE});
+        if (s.refuseAdds) {
+            return null;
+        }
+        try {
+            if (s.storage != null) {
+                final File target = new File(s.storage, "stored-" + s.attachments.size() + ".attachment.bgsfile");
+                if (file) {
+                    final File source = (File) args[0];
+                    Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    if ((Boolean) args[3]) {
+                        // The SDK renames or copies-then-deletes; either way the source is consumed.
+                        source.delete();
+                    }
+                } else {
+                    Files.write(target.toPath(), (byte[]) args[0]);
+                }
+            }
+        } catch (final java.io.IOException e) {
+            return null;
+        }
+        final String name = (String) args[1];
+        final String mime = (String) args[2];
+        final String fileName = file ? ((File) args[0]).getName() : name;
+        final Attachment attachment = (Attachment) Proxy.newProxyInstance(
+                Attachment.class.getClassLoader(),
+                new Class<?>[] {Attachment.class},
+                (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "getName":
+                            return name;
+                        case "getMimeType":
+                            return mime;
+                        case "getFileName":
+                            return fileName;
+                        case "hashCode":
+                            return System.identityHashCode(p);
+                        case "equals":
+                            return p == a[0];
+                        case "toString":
+                            return "FakeAttachment(" + name + ")";
+                        default:
+                            throw new UnsupportedOperationException(m.getName());
+                    }
+                });
+        s.attachments.add(attachment);
+        return attachment;
     }
 
     @SuppressWarnings("unchecked")
@@ -138,6 +211,29 @@ final class FakeReports {
             case "clearAllAttributes":
                 s.attributes.clear();
                 return null;
+            case "getAttachments":
+                return new ArrayList<>(s.attachments);
+            case "addAttachment":
+                return addAttachment(s, args);
+            case "clearAttachments":
+                s.attachments.clear();
+                return null;
+            case "getScreenshotDisplayIds":
+                return new ArrayList<>(s.screenshots.keySet());
+            case "isScreenshotAnnotated":
+                return s.screenshots.containsKey((Integer) args[0])
+                        && (Boolean) s.screenshots.get((Integer) args[0])[1];
+            case "setScreenshot":
+                // setScreenshot(int, Bitmap, boolean) is the one writer; null removes the display.
+                if (args.length == 3) {
+                    if (args[1] == null) {
+                        s.screenshots.remove((Integer) args[0]);
+                    } else {
+                        s.screenshots.put((Integer) args[0], new Object[] {args[1], args[2]});
+                    }
+                    return null;
+                }
+                throw new UnsupportedOperationException("FakeReports models only the 3-argument setScreenshot");
             default:
                 throw new UnsupportedOperationException("FakeReports does not model " + name);
         }

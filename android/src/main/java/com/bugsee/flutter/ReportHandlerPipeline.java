@@ -190,6 +190,14 @@ final class ReportHandlerPipeline {
          */
         volatile boolean done;
         volatile Cancellable timer;
+        /**
+         * Long operations (a file copy, an image decode) that started while the handle was live and
+         * have not finished; guarded by the handle's monitor. The SDK's completion is held back until
+         * they have, never the other way round: nothing here blocks a thread for them.
+         */
+        int leases;
+        /** Set (under the monitor) when {@link #done} was flipped while {@link #leases} was not zero. */
+        boolean completionDeferred;
 
         Handle(
                 final String id,
@@ -478,12 +486,76 @@ final class ReportHandlerPipeline {
         }
     }
 
+    /**
+     * A claim on a live report for an operation that must not run under the handle's monitor (a file
+     * copy can take as long as the disk does): while it is held the report stays valid for the
+     * operation even if the handle completes, and the SDK's completion waits for {@link #release}.
+     */
+    final class Lease {
+        private final Handle handle;
+        private boolean released;
+
+        private Lease(@NonNull final Handle handle) {
+            this.handle = handle;
+        }
+
+        @NonNull
+        Report report() {
+            return handle.report;
+        }
+
+        /** Idempotent. Runs the SDK's completion if the handle completed meanwhile and this was the last. */
+        void release() {
+            final boolean runCompletion;
+            synchronized (handle) {
+                if (released) {
+                    return;
+                }
+                released = true;
+                handle.leases--;
+                runCompletion = handle.leases == 0 && handle.completionDeferred;
+                if (runCompletion) {
+                    handle.completionDeferred = false;
+                }
+            }
+            if (runCompletion) {
+                outcomes.line("report handler " + handle.id + " completion released by its last file operation");
+                runQuietly(handle.sdkCompletion);
+            }
+        }
+    }
+
+    /**
+     * Claims the live report behind {@code handleId} for a long operation, or null (nothing claimed)
+     * when it is not live (7.3.4).
+     */
+    @Nullable
+    Lease acquire(@Nullable final String handleId) {
+        final Handle handle = handleId == null ? null : handles.get(handleId);
+        if (handle == null) {
+            return null;
+        }
+        synchronized (handle) {
+            if (handle.done) {
+                return null;
+            }
+            handle.leases++;
+        }
+        return new Lease(handle);
+    }
+
     private boolean finish(@NonNull final Handle handle, @NonNull final String by) {
+        final boolean runNow;
         synchronized (handle) {
             if (handle.done) {
                 return false;
             }
             handle.done = true;
+            // A long operation that started while the handle was live still owns the report: the
+            // SDK's completion runs when the last of them ends (release()), so an operation reported
+            // as applied landed BEFORE the completion, exactly like a short edit.
+            runNow = handle.leases == 0;
+            handle.completionDeferred = !runNow;
         }
         // Outside the lock from here: the SDK's completion, the timer and the log never run
         // while an edit could be waiting on it.
@@ -492,8 +564,11 @@ final class ReportHandlerPipeline {
         if (timer != null) {
             cancelQuietly(timer);
         }
-        outcomes.line("report handler " + handle.id + " completed by=" + by);
-        runQuietly(handle.sdkCompletion);
+        outcomes.line("report handler " + handle.id + " completed by=" + by
+                + (runNow ? "" : " (deferred until its file operation ends)"));
+        if (runNow) {
+            runQuietly(handle.sdkCompletion);
+        }
         return true;
     }
 
@@ -586,7 +661,7 @@ final class ReportHandlerPipeline {
     }
 
     /** One daemon thread, started on first use, for every handle's deadline. */
-    private static final class DaemonScheduler implements Scheduler {
+    static final class DaemonScheduler implements Scheduler {
         private final ScheduledThreadPoolExecutor executor;
 
         DaemonScheduler() {

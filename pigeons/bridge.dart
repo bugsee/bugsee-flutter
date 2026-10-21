@@ -156,6 +156,7 @@ class ReportSnapshotMessage {
   String id;
   String type;
   String? summary;
+
   /// Named `reportDescription`: `description` collides with NSObject's in Swift.
   String? reportDescription;
   String? email;

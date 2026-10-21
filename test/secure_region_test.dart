@@ -429,6 +429,243 @@ void main() {
     });
   });
 
+  group('page transitions keep the region covered (pixels are on screen)', () {
+    Future<void> run(
+      WidgetTester tester,
+      PageTransitionsBuilder builder, {
+      bool hero = false,
+    }) async {
+      final navigator = GlobalKey<NavigatorState>();
+      Widget page(String label) => Scaffold(
+        body: Stack(
+          children: [
+            Positioned(
+              left: 10,
+              top: 20,
+              child: hero
+                  ? Hero(tag: 'h', child: region(registry))
+                  : region(registry),
+            ),
+            Text(label),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          theme: ThemeData(
+            pageTransitionsTheme: PageTransitionsTheme(
+              builders: {for (final p in TargetPlatform.values) p: builder},
+            ),
+          ),
+          home: page('one'),
+        ),
+      );
+      void expectCovered(String when) {
+        final state = registry.measure();
+        expect(state[0], isNotNull, reason: 'nothing covered $when');
+        expect(state[0]!.rects, isNotEmpty, reason: 'nothing covered $when');
+      }
+
+      expectCovered('before the push');
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => page('two')),
+      );
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 25));
+        expectCovered('during the push, frame $i');
+      }
+      await tester.pumpAndSettle();
+      navigator.currentState!.pop();
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 25));
+        expectCovered('during the pop, frame $i');
+      }
+      await tester.pumpAndSettle();
+      expectCovered('after the pop');
+    }
+
+    testWidgets('Zoom (a SnapshotWidget: the region paints into a temporary '
+        'layer)', (tester) async {
+      await run(tester, const ZoomPageTransitionsBuilder());
+    });
+    testWidgets('FadeForwards', (tester) async {
+      await run(tester, const FadeForwardsPageTransitionsBuilder());
+    });
+    testWidgets('Cupertino', (tester) async {
+      await run(tester, const CupertinoPageTransitionsBuilder());
+    });
+    testWidgets('Hero in flight', (tester) async {
+      await run(tester, const FadeUpwardsPageTransitionsBuilder(), hero: true);
+    });
+  });
+
+  group('what is hidden is hidden on positive evidence only', () {
+    testWidgets('a dialog over the page leaves the page covered', (
+      tester,
+    ) async {
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          home: Scaffold(body: at(registry, 10, 20)),
+        ),
+      );
+      showDialog<void>(
+        context: navigator.currentContext!,
+        builder: (_) => const AlertDialog(title: Text('modal')),
+      );
+      await tester.pumpAndSettle();
+      expect(registry.measure()[0]!.rects, hasLength(1));
+    });
+
+    testWidgets('a disabled TickerMode (an inactive route or overlay entry) '
+        'hides it; enabling brings it back', (tester) async {
+      Widget tree(bool on) =>
+          TickerMode(enabled: on, child: at(registry, 5, 5));
+      await tester.pumpWidget(app(registry, tree(true)));
+      expect(native.latest[0], [5, 5, 105, 55]);
+      await tester.pumpWidget(app(registry, tree(false)));
+      expect(native.sent.last.views, isEmpty);
+      await tester.pumpWidget(app(registry, tree(true)));
+      expect(native.latest[0], [5, 5, 105, 55]);
+    });
+
+    testWidgets('IndexedStack: only the shown child is covered', (
+      tester,
+    ) async {
+      Widget stack(int index) => IndexedStack(
+        index: index,
+        alignment: Alignment.topLeft,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: region(registry, w: 11, h: 11),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 100),
+            child: region(registry, w: 22, h: 22),
+          ),
+        ],
+      );
+      await tester.pumpWidget(app(registry, stack(0)));
+      expect(native.latest[0], [10, 0, 21, 11]);
+      await tester.pumpWidget(app(registry, stack(1)));
+      expect(native.latest[0], [100, 0, 122, 22]);
+    });
+
+    testWidgets('Visibility without maintaining state hides it, with '
+        'maintainState it too, shown it is covered', (tester) async {
+      Widget vis(bool visible) => Visibility(
+        visible: visible,
+        maintainState: true,
+        child: at(registry, 5, 5),
+      );
+      await tester.pumpWidget(app(registry, vis(true)));
+      expect(native.latest[0], [5, 5, 105, 55]);
+      await tester.pumpWidget(app(registry, vis(false)));
+      expect(native.sent.last.views, isEmpty);
+      await tester.pumpWidget(app(registry, vis(true)));
+      expect(native.latest[0], [5, 5, 105, 55]);
+    });
+
+    testWidgets('a child kept in the cache extent but scrolled out of a '
+        'clipping viewport is hidden; a partly visible one is covered whole', (
+      tester,
+    ) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 200),
+              child: SizedBox(
+                width: 400,
+                height: 300,
+                child: ListView(
+                  controller: controller,
+                  cacheExtent: 1000,
+                  children: [
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: region(registry, h: 100),
+                    ),
+                    const SizedBox(height: 1000),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [0, 200, 100, 300]);
+      controller.jumpTo(50); // half of it is above the viewport top (200)
+      await tester.pump();
+      expect(native.latest[0], [0, 150, 100, 250]);
+      controller.jumpTo(150); // wholly above the viewport, still built
+      await tester.pump();
+      expect(native.sent.last.views, isEmpty);
+    });
+
+    testWidgets('paint outside the region box is covered too', (tester) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: BugseeSecureRegion(
+              registry: registry,
+              child: SizedBox(
+                width: 100,
+                height: 50,
+                child: Transform.translate(
+                  offset: const Offset(200, 0),
+                  child: const SizedBox(width: 100, height: 50),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(native.latest[0], [0, 0, 300, 50]);
+    });
+  });
+
+  group('ratio and epoch', () {
+    testWidgets('the ratio travels with the rectangles and a ratio change is '
+        'republished even though no rectangle moved', (tester) async {
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      Widget tree() => Align(
+        alignment: Alignment.topLeft,
+        child: region(registry, w: 10, h: 10),
+      );
+      await tester.pumpWidget(app(registry, tree()));
+      expect(native.sent.last.views.single.devicePixelRatio, 3);
+      expect(native.latest[0], [0, 0, 10, 10]);
+      tester.view.devicePixelRatio = 2;
+      await tester.pumpWidget(app(registry, tree()));
+      expect(native.sent, hasLength(2));
+      expect(native.sent.last.views.single.devicePixelRatio, 2);
+      expect(native.latest[0], [0, 0, 10, 10]);
+    });
+
+    test('the epoch is random, never zero and not a clock', () {
+      final a = SecureRegionRegistry(publish: (m) async => true);
+      final b = SecureRegionRegistry(publish: (m) async => true);
+      expect(a.epoch, isNot(b.epoch));
+      expect(a.epoch, greaterThan(0));
+      final now = DateTime.now().microsecondsSinceEpoch;
+      expect(
+        (a.epoch - now).abs() > 1000000 || (b.epoch - now).abs() > 1000000,
+        isTrue,
+      );
+    });
+  });
+
   group('lifecycle', () {
     testWidgets('disposing the region clears it, once, then goes quiet', (
       tester,

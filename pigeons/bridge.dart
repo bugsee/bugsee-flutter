@@ -57,10 +57,21 @@ class WrapperIdentityMessage {
 /// dp), origin at the view's top-left, right/bottom exclusive. Native converts
 /// them to the SDK's unit and places the view on the screen.
 class SecureViewRectanglesMessage {
-  SecureViewRectanglesMessage({required this.viewId, required this.rectangles});
+  SecureViewRectanglesMessage({
+    required this.viewId,
+    required this.devicePixelRatio,
+    required this.rectangles,
+  });
 
   /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
   int viewId;
+
+  /// `FlutterView.devicePixelRatio` the rectangles were measured with. Native
+  /// scales by THIS, not by what the display reports now: a density change is
+  /// applied natively before Dart has laid out again, so rectangles measured at
+  /// the old ratio must not be scaled by the new one. When the two differ,
+  /// native covers the whole display until Dart republishes.
+  double devicePixelRatio;
   List<double> rectangles;
 }
 
@@ -68,10 +79,12 @@ class SecureViewRectanglesMessage {
 /// absent from [views] has none. Whole-state, not a delta, so a lost or late
 /// message can never leave a rectangle behind.
 ///
-/// Ordering: `(epoch, sequence)` is compared lexicographically and native
-/// ignores a message that is not newer than the newest it accepted. `epoch`
-/// identifies the Dart isolate (a hot restart starts a new one, whose counter
-/// restarts at 0, so it must still win); `sequence` counts publishes within it.
+/// Ordering: within one `epoch` native ignores a message whose `sequence` is
+/// not newer than the newest it accepted. `epoch` is a random id of the Dart
+/// isolate (never a clock: a clock can go backwards). A message with an epoch
+/// native has not seen starts a new isolate (a hot restart; its counter restarts
+/// at 1) and replaces the old one's state; a message of an epoch native has
+/// already retired is a late straggler of a dead isolate and is ignored.
 class SecureRectanglesMessage {
   SecureRectanglesMessage({
     required this.epoch,

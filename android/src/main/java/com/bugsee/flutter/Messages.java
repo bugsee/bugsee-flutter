@@ -510,6 +510,26 @@ public class Messages {
       this.viewId = setterArg;
     }
 
+    /**
+     * `FlutterView.devicePixelRatio` the rectangles were measured with. Native
+     * scales by THIS, not by what the display reports now: a density change is
+     * applied natively before Dart has laid out again, so rectangles measured at
+     * the old ratio must not be scaled by the new one. When the two differ,
+     * native covers the whole display until Dart republishes.
+     */
+    private @NonNull Double devicePixelRatio;
+
+    public @NonNull Double getDevicePixelRatio() {
+      return devicePixelRatio;
+    }
+
+    public void setDevicePixelRatio(@NonNull Double setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"devicePixelRatio\" is null.");
+      }
+      this.devicePixelRatio = setterArg;
+    }
+
     private @NonNull List<Double> rectangles;
 
     public @NonNull List<Double> getRectangles() {
@@ -531,18 +551,18 @@ public class Messages {
       if (this == o) { return true; }
       if (o == null || getClass() != o.getClass()) { return false; }
       SecureViewRectanglesMessage that = (SecureViewRectanglesMessage) o;
-      return pigeonDeepEquals(viewId, that.viewId) && pigeonDeepEquals(rectangles, that.rectangles);
+      return pigeonDeepEquals(viewId, that.viewId) && pigeonDeepEquals(devicePixelRatio, that.devicePixelRatio) && pigeonDeepEquals(rectangles, that.rectangles);
     }
 
     @Override
     public int hashCode() {
-      Object[] fields = new Object[] {getClass(), viewId, rectangles};
+      Object[] fields = new Object[] {getClass(), viewId, devicePixelRatio, rectangles};
       return pigeonDeepHashCode(fields);
     }
 
     @Override
     public String toString() {
-      return "SecureViewRectanglesMessage{" + "viewId=" + viewId + ", " + "rectangles=" + rectangles + "}";
+      return "SecureViewRectanglesMessage{" + "viewId=" + viewId + ", " + "devicePixelRatio=" + devicePixelRatio + ", " + "rectangles=" + rectangles + "}";
     }
 
     public static final class Builder {
@@ -552,6 +572,14 @@ public class Messages {
       @CanIgnoreReturnValue
       public @NonNull Builder setViewId(@NonNull Long setterArg) {
         this.viewId = setterArg;
+        return this;
+      }
+
+      private @Nullable Double devicePixelRatio;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setDevicePixelRatio(@NonNull Double setterArg) {
+        this.devicePixelRatio = setterArg;
         return this;
       }
 
@@ -566,6 +594,7 @@ public class Messages {
       public @NonNull SecureViewRectanglesMessage build() {
         SecureViewRectanglesMessage pigeonReturn = new SecureViewRectanglesMessage();
         pigeonReturn.setViewId(viewId);
+        pigeonReturn.setDevicePixelRatio(devicePixelRatio);
         pigeonReturn.setRectangles(rectangles);
         return pigeonReturn;
       }
@@ -573,8 +602,9 @@ public class Messages {
 
     @NonNull
     ArrayList<Object> toList() {
-      ArrayList<Object> toListResult = new ArrayList<>(2);
+      ArrayList<Object> toListResult = new ArrayList<>(3);
       toListResult.add(viewId);
+      toListResult.add(devicePixelRatio);
       toListResult.add(rectangles);
       return toListResult;
     }
@@ -583,7 +613,9 @@ public class Messages {
       SecureViewRectanglesMessage pigeonResult = new SecureViewRectanglesMessage();
       Object viewId = pigeonVar_list.get(0);
       pigeonResult.setViewId((Long) viewId);
-      Object rectangles = pigeonVar_list.get(1);
+      Object devicePixelRatio = pigeonVar_list.get(1);
+      pigeonResult.setDevicePixelRatio((Double) devicePixelRatio);
+      Object rectangles = pigeonVar_list.get(2);
       pigeonResult.setRectangles((List<Double>) rectangles);
       return pigeonResult;
     }
@@ -594,10 +626,12 @@ public class Messages {
    * absent from [views] has none. Whole-state, not a delta, so a lost or late
    * message can never leave a rectangle behind.
    *
-   * Ordering: `(epoch, sequence)` is compared lexicographically and native
-   * ignores a message that is not newer than the newest it accepted. `epoch`
-   * identifies the Dart isolate (a hot restart starts a new one, whose counter
-   * restarts at 0, so it must still win); `sequence` counts publishes within it.
+   * Ordering: within one `epoch` native ignores a message whose `sequence` is
+   * not newer than the newest it accepted. `epoch` is a random id of the Dart
+   * isolate (never a clock: a clock can go backwards). A message with an epoch
+   * native has not seen starts a new isolate (a hot restart; its counter restarts
+   * at 1) and replaces the old one's state; a message of an epoch native has
+   * already retired is a late straggler of a dead isolate and is ignored.
    *
    * Generated class from Pigeon that represents data sent in messages.
    */

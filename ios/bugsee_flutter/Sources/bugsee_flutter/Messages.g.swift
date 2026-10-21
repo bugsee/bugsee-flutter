@@ -301,22 +301,31 @@ struct WrapperIdentityMessage: Hashable, CustomStringConvertible {
 struct SecureViewRectanglesMessage: Hashable, CustomStringConvertible {
   /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
   var viewId: Int64
+  /// `FlutterView.devicePixelRatio` the rectangles were measured with. Native
+  /// scales by THIS, not by what the display reports now: a density change is
+  /// applied natively before Dart has laid out again, so rectangles measured at
+  /// the old ratio must not be scaled by the new one. When the two differ,
+  /// native covers the whole display until Dart republishes.
+  var devicePixelRatio: Double
   var rectangles: [Double]
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> SecureViewRectanglesMessage? {
     let viewId = pigeonVar_list[0] as! Int64
-    let rectangles = pigeonVar_list[1] as! [Double]
+    let devicePixelRatio = pigeonVar_list[1] as! Double
+    let rectangles = pigeonVar_list[2] as! [Double]
 
     return SecureViewRectanglesMessage(
       viewId: viewId,
+      devicePixelRatio: devicePixelRatio,
       rectangles: rectangles
     )
   }
   func toList() -> [Any?] {
     return [
       viewId,
+      devicePixelRatio,
       rectangles,
     ]
   }
@@ -324,17 +333,18 @@ struct SecureViewRectanglesMessage: Hashable, CustomStringConvertible {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MessagesPigeonInternal.deepEquals(lhs.viewId, rhs.viewId) && MessagesPigeonInternal.deepEquals(lhs.rectangles, rhs.rectangles)
+    return MessagesPigeonInternal.deepEquals(lhs.viewId, rhs.viewId) && MessagesPigeonInternal.deepEquals(lhs.devicePixelRatio, rhs.devicePixelRatio) && MessagesPigeonInternal.deepEquals(lhs.rectangles, rhs.rectangles)
   }
 
   func hash(into hasher: inout Hasher) {
     hasher.combine("SecureViewRectanglesMessage")
     MessagesPigeonInternal.deepHash(value: viewId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: devicePixelRatio, hasher: &hasher)
     MessagesPigeonInternal.deepHash(value: rectangles, hasher: &hasher)
   }
 
   public var description: String {
-    return "SecureViewRectanglesMessage(viewId: \(String(describing: viewId)), rectangles: \(String(describing: rectangles)))"
+    return "SecureViewRectanglesMessage(viewId: \(String(describing: viewId)), devicePixelRatio: \(String(describing: devicePixelRatio)), rectangles: \(String(describing: rectangles)))"
   }
 }
 
@@ -342,10 +352,12 @@ struct SecureViewRectanglesMessage: Hashable, CustomStringConvertible {
 /// absent from [views] has none. Whole-state, not a delta, so a lost or late
 /// message can never leave a rectangle behind.
 ///
-/// Ordering: `(epoch, sequence)` is compared lexicographically and native
-/// ignores a message that is not newer than the newest it accepted. `epoch`
-/// identifies the Dart isolate (a hot restart starts a new one, whose counter
-/// restarts at 0, so it must still win); `sequence` counts publishes within it.
+/// Ordering: within one `epoch` native ignores a message whose `sequence` is
+/// not newer than the newest it accepted. `epoch` is a random id of the Dart
+/// isolate (never a clock: a clock can go backwards). A message with an epoch
+/// native has not seen starts a new isolate (a hot restart; its counter restarts
+/// at 1) and replaces the old one's state; a message of an epoch native has
+/// already retired is a late straggler of a dead isolate and is ignored.
 ///
 /// Generated class from Pigeon that represents data sent in messages.
 struct SecureRectanglesMessage: Hashable, CustomStringConvertible {

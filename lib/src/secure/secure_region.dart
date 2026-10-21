@@ -16,12 +16,19 @@
 //   covered (at the cost of covering some neighbouring pixels the clip hid).
 //   Intersecting with ancestor clips would need every clip shape modelled
 //   exactly (paths, rounded rects, a clip that animates); one error leaks.
-// * Scrolled out / offstage / not painted: a region that contributes nothing to
-//   the composited frame (its layer is not in the layer tree: the sliver did not
-//   paint it, an Offstage or an inactive route hides it) is NOT reported, and is
-//   removed the frame it stops painting. Reporting its stale geometry would
-//   black out whatever now sits at that spot. A region that has never been laid
-//   out or painted is in the same state.
+// * Hidden: a region is dropped ONLY on positive evidence that none of its
+//   pixels are on screen: an ancestor that does not paint it (`paintsChild`:
+//   Offstage, Visibility, zero Opacity), an IndexedStack showing another child,
+//   a disabled TickerMode (an inactive route or overlay entry, which is how a
+//   covered page is hidden), or a clipping scroll viewport that its region lies
+//   wholly outside of. Nothing else drops it. In particular a detached layer is
+//   NOT evidence: SnapshotWidget (the Zoom page transition) paints a region into
+//   a temporary layer and draws the cached image, so its pixels are on screen
+//   while its own layer is not attached. A region that has never been laid out
+//   is not reported (it has no geometry and has drawn nothing).
+// * Overflow: what the region's descendants paint outside its box (a shifted
+//   Transform, an OverflowBox) is included. What is drawn outside its subtree
+//   (an Overlay magnifier, a tooltip) is not known to Flutter and not covered.
 // * Not measurable (a transform that yields NaN/infinity, an exception while
 //   measuring): the WHOLE view is reported.
 // * Degenerate (zero or negative area): nothing to hide; not reported.
@@ -34,6 +41,7 @@
 // that never happens cannot have moved anything.
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -47,28 +55,41 @@ typedef SecureRectanglesPublisher =
 /// One region's measured box: logical pixels, relative to its view.
 @immutable
 class MeasuredRegion {
-  const MeasuredRegion(this.viewId, this.rect);
+  const MeasuredRegion(this.viewId, this.ratio, this.rect);
   final int viewId;
+
+  /// The view's device pixel ratio when it was measured.
+  final double ratio;
   final Rect rect;
 
   @override
   bool operator ==(Object other) =>
-      other is MeasuredRegion && other.viewId == viewId && other.rect == rect;
+      other is MeasuredRegion &&
+      other.viewId == viewId &&
+      other.ratio == ratio &&
+      other.rect == rect;
 
   @override
-  int get hashCode => Object.hash(viewId, rect);
+  int get hashCode => Object.hash(viewId, ratio, rect);
 
   @override
-  String toString() => 'MeasuredRegion(view $viewId, $rect)';
+  String toString() => 'MeasuredRegion(view $viewId @$ratio, $rect)';
 }
 
-/// The rectangles of every view: view id to its canonical rectangles.
-typedef SecureState = Map<int, List<Rect>>;
+/// What one view publishes: the ratio it was measured at and its canonical
+/// rectangles.
+@immutable
+class ViewRects {
+  const ViewRects(this.ratio, this.rects);
+  final double ratio;
+  final List<Rect> rects;
+}
 
-bool _finite(double v) => v.isFinite;
+/// The rectangles of every view: view id to its ratio and rectangles.
+typedef SecureState = Map<int, ViewRects>;
 
 bool _rectFinite(Rect r) =>
-    _finite(r.left) && _finite(r.top) && _finite(r.right) && _finite(r.bottom);
+    r.left.isFinite && r.top.isFinite && r.right.isFinite && r.bottom.isFinite;
 
 /// Sorted, de-duplicated, without empty rectangles: the same set in any order
 /// is the same state, so reordering regions never counts as a change.
@@ -85,17 +106,94 @@ List<Rect> canonicalRects(Iterable<Rect> rects) {
   return list;
 }
 
-/// Whether two states are the same set of rectangles per view.
+/// Whether two states are the same set of rectangles per view, measured at the
+/// same ratio (a ratio change must be republished even if no rectangle moved).
 bool sameState(SecureState a, SecureState b) {
   if (a.length != b.length) return false;
   for (final entry in a.entries) {
     final other = b[entry.key];
-    if (other == null || other.length != entry.value.length) return false;
-    for (var i = 0; i < other.length; i++) {
-      if (other[i] != entry.value[i]) return false;
+    if (other == null ||
+        other.ratio != entry.value.ratio ||
+        other.rects.length != entry.value.rects.length) {
+      return false;
+    }
+    for (var i = 0; i < other.rects.length; i++) {
+      if (other.rects[i] != entry.value.rects[i]) return false;
     }
   }
   return true;
+}
+
+/// Descendants visited when looking for paint outside a region's box; more than
+/// this and the region is reported as the whole view (fail closed).
+const int _maxDescendants = 2000;
+
+/// Whether [box] is PROVABLY not on screen. Only positive evidence counts; see
+/// the library comment. Never throws (an exception means "not provable").
+bool provablyHidden(RenderSecureRegion box) {
+  try {
+    if (!box.tickerEnabled) return true;
+    RenderObject child = box;
+    RenderObject? parent = box.parent;
+    while (parent != null) {
+      if (!parent.paintsChild(child)) return true;
+      if (parent is RenderIndexedStack) {
+        final visible = parent.index;
+        if (visible == null) return true;
+        RenderBox? shown = parent.firstChild;
+        for (var i = 0; i < visible && shown != null; i++) {
+          shown = (shown.parentData! as StackParentData).nextSibling;
+        }
+        if (!identical(shown, child)) return true;
+      }
+      if (parent is RenderViewportBase && parent.clipBehavior != Clip.none) {
+        // A viewport clips what lies outside it: a region wholly outside is
+        // invisible (a child kept in the cache extent, scrolled out of view).
+        final Rect inViewport = MatrixUtils.transformRect(
+          box.getTransformTo(parent),
+          Offset.zero & box.size,
+        );
+        final Rect port = Offset.zero & parent.size;
+        if (_rectFinite(inViewport) && !inViewport.overlaps(port)) return true;
+      }
+      child = parent;
+      parent = parent.parent;
+    }
+  } catch (_) {
+    return false;
+  }
+  return false;
+}
+
+/// The box of [box] and of everything its descendants paint outside it, in the
+/// view's logical pixels, or `null` when that is too much to follow.
+Rect? _paintedRect(RenderSecureRegion box) {
+  final Matrix4 toView = box.getTransformTo(null);
+  var rect = MatrixUtils.transformRect(toView, Offset.zero & box.size);
+  var visited = 0;
+  var tooMany = false;
+  void visit(RenderObject node) {
+    node.visitChildren((RenderObject child) {
+      if (tooMany) return;
+      // A child its parent does not paint has no meaningful geometry (a
+      // zeroed transform would drag the rect to the view's origin).
+      if (!node.paintsChild(child)) return;
+      if (++visited > _maxDescendants) {
+        tooMany = true;
+        return;
+      }
+      rect = rect.expandToInclude(
+        MatrixUtils.transformRect(
+          child.getTransformTo(null),
+          child.paintBounds,
+        ),
+      );
+      visit(child);
+    });
+  }
+
+  visit(box);
+  return tooMany ? null : rect;
 }
 
 /// Measures [box] in its view's logical pixels, or `null` when it contributes
@@ -103,7 +201,7 @@ bool sameState(SecureState a, SecureState b) {
 MeasuredRegion? measureRegion(RenderSecureRegion box) {
   RenderView? view;
   try {
-    if (!box.attached || !box.hasSize || !box.isOnScreen) return null;
+    if (!box.attached || !box.hasSize || provablyHidden(box)) return null;
     // The root of this box's tree is its view.
     RenderObject root = box;
     while (root.parent != null) {
@@ -116,12 +214,13 @@ MeasuredRegion? measureRegion(RenderSecureRegion box) {
     if (!(size.width > 0 && size.height > 0)) {
       return null; // zero or negative size: nothing to hide
     }
-    final Rect rect = MatrixUtils.transformRect(
-      box.getTransformTo(null),
-      Offset.zero & size,
-    );
-    return _rectFinite(rect)
-        ? MeasuredRegion(view.flutterView.viewId, rect)
+    final Rect? rect = _paintedRect(box);
+    return rect != null && _rectFinite(rect)
+        ? MeasuredRegion(
+            view.flutterView.viewId,
+            view.flutterView.devicePixelRatio,
+            rect,
+          )
         : _wholeView(view);
   } catch (_) {
     return view == null ? null : _wholeView(view);
@@ -129,21 +228,24 @@ MeasuredRegion? measureRegion(RenderSecureRegion box) {
 }
 
 MeasuredRegion? _wholeView(RenderView view) {
+  final int id = view.flutterView.viewId;
+  final double ratio = view.flutterView.devicePixelRatio;
   try {
     final Size physical = view.flutterView.physicalSize;
-    final double ratio = view.flutterView.devicePixelRatio;
     final Size logical = ratio > 0 && ratio.isFinite
         ? Size(physical.width / ratio, physical.height / ratio)
         : physical;
     final w = logical.width.isFinite ? logical.width : 1048576.0;
     final h = logical.height.isFinite ? logical.height : 1048576.0;
     return MeasuredRegion(
-      view.flutterView.viewId,
-      Rect.fromLTWH(0, 0, math.max(w.toDouble(), 1), math.max(h.toDouble(), 1)),
+      id,
+      ratio,
+      Rect.fromLTWH(0, 0, math.max(w, 1), math.max(h, 1)),
     );
   } catch (_) {
     return MeasuredRegion(
-      view.flutterView.viewId,
+      id,
+      ratio,
       const Rect.fromLTWH(0, 0, 1048576, 1048576),
     );
   }
@@ -157,7 +259,15 @@ class SecureRegionRegistry {
     int? epoch,
     this.retryDelay = const Duration(seconds: 1),
     this.maxRetries = 5,
-  }) : epoch = epoch ?? DateTime.now().microsecondsSinceEpoch;
+  }) : epoch = epoch ?? _randomEpoch();
+
+  /// A random id for this isolate, never a clock (a clock can go backwards
+  /// before a hot restart, and native would then reject the new isolate).
+  static int _randomEpoch() {
+    final random = math.Random.secure();
+    final int id = (random.nextInt(1 << 30) << 22) | random.nextInt(1 << 22);
+    return id == 0 ? 1 : id;
+  }
 
   /// The process-wide registry that widgets use unless given another.
   static SecureRegionRegistry get instance =>
@@ -185,7 +295,7 @@ class SecureRegionRegistry {
 
   /// What native is known to hold, or `null` when that is unknown (a publish
   /// failed): then the next measurement is sent even if it is empty.
-  SecureState? _published = <int, List<Rect>>{};
+  SecureState? _published = <int, ViewRects>{};
 
   /// How many publishes were attempted. For tests.
   @visibleForTesting
@@ -202,6 +312,9 @@ class SecureRegionRegistry {
   void remove(RenderSecureRegion region) {
     if (_regions.remove(region)) _schedule();
   }
+
+  /// Something a measurement depends on changed: measure this frame.
+  void touch() => _schedule();
 
   void _schedule() {
     final binding = SchedulerBinding.instance;
@@ -238,15 +351,18 @@ class SecureRegionRegistry {
   /// The current state of every view, as it would be published.
   SecureState measure() {
     final byView = <int, List<Rect>>{};
+    final ratios = <int, double>{};
     for (final region in _regions) {
       final m = measureRegion(region);
-      if (m != null) (byView[m.viewId] ??= <Rect>[]).add(m.rect);
+      if (m == null) continue;
+      (byView[m.viewId] ??= <Rect>[]).add(m.rect);
+      ratios[m.viewId] = m.ratio;
     }
-    final result = <int, List<Rect>>{};
+    final result = <int, ViewRects>{};
     final ids = byView.keys.toList()..sort();
     for (final id in ids) {
       final rects = canonicalRects(byView[id]!);
-      if (rects.isNotEmpty) result[id] = rects;
+      if (rects.isNotEmpty) result[id] = ViewRects(ratios[id]!, rects);
     }
     return result;
   }
@@ -260,8 +376,9 @@ class SecureRegionRegistry {
         for (final entry in state.entries)
           SecureViewRectanglesMessage(
             viewId: entry.key,
+            devicePixelRatio: entry.value.ratio,
             rectangles: [
-              for (final r in entry.value) ...[
+              for (final r in entry.value.rects) ...[
                 r.left,
                 r.top,
                 r.right,
@@ -315,27 +432,27 @@ class SecureRegionRegistry {
 }
 
 /// The render object behind [BugseeSecureRegion].
-///
-/// A repaint boundary on purpose: its layer is in the composited tree exactly
-/// when the region is being painted this frame, which is how [isOnScreen] tells
-/// a visible region from one that is offstage or scrolled out of its sliver.
 class RenderSecureRegion extends RenderProxyBox {
   RenderSecureRegion({
     required bool enabled,
     required SecureRegionRegistry registry,
+    bool tickerEnabled = true,
   }) : _enabled = enabled,
-       _registry = registry;
+       _registry = registry,
+       _tickerEnabled = tickerEnabled;
 
   bool _enabled;
   SecureRegionRegistry _registry;
+  bool _tickerEnabled;
 
-  @override
-  bool get isRepaintBoundary => true;
-
-  /// Whether this region is part of the composited frame.
-  bool get isOnScreen {
-    final l = layer;
-    return l != null && l.attached;
+  /// `false` when an enclosing [TickerMode] is disabled: Flutter's way of
+  /// saying a route or overlay entry is inactive (covered, offstage). Positive
+  /// evidence that the region is not on screen.
+  bool get tickerEnabled => _tickerEnabled;
+  set tickerEnabled(bool value) {
+    if (value == _tickerEnabled) return;
+    _tickerEnabled = value;
+    if (attached && _enabled) _registry.touch();
   }
 
   bool get enabled => _enabled;
@@ -397,6 +514,7 @@ class BugseeSecureRegion extends SingleChildRenderObjectWidget {
       RenderSecureRegion(
         enabled: enabled,
         registry: registry ?? SecureRegionRegistry.instance,
+        tickerEnabled: TickerMode.valuesOf(context).enabled,
       );
 
   @override
@@ -406,6 +524,7 @@ class BugseeSecureRegion extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..registry = registry ?? SecureRegionRegistry.instance
-      ..enabled = enabled;
+      ..enabled = enabled
+      ..tickerEnabled = TickerMode.valuesOf(context).enabled;
   }
 }

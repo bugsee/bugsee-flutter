@@ -8,6 +8,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.bugsee.library.contracts.internal.BugseeWrapper;
+import com.bugsee.library.contracts.reporting.Report;
 
 import org.junit.Test;
 
@@ -220,12 +221,81 @@ public class FlutterWrapperTest {
         assertTrue(registered.get(0).getContext().isEmpty());
     }
 
+    /** With no Dart handler registered (the default), the SDK is never left waiting. */
     @Test
-    public void reportHandlersCompleteImmediately() {
+    public void reportHandlersCompleteImmediatelyWhenNoDartHandlerIsRegistered() {
         final FlutterWrapper w = FlutterWrapper.atProcessStart();
         final AtomicInteger done = new AtomicInteger();
         w.onBeforeReportCreated(null, false, done::incrementAndGet);
         w.onAfterReportCreated(null, true, done::incrementAndGet);
-        assertEquals(2, done.get());
+        final Report report = FakeReports.create(new FakeReports.State());
+        w.onBeforeReportCreated(report, false, done::incrementAndGet);
+        w.onAfterReportCreated(report, false, done::incrementAndGet);
+        w.onAfterReportCreated(report, true, done::incrementAndGet);
+        assertEquals(5, done.get());
+    }
+
+    /** The wrapper is replaced when Dart refines the identity; its answers must not change. */
+    @Test
+    public void theReplacedWrapperAnswersDataRequestsToo() {
+        final List<BugseeWrapper> registered = new ArrayList<>();
+        FlutterWrapperInitProvider.registerRefined(
+                registered::add, "flutter", "1.2.3", null, Collections.singletonMap("a", "b"));
+        final BugseeWrapper refined = registered.get(0);
+        for (final String type : new String[] {"vh", "", "something-new"}) {
+            final AtomicInteger calls = new AtomicInteger();
+            final AtomicReference<String> got = new AtomicReference<>("sentinel");
+            refined.requestData(type, data -> {
+                calls.incrementAndGet();
+                got.set(data);
+            });
+            assertEquals(type, 1, calls.get());
+            assertNull(type, got.get());
+        }
+        refined.requestData("vh", data -> {
+            throw new IllegalStateException("callback failed");
+        });
+        // A null callback (never expected from the SDK) must not escape either.
+        refined.requestData("vh", null);
+    }
+
+    /**
+     * The report handlers go through the pipeline of the wrapper that was handed in, so a
+     * replacement wrapper shares the process-wide one (the engine's Dart end is not in it).
+     */
+    @Test
+    public void everyWrapperRoutesReportHandlersThroughItsPipeline() {
+        final List<String> seen = new ArrayList<>();
+        final ReportHandlerPipeline pipeline = new ReportHandlerPipeline(
+                (task, delay) -> () -> { },
+                task -> {
+                    task.run();
+                    return true;
+                },
+                () -> null,
+                () -> ReportHandlerDeadlines.LIVE_HANDLER_THREAD,
+                seen::add);
+        final Object owner = new Object();
+        final List<ReportHandlerPipeline.Request> requests = new ArrayList<>();
+        pipeline.attach(owner, (request, unreachable) -> requests.add(request));
+        pipeline.setPhases(owner, true, true);
+        final FlutterWrapper w = FlutterWrapper.create(
+                "flutter", "1", null, null, LifecycleHub.shared(),
+                new SecureRectangleStore(SecureRectangleStore.UNKNOWN_ENVIRONMENT), pipeline);
+        final Report report = FakeReports.create(new FakeReports.State());
+        final AtomicInteger done = new AtomicInteger();
+        w.onBeforeReportCreated(report, false, done::incrementAndGet);
+        w.onAfterReportCreated(report, false, done::incrementAndGet);
+        assertEquals("both reached Dart and neither is complete", 2, requests.size());
+        assertEquals(0, done.get());
+        assertFalse(requests.get(0).after);
+        assertTrue(requests.get(1).after);
+        // Terminating never reaches Dart, whatever is registered.
+        w.onBeforeReportCreated(report, true, done::incrementAndGet);
+        assertEquals(1, done.get());
+        assertEquals(2, requests.size());
+        pipeline.complete(requests.get(0).handle);
+        pipeline.complete(requests.get(1).handle);
+        assertEquals(3, done.get());
     }
 }

@@ -1,0 +1,35 @@
+@import Foundation;
+@import Bugsee;
+
+NS_ASSUME_NONNULL_BEGIN
+
+/// A `BGSReportContract` that holds the state the bridge reads and writes, and records every
+/// MUTATING call by selector, in order, so a test can assert HOW the report was changed
+/// (`replaceLabels:` rather than `clearLabels` + `addLabels:`), not only its end state.
+///
+/// A method this fake does not model raises, so a test cannot pass by accident through a call
+/// the bridge was never meant to make (attachments, screenshots: Phase 6).
+///
+/// The severity setter behaves like the SDK's: it ignores anything outside 1..5 and keeps the
+/// current value, silently. That is the refusal the wrapper's own validation exists to turn into
+/// an error.
+@interface BGSFlutterFakeReport : NSObject <BGSReportContract>
+@property(nonatomic, copy) NSString *fakeReportId;
+@property(nonatomic, copy) NSString *fakeType;
+@property(nonatomic, copy, nullable) NSString *fakeSummary;
+@property(nonatomic, copy, nullable) NSString *fakeDescription;
+@property(nonatomic, copy, nullable) NSString *fakeEmail;
+/// 0 is the SDK's "never set".
+@property(nonatomic) BugseeSeverityLevel fakeSeverity;
+@property(nonatomic, readonly) NSMutableArray<NSString *> *fakeLabels;
+@property(nonatomic, readonly) NSMutableDictionary<NSString *, id> *fakeAttributes;
+/// Every mutating selector called, in order.
+@property(nonatomic, readonly) NSMutableArray<NSString *> *mutations;
+/// Run before / after the summary is stored; lets a test widen or observe the window.
+@property(nonatomic, copy, nullable) dispatch_block_t beforeSetSummary;
+@property(nonatomic, copy, nullable) dispatch_block_t onSummarySet;
+/// How many times `reportId` / `type` were read.
+@property(nonatomic) NSUInteger reads;
+@end
+
+NS_ASSUME_NONNULL_END

@@ -261,7 +261,9 @@ void main() {
       expect(s, contains('for await _ in wakeups'));
       expect(s, contains('self.pending.removeFirst()'));
       expect(
-        RegExp(r'attachSink \{[^}]*Task').hasMatch(s),
+        RegExp(
+          r'BGSFlutterLifecycleHub\.shared\(\)\.attachSink \{[^}]*Task',
+        ).hasMatch(s),
         isFalse,
         reason: 'a Task per event does not promise delivery order',
       );

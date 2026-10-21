@@ -32,6 +32,10 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   private let owner: Int64
   private var tracker: BGSFlutterSecurePlacementTracker?
 
+  // Report handlers (workbook Part 7). One owner token per engine identifies its Dart isolate
+  // in the process-wide pipeline.
+  private var reportOwner: Any?
+
   init(messenger: FlutterBinaryMessenger, registrar: FlutterPluginRegistrar) {
     self.messenger = messenger
     self.owner = BugseeFlutterPlugin.newOwner()
@@ -43,6 +47,24 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
       owner: owner, store: store, environment: BugseeFlutterPlugin.environment,
       viewProvider: { [weak registrar] in registrar?.viewController?.view })
     tracker?.refresh()
+    // No phase is registered until Dart says so (`setReportHandlerPhases`).
+    let dart = BugseeBridgeFlutterApi(binaryMessenger: messenger)
+    reportOwner = BGSFlutterReportHandlerPipeline.shared().attachSink { request, unreachable in
+      // On the main queue (the pipeline posts it there). Never waits for the reply: the SDK's
+      // completion runs when Dart completes the handle, when the deadline passes, or when this
+      // call fails (Dart not listening).
+      let message = ReportHandlerRequestMessage(
+        handle: request.handle, deliveryId: request.deliveryId, after: request.after,
+        reportId: request.reportId, type: request.type, deadlineMs: request.deadlineMs)
+      Task { @MainActor in
+        do {
+          try await dart.onReportHandlerRequest(request: message)
+        } catch {
+          // No Dart handler (hot restart, teardown): answer for it, now.
+          unreachable()
+        }
+      }
+    }
   }
 
   public static func register(with registrar: FlutterPluginRegistrar) {
@@ -61,6 +83,11 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     stopForwarding()
     tracker?.detach()
     tracker = nil
+    // Completes what was handed to this engine's Dart: nothing else knows those handles.
+    if let owner = reportOwner {
+      BGSFlutterReportHandlerPipeline.shared().detachOwner(owner)
+      reportOwner = nil
+    }
     // The engine's UI is gone; there is nothing left of it to hide.
     BGSFlutterSecureRectangleStore.shared().dropOwner(owner)
   }
@@ -138,5 +165,127 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
       tracker?.refresh()
     }
     return applied
+  }
+
+  // MARK: Report handlers
+
+  func resetReportHandlers() throws {
+    if let owner = reportOwner {
+      BGSFlutterReportHandlerPipeline.shared().resetOwner(owner)
+    }
+  }
+
+  func setReportHandlerPhases(before: Bool, after: Bool) throws {
+    if let owner = reportOwner {
+      BGSFlutterReportHandlerPipeline.shared().setPhasesForOwner(owner, before: before, after: after)
+    }
+  }
+
+  func completeReportHandler(handle: String) throws {
+    _ = BGSFlutterReportHandlerPipeline.shared().completeHandle(handle)
+  }
+
+  func reportRead(handle: String) throws -> ReportSnapshotMessage? {
+    guard let report = BGSFlutterReportHandlerPipeline.shared().report(forHandle: handle) else {
+      return nil
+    }
+    let s = BGSFlutterReportOps.readReport(report)
+    return ReportSnapshotMessage(
+      id: s.reportId, type: s.type, summary: s.summary, reportDescription: s.reportDescription,
+      email: s.email, severity: s.severity?.int64Value, labels: s.labels,
+      attributes: s.attributes)
+  }
+
+  func reportSetSummary(handle: String, value: String?) throws -> Bool {
+    try edit(handle) { report, _ in
+      BGSFlutterReportOps.setSummary(value, onReport: report)
+      return true
+    }
+  }
+
+  func reportSetDescription(handle: String, value: String?) throws -> Bool {
+    try edit(handle) { report, _ in
+      BGSFlutterReportOps.setDescription(value, onReport: report)
+      return true
+    }
+  }
+
+  func reportSetEmail(handle: String, value: String?) throws -> Bool {
+    try edit(handle) { report, _ in
+      BGSFlutterReportOps.setEmail(value, onReport: report)
+      return true
+    }
+  }
+
+  func reportSetSeverity(handle: String, severity: Int64) throws -> Bool {
+    try edit(handle) { report, error in
+      attempt(error) { try BGSFlutterReportOps.setSeverity(severity, onReport: report) }
+    }
+  }
+
+  func reportReplaceLabels(handle: String, labels: [String]) throws -> Bool {
+    try edit(handle) { report, error in
+      attempt(error) { try BGSFlutterReportOps.replaceLabels(labels, onReport: report) }
+    }
+  }
+
+  func reportAddLabels(handle: String, labels: [String]) throws -> Bool {
+    try edit(handle) { report, error in
+      attempt(error) { try BGSFlutterReportOps.addLabels(labels, onReport: report) }
+    }
+  }
+
+  func reportClearLabels(handle: String) throws -> Bool {
+    try edit(handle) { report, _ in
+      BGSFlutterReportOps.clearLabels(onReport: report)
+      return true
+    }
+  }
+
+  func reportSetAttribute(handle: String, name: String, value: Any) throws -> Bool {
+    try edit(handle) { report, error in
+      attempt(error) { try BGSFlutterReportOps.setAttribute(value, name: name, onReport: report) }
+    }
+  }
+
+  func reportRemoveAttribute(handle: String, name: String) throws -> Bool {
+    try edit(handle) { report, _ in
+      BGSFlutterReportOps.removeAttribute(name, onReport: report)
+      return true
+    }
+  }
+
+  func reportClearAttributes(handle: String) throws -> Bool {
+    try edit(handle) { report, _ in
+      BGSFlutterReportOps.clearAttributes(onReport: report)
+      return true
+    }
+  }
+
+  /// false: the handle is not live, nothing changed. An unusable argument is an error reply.
+  private func edit(_ handle: String, _ change: @escaping (Any, NSErrorPointer) -> Bool) throws
+    -> Bool
+  {
+    var error: NSError?
+    switch BGSFlutterReportHandlerPipeline.shared().editHandle(handle, edit: change, error: &error) {
+    case .applied: return true
+    case .notLive: return false
+    case .refused:
+      throw PigeonError(
+        code: "invalid-argument", message: error?.localizedDescription ?? "invalid argument",
+        details: nil)
+    @unknown default: return false
+    }
+  }
+}
+
+/// The ObjC operations throw (`NSError **`); the pipeline's edit block reports through a pointer.
+private func attempt(_ error: NSErrorPointer, _ body: () throws -> Void) -> Bool {
+  do {
+    try body()
+    return true
+  } catch let thrown as NSError {
+    error?.pointee = thrown
+    return false
   }
 }

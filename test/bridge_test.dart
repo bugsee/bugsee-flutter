@@ -34,6 +34,33 @@ class FakeHost extends BugseeBridgeHostApi {
     await onAttach?.call();
   }
 
+  int resets = 0;
+  final List<(bool, bool)> phases = [];
+
+  int failReset = 0;
+
+  @override
+  Future<void> resetReportHandlers() async {
+    calls.add('reset');
+    if (failReset > 0) {
+      failReset--;
+      throw PlatformException(code: 'channel-error');
+    }
+    resets++;
+  }
+
+  int failPhases = 0;
+
+  @override
+  Future<void> setReportHandlerPhases(bool before, bool after) async {
+    calls.add('phases');
+    if (failPhases > 0) {
+      failPhases--;
+      throw PlatformException(code: 'channel-error');
+    }
+    phases.add((before, after));
+  }
+
   @override
   Future<void> setWrapperIdentity(WrapperIdentityMessage identity) async {
     calls.add('identity');
@@ -227,7 +254,55 @@ void main() {
       await bridge.start(facts: _facts);
       await bridge.start(facts: _facts);
       await bridge.start();
-      expect(host.calls, ['attach', 'identity']);
+      expect(host.calls, ['attach', 'reset', 'phases', 'identity']);
+      // A new isolate has no report handler yet: native must not wait on one.
+      expect(host.phases, [(false, false)]);
+    });
+
+    test('handlers registered BEFORE start still sweep the old isolate, once, '
+        'before any phase registration', () async {
+      await bridge.setReportHandlers(onBefore: (_) {});
+      await bridge.start(facts: _facts);
+      expect(host.resets, 1);
+      expect(
+        host.calls.indexOf('reset'),
+        lessThan(host.calls.indexOf('phases')),
+        reason: 'the sweep also clears native phases: it must come first',
+      );
+      expect(host.calls.where((c) => c == 'reset'), hasLength(1));
+      // The handler registered before start() is what native was told.
+      expect(host.phases.last, (true, false));
+    });
+
+    test('handlers registered AFTER start() do not sweep again', () async {
+      await bridge.start(facts: _facts);
+      await bridge.setReportHandlers(onAfter: (_) {});
+      expect(host.resets, 1);
+      expect(host.phases, [(false, false), (false, true)]);
+    });
+
+    test('a failed sweep is not cached: the next registration repeats it, '
+        'before its phases', () async {
+      host.failReset = 1;
+      await expectLater(
+        bridge.setReportHandlers(onBefore: (_) {}),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(host.calls, ['reset']);
+      await bridge.setReportHandlers(onBefore: (_) {});
+      expect(host.calls, ['reset', 'reset', 'phases']);
+    });
+
+    test('start() and setReportHandlers racing sweep once', () async {
+      await Future.wait([
+        bridge.setReportHandlers(onBefore: (_) {}),
+        bridge.start(facts: _facts),
+      ]);
+      expect(host.resets, 1);
+      expect(
+        host.calls.indexOf('reset'),
+        lessThan(host.calls.indexOf('phases')),
+      );
     });
 
     test(
@@ -238,15 +313,15 @@ void main() {
           bridge.start(facts: _facts),
           throwsA(isA<PlatformException>()),
         );
-        expect(host.calls, ['attach', 'identity']);
+        expect(host.calls, ['attach', 'reset', 'phases', 'identity']);
         expect(host.identities, hasLength(1));
         // Not cached: the next call tries again, repeating only the failed step
         // (the identity already went through).
         await bridge.start(facts: _facts);
-        expect(host.calls, ['attach', 'identity', 'attach']);
+        expect(host.calls, ['attach', 'reset', 'phases', 'identity', 'attach']);
         // And now it is cached.
         await bridge.start(facts: _facts);
-        expect(host.calls, hasLength(3));
+        expect(host.calls, hasLength(5));
       },
     );
 
@@ -265,7 +340,7 @@ void main() {
       expect(host.identities, hasLength(1));
       // Attach had succeeded: the retry must not attach again (native would replay
       // events this bridge already received).
-      expect(host.calls, ['attach', 'identity', 'identity']);
+      expect(host.calls, ['attach', 'reset', 'phases', 'identity', 'identity']);
     });
 
     test('the identity carries versions, engine and build mode', () async {
@@ -305,7 +380,33 @@ void main() {
           ]);
         },
       );
+      messenger.setMockMessageHandler(
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.resetReportHandlers',
+        (m) async {
+          calls.add('reset');
+          return BugseeBridgeHostApi.pigeonChannelCodec.encodeMessage(<Object?>[
+            null,
+          ]);
+        },
+      );
+      messenger.setMockMessageHandler(
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setReportHandlerPhases',
+        (m) async {
+          calls.add('phases');
+          return BugseeBridgeHostApi.pigeonChannelCodec.encodeMessage(<Object?>[
+            null,
+          ]);
+        },
+      );
       addTearDown(() {
+        messenger.setMockMessageHandler(
+          'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.resetReportHandlers',
+          null,
+        );
+        messenger.setMockMessageHandler(
+          'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setReportHandlerPhases',
+          null,
+        );
         messenger.setMockMessageHandler(
           'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.attachLifecycle',
           null,
@@ -316,7 +417,7 @@ void main() {
         );
       });
       await BugseeBridge().start(facts: _facts);
-      expect(calls, ['attach', 'flutter']);
+      expect(calls, ['attach', 'reset', 'phases', 'flutter']);
     });
   });
 

@@ -16,8 +16,8 @@ import java.util.Map;
  *
  * <p>Identity is real (workbook Part 3), and lifecycle events are forwarded
  * (Part 4). The rest is a deliberately inert stub until Phase 3 gives it
- * behaviour: data requests are answered with {@code null}, no secure rectangles
- * are contributed, and report handlers complete immediately. Every method is
+ * behaviour: data requests are answered with {@code null}. Report handlers go through
+ * {@link ReportHandlerPipeline}. Every method is
  * safe to be called by the SDK at any time, from any thread, and none throws.
  *
  * <p>This object is replaced mid-session when Dart refines the identity, so it
@@ -43,6 +43,7 @@ final class FlutterWrapper implements BugseeWrapper {
     private final Map<String, String> context;
     private final LifecycleHub lifecycle;
     private final SecureRectangleStore secureRectangles;
+    private final ReportHandlerPipeline reports;
 
     /** The identity knowable before Dart exists: type and version only. */
     @NonNull
@@ -64,7 +65,7 @@ final class FlutterWrapper implements BugseeWrapper {
             @Nullable final Object context
     ) {
         return create(type, version, build, context,
-                LifecycleHub.shared(), SecureRectangleStore.shared());
+                LifecycleHub.shared(), SecureRectangleStore.shared(), ReportHandlerPipeline.shared());
     }
 
     /** As above with the process-wide collaborators supplied; for tests. */
@@ -76,6 +77,21 @@ final class FlutterWrapper implements BugseeWrapper {
             @Nullable final Object context,
             @NonNull final LifecycleHub lifecycle,
             @NonNull final SecureRectangleStore secureRectangles
+    ) {
+        return create(type, version, build, context, lifecycle, secureRectangles,
+                ReportHandlerPipeline.shared());
+    }
+
+    /** As above with every process-wide collaborator supplied; for tests. */
+    @NonNull
+    static FlutterWrapper create(
+            @Nullable final Object type,
+            @Nullable final Object version,
+            @Nullable final Object build,
+            @Nullable final Object context,
+            @NonNull final LifecycleHub lifecycle,
+            @NonNull final SecureRectangleStore secureRectangles,
+            @NonNull final ReportHandlerPipeline reports
     ) {
         final Map<String, String> cleaned = new HashMap<>();
         if (context instanceof Map) {
@@ -91,7 +107,8 @@ final class FlutterWrapper implements BugseeWrapper {
                 build instanceof String ? (String) build : null,
                 cleaned,
                 lifecycle,
-                secureRectangles);
+                secureRectangles,
+                reports);
     }
 
     private static String stringOr(@Nullable final Object value, @NonNull final String fallback) {
@@ -104,10 +121,12 @@ final class FlutterWrapper implements BugseeWrapper {
             @Nullable final String build,
             @NonNull final Map<String, String> context,
             @NonNull final LifecycleHub lifecycle,
-            @NonNull final SecureRectangleStore secureRectangles
+            @NonNull final SecureRectangleStore secureRectangles,
+            @NonNull final ReportHandlerPipeline reports
     ) {
         this.lifecycle = lifecycle;
         this.secureRectangles = secureRectangles;
+        this.reports = reports;
         this.type = type;
         this.version = version;
         this.build = build;
@@ -138,7 +157,13 @@ final class FlutterWrapper implements BugseeWrapper {
         return context;
     }
 
-    /** Phase 3 replaces this. Unknown types are always answered with null. */
+    /**
+     * Always answers, and always with null for now: the one flow that exists is {@code vh}
+     * (the managed view hierarchy, Phase 5), and an unknown type is answered with null
+     * (workbook 6.1). Silence would cost the SDK the whole 500 ms budget, so even a
+     * {@code vh} request is answered, with null, until Phase 5 produces a payload.
+     * Never throws, whatever the SDK or its callback does.
+     */
     @Override
     public void requestData(
             @NonNull final String dataType,
@@ -165,13 +190,19 @@ final class FlutterWrapper implements BugseeWrapper {
         return secureRectangles.pull(display);
     }
 
+    /**
+     * Report handlers (workbook Part 7): see {@link ReportHandlerPipeline}. The SDK calls
+     * these on a thread of its own (never main on the healthy path, but possibly main on a
+     * crash path), so nothing here may block, and the SDK's completion runs exactly once
+     * whatever happens. The pipeline is process-wide, not part of this replaceable object.
+     */
     @Override
     public void onBeforeReportCreated(
             @NonNull final Report report,
             final boolean isTerminating,
             @NonNull final Runnable completionCallback
     ) {
-        completionCallback.run();
+        reports.dispatch(ReportHandlerPipeline.Phase.BEFORE, report, isTerminating, completionCallback);
     }
 
     @Override
@@ -180,6 +211,6 @@ final class FlutterWrapper implements BugseeWrapper {
             final boolean isTerminating,
             @NonNull final Runnable completionCallback
     ) {
-        completionCallback.run();
+        reports.dispatch(ReportHandlerPipeline.Phase.AFTER, report, isTerminating, completionCallback);
     }
 }

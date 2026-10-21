@@ -1,6 +1,8 @@
 #import <XCTest/XCTest.h>
 
+#import "BGSFlutterFakeReport.h"
 #import "BGSFlutterLifecycleHub.h"
+#import "BGSFlutterReportHandlerPipeline.h"
 #import "BGSFlutterSecureRectangleStore.h"
 #import "BGSFlutterWrapper.h"
 
@@ -32,6 +34,22 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
   int32_t ints[6] = {version, 1, l, t, r, b};
   return [NSData dataWithBytes:ints length:sizeof(ints)];
 }
+
+/// A callback that counts its answers and records the last.
+@interface BGSCountingCallback : NSObject <BGSDataRequestResultCallback>
+@property(nonatomic) NSUInteger calls;
+@property(nonatomic, copy, nullable) NSString *last;
+@property(nonatomic) BOOL throws;
+@end
+@implementation BGSCountingCallback
+- (void)onResult:(NSString *)result {
+  self.calls++;
+  self.last = result ?: @"<nil>";
+  if (self.throws) {
+    [NSException raise:NSInternalInconsistencyException format:@"callback failed"];
+  }
+}
+@end
 
 @interface BGSFlutterWrapperTests : XCTestCase
 @end
@@ -139,6 +157,139 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
   int32_t head[6] = {2, 2, 10, 20, 31, 40};
   XCTAssertEqualObjects([changed subdataWithRange:NSMakeRange(0, sizeof(head))],
                         [NSData dataWithBytes:head length:sizeof(head)]);
+}
+
+#pragma mark - requestData (workbook 6.1, Part 6)
+
+/// Every type is answered with nil, `vh` included (its real flow is Phase 5), and never throws.
+- (void)assertAnswersNilForEveryType:(id<BugseeWrapper>)wrapper {
+  for (NSString *type in @[ @"vh", @"", @"something-new" ]) {
+    BGSCountingCallback *callback = [[BGSCountingCallback alloc] init];
+    [wrapper requestDataWithType:type callback:callback];
+    XCTAssertEqual(callback.calls, 1u, @"%@", type);
+    XCTAssertEqualObjects(callback.last, @"<nil>", @"%@", type);
+  }
+  // A throwing callback must not escape, and a missing one is not a crash.
+  BGSCountingCallback *throwing = [[BGSCountingCallback alloc] init];
+  throwing.throws = YES;
+  XCTAssertNoThrow([wrapper requestDataWithType:@"vh" callback:throwing]);
+  XCTAssertNoThrow([wrapper requestDataWithType:@"vh" callback:(id)nil]);
+}
+
+- (void)testRequestDataAnswersNilForEveryTypeAndNeverThrows {
+  [self assertAnswersNilForEveryType:(id<BugseeWrapper>)[BGSFlutterWrapper wrapperAtProcessStart]];
+}
+
+/// The wrapper is replaced at runtime when Dart refines the identity; the replacement answers too.
+- (void)testTheReplacedWrapperAnswersRequestDataToo {
+  NSMutableArray *registered = [NSMutableArray array];
+  [BGSFlutterWrapperRegistrar setRegistrationHandlerForTests:^(id w) {
+    [registered addObject:w];
+  }];
+  XCTAssertTrue([BGSFlutterWrapperRegistrar replaceWithType:@"flutter" version:@"1.2.3" build:nil context:nil]);
+  XCTAssertEqual(registered.count, 1u);
+  [self assertAnswersNilForEveryType:registered.firstObject];
+}
+
+#pragma mark - report handlers (workbook Part 7)
+
+- (BGSFlutterReportHandlerPipeline *)pipelineCollecting:(NSMutableArray<BGSFlutterReportRequest *> *)requests
+                                                  owner:(id *)owner
+                                              deadlines:(NSMutableArray<dispatch_block_t> *)deadlines {
+  BGSFlutterReportHandlerPipeline *pipeline = [[BGSFlutterReportHandlerPipeline alloc]
+      initWithScheduler:^id(dispatch_block_t task, int64_t delayMs) {
+        @synchronized(deadlines) {
+          [deadlines addObject:[task copy]];
+        }
+        return @"t";
+      }
+      cancel:^(id token) {
+      }
+      platformPost:^(dispatch_block_t task) {
+        task();
+      }
+      log:^(NSString *line) {
+      }];
+  *owner = [pipeline attachSink:^(BGSFlutterReportRequest *request, dispatch_block_t unreachable) {
+    @synchronized(requests) {
+      [requests addObject:request];
+    }
+  }];
+  [pipeline setPhasesForOwner:*owner before:YES after:YES];
+  return pipeline;
+}
+
+/// The SDK's callbacks reach the pipeline from a NON-main thread (iOS recovery), complete
+/// exactly once, and a Dart handler that never answers does not stall them.
+- (void)testReportHandlersGoThroughThePipelineFromANonMainThread {
+  NSMutableArray<BGSFlutterReportRequest *> *requests = [NSMutableArray array];
+  NSMutableArray<dispatch_block_t> *deadlines = [NSMutableArray array];
+  id owner = nil;
+  BGSFlutterReportHandlerPipeline *pipeline = [self pipelineCollecting:requests owner:&owner deadlines:deadlines];
+  BGSFlutterWrapper *w = [BGSFlutterWrapper wrapperWithType:@"flutter"
+                                                    version:@"1"
+                                                      build:nil
+                                                    context:nil
+                                                        hub:[BGSFlutterLifecycleHub shared]
+                                           secureRectangles:[BGSFlutterSecureRectangleStore new]
+                                                    reports:pipeline];
+  BGSFlutterFakeReport *report = [[BGSFlutterFakeReport alloc] init];
+  __block NSUInteger completions = 0;
+  NSObject *lock = [[NSObject alloc] init];
+  XCTestExpectation *returned = [self expectationWithDescription:@"callbacks returned"];
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+    XCTAssertFalse([NSThread isMainThread]);
+    [(id<BugseeWrapper>)w onBeforeReportCreated:report isTerminating:NO completion:^{
+      @synchronized(lock) { completions++; }
+    }];
+    [(id<BugseeWrapper>)w onAfterReportCreated:report isTerminating:NO completion:^{
+      @synchronized(lock) { completions++; }
+    }];
+    [returned fulfill];
+  });
+  [self waitForExpectations:@[ returned ] timeout:5];
+  XCTAssertEqual(requests.count, 2u, @"both phases reached the Dart end, off the main thread");
+  XCTAssertFalse(requests[0].after);
+  XCTAssertTrue(requests[1].after);
+  // Off main, so the recovery budget (inside the SDK's 3 s cap).
+  XCTAssertEqual(requests[0].deadlineMs, BGSFlutterReportRecoveryDeadlineMs);
+  @synchronized(lock) {
+    XCTAssertEqual(completions, 0u, @"nothing completed: the SDK waits for Dart or the deadline");
+  }
+  // Dart never answers: the deadlines complete both, once each, however late they come.
+  for (dispatch_block_t deadline in [deadlines copy]) {
+    deadline();
+  }
+  for (dispatch_block_t deadline in [deadlines copy]) {
+    deadline();
+  }
+  XCTAssertEqual(completions, 2u);
+  [pipeline detachOwner:owner];
+  XCTAssertEqual(completions, 2u);
+}
+
+- (void)testTerminatingNeverReachesDartThroughTheWrapper {
+  NSMutableArray<BGSFlutterReportRequest *> *requests = [NSMutableArray array];
+  id owner = nil;
+  BGSFlutterReportHandlerPipeline *pipeline = [self pipelineCollecting:requests owner:&owner deadlines:[NSMutableArray array]];
+  BGSFlutterWrapper *w = [BGSFlutterWrapper wrapperWithType:@"flutter" version:@"1" build:nil context:nil
+                                                        hub:[BGSFlutterLifecycleHub shared]
+                                           secureRectangles:[BGSFlutterSecureRectangleStore new]
+                                                    reports:pipeline];
+  __block NSUInteger completions = 0;
+  [(id<BugseeWrapper>)w onBeforeReportCreated:[[BGSFlutterFakeReport alloc] init] isTerminating:YES completion:^{ completions++; }];
+  [(id<BugseeWrapper>)w onAfterReportCreated:[[BGSFlutterFakeReport alloc] init] isTerminating:YES completion:^{ completions++; }];
+  XCTAssertEqual(completions, 2u);
+  XCTAssertEqual(requests.count, 0u);
+}
+
+/// With no Dart handler registered (the default), the SDK is never left waiting.
+- (void)testTheDefaultWrapperCompletesImmediatelyWhenNoDartHandlerIsRegistered {
+  BGSFlutterWrapper *w = [BGSFlutterWrapper wrapperAtProcessStart];
+  __block NSUInteger completions = 0;
+  [(id<BugseeWrapper>)w onBeforeReportCreated:[[BGSFlutterFakeReport alloc] init] isTerminating:NO completion:^{ completions++; }];
+  [(id<BugseeWrapper>)w onAfterReportCreated:[[BGSFlutterFakeReport alloc] init] isTerminating:NO completion:^{ completions++; }];
+  XCTAssertEqual(completions, 2u);
 }
 
 @end

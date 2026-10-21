@@ -66,8 +66,19 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   (an ancestor that does not paint it, an IndexedStack showing another child, or the region and all its paint lying wholly outside a clipping viewport); neither a disabled TickerMode nor a detached layer counts as such evidence. An unmeasurable region covers the whole view.
   First-frame exposure of a newly appearing region remains.
   Known limits: see "Secure rectangle limits" in `.claude/CLAUDE.md`.
-- Report handlers: always call completion; `isTerminating=true` → synchronous native-only
-  work, no round-trip to Dart.
+- Report handlers (3c, done): native pipeline (`ReportHandlerPipeline` / `BGSFlutterReportHandlerPipeline`) + a Dart
+  `ReportProxy` (internal, `lib/src/report`; Phase 4 exposes it). The SDK's completion runs EXACTLY ONCE on every path; the
+  pipeline NEVER WAITS (the SDK already waits on its own timer; a native wait for Dart's reply deadlocks when the handler runs
+  on the platform thread, which iOS's live path does). `isTerminating` never reaches Dart and the report is not even read.
+  No Dart handler registered, or Dart not attached: complete at once. The window is the SDK's budget LESS A MARGIN (a third, at most 10 s), from SDK source (numbers extracted into `test/fixtures/report_enums.json`): Android 7.4.2 waits `ReportHandlerCallbackTimeout` (30 s, option) per handler on thread `BugseeReportHandlerThread`, ours 20 s; its recovery/terminating paths run on other threads, wait 3 s for the handler to RETURN and never for the completion, so Android completes at once there. iOS (nextgen = beta7 headers): live = MAIN thread, 30 s per handler, ours 20 s; recovery = worker thread, 3 s cap, a late completion re-persists the report, ours 2 s. Honest limit: the SDK's per-handler timer starts when it QUEUES the handler, ours at handler entry, and the wait in between (another report's slow handler holding the shared Android dispatch thread, a busy iOS main thread) is NOT observable; the margin absorbs it, and a handler queued behind more than the margin can still overrun, with an edit accepted although the SDK has moved on. What is observable (the hop to the platform thread after entry) is deducted: Dart is told what is LEFT, and a window already over is completed, not offered. An accepted edit is guaranteed to have landed before the completion ran (per-handle lock across check-and-apply). A new isolate (hot restart) completes the previous one's outstanding deliveries. A Dart handler that overruns its budget is reported even if it makes no further edit. The path is told apart by thread
+  (Android: name, iOS: main or not) for the time budget ONLY, never passed to Dart, never "this is a recovered crash" (7.2.3).
+  The workbook's table says Android recovery runs on main and is waited for; 7.4.2 source says a spawned thread, not awaited
+  (inline on the launching thread only when no thread can be started): source wins, spec gap to report.
+  Dart: edits are operations keyed by a handle; a late edit throws `ReportClosedError` (a `StateError`) and native ignores it.
+  `onAfter` is at-least-once: each delivery carries a stable `deliveryId` (`before|after:<reportId>`) and Dart skips a repeat
+  within the isolate (128 remembered). Enums cross by value (the bridge has none; severity is the SDK integer; Dart
+  `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (TODO seam in `ReportProxy`).
+- `requestData` (3c): the stub answers null/nil for every type incl. `vh`, also on the replaced wrapper; tested on both platforms.
 
 ## 4. Phase 4 — Public API and options (Part 8)
 

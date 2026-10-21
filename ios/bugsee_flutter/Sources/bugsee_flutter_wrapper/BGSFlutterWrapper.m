@@ -1,6 +1,7 @@
 #import "BGSFlutterWrapper.h"
 
 #import "BGSFlutterLifecycleHub.h"
+#import "BGSFlutterReportHandlerPipeline.h"
 #import "BGSFlutterSecureRectangleStore.h"
 
 @import Bugsee;
@@ -27,6 +28,7 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
   // refines the identity, so nothing that must survive that lives in it (5.4.2).
   BGSFlutterLifecycleHub *_hub;
   BGSFlutterSecureRectangleStore *_secureRectangles;
+  BGSFlutterReportHandlerPipeline *_reports;
 }
 
 + (instancetype)wrapperAtProcessStart {
@@ -42,7 +44,8 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
                          build:build
                        context:context
                            hub:[BGSFlutterLifecycleHub shared]
-              secureRectangles:[BGSFlutterSecureRectangleStore shared]];
+              secureRectangles:[BGSFlutterSecureRectangleStore shared]
+                       reports:[BGSFlutterReportHandlerPipeline shared]];
 }
 
 + (instancetype)wrapperWithType:(id)type
@@ -51,9 +54,26 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
                         context:(id)context
                             hub:(BGSFlutterLifecycleHub *)hub
                secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles {
+  return [self wrapperWithType:type
+                       version:version
+                         build:build
+                       context:context
+                           hub:hub
+              secureRectangles:secureRectangles
+                       reports:[BGSFlutterReportHandlerPipeline shared]];
+}
+
++ (instancetype)wrapperWithType:(id)type
+                        version:(id)version
+                          build:(id)build
+                        context:(id)context
+                            hub:(BGSFlutterLifecycleHub *)hub
+               secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles
+                        reports:(BGSFlutterReportHandlerPipeline *)reports {
   BGSFlutterWrapper *wrapper = [[BGSFlutterWrapper alloc] init];
   wrapper->_hub = hub;
   wrapper->_secureRectangles = secureRectangles;
+  wrapper->_reports = reports;
   wrapper->_wrapperType = [BGSFlutterStringOr(type, BGSFlutterUnknown) copy];
   wrapper->_wrapperVersion = [BGSFlutterStringOr(version, BGSFlutterUnknown) copy];
   wrapper->_wrapperBuild = [build isKindOfClass:[NSString class]] ? [build copy] : nil;
@@ -69,6 +89,10 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
   return wrapper;
 }
 
+// Always answers, and always with nil for now: the one flow that exists is `vh` (the managed
+// view hierarchy, Phase 5), and an unknown type is answered with nil (workbook 6.1). Silence
+// would cost the SDK the whole 500 ms budget, so even a `vh` request is answered, with nil,
+// until Phase 5 produces a payload. Never throws, whatever the SDK or its callback does.
 - (void)requestDataWithType:(NSString *)dataType callback:(id<BGSDataRequestResultCallback>)callback {
   @try {
     [callback onResult:nil];
@@ -88,16 +112,28 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
   return [_secureRectangles pullForDisplay:display];
 }
 
+// Report handlers (workbook Part 7): see BGSFlutterReportHandlerPipeline. On the live path the
+// SDK calls these ON THE MAIN THREAD, on recovery on a worker, so nothing here may block, and the
+// SDK's completion runs exactly once whatever happens. The pipeline is process-wide, not part of
+// this replaceable object.
 - (void)onBeforeReportCreated:(id<BGSReportContract>)report
                 isTerminating:(BOOL)isTerminating
                    completion:(BGSCallback)completion {
-  completion();
+  [_reports dispatchPhase:BGSFlutterReportPhaseBefore
+                   report:report
+            isTerminating:isTerminating
+             onMainThread:[NSThread isMainThread]
+               completion:completion];
 }
 
 - (void)onAfterReportCreated:(id<BGSReportContract>)report
                isTerminating:(BOOL)isTerminating
                   completion:(BGSCallback)completion {
-  completion();
+  [_reports dispatchPhase:BGSFlutterReportPhaseAfter
+                   report:report
+            isTerminating:isTerminating
+             onMainThread:[NSThread isMainThread]
+               completion:completion];
 }
 
 @end

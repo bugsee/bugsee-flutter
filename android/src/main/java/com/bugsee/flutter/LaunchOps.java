@@ -108,7 +108,9 @@ final class LaunchOps {
             });
         } catch (final Throwable t) {
             // An SDK that called back and then threw has already been answered.
-            if (!answered.get()) {
+            // Claimed, not just read: an SDK that threw after scheduling its callback on another
+            // thread must not also answer through it.
+            if (answered.compareAndSet(false, true)) {
                 error.error(t);
             }
         }

@@ -13,6 +13,9 @@
 @property(nonatomic) NSInteger startedCalls;
 /// Throws after calling `started:` back.
 @property(nonatomic) BOOL throwAfterStarted;
+/// Throws but keeps `started:` to be called later (another thread).
+@property(nonatomic) BOOL throwLeavingStarted;
+@property(nonatomic, copy) void (^leftStarted)(BOOL);
 /// The status the SDK is in when it calls `started:`.
 @property(nonatomic, copy) NSString *statusAtStarted;
 @property(nonatomic, strong) NSException *launchThrows;
@@ -52,6 +55,10 @@
   if (_launchThrows) @throw _launchThrows;
   [_launches addObject:token];
   _launchedWith = options;
+  if (_throwLeavingStarted) {
+    _leftStarted = [started copy];
+    @throw [NSException exceptionWithName:@"BugseeLate" reason:@"callback comes later" userInfo:nil];
+  }
   if (_startedWith) {
     _status = _statusAtStarted;
     for (NSInteger i = 0; i < _startedCalls; i++) {
@@ -204,6 +211,24 @@
   sdk.startedCalls = 2;
   // The helper asserts the completion ran exactly once.
   XCTAssertEqualObjects([self launch:sdk token:@"tok" options:nil][0], BGSFlutterLaunchOps.launched);
+}
+
+- (void)testAnSdkThatThrowsAndCallsStartedLaterAnswersOnlyTheError {
+  BGSFakeBugsee *sdk = [[BGSFakeBugsee alloc] init];
+  sdk.throwLeavingStarted = YES;
+  __block NSInteger calls = 0;
+  __block NSError *error = nil;
+  [BGSFlutterLaunchOps launchWithSdk:sdk
+                               token:@"tok"
+                             options:nil
+                          completion:^(NSString *o, NSString *r, NSError *e) {
+                            calls++;
+                            error = e;
+                          }];
+  XCTAssertEqual(calls, 1);
+  XCTAssertNotNil(error);
+  sdk.leftStarted(YES);  // the SDK's other thread, later
+  XCTAssertEqual(calls, 1, @"no second answer");
 }
 
 - (void)testAnSdkThatCallsStartedAndThenThrowsHasAlreadyBeenAnswered {

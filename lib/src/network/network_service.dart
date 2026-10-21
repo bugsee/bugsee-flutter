@@ -114,6 +114,7 @@ final class NetworkCaptureService {
   void uninstall() {
     final overrides = _overrides;
     controller.active = false;
+    controller.generation++;
     _generation++;
     _probedCurrent = null;
     // Events already captured (and already through the filter) are still handed to the SDK: the

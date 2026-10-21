@@ -202,6 +202,30 @@ void main() {
     },
   );
 
+  test(
+    'an exchange in flight at an uninstall does not resume after a reinstall',
+    () async {
+      final (rig, response) = await open();
+      final done = Completer<void>();
+      response.listen((_) {}, onDone: done.complete);
+      // Uninstalled, then installed again, while the exchange was in flight.
+      controller.active = false;
+      controller.generation++;
+      controller.active = true;
+      rig.response.data.add([1]);
+      await rig.response.data.close();
+      await done.future;
+      expect(stages(), [NetworkStage.before]);
+      // An exchange that starts after the reinstall records.
+      final (rig2, response2) = await open();
+      final done2 = Completer<void>();
+      response2.listen((_) {}, onDone: done2.complete);
+      await rig2.response.data.close();
+      await done2.future;
+      expect(stages().where((s) => s == NetworkStage.complete), hasLength(1));
+    },
+  );
+
   test('a cancel after the uninstall records no abort either', () async {
     final (rig, response) = await open();
     final sub = response.listen((_) {});

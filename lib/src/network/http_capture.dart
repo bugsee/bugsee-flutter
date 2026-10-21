@@ -37,6 +37,10 @@ final class HttpCaptureController {
   /// False once uninstalled: clients that already exist keep forwarding but record nothing.
   bool active = true;
 
+  /// Bumped by every uninstall: an exchange that started under an earlier one never records,
+  /// even if the capture is installed again while it is still in flight.
+  int generation = 0;
+
   final String _prefix = Random()
       .nextInt(1 << 32)
       .toRadixString(16)
@@ -154,7 +158,10 @@ final class _Exchange {
     this.startedUs, {
     this.parentUrl,
     this.skipHops = 0,
-  }) : id = ctl.nextId();
+  }) : id = ctl.nextId(),
+       _generation = ctl.generation;
+
+  final int _generation;
 
   /// The exchange `response.redirect()` continues: a NEW exchange (the 3xx response is complete
   /// on its own, usually drained by the app first), starting at the hop the app followed. Its
@@ -208,6 +215,7 @@ final class _Exchange {
     String? redirectedFrom,
     Map<String, double>? timings,
   }) {
+    if (ctl.generation != _generation) return;
     ctl.emit(
       BugseeNetworkEvent(
         id: id,

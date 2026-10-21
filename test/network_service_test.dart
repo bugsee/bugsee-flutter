@@ -94,6 +94,47 @@ void main() {
       },
     );
 
+    test(
+      'an exchange in flight at an uninstall does not record after a reinstall',
+      () async {
+        final gate = Completer<void>();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        server.listen((r) async {
+          r.response
+            ..headers.contentType = ContentType.text
+            ..bufferOutput = false
+            ..write('first;');
+          await r.response.flush();
+          await gate.future;
+          r.response.write('second');
+          await r.response.close();
+        });
+        final rig = Rig();
+        rig.service.install();
+        await rig.settle();
+        final client = HttpClient();
+        addTearDown(() => client.close(force: true));
+        final request = await client.getUrl(
+          Uri.parse('http://127.0.0.1:${server.port}/'),
+        );
+        final response = await request.close();
+        final first = Completer<void>();
+        final done = Completer<void>();
+        response.listen((_) {
+          if (!first.isCompleted) first.complete();
+        }, onDone: done.complete);
+        await first.future;
+        rig.service.uninstall();
+        rig.service.install();
+        await rig.settle();
+        gate.complete();
+        await done.future;
+        await rig.service.pipeline.flush();
+        expect(rig.sent.map((m) => m.stage), ['before']);
+      },
+    );
+
     test('chains to the overrides the app already installed', () async {
       final app = _AppOverrides();
       HttpOverrides.global = app;

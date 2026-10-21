@@ -22,6 +22,18 @@ class _MissingPluginFake extends FacadeFake {
       throw MissingPluginException('no implementation');
 }
 
+void _deliver(BugseeRuntime runtime, List<String> seen) =>
+    runtime.bridge.onReportHandlerRequest(
+      ReportHandlerRequestMessage(
+        handle: 'h${seen.length}',
+        deliveryId: 'after:r${seen.length}',
+        after: true,
+        reportId: 'r',
+        type: 'bug',
+        deadlineMs: 5000,
+      ),
+    );
+
 class _AttachFails extends FacadeFake {
   @override
   Future<void> attachLifecycle() async =>
@@ -823,7 +835,7 @@ void main() {
     );
 
     test(
-      'overlapping handler changes: a failure of the first does not undo the second',
+      'overlapping handler changes run in order: a failed first does not undo the second',
       () async {
         final seen = <String>[];
         native.failPhaseCalls.add(1);
@@ -834,32 +846,82 @@ void main() {
         final h2 = BugseeReportHandler(
           onAfterReportCreated: (r) async => seen.add('h2'),
         );
-        // The runtime has to be started before the calls overlap, as in an app.
-        await Bugsee.isBlackout();
+        await Bugsee.isBlackout(); // started, as in an app
         native.phasesArmed = true;
         final first = Bugsee.setReportHandler(h1);
         final firstOutcome = expectLater(
           first,
           throwsA(isA<BugseeException>()),
         );
+        final second = Bugsee.setReportHandler(h2);
         await Future<void>.delayed(Duration.zero);
-        await Bugsee.setReportHandler(h2);
         native.firstPhasesGate!.complete();
         await firstOutcome;
+        await second;
         expect(Bugsee.reportHandler, same(h2));
         expect(native.phases.toString(), 'Phases(false, true)');
-        runtime.bridge.onReportHandlerRequest(
-          ReportHandlerRequestMessage(
-            handle: 'h',
-            deliveryId: 'after:r',
-            after: true,
-            reportId: 'r',
-            type: 'bug',
-            deadlineMs: 5000,
-          ),
-        );
+        _deliver(runtime, seen);
         await Future<void>.delayed(Duration.zero);
         expect(seen, ['h2'], reason: 'Dart and native agree on h2');
+      },
+    );
+
+    test(
+      'overlapping handler changes that both fail leave the old handler in effect',
+      () async {
+        final seen = <String>[];
+        final old = BugseeReportHandler(
+          onAfterReportCreated: (r) async => seen.add('old'),
+        );
+        await Bugsee.setReportHandler(old);
+        native.phasesArmed = true;
+        native.failPhaseCalls.addAll([1, 2]);
+        native.firstPhasesGate = Completer<void>();
+        BugseeReportHandler mk(String n) =>
+            BugseeReportHandler(onAfterReportCreated: (r) async => seen.add(n));
+        final a = expectLater(
+          Bugsee.setReportHandler(mk('a')),
+          throwsA(isA<BugseeException>()),
+        );
+        final b = expectLater(
+          Bugsee.setReportHandler(mk('b')),
+          throwsA(isA<BugseeException>()),
+        );
+        await Future<void>.delayed(Duration.zero);
+        native.firstPhasesGate!.complete();
+        await a;
+        await b;
+        expect(Bugsee.reportHandler, same(old));
+        _deliver(runtime, seen);
+        await Future<void>.delayed(Duration.zero);
+        expect(seen, ['old']);
+      },
+    );
+
+    test(
+      'equal handlers: the first fails, the second succeeds, and it is in effect',
+      () async {
+        final seen = <String>[];
+        final same1 = BugseeReportHandler(
+          onAfterReportCreated: (r) async => seen.add('same'),
+        );
+        await Bugsee.isBlackout();
+        native.phasesArmed = true;
+        native.failPhaseCalls.add(1);
+        native.firstPhasesGate = Completer<void>();
+        final a = expectLater(
+          Bugsee.setReportHandler(same1),
+          throwsA(isA<BugseeException>()),
+        );
+        final b = Bugsee.setReportHandler(same1);
+        await Future<void>.delayed(Duration.zero);
+        native.firstPhasesGate!.complete();
+        await a;
+        await b;
+        expect(Bugsee.reportHandler, same(same1));
+        _deliver(runtime, seen);
+        await Future<void>.delayed(Duration.zero);
+        expect(seen, ['same']);
       },
     );
 

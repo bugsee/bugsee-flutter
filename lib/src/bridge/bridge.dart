@@ -149,7 +149,23 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   Future<void> setReportHandlers({
     ReportHandler? onBefore,
     ReportHandler? onAfter,
-  }) async {
+  }) {
+    // One at a time, in call order: the snapshot, the native call and the rollback of one
+    // registration must not interleave with another's, or a failure could restore handlers an
+    // earlier call installed and split Dart from native (which holds the last SUCCESSFUL call's).
+    final run = _handlerChain.then(
+      (_) => _setReportHandlers(onBefore, onAfter),
+    );
+    _handlerChain = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<void> _handlerChain = Future<void>.value();
+
+  Future<void> _setReportHandlers(
+    ReportHandler? onBefore,
+    ReportHandler? onAfter,
+  ) async {
     final previousBefore = _onBefore;
     final previousAfter = _onAfter;
     final previousPhasesSent = _phasesSent;
@@ -160,14 +176,10 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     try {
       await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
     } catch (_) {
-      // Native still has the old phases, so the old handlers keep running: one truth. Only if no
-      // later call has installed its own since (overlapping calls: that one is what native will
-      // hold if it succeeds, and rolling back over it would split Dart from native).
-      if (identical(_onBefore, onBefore) && identical(_onAfter, onAfter)) {
-        _onBefore = previousBefore;
-        _onAfter = previousAfter;
-        _phasesSent = previousPhasesSent;
-      }
+      // Native still has the old phases, so the old handlers keep running: one truth.
+      _onBefore = previousBefore;
+      _onAfter = previousAfter;
+      _phasesSent = previousPhasesSent;
       rethrow;
     }
     _phasesSent = true;

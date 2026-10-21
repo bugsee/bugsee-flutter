@@ -1,7 +1,6 @@
 // The facade methods other than launch/stop/status, against a fake native side: what is
 // validated in Dart before anything crosses, what crosses and how it is encoded, and how every
 // native failure maps to a BugseeException subclass.
-import 'dart:async';
 import 'dart:io';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
@@ -33,11 +32,7 @@ Future<void> expectRefusedInDart(
     action(),
     throwsA(
       isA<BugseeArgumentException>()
-          .having(
-            (e) => e.argument,
-            'argument',
-            argument == null ? anything : argument,
-          )
+          .having((e) => e.argument, 'argument', argument ?? anything)
           .having((e) => e.message, 'message', message ?? isNotEmpty),
     ),
   );

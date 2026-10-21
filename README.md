@@ -1,9 +1,11 @@
 # bugsee_flutter
 
-> **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options,
-> `stop` and status work on Android and iOS. Attributes, events, breadcrumbs, report handlers and
-> the secure-region widget are not public yet. Existing users should stay on the latest published
-> release until the migration guide is available. This API is a clean break from 9.x.
+> **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options, `stop`,
+> status, attributes, user identity, events and traces, breadcrumbs, notifications, blackout, the
+> report handler, the lifecycle event stream and the secure-view widget work on Android and iOS. Not
+> yet: Dart exception, network and `print` capture, report attachments and `createReport`, APM spans.
+> Existing users should stay on the latest published release until the migration guide is available.
+> This API is a clean break from 9.x.
 
 ## Quick start
 
@@ -86,6 +88,79 @@ you did not await: the plugin marks the stop before the SDK does).
 - `getHostLaunchOptions()` differs between the platforms: Android returns every option you passed,
   iOS only those that differ from the iOS default. `getLaunchOptions()` is the same on both.
 
+## API overview
+
+Every method is a static on `Bugsee` and returns a `Future`. The inventory of both native SDKs,
+what is left out and why, and what each call does before `launch`, is in
+[docs/api-surface.md](docs/api-surface.md).
+
+```dart
+// Attributes: String, bool, int or double; kept by the SDK across launches. Work before launch.
+await Bugsee.setAttribute('plan', 'pro');
+await Bugsee.getAttribute('plan');          // 'pro'
+await Bugsee.getAllAttributes();            // {plan: pro}
+await Bugsee.clearAttribute('plan');
+
+// The user: one identifier (an email links reports to a user). An empty string clears it.
+await Bugsee.setUserIdentifier('user@example.com');
+
+// Events, traces, logs: dropped before launch, nothing is queued.
+await Bugsee.event('checkout', {'items': 3, 'coupon': null});
+await Bugsee.trace('cart-size', 3);
+await Bugsee.log('payment declined', level: LogLevel.warning);
+
+// Breadcrumbs: capture is off by default on both SDKs, so launch with it on.
+await Bugsee.launch(token, options: const BugseeOptions(captureBreadcrumbs: true));
+final taken = await Bugsee.addBreadcrumb(
+  const BugseeBreadcrumb(category: 'nav', message: 'opened cart', level: BreadcrumbLevel.info),
+);
+
+// A notification to your Slack/Teams integration, without a report.
+await Bugsee.notify('Deploy finished', body: 'v2.1', severity: ReportSeverity.medium, urgent: true);
+
+// Blackout: video, screenshot, touches and the view hierarchy stop; logs and data continue.
+await Bugsee.startBlackout();
+await Bugsee.endBlackout();                 // there is no pause/resume
+
+// Reports.
+await Bugsee.upload('Summary', 'Description', severity: ReportSeverity.high, labels: ['checkout']);
+await Bugsee.showReportDialog(summary: 'Something broke');
+await Bugsee.setReportHandler(
+  BugseeReportHandler(
+    onAfterReportCreated: (report) async {
+      await report.replaceLabels(['flutter']);       // idempotent: it may run again
+      await report.setAttribute('screen', 'cart');
+    },
+  ),
+);
+
+// Every SDK lifecycle event; a name this version does not know is delivered as it is.
+Bugsee.lifecycleEvents.listen((e) => print('${e.name} ${e.reportId ?? ''}'));
+```
+
+Hide a part of the UI from the recording and the report screenshot:
+
+```dart
+BugseeSecureView(child: TextField(obscureText: true))
+```
+
+Things worth knowing (each is documented on the method):
+
+- **Argument errors are `BugseeException`s.** `BugseeArgumentException` (an empty event name, event params
+  the SDKs cannot carry, a blank notification title; it names the parameter) and `BugseeAttributeException`
+  (`invalidName`, `invalidValue`, `rejected`). They are delivered through the `Future`, and nothing reaches
+  the SDK. The SDKs drop an attribute over their size limits without a word; the plugin reads it back
+  and reports `rejected`.
+- **Before `launch`**: attributes, the user identifier and blackout work on both platforms; events,
+  traces, logs, breadcrumbs, notifications, `upload` and the dialog are dropped by the SDKs, and the plugin does
+  not queue them.
+- **No SDK here** (desktop, web): these calls do nothing and return `null`/empty/`false`; only `launch` throws.
+- **Register the report handler before `launch`** to see reports the SDK recovers while launching.
+  `onBeforeReportCreated` runs at most once and may be skipped; `onAfterReportCreated` runs at least once, so
+  make it idempotent. Attachments are not part of the report API yet.
+- **Left out on purpose**: the 7.x appearance system, `relaunch`, APM transactions and spans, secure
+  rectangles and activities, native views (see `docs/api-surface.md`).
+
 ## Requirements
 
 Flutter 3.41.0 or newer (Dart 3.11). Because the plugin is SwiftPM-only, older Flutter
@@ -125,6 +200,7 @@ tasks.matching { it.name.startsWith("injectBugsee") && it.name.endsWith("BuildId
 
 ## Developing
 
-The example app (`example/`) is a small launch screen using this API;
-`example/integration_test/launch_test.dart` runs the whole sequence on a device or simulator.
+The example app (`example/`) has a launch screen and a data screen that calls every method above;
+`example/integration_test/launch_test.dart` and `facade_test.dart` run them against the real SDKs on a device
+or simulator.
 See [PLAN.md](PLAN.md) for the implementation plan and `.github/CI.md` for the checks.

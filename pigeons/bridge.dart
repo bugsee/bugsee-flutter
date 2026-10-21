@@ -305,7 +305,7 @@ abstract class BugseeBridgeHostApi {
   // (Dart has validated already), an SDK exception is `sdk-error`, and a call made while the
   // plugin has no engine is `not-attached`; none of them changes anything. What a call does
   // BEFORE the SDK is launched is the SDK's own behaviour (the wrapper queues nothing) and is
-  // listed per method in docs/api-surface.md.
+  // listed per method in doc/api-surface.md.
 
   /// Sets a custom attribute (persisted by the SDK across launches). [value] is a String, bool,
   /// int or double. After the SDK call native reads the value back: a value the SDK did not keep

@@ -1,6 +1,6 @@
 // Argument validation for the facade, in Dart, before anything crosses the bridge. Internal.
 //
-// The rules are what both SDKs can carry, read from their source (see docs/api-surface.md); the
+// The rules are what both SDKs can carry, read from their source (see doc/api-surface.md); the
 // native sides defend again, and `test/facade_drift_test.dart` compares the numbers repeated
 // there. A rule that only ONE platform needs is still applied to both: a call that works on one
 // platform and is silently dropped on the other is the failure this exists to prevent.

@@ -138,7 +138,7 @@ secure-region widget were made public in 4b.
 ### 4b — the rest of the public facade (done)
 
 Full inventory of both SDKs (Android 7.4.2, iOS 7.0.0-beta7), per-method decisions with reasons, the before-launch
-behaviour table with source line references, value rules, errors and threading: **`docs/api-surface.md`**.
+behaviour table with source line references, value rules, errors and threading: **`doc/api-surface.md`**.
 
 - **Added** (all `Bugsee.` statics, all `async`): `setAttribute`/`getAttribute`/`getAllAttributes`/`clearAttribute`/`clearAllAttributes`,
   `setUserIdentifier`/`getUserIdentifier`/`clearUserIdentifier`, `event`, `trace`, `log`, `addBreadcrumb` (+ `BugseeBreadcrumb`,

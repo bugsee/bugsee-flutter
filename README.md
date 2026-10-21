@@ -92,7 +92,7 @@ you did not await: the plugin marks the stop before the SDK does).
 
 Every method is a static on `Bugsee` and returns a `Future`. The inventory of both native SDKs,
 what is left out and why, and what each call does before `launch`, is in
-[docs/api-surface.md](docs/api-surface.md).
+[doc/api-surface.md](doc/api-surface.md).
 
 ```dart
 // Attributes: String, bool, int or double; kept by the SDK across launches. Work before launch.
@@ -159,7 +159,7 @@ Things worth knowing (each is documented on the method):
   `onBeforeReportCreated` runs at most once and may be skipped; `onAfterReportCreated` runs at least once, so
   make it idempotent. Attachments are not part of the report API yet.
 - **Left out on purpose**: the 7.x appearance system, `relaunch`, APM transactions and spans, secure
-  rectangles and activities, native views (see `docs/api-surface.md`).
+  rectangles and activities, native views (see `doc/api-surface.md`).
 
 ## Requirements
 

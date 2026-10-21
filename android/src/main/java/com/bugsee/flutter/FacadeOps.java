@@ -26,7 +26,7 @@ import java.util.TreeSet;
  * SDK exception into a {@link Failure} instead of letting it escape onto the platform thread.
  *
  * <p><b>Before launch</b> the wrapper queues and gates nothing: each SDK entry point does what it
- * does (docs/api-surface.md, per method, from v7.4.2 source). Attributes and the user identifier
+ * does (doc/api-surface.md, per method, from v7.4.2 source). Attributes and the user identifier
  * are persisted and work; blackout is held and applied at launch; event, trace, log, breadcrumb,
  * notification, the dialog and upload are dropped by the SDK.
  */

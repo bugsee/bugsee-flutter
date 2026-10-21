@@ -27,7 +27,7 @@ import java.util.Set;
 /**
  * The facade operations with a fake SDK behind the seam: what reaches the SDK, what does not, what
  * Dart is told. The real SDK's behaviour per method (v7.4.2 {@code BugseeInternal}) is noted at each
- * test and in docs/api-surface.md.
+ * test and in doc/api-surface.md.
  */
 public class FacadeOpsTest {
 

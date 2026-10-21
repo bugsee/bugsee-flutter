@@ -59,7 +59,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// the seam above. Dart validates first; this defends again.
 ///
 /// Before launch the wrapper queues and gates nothing: each SDK entry point does what it does
-/// (docs/api-surface.md, per method, from iOS 7.0.0-beta7 source). Attributes (NSUserDefaults), the
+/// (doc/api-surface.md, per method, from iOS 7.0.0-beta7 source). Attributes (NSUserDefaults), the
 /// user identifier (Keychain) and blackout (a flag the video provider reads) work; event, trace,
 /// log, breadcrumb, notification, the dialog and upload are dropped.
 @interface BGSFlutterFacadeOps : NSObject

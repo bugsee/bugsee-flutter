@@ -23,7 +23,7 @@ typedef ReportHandler = FutureOr<void> Function(ReportProxy report);
 ///
 /// Neither runs while the process is terminating (the SDK says so, and Dart cannot run then), and
 /// neither can run for a report the SDK recovers before the Flutter engine exists. The window for a
-/// handler is the SDK's budget less a margin (see `docs/api-surface.md`); work that must be slow
+/// handler is the SDK's budget less a margin (see `doc/api-surface.md`); work that must be slow
 /// belongs before the edit calls, and the edits must be awaited before the handler returns.
 final class BugseeReportHandler {
   const BugseeReportHandler({

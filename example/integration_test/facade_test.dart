@@ -7,7 +7,7 @@
 // takes (events, traces, logs, breadcrumbs, notifications) is shown by the calls completing and by
 // the SDK's own behaviour (a breadcrumb is accepted only once launched, `upload` makes the SDK run
 // the report handler and raise its lifecycle events). Android and iOS run the same file; the
-// differences the two SDKs have are asserted per platform and listed in docs/api-surface.md.
+// differences the two SDKs have are asserted per platform and listed in doc/api-surface.md.
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_example/main.dart';

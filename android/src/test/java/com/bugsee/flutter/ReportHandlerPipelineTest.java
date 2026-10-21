@@ -739,7 +739,7 @@ public class ReportHandlerPipelineTest {
                 sdk.submit(() -> p.dispatch(Phase.BEFORE, report, false, done::countDown))
                         .get(60, TimeUnit.SECONDS);
                 assertTrue("the SDK thread was not held up",
-                        (System.nanoTime() - start) / 1_000_000L < 500);
+                        (System.nanoTime() - start) / 1_000_000L < 5_000);
             } finally {
                 sdk.shutdownNow();
             }

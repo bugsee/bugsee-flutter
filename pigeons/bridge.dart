@@ -192,6 +192,28 @@ class LaunchOutcomeMessage {
   String? reason;
 }
 
+/// A breadcrumb the app records. [level] is the NAME (`debug`, `info`, `warning`, `error`,
+/// `fatal`), never a number: the SDKs number their levels differently (Android debug 1 .. fatal 5,
+/// iOS error 1 .. debug 4 with no fatal), so each native side maps the name itself.
+class BreadcrumbMessage {
+  BreadcrumbMessage({
+    required this.category,
+    required this.level,
+    required this.message,
+    required this.type,
+    this.data,
+  });
+
+  String category;
+  String level;
+  String message;
+  String type;
+
+  /// Null leaves the crumb without data. Values Dart has checked: null, bool, number, String,
+  /// List, Map.
+  Map<String, Object?>? data;
+}
+
 /// Dart calls native.
 @HostApi()
 abstract class BugseeBridgeHostApi {
@@ -276,6 +298,85 @@ abstract class BugseeBridgeHostApi {
   /// from the iOS default). Keyed by `com.bugsee.option.*`, enums as internal integers, floats as
   /// doubles; hidden (`$$`) options are removed by Dart.
   Map<String, Object> launchOptions(bool hostOnly);
+
+  // ---- Facade (Phase 4b). Every call below runs on the platform thread (a Pigeon handler
+  // without a task queue), which is the thread both SDKs' public API is documented to be
+  // called from. An argument the SDK cannot take is a PlatformException `invalid-argument`
+  // (Dart has validated already), an SDK exception is `sdk-error`, and a call made while the
+  // plugin has no engine is `not-attached`; none of them changes anything. What a call does
+  // BEFORE the SDK is launched is the SDK's own behaviour (the wrapper queues nothing) and is
+  // listed per method in docs/api-surface.md.
+
+  /// Sets a custom attribute (persisted by the SDK across launches). [value] is a String, bool,
+  /// int or double. After the SDK call native reads the value back: a value the SDK did not keep
+  /// (size limits that differ per platform) is a PlatformException `attribute-rejected` and
+  /// the previous value stays.
+  void setAttribute(String name, Object value);
+
+  /// The attribute's value as a String, bool, int, double or List<String> (Android can hold a
+  /// set of strings that this API cannot create), or null when it is not set.
+  Object? getAttribute(String name);
+
+  /// Every attribute, same value types as [getAttribute]; empty when none.
+  Map<String, Object> getAllAttributes();
+
+  /// A no-op when the attribute is not set.
+  void clearAttribute(String name);
+
+  void clearAllAttributes();
+
+  /// Null or empty clears (Android alone would store an empty string).
+  void setUserIdentifier(String? identifier);
+
+  /// Null when none is set (an empty identifier reads as none).
+  String? getUserIdentifier();
+
+  /// [value] is a String, bool, int or double.
+  void trace(String name, Object value);
+
+  void event(String name, Map<String, Object?>? params);
+
+  /// Whether the SDK was handed the crumb: false when breadcrumb capture is off
+  /// (`capture.breadcrumbs`, default off on both SDKs), the SDK is not launched or made no crumb.
+  /// Handing it over is not proof it was recorded (the app's breadcrumb filter may drop it).
+  bool addBreadcrumb(BreadcrumbMessage breadcrumb);
+
+  /// [severity] is the SDK's internal integer (1..5) or null for unset. [fields] are the extra
+  /// rows as a FLAT list `[key, value, key, value, ...]` (even length): a Pigeon map decodes to a
+  /// hash map and loses the order, which Android's SDK preserves when given an ordered map (iOS's
+  /// takes a dictionary, unordered). A call before launch is ignored by both SDKs.
+  void relayNotification(
+    String title,
+    String? body,
+    int? severity,
+    List<String>? fields,
+    bool urgent,
+  );
+
+  /// App-level log line. [level] is the SDK's internal `LogLevel` integer (1..5, the same on both).
+  void log(String message, int level);
+
+  void startBlackout();
+
+  void endBlackout();
+
+  bool isBlackout();
+
+  /// Opens the SDK's report dialog. A no-op before the SDK is launched.
+  void showReportDialog(
+    String? summary,
+    String? description,
+    int? severity,
+    List<String>? labels,
+  );
+
+  /// Creates and uploads a report with no UI. A no-op before the SDK is launched.
+  void upload(
+    String summary,
+    String description,
+    int? severity,
+    List<String>? labels,
+  );
 }
 
 /// Native calls Dart. Always from the platform (main) thread.

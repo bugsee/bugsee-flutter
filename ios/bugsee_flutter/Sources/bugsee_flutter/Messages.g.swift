@@ -618,6 +618,67 @@ struct LaunchOutcomeMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// A breadcrumb the app records. [level] is the NAME (`debug`, `info`, `warning`, `error`,
+/// `fatal`), never a number: the SDKs number their levels differently (Android debug 1 .. fatal 5,
+/// iOS error 1 .. debug 4 with no fatal), so each native side maps the name itself.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct BreadcrumbMessage: Hashable, CustomStringConvertible {
+  var category: String
+  var level: String
+  var message: String
+  var type: String
+  /// Null leaves the crumb without data. Values Dart has checked: null, bool, number, String,
+  /// List, Map.
+  var data: [String: Any?]? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> BreadcrumbMessage? {
+    let category = pigeonVar_list[0] as! String
+    let level = pigeonVar_list[1] as! String
+    let message = pigeonVar_list[2] as! String
+    let type = pigeonVar_list[3] as! String
+    let data: [String: Any?]? = nilOrValue(pigeonVar_list[4])
+
+    return BreadcrumbMessage(
+      category: category,
+      level: level,
+      message: message,
+      type: type,
+      data: data
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      category,
+      level,
+      message,
+      type,
+      data,
+    ]
+  }
+  static func == (lhs: BreadcrumbMessage, rhs: BreadcrumbMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.category, rhs.category) && MessagesPigeonInternal.deepEquals(lhs.level, rhs.level) && MessagesPigeonInternal.deepEquals(lhs.message, rhs.message) && MessagesPigeonInternal.deepEquals(lhs.type, rhs.type) && MessagesPigeonInternal.deepEquals(lhs.data, rhs.data)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("BreadcrumbMessage")
+    MessagesPigeonInternal.deepHash(value: category, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: level, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: message, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: type, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: data, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "BreadcrumbMessage(category: \(String(describing: category)), level: \(String(describing: level)), message: \(String(describing: message)), type: \(String(describing: type)), data: \(String(describing: data)))"
+  }
+}
+
 private class MessagesPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -635,6 +696,8 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
       return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
     case 135:
       return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
+    case 136:
+      return BreadcrumbMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -663,6 +726,9 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
       super.writeValue(value.toList())
     } else if let value = value as? LaunchOutcomeMessage {
       super.writeByte(135)
+      super.writeValue(value.toList())
+    } else if let value = value as? BreadcrumbMessage {
+      super.writeByte(136)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -748,6 +814,44 @@ protocol BugseeBridgeHostApi {
   /// from the iOS default). Keyed by `com.bugsee.option.*`, enums as internal integers, floats as
   /// doubles; hidden (`$$`) options are removed by Dart.
   func launchOptions(hostOnly: Bool) throws -> [String: Any]
+  /// Sets a custom attribute (persisted by the SDK across launches). [value] is a String, bool,
+  /// int or double. After the SDK call native reads the value back: a value the SDK did not keep
+  /// (size limits that differ per platform) is a PlatformException `attribute-rejected` and
+  /// the previous value stays.
+  func setAttribute(name: String, value: Any) throws
+  /// The attribute's value as a String, bool, int, double or List<String> (Android can hold a
+  /// set of strings that this API cannot create), or null when it is not set.
+  func getAttribute(name: String) throws -> Any?
+  /// Every attribute, same value types as [getAttribute]; empty when none.
+  func getAllAttributes() throws -> [String: Any]
+  /// A no-op when the attribute is not set.
+  func clearAttribute(name: String) throws
+  func clearAllAttributes() throws
+  /// Null or empty clears (Android alone would store an empty string).
+  func setUserIdentifier(identifier: String?) throws
+  /// Null when none is set (an empty identifier reads as none).
+  func getUserIdentifier() throws -> String?
+  /// [value] is a String, bool, int or double.
+  func trace(name: String, value: Any) throws
+  func event(name: String, params: [String: Any?]?) throws
+  /// Whether the SDK was handed the crumb: false when breadcrumb capture is off
+  /// (`capture.breadcrumbs`, default off on both SDKs), the SDK is not launched or made no crumb.
+  /// Handing it over is not proof it was recorded (the app's breadcrumb filter may drop it).
+  func addBreadcrumb(breadcrumb: BreadcrumbMessage) throws -> Bool
+  /// [severity] is the SDK's internal integer (1..5) or null for unset. [fields] are the extra
+  /// rows as a FLAT list `[key, value, key, value, ...]` (even length): a Pigeon map decodes to a
+  /// hash map and loses the order, which Android's SDK preserves when given an ordered map (iOS's
+  /// takes a dictionary, unordered). A call before launch is ignored by both SDKs.
+  func relayNotification(title: String, body: String?, severity: Int64?, fields: [String]?, urgent: Bool) throws
+  /// App-level log line. [level] is the SDK's internal `LogLevel` integer (1..5, the same on both).
+  func log(message: String, level: Int64) throws
+  func startBlackout() throws
+  func endBlackout() throws
+  func isBlackout() throws -> Bool
+  /// Opens the SDK's report dialog. A no-op before the SDK is launched.
+  func showReportDialog(summary: String?, description: String?, severity: Int64?, labels: [String]?) throws
+  /// Creates and uploads a report with no UI. A no-op before the SDK is launched.
+  func upload(summary: String, description: String, severity: Int64?, labels: [String]?) throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -1115,6 +1219,284 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       launchOptionsChannel.setMessageHandler(nil)
+    }
+    /// Sets a custom attribute (persisted by the SDK across launches). [value] is a String, bool,
+    /// int or double. After the SDK call native reads the value back: a value the SDK did not keep
+    /// (size limits that differ per platform) is a PlatformException `attribute-rejected` and
+    /// the previous value stays.
+    let setAttributeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setAttribute\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setAttributeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let nameArg = args[0] as! String
+        let valueArg = args[1]!
+        do {
+          try api.setAttribute(name: nameArg, value: valueArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      setAttributeChannel.setMessageHandler(nil)
+    }
+    /// The attribute's value as a String, bool, int, double or List<String> (Android can hold a
+    /// set of strings that this API cannot create), or null when it is not set.
+    let getAttributeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.getAttribute\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getAttributeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let nameArg = args[0] as! String
+        do {
+          let result = try api.getAttribute(name: nameArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      getAttributeChannel.setMessageHandler(nil)
+    }
+    /// Every attribute, same value types as [getAttribute]; empty when none.
+    let getAllAttributesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.getAllAttributes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getAllAttributesChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.getAllAttributes()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      getAllAttributesChannel.setMessageHandler(nil)
+    }
+    /// A no-op when the attribute is not set.
+    let clearAttributeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.clearAttribute\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      clearAttributeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let nameArg = args[0] as! String
+        do {
+          try api.clearAttribute(name: nameArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      clearAttributeChannel.setMessageHandler(nil)
+    }
+    let clearAllAttributesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.clearAllAttributes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      clearAllAttributesChannel.setMessageHandler { _, reply in
+        do {
+          try api.clearAllAttributes()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      clearAllAttributesChannel.setMessageHandler(nil)
+    }
+    /// Null or empty clears (Android alone would store an empty string).
+    let setUserIdentifierChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setUserIdentifier\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setUserIdentifierChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let identifierArg: String? = nilOrValue(args[0])
+        do {
+          try api.setUserIdentifier(identifier: identifierArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      setUserIdentifierChannel.setMessageHandler(nil)
+    }
+    /// Null when none is set (an empty identifier reads as none).
+    let getUserIdentifierChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.getUserIdentifier\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getUserIdentifierChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.getUserIdentifier()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      getUserIdentifierChannel.setMessageHandler(nil)
+    }
+    /// [value] is a String, bool, int or double.
+    let traceChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.trace\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      traceChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let nameArg = args[0] as! String
+        let valueArg = args[1]!
+        do {
+          try api.trace(name: nameArg, value: valueArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      traceChannel.setMessageHandler(nil)
+    }
+    let eventChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.event\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      eventChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let nameArg = args[0] as! String
+        let paramsArg: [String: Any?]? = nilOrValue(args[1])
+        do {
+          try api.event(name: nameArg, params: paramsArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      eventChannel.setMessageHandler(nil)
+    }
+    /// Whether the SDK was handed the crumb: false when breadcrumb capture is off
+    /// (`capture.breadcrumbs`, default off on both SDKs), the SDK is not launched or made no crumb.
+    /// Handing it over is not proof it was recorded (the app's breadcrumb filter may drop it).
+    let addBreadcrumbChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addBreadcrumb\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      addBreadcrumbChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let breadcrumbArg = args[0] as! BreadcrumbMessage
+        do {
+          let result = try api.addBreadcrumb(breadcrumb: breadcrumbArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      addBreadcrumbChannel.setMessageHandler(nil)
+    }
+    /// [severity] is the SDK's internal integer (1..5) or null for unset. [fields] are the extra
+    /// rows as a FLAT list `[key, value, key, value, ...]` (even length): a Pigeon map decodes to a
+    /// hash map and loses the order, which Android's SDK preserves when given an ordered map (iOS's
+    /// takes a dictionary, unordered). A call before launch is ignored by both SDKs.
+    let relayNotificationChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.relayNotification\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      relayNotificationChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let titleArg = args[0] as! String
+        let bodyArg: String? = nilOrValue(args[1])
+        let severityArg: Int64? = nilOrValue(args[2])
+        let fieldsArg: [String]? = nilOrValue(args[3])
+        let urgentArg = args[4] as! Bool
+        do {
+          try api.relayNotification(title: titleArg, body: bodyArg, severity: severityArg, fields: fieldsArg, urgent: urgentArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      relayNotificationChannel.setMessageHandler(nil)
+    }
+    /// App-level log line. [level] is the SDK's internal `LogLevel` integer (1..5, the same on both).
+    let logChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.log\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      logChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let messageArg = args[0] as! String
+        let levelArg = args[1] as! Int64
+        do {
+          try api.log(message: messageArg, level: levelArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      logChannel.setMessageHandler(nil)
+    }
+    let startBlackoutChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.startBlackout\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      startBlackoutChannel.setMessageHandler { _, reply in
+        do {
+          try api.startBlackout()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      startBlackoutChannel.setMessageHandler(nil)
+    }
+    let endBlackoutChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.endBlackout\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      endBlackoutChannel.setMessageHandler { _, reply in
+        do {
+          try api.endBlackout()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      endBlackoutChannel.setMessageHandler(nil)
+    }
+    let isBlackoutChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.isBlackout\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      isBlackoutChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.isBlackout()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      isBlackoutChannel.setMessageHandler(nil)
+    }
+    /// Opens the SDK's report dialog. A no-op before the SDK is launched.
+    let showReportDialogChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.showReportDialog\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      showReportDialogChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let summaryArg: String? = nilOrValue(args[0])
+        let descriptionArg: String? = nilOrValue(args[1])
+        let severityArg: Int64? = nilOrValue(args[2])
+        let labelsArg: [String]? = nilOrValue(args[3])
+        do {
+          try api.showReportDialog(summary: summaryArg, description: descriptionArg, severity: severityArg, labels: labelsArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      showReportDialogChannel.setMessageHandler(nil)
+    }
+    /// Creates and uploads a report with no UI. A no-op before the SDK is launched.
+    let uploadChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.upload\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      uploadChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let summaryArg = args[0] as! String
+        let descriptionArg = args[1] as! String
+        let severityArg: Int64? = nilOrValue(args[2])
+        let labelsArg: [String]? = nilOrValue(args[3])
+        do {
+          try api.upload(summary: summaryArg, description: descriptionArg, severity: severityArg, labels: labelsArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      uploadChannel.setMessageHandler(nil)
     }
   }
 }

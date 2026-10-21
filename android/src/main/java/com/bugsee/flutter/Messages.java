@@ -1330,6 +1330,182 @@ public class Messages {
     }
   }
 
+  /**
+   * A breadcrumb the app records. [level] is the NAME (`debug`, `info`, `warning`, `error`,
+   * `fatal`), never a number: the SDKs number their levels differently (Android debug 1 .. fatal 5,
+   * iOS error 1 .. debug 4 with no fatal), so each native side maps the name itself.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class BreadcrumbMessage {
+    private @NonNull String category;
+
+    public @NonNull String getCategory() {
+      return category;
+    }
+
+    public void setCategory(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"category\" is null.");
+      }
+      this.category = setterArg;
+    }
+
+    private @NonNull String level;
+
+    public @NonNull String getLevel() {
+      return level;
+    }
+
+    public void setLevel(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"level\" is null.");
+      }
+      this.level = setterArg;
+    }
+
+    private @NonNull String message;
+
+    public @NonNull String getMessage() {
+      return message;
+    }
+
+    public void setMessage(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"message\" is null.");
+      }
+      this.message = setterArg;
+    }
+
+    private @NonNull String type;
+
+    public @NonNull String getType() {
+      return type;
+    }
+
+    public void setType(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"type\" is null.");
+      }
+      this.type = setterArg;
+    }
+
+    /**
+     * Null leaves the crumb without data. Values Dart has checked: null, bool, number, String,
+     * List, Map.
+     */
+    private @Nullable Map<String, Object> data;
+
+    public @Nullable Map<String, Object> getData() {
+      return data;
+    }
+
+    public void setData(@Nullable Map<String, Object> setterArg) {
+      this.data = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    BreadcrumbMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      BreadcrumbMessage that = (BreadcrumbMessage) o;
+      return pigeonDeepEquals(category, that.category) && pigeonDeepEquals(level, that.level) && pigeonDeepEquals(message, that.message) && pigeonDeepEquals(type, that.type) && pigeonDeepEquals(data, that.data);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), category, level, message, type, data};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "BreadcrumbMessage{" + "category=" + category + ", " + "level=" + level + ", " + "message=" + message + ", " + "type=" + type + ", " + "data=" + data + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable String category;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setCategory(@NonNull String setterArg) {
+        this.category = setterArg;
+        return this;
+      }
+
+      private @Nullable String level;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setLevel(@NonNull String setterArg) {
+        this.level = setterArg;
+        return this;
+      }
+
+      private @Nullable String message;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setMessage(@NonNull String setterArg) {
+        this.message = setterArg;
+        return this;
+      }
+
+      private @Nullable String type;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setType(@NonNull String setterArg) {
+        this.type = setterArg;
+        return this;
+      }
+
+      private @Nullable Map<String, Object> data;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setData(@Nullable Map<String, Object> setterArg) {
+        this.data = setterArg;
+        return this;
+      }
+
+      public @NonNull BreadcrumbMessage build() {
+        BreadcrumbMessage pigeonReturn = new BreadcrumbMessage();
+        pigeonReturn.setCategory(category);
+        pigeonReturn.setLevel(level);
+        pigeonReturn.setMessage(message);
+        pigeonReturn.setType(type);
+        pigeonReturn.setData(data);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(5);
+      toListResult.add(category);
+      toListResult.add(level);
+      toListResult.add(message);
+      toListResult.add(type);
+      toListResult.add(data);
+      return toListResult;
+    }
+
+    static @NonNull BreadcrumbMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      BreadcrumbMessage pigeonResult = new BreadcrumbMessage();
+      Object category = pigeonVar_list.get(0);
+      pigeonResult.setCategory((String) category);
+      Object level = pigeonVar_list.get(1);
+      pigeonResult.setLevel((String) level);
+      Object message = pigeonVar_list.get(2);
+      pigeonResult.setMessage((String) message);
+      Object type = pigeonVar_list.get(3);
+      pigeonResult.setType((String) type);
+      Object data = pigeonVar_list.get(4);
+      pigeonResult.setData((Map<String, Object>) data);
+      return pigeonResult;
+    }
+  }
+
   private static class PigeonCodec extends StandardMessageCodec {
     public static final PigeonCodec INSTANCE = new PigeonCodec();
 
@@ -1352,6 +1528,8 @@ public class Messages {
           return ReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 135:
           return LaunchOutcomeMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 136:
+          return BreadcrumbMessage.fromList((ArrayList<Object>) readValue(buffer));
         default:
           return super.readValueOfType(type, buffer);
       }
@@ -1380,6 +1558,9 @@ public class Messages {
       } else if (value instanceof LaunchOutcomeMessage) {
         stream.write(135);
         writeValue(stream, ((LaunchOutcomeMessage) value).toList());
+      } else if (value instanceof BreadcrumbMessage) {
+        stream.write(136);
+        writeValue(stream, ((BreadcrumbMessage) value).toList());
       } else {
         super.writeValue(stream, value);
       }
@@ -1518,6 +1699,62 @@ public class Messages {
      */
     @NonNull 
     Map<String, Object> launchOptions(@NonNull Boolean hostOnly);
+    /**
+     * Sets a custom attribute (persisted by the SDK across launches). [value] is a String, bool,
+     * int or double. After the SDK call native reads the value back: a value the SDK did not keep
+     * (size limits that differ per platform) is a PlatformException `attribute-rejected` and
+     * the previous value stays.
+     */
+    void setAttribute(@NonNull String name, @NonNull Object value);
+    /**
+     * The attribute's value as a String, bool, int, double or List<String> (Android can hold a
+     * set of strings that this API cannot create), or null when it is not set.
+     */
+    @Nullable 
+    Object getAttribute(@NonNull String name);
+    /** Every attribute, same value types as [getAttribute]; empty when none. */
+    @NonNull 
+    Map<String, Object> getAllAttributes();
+    /** A no-op when the attribute is not set. */
+    void clearAttribute(@NonNull String name);
+
+    void clearAllAttributes();
+    /** Null or empty clears (Android alone would store an empty string). */
+    void setUserIdentifier(@Nullable String identifier);
+    /** Null when none is set (an empty identifier reads as none). */
+    @Nullable 
+    String getUserIdentifier();
+    /** [value] is a String, bool, int or double. */
+    void trace(@NonNull String name, @NonNull Object value);
+
+    void event(@NonNull String name, @Nullable Map<String, Object> params);
+    /**
+     * Whether the SDK was handed the crumb: false when breadcrumb capture is off
+     * (`capture.breadcrumbs`, default off on both SDKs), the SDK is not launched or made no crumb.
+     * Handing it over is not proof it was recorded (the app's breadcrumb filter may drop it).
+     */
+    @NonNull 
+    Boolean addBreadcrumb(@NonNull BreadcrumbMessage breadcrumb);
+    /**
+     * [severity] is the SDK's internal integer (1..5) or null for unset. [fields] are the extra
+     * rows as a FLAT list `[key, value, key, value, ...]` (even length): a Pigeon map decodes to a
+     * hash map and loses the order, which Android's SDK preserves when given an ordered map (iOS's
+     * takes a dictionary, unordered). A call before launch is ignored by both SDKs.
+     */
+    void relayNotification(@NonNull String title, @Nullable String body, @Nullable Long severity, @Nullable List<String> fields, @NonNull Boolean urgent);
+    /** App-level log line. [level] is the SDK's internal `LogLevel` integer (1..5, the same on both). */
+    void log(@NonNull String message, @NonNull Long level);
+
+    void startBlackout();
+
+    void endBlackout();
+
+    @NonNull 
+    Boolean isBlackout();
+    /** Opens the SDK's report dialog. A no-op before the SDK is launched. */
+    void showReportDialog(@Nullable String summary, @Nullable String description, @Nullable Long severity, @Nullable List<String> labels);
+    /** Creates and uploads a report with no UI. A no-op before the SDK is launched. */
+    void upload(@NonNull String summary, @NonNull String description, @Nullable Long severity, @Nullable List<String> labels);
 
     /** The codec used by BugseeBridgeHostApi. */
     static @NonNull MessageCodec<Object> getCodec() {
@@ -2017,6 +2254,399 @@ public class Messages {
                 try {
                   Map<String, Object> output = api.launchOptions(hostOnlyArg);
                   wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setAttribute" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String nameArg = (String) args.get(0);
+                Object valueArg = args.get(1);
+                try {
+                  api.setAttribute(nameArg, valueArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.getAttribute" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String nameArg = (String) args.get(0);
+                try {
+                  Object output = api.getAttribute(nameArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.getAllAttributes" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  Map<String, Object> output = api.getAllAttributes();
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.clearAttribute" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String nameArg = (String) args.get(0);
+                try {
+                  api.clearAttribute(nameArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.clearAllAttributes" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  api.clearAllAttributes();
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setUserIdentifier" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String identifierArg = (String) args.get(0);
+                try {
+                  api.setUserIdentifier(identifierArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.getUserIdentifier" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  String output = api.getUserIdentifier();
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.trace" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String nameArg = (String) args.get(0);
+                Object valueArg = args.get(1);
+                try {
+                  api.trace(nameArg, valueArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.event" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String nameArg = (String) args.get(0);
+                Map<String, Object> paramsArg = (Map<String, Object>) args.get(1);
+                try {
+                  api.event(nameArg, paramsArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addBreadcrumb" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                BreadcrumbMessage breadcrumbArg = (BreadcrumbMessage) args.get(0);
+                try {
+                  Boolean output = api.addBreadcrumb(breadcrumbArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.relayNotification" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String titleArg = (String) args.get(0);
+                String bodyArg = (String) args.get(1);
+                Long severityArg = (Long) args.get(2);
+                List<String> fieldsArg = (List<String>) args.get(3);
+                Boolean urgentArg = (Boolean) args.get(4);
+                try {
+                  api.relayNotification(titleArg, bodyArg, severityArg, fieldsArg, urgentArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.log" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String messageArg = (String) args.get(0);
+                Long levelArg = (Long) args.get(1);
+                try {
+                  api.log(messageArg, levelArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.startBlackout" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  api.startBlackout();
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.endBlackout" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  api.endBlackout();
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.isBlackout" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  Boolean output = api.isBlackout();
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.showReportDialog" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String summaryArg = (String) args.get(0);
+                String descriptionArg = (String) args.get(1);
+                Long severityArg = (Long) args.get(2);
+                List<String> labelsArg = (List<String>) args.get(3);
+                try {
+                  api.showReportDialog(summaryArg, descriptionArg, severityArg, labelsArg);
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.upload" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String summaryArg = (String) args.get(0);
+                String descriptionArg = (String) args.get(1);
+                Long severityArg = (Long) args.get(2);
+                List<String> labelsArg = (List<String>) args.get(3);
+                try {
+                  api.upload(summaryArg, descriptionArg, severityArg, labelsArg);
+                  wrapped.add(0, null);
                 }
  catch (Throwable exception) {
                   wrapped = wrapError(exception);

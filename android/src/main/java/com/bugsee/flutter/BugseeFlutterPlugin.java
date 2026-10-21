@@ -63,6 +63,8 @@ public class BugseeFlutterPlugin
     private final long owner = NEXT_OWNER.getAndIncrement();
     private BinaryMessenger messenger;
     private LaunchOps.Sdk sdk;
+    /** Non-null while attached to an engine, like {@link #sdk}; every facade call needs it. */
+    private FacadeOps.Sdk facade;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
@@ -72,6 +74,7 @@ public class BugseeFlutterPlugin
     public void onAttachedToEngine(@NonNull final FlutterPluginBinding binding) {
         messenger = binding.getBinaryMessenger();
         sdk = new BugseeSdk(binding.getApplicationContext());
+        facade = new BugseeFacadeSdk();
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
@@ -130,6 +133,7 @@ public class BugseeFlutterPlugin
         }
         messenger = null;
         sdk = null;
+        facade = null;
     }
 
     @Override
@@ -388,6 +392,171 @@ public class BugseeFlutterPlugin
     @Override
     public Map<String, Object> launchOptions(@NonNull final Boolean hostOnly) {
         return LaunchOps.launchOptions(sdkOrThrow(), hostOnly);
+    }
+
+    // ---- Facade (Phase 4b; see FacadeOps) -----------------------------------------------------
+    //
+    // Pigeon runs these handlers on the platform (main) thread, the thread the SDK's public API
+    // is documented to be called from; nothing here keeps state, and the SDK serialises its own.
+
+    private interface FacadeCall<T> {
+        T run(@NonNull FacadeOps.Sdk sdk) throws FacadeOps.Failure;
+    }
+
+    private <T> T facade(@NonNull final FacadeCall<T> call) {
+        final FacadeOps.Sdk current = facade;
+        if (current == null) {
+            throw new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null);
+        }
+        try {
+            return call.run(current);
+        } catch (final FacadeOps.Failure failure) {
+            throw new Messages.FlutterError(failure.code, failure.getMessage(), null);
+        }
+    }
+
+    @Override
+    public void setAttribute(@NonNull final String name, @NonNull final Object value) {
+        facade(sdk -> {
+            FacadeOps.setAttribute(sdk, name, value);
+            return null;
+        });
+    }
+
+    @Nullable
+    @Override
+    public Object getAttribute(@NonNull final String name) {
+        return facade(sdk -> FacadeOps.getAttribute(sdk, name));
+    }
+
+    @NonNull
+    @Override
+    public Map<String, Object> getAllAttributes() {
+        return facade(FacadeOps::getAllAttributes);
+    }
+
+    @Override
+    public void clearAttribute(@NonNull final String name) {
+        facade(sdk -> {
+            FacadeOps.clearAttribute(sdk, name);
+            return null;
+        });
+    }
+
+    @Override
+    public void clearAllAttributes() {
+        facade(sdk -> {
+            FacadeOps.clearAllAttributes(sdk);
+            return null;
+        });
+    }
+
+    @Override
+    public void setUserIdentifier(@Nullable final String identifier) {
+        facade(sdk -> {
+            FacadeOps.setUserIdentifier(sdk, identifier);
+            return null;
+        });
+    }
+
+    @Nullable
+    @Override
+    public String getUserIdentifier() {
+        return facade(FacadeOps::getUserIdentifier);
+    }
+
+    @Override
+    public void trace(@NonNull final String name, @NonNull final Object value) {
+        facade(sdk -> {
+            FacadeOps.trace(sdk, name, value);
+            return null;
+        });
+    }
+
+    @Override
+    public void event(@NonNull final String name, @Nullable final Map<String, Object> params) {
+        facade(sdk -> {
+            FacadeOps.event(sdk, name, params);
+            return null;
+        });
+    }
+
+    @NonNull
+    @Override
+    public Boolean addBreadcrumb(@NonNull final Messages.BreadcrumbMessage crumb) {
+        return facade(sdk -> FacadeOps.addBreadcrumb(sdk, crumb.getCategory(), crumb.getLevel(),
+                crumb.getMessage(), crumb.getType(), crumb.getData()));
+    }
+
+    @Override
+    public void relayNotification(
+            @NonNull final String title,
+            @Nullable final String body,
+            @Nullable final Long severity,
+            @Nullable final List<String> fields,
+            @NonNull final Boolean urgent
+    ) {
+        facade(sdk -> {
+            FacadeOps.relayNotification(sdk, title, body, severity, fields, urgent);
+            return null;
+        });
+    }
+
+    @Override
+    public void log(@NonNull final String message, @NonNull final Long level) {
+        facade(sdk -> {
+            FacadeOps.log(sdk, message, level);
+            return null;
+        });
+    }
+
+    @Override
+    public void startBlackout() {
+        facade(sdk -> {
+            FacadeOps.startBlackout(sdk);
+            return null;
+        });
+    }
+
+    @Override
+    public void endBlackout() {
+        facade(sdk -> {
+            FacadeOps.endBlackout(sdk);
+            return null;
+        });
+    }
+
+    @NonNull
+    @Override
+    public Boolean isBlackout() {
+        return facade(FacadeOps::isBlackout);
+    }
+
+    @Override
+    public void showReportDialog(
+            @Nullable final String summary,
+            @Nullable final String description,
+            @Nullable final Long severity,
+            @Nullable final List<String> labels
+    ) {
+        facade(sdk -> {
+            FacadeOps.showReportDialog(sdk, summary, description, severity, labels);
+            return null;
+        });
+    }
+
+    @Override
+    public void upload(
+            @NonNull final String summary,
+            @NonNull final String description,
+            @Nullable final Long severity,
+            @Nullable final List<String> labels
+    ) {
+        facade(sdk -> {
+            FacadeOps.upload(sdk, summary, description, severity, labels);
+            return null;
+        });
     }
 
     /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */

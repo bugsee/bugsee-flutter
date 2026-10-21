@@ -3,8 +3,8 @@ description: Bugsee adds video, network traffic, console logs and other traces f
 version: 10.0.0-dev.1
 homepage: https://www.bugsee.com/
 documentation: https://docs.bugsee.com/sdk/flutter/installation/
-repository: https://github.com/bugsee/flutter-bugsee
-issue_tracker: https://github.com/bugsee/flutter-bugsee/issues
+repository: https://github.com/bugsee/bugsee-flutter
+issue_tracker: https://github.com/bugsee/bugsee-flutter/issues
 
 environment:
   # Floors come from native-versions.json (flutter.min / flutter.dart).

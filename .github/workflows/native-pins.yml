@@ -1,0 +1,35 @@
+name: native-pins
+
+# Weekly check that every pinned native version still exists upstream. Network
+# checks live here only, never in PR CI, so an upstream outage cannot block a PR.
+# Read-only: no secrets, no writes. Failure = a pin disappeared or a source was
+# unreachable; a newer Android 7.x release is printed but does not fail the run.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-pins
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify pinned native versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # A scheduled run uses the default branch's copy of this file and, without a
+          # ref, its tree. The pins and script live on nextgen, so check that out.
+          ref: nextgen
+      # The script uses only dart:io, so no `pub get` and no Flutter are needed.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.11.0'
+      - run: dart scripts/check_native_pins.dart

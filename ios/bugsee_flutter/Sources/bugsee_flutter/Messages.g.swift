@@ -852,6 +852,19 @@ protocol BugseeBridgeHostApi {
   func showReportDialog(summary: String?, description: String?, severity: Int64?, labels: [String]?) throws
   /// Creates and uploads a report with no UI. A no-op before the SDK is launched.
   func upload(summary: String, description: String, severity: Int64?, labels: [String]?) throws
+  /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+  /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+  /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+  /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+  /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+  /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+  /// path: dropped there).
+  ///
+  /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+  /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+  /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+  /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+  func logException(payload: String, handled: Bool, domain: String?) throws -> Bool
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -1497,6 +1510,35 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       uploadChannel.setMessageHandler(nil)
+    }
+    /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+    /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+    /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+    /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+    /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+    /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+    /// path: dropped there).
+    ///
+    /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+    /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+    /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+    /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+    let logExceptionChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.logException\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      logExceptionChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let payloadArg = args[0] as! String
+        let handledArg = args[1] as! Bool
+        let domainArg: String? = nilOrValue(args[2])
+        do {
+          let result = try api.logException(payload: payloadArg, handled: handledArg, domain: domainArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      logExceptionChannel.setMessageHandler(nil)
     }
   }
 }

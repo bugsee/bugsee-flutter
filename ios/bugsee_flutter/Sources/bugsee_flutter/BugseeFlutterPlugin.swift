@@ -305,6 +305,16 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
         severity: severity.map { NSNumber(value: $0) }, labels: labels))
   }
 
+  // MARK: Exceptions (Phase 5a; see BGSFlutterExceptionOps)
+
+  private let exceptionSdk = BGSFlutterRealExceptionSdk()
+
+  func logException(payload: String, handled: Bool, domain: String?) throws -> Bool {
+    (try unwrap(
+      BGSFlutterExceptionOps.log(sdk: exceptionSdk, payload: payload, handled: handled, domain: domain)
+    ) as? NSNumber)?.boolValue ?? false
+  }
+
   // MARK: Report handlers
 
   func resetReportHandlers() throws {

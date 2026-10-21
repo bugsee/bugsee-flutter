@@ -377,6 +377,23 @@ abstract class BugseeBridgeHostApi {
     int? severity,
     List<String>? labels,
   );
+
+  // ---- Exceptions (Phase 5a). One call on the platform thread, like the facade; failures use the
+  // facade's codes (`invalid-argument`, `sdk-error`, `not-attached`).
+
+  /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+  /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+  /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+  /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+  /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+  /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+  /// path: dropped there).
+  ///
+  /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+  /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+  /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+  /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+  bool logException(String payload, bool handled, String? domain);
 }
 
 /// Native calls Dart. Always from the platform (main) thread.

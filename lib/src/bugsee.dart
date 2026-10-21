@@ -1,8 +1,14 @@
 // The public entry point. Everything behind it is `BugseeRuntime`, which a test can replace.
+import 'dart:async' show runZonedGuarded;
+import 'dart:isolate' show Isolate;
+
+import 'package:flutter/foundation.dart'
+    show ErrorDescription, FlutterError, FlutterErrorDetails;
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'bugsee_runtime.dart';
 import 'errors.dart';
+import 'exceptions/error_capture.dart';
 import 'facade/breadcrumb.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
@@ -314,4 +320,113 @@ abstract final class Bugsee {
     _runtime.ensureStartedInBackground();
     return _runtime.lifecycleEvents;
   }
+
+  // ---- Dart errors ------------------------------------------------------------------------------
+
+  /// Reports a Dart [error] to Bugsee, with the [stackTrace] it was caught with (`null` takes the
+  /// current stack): `catch (error, stack) { Bugsee.logException(error, stack); }`.
+  ///
+  /// [handled] (default `true`) says whether the app dealt with it: a handled error becomes an
+  /// **error** report, an unhandled one a **crash** report (the app lives on; it is the report type
+  /// the dashboard files unhandled errors under). [domain] groups issues on the dashboard (1 to 256
+  /// characters); on iOS it is dropped for an unhandled error (the SDK has no domain there). There is
+  /// no severity: neither SDK takes one for an exception; set it in a report handler
+  /// ([setReportHandler]).
+  ///
+  /// Any object can be thrown in Dart, so any object is accepted: its type (`StateError`,
+  /// `FormatException`, ...) and `toString()` are what is reported. A [FlutterError] contributes its
+  /// summary only. The stack is sent as the VM printed it: in a build with `--obfuscate` or
+  /// `--split-debug-info` the backend symbolicates it from the symbols you upload (see
+  /// doc/exceptions.md, which also has what each SDK does with the call).
+  ///
+  /// Completes with whether the SDK was handed the error; `false` before [launch] and after [stop],
+  /// where both SDKs drop it (nothing is queued). Throws a [BugseeArgumentException] for a bad
+  /// [domain] and a [BugseeException] when native cannot be reached; never because of [error].
+  static Future<bool> logException(
+    Object error,
+    StackTrace? stackTrace, {
+    bool handled = true,
+    String? domain,
+  }) => _runtime.logException(
+    error,
+    stackTrace ?? StackTrace.current,
+    handled: handled,
+    domain: domain,
+    stackCaptured: stackTrace == null,
+  );
+
+  /// Starts reporting the Dart errors nobody handled, chained to whatever handlers are installed.
+  ///
+  /// Opt-in: nothing is installed until this is called, and launching does not call it. It hooks
+  /// `FlutterError.onError` ([flutterErrors]), `PlatformDispatcher.instance.onError`
+  /// ([platformErrors]) and the root isolate's error listener ([isolateErrors]); errors in a zone
+  /// you create need [runGuarded], and in isolates you spawn [listenToIsolateErrors].
+  ///
+  /// It never replaces or swallows a handler: the one that was installed first (the app's,
+  /// Crashlytics', Sentry's) is still called, after ours, and its answer is returned; without one
+  /// the engine reports the error as it would have. Call it once, after the other tools installed
+  /// theirs or before, either order keeps them all called. A second call while installed does
+  /// nothing. Hot restart starts clean (the handlers are Dart statics of the new isolate).
+  ///
+  /// An error is reported once (the same object by identity; text by fingerprint) and the same
+  /// error at most once in 30 s, at most 10 reports in 60 s: a build error that repeats every frame
+  /// opens one report, not sixty. `FlutterErrorDetails.silent` errors are not reported. Nothing from
+  /// `FlutterErrorDetails` but the exception and its stack is read (no widget trees, no
+  /// information collector).
+  ///
+  /// [reportAsCrash] (default `true`) files them as **crash** reports, like unhandled errors in the
+  /// native SDKs; `false` files **error** reports. iOS writes a crash report that the NEXT launch
+  /// sends, and keeps one at a time; the simulator files nothing (see doc/exceptions.md). Nothing is
+  /// reported while `detect.crash` was false in the last launch made through [launch].
+  static void installErrorHandlers({
+    bool flutterErrors = true,
+    bool platformErrors = true,
+    bool isolateErrors = true,
+    bool reportAsCrash = true,
+  }) => _runtime.errorCapture.install(
+    flutterErrors: flutterErrors,
+    platformErrors: platformErrors,
+    isolateErrors: isolateErrors,
+    reportAsCrash: reportAsCrash,
+  );
+
+  /// Removes what [installErrorHandlers] installed, putting the previous handlers back when ours
+  /// are still the current ones. If another tool wrapped ours since, they cannot be unlinked: they
+  /// stay in that tool's chain and pass every error on, reporting nothing.
+  static void uninstallErrorHandlers() => _runtime.errorCapture.uninstall();
+
+  /// Whether [installErrorHandlers] is in effect.
+  static bool get errorHandlersInstalled => _runtime.errorCapture.isInstalled;
+
+  /// `runZonedGuarded` that reports what escapes [body] (errors from timers, futures and microtasks
+  /// started in it) and then calls [onError]; without [onError] the error goes to
+  /// `FlutterError.reportError`, so it is still printed and still reaches the app's handlers.
+  /// Reported as unhandled (a crash report; an error report when [installErrorHandlers] was told
+  /// `reportAsCrash: false`).
+  static R? runGuarded<R>(
+    R Function() body, {
+    void Function(Object error, StackTrace stack)? onError,
+  }) {
+    return runZonedGuarded<R>(body, (error, stack) {
+      _runtime.errorCapture.captureZoneError(error, stack);
+      if (onError != null) {
+        onError(error, stack);
+      } else {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stack,
+            library: 'bugsee_flutter',
+            context: ErrorDescription('in a zone guarded by Bugsee.runGuarded'),
+          ),
+        );
+      }
+    });
+  }
+
+  /// Reports the errors that [isolate] (one you spawned) does not catch, until you call `cancel` on
+  /// the result. Start the isolate paused, add the listener, then resume it: an isolate that exits
+  /// first is missed. Works whether or not [installErrorHandlers] was called.
+  static IsolateErrorListener listenToIsolateErrors(Isolate isolate) =>
+      _runtime.errorCapture.listenTo(isolate);
 }

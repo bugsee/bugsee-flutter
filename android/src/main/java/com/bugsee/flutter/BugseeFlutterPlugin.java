@@ -65,6 +65,7 @@ public class BugseeFlutterPlugin
     private LaunchOps.Sdk sdk;
     /** Non-null while attached to an engine, like {@link #sdk}; every facade call needs it. */
     private FacadeOps.Sdk facade;
+    private ExceptionOps.Sdk exceptions;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
@@ -75,6 +76,7 @@ public class BugseeFlutterPlugin
         messenger = binding.getBinaryMessenger();
         sdk = new BugseeSdk(binding.getApplicationContext());
         facade = new BugseeFacadeSdk();
+        exceptions = new BugseeExceptionSdk();
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
@@ -134,6 +136,7 @@ public class BugseeFlutterPlugin
         messenger = null;
         sdk = null;
         facade = null;
+        exceptions = null;
     }
 
     @Override
@@ -557,6 +560,27 @@ public class BugseeFlutterPlugin
             FacadeOps.upload(sdk, summary, description, severity, labels);
             return null;
         });
+    }
+
+    // ---- Exceptions (Phase 5a; see ExceptionOps) ----------------------------------------------
+
+    @NonNull
+    @Override
+    public Boolean logException(
+            @NonNull final String payload,
+            @NonNull final Boolean handled,
+            @Nullable final String domain
+    ) {
+        final ExceptionOps.Sdk current = exceptions;
+        if (current == null) {
+            throw new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null);
+        }
+        try {
+            return ExceptionOps.log(current, payload, handled, domain);
+        } catch (final FacadeOps.Failure failure) {
+            throw new Messages.FlutterError(failure.code, failure.getMessage(), null);
+        }
     }
 
     /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */

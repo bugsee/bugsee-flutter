@@ -41,6 +41,8 @@
 @interface BGSFlowSdk : NSObject <BGSFlutterCreatedReportSdk>
 @property(nonatomic, copy) void (^createCompletion)(id);
 @property(nonatomic, strong) NSMutableArray *uploaded;
+/// How many attachments the report held at the moment the SDK was handed it.
+@property(nonatomic, strong) NSMutableArray<NSNumber *> *countsAtUpload;
 @property(nonatomic, copy) dispatch_block_t uploadDone;
 @property(nonatomic) BOOL throwOnCreate;
 @property(nonatomic) BOOL throwOnUpload;
@@ -50,6 +52,7 @@
   self = [super init];
   if (self) {
     _uploaded = [NSMutableArray array];
+    _countsAtUpload = [NSMutableArray array];
   }
   return self;
 }
@@ -64,6 +67,7 @@
     [NSException raise:NSInternalInconsistencyException format:@"sdk is gone"];
   }
   [_uploaded addObject:report];
+  [_countsAtUpload addObject:@([(BugseeExtendedReport *)report attachments].count)];
   _uploadDone = [completion copy];
 }
 @end
@@ -89,6 +93,7 @@
 
 @implementation BGSFlutterReportFileFlowTests {
   BGSFlowQueue *_worker;
+  BGSFlowQueue *_createdWorker;
   BGSFlowQueue *_main;
   BGSFlowSdk *_sdk;
   NSMutableArray<BGSFlowTask *> *_createdTimers;
@@ -108,6 +113,7 @@
 
 - (void)setUp {
   _worker = [[BGSFlowQueue alloc] init];
+  _createdWorker = [[BGSFlowQueue alloc] init];
   _main = [[BGSFlowQueue alloc] init];
   _sdk = [[BGSFlowSdk alloc] init];
   _createdTimers = [NSMutableArray array];
@@ -160,6 +166,9 @@
                                                       worker:^BOOL(dispatch_block_t task) {
                                                         return [weak workerForTest:task];
                                                       }
+                                               createdWorker:^BOOL(dispatch_block_t task) {
+                                                 return [weak createdWorkerForTest:task];
+                                               }
                                                         main:^(dispatch_block_t task) {
                                                           [weak mainForTest:task];
                                                         }
@@ -195,6 +204,9 @@
 - (NSMutableArray<BGSFlowTask *> *)createdTimersForTest {
   return _createdTimers;
 }
+- (BOOL)createdWorkerForTest:(dispatch_block_t)task {
+  return [_createdWorker execute:task];
+}
 - (BOOL)workerForTest:(dispatch_block_t)task {
   return [_worker execute:task];
 }
@@ -220,9 +232,13 @@
   return handle;
 }
 
+/// Runs every queue until all are empty (a worker task posts to main, a main task may queue more).
 - (void)drainAll {
-  [_worker drain];
-  [_main drain];
+  while (_worker.tasks.count + _createdWorker.tasks.count + _main.tasks.count > 0) {
+    [_worker drain];
+    [_createdWorker drain];
+    [_main drain];
+  }
 }
 
 /// Collects replies as `value|code`.
@@ -359,7 +375,7 @@
   [_flow createForOwner:_engine ttlMs:600000 reply:[self collector:got]];
   XCTAssertNotNil(_sdk.createCompletion, @"the SDK was asked");
   _sdk.createCompletion(report);
-  [_main drain];
+  [self drainAll];
   return got.lastObject;
 }
 
@@ -386,7 +402,7 @@
   NSMutableArray *got = [NSMutableArray array];
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
   _sdk.createCompletion(nil);
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @"ok" ]);
   _sdk.createCompletion = nil;
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
@@ -397,7 +413,7 @@
   _sdk.throwOnCreate = YES;
   NSMutableArray *got = [NSMutableArray array];
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @"error:sdk-error" ]);
   _sdk.throwOnCreate = NO;
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
@@ -409,10 +425,10 @@
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
   void (^late)(id) = _sdk.createCompletion;
   _createdTimers.firstObject.block();
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @"error:create-timeout" ]);
   late([self newCreated]);
-  [_main drain];
+  [self drainAll];
   XCTAssertEqual(got.count, 1u, @"no second reply");
   _sdk.createCompletion = nil;
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
@@ -436,7 +452,7 @@
 - (void)testACreatedOperationOnADeadHandleIsNotLive {
   NSMutableArray *got = [NSMutableArray array];
   [_flow createdAddFile:@"cr-77" path:_file name:@"a" mimeType:nil reply:[self collector:got]];
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ BGSFlutterFileNotLive ]);
 }
 
@@ -450,12 +466,12 @@
   [_flow uploadCreated:handle reply:[self collector:up]];
   [_flow createdAddData:handle data:[NSData dataWithBytes:"\1" length:1] name:@"after" mimeType:nil reply:[self collector:after]];
   XCTAssertEqual(_sdk.uploaded.count, 0u);
-  [_main drain];  // the add, then the upload's hop, then the late reply
+  [self drainAll];  // the add, then the upload's hop, then the late reply
   XCTAssertEqual(report.attachments.count, 1u, @"the add landed first");
   XCTAssertEqual(_sdk.uploaded.count, 1u, @"then the SDK was handed the report");
   XCTAssertEqualObjects(after, @[ BGSFlutterFileNotLive ]);
   _sdk.uploadDone();
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(add, @[ @"ok" ]);
   XCTAssertEqualObjects(up, @[ @YES ]);
 }
@@ -466,11 +482,11 @@
   NSMutableArray *second = [NSMutableArray array];
   [_flow uploadCreated:handle reply:[self collector:first]];
   [_flow uploadCreated:handle reply:[self collector:second]];
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(second, @[ @"error:not-live" ], @"not 'the SDK declined': the report is gone");
   XCTAssertEqual(_sdk.uploaded.count, 1u);
   _sdk.uploadDone();
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(first, @[ @YES ]);
   _sdk.createCompletion = nil;
   [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
@@ -494,7 +510,7 @@
   XCTAssertNil([_flow readCreated:handle]);
   NSMutableArray *got = [NSMutableArray array];
   [_flow createdClearAttachments:handle reply:[self collector:got]];
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ BGSFlutterFileNotLive ]);
 }
 
@@ -538,13 +554,13 @@
   NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
   NSMutableArray *got = [NSMutableArray array];
   [_flow uploadCreated:handle reply:[self collector:got]];
-  [_main drain];
+  [self drainAll];
   XCTAssertEqual(_uploadTimers.count, 1u);
   _uploadTimers.firstObject.block();
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @"error:upload-timeout" ]);
   _sdk.uploadDone();  // the SDK answers after all
-  [_main drain];
+  [self drainAll];
   XCTAssertEqual(got.count, 1u, @"exactly one answer");
 }
 
@@ -552,15 +568,15 @@
   NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
   NSMutableArray *got = [NSMutableArray array];
   [_flow uploadCreated:handle reply:[self collector:got]];
-  [_main drain];
+  [self drainAll];
   BGSFlowTask *timer = _uploadTimers.firstObject;
   _sdk.uploadDone();
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @YES ]);
   XCTAssertTrue(timer.cancelled);
   XCTAssertEqual(_uploadTimers.count, 0u);
   timer.block();  // already started when the cancel came
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @YES ]);
 }
 
@@ -580,7 +596,7 @@
   [_flow handlerAddFile:handle path:_file name:@"late" mimeType:nil move:YES reply:[self collector:got]];
   _clockMs = 25000;  // the slow copy ahead of it took the handler's window (20 s) and more
   [_worker drain];
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ BGSFlutterFileNotLive ]);
   XCTAssertEqual(_handlerReport.adds.count, 0u, @"nothing was imported");
   XCTAssertTrue([NSFileManager.defaultManager fileExistsAtPath:_file], @"and nothing was consumed");
@@ -606,7 +622,7 @@
   [_flow createForOwner:_engine ttlMs:600000 reply:[self collector:got]];
   [_flow resetOwner:[NSObject new]];
   _sdk.createCompletion([self newCreated]);
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @"cr-1" ]);
 }
 
@@ -615,7 +631,7 @@
   [_flow createForOwner:_engine ttlMs:600000 reply:[self collector:got]];
   [_flow resetOwner:_engine];
   _sdk.createCompletion([self newCreated]);
-  [_main drain];
+  [self drainAll];
   XCTAssertEqualObjects(got, @[ @"ok" ], @"answered with none: the late report is not published");
 }
 
@@ -639,6 +655,47 @@
   [_flow createdAddFile:handle path:empty name:@"e" mimeType:nil reply:[self collector:got]];
   [self drainAll];
   XCTAssertEqualObjects(got, @[ @"error:invalid-argument" ]);
+}
+
+
+- (void)testACreatedFileIsReadOffMainAndAppliedOnMain {
+  BugseeExtendedReport *report = [self newCreated];
+  NSString *handle = [self createWith:[NSMutableArray array] report:report];
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow createdAddFile:handle path:_file name:@"a" mimeType:nil reply:[self collector:got]];
+  XCTAssertEqual(_createdWorker.tasks.count, 1u, @"the read is queued on the created worker");
+  XCTAssertEqual(_main.tasks.count, 0u, @"nothing was queued for main yet: no read or decode on the UI thread");
+  [_createdWorker drain];
+  // The file is gone before main runs: if the read had been left for main it would fail now.
+  [NSFileManager.defaultManager removeItemAtPath:_file error:NULL];
+  XCTAssertEqual(report.attachments.count, 0u, @"read, not yet applied");
+  XCTAssertEqual(_main.tasks.count, 1u, @"the apply is on main");
+  [_main drain];
+  XCTAssertEqual(report.attachments.count, 1u);
+  XCTAssertEqualObjects(got, @[ @"ok" ]);
+}
+
+- (void)testAnAddQueuedBeforeAnUploadIsStillAppliedBeforeTheSdkSeesTheReport {
+  BugseeExtendedReport *report = [self newCreated];
+  NSString *handle = [self createWith:[NSMutableArray array] report:report];
+  [_flow createdAddFile:handle path:_file name:@"a" mimeType:nil reply:[self collector:[NSMutableArray array]]];
+  [_flow uploadCreated:handle reply:[self collector:[NSMutableArray array]]];
+  [self drainAll];
+  XCTAssertEqual(report.attachments.count, 1u, @"applied");
+  XCTAssertEqual(_sdk.uploaded.count, 1u, @"and only then handed to the SDK");
+  XCTAssertEqualObjects(_sdk.countsAtUpload, @[ @1 ], @"with the attachment already in it WHEN the SDK was handed the report");
+}
+
+- (void)testACreatedWorkerThatIsFullAnswersBusyAndAnUploadStillReachesTheSdk {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  _createdWorker.accept = NO;
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow createdAddFile:handle path:_file name:@"a" mimeType:nil reply:[self collector:got]];
+  [self drainAll];
+  XCTAssertEqualObjects(got, @[ BGSFlutterFileBusy ]);
+  [_flow uploadCreated:handle reply:[self collector:[NSMutableArray array]]];
+  [self drainAll];
+  XCTAssertEqual(_sdk.uploaded.count, 1u);
 }
 
 @end

@@ -181,4 +181,17 @@ public class ImageHeaderTest {
         final byte[] noFrame = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xDA, 0, 2};
         assertNull(dims(noFrame));
     }
+
+    @Test
+    public void twoHugeUnsignedSidesDoNotWrapTheProductNegative() throws Exception {
+        // 3e9 x 4e9 = 1.2e19 > Long.MAX_VALUE: a signed product would be negative and "within the cap".
+        final File f = tmp.newFile();
+        Files.write(f.toPath(), png(3_000_000_000L, 4_000_000_000L, false));
+        try {
+            ImageHeader.requireWithin(f, ReportOps.MAX_SCREENSHOT_PIXELS);
+            fail("accepted an overflowing header");
+        } catch (final ReportOps.Refused e) {
+            assertEquals(ReportOps.IMAGE_TOO_LARGE, e.code);
+        }
+    }
 }

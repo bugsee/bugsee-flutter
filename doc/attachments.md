@@ -111,7 +111,9 @@ wrapper does not depend on it being fixed.
 of 64; a full queue answers `busy`), never on the platform thread; replies are posted back to it. A created report's
 operations, its upload and every discard run on a SECOND worker (Android), so a slow handler copy never holds up the report the
 app is filling in; a discard whose queue is full gets a short-lived thread, never the caller's or a timer's. An iOS created
-report is an unsynchronised object the SDK uses on main, so its (bounded) operations run on main.
+report is an unsynchronised object the SDK uses on main, so what touches the object runs on main, but the file read (up to
+3 MiB) and the image decode happen first on a second serial worker, never on the UI thread; the upload hops to main behind
+them, so an add the app called before it is in the report when the SDK is handed it.
 
 **Images.** The pixel cap is checked from the file HEADER before anything is decoded: on Android by `ImageHeader` (PNG, JPEG,
 GIF, WebP, unit-tested with real image bytes; any other format falls back to `BitmapFactory`'s bounds), on iOS by ImageIO.

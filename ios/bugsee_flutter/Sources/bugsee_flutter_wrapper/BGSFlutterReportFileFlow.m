@@ -32,6 +32,7 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   BGSFlutterReportHandlerPipeline *_pipeline;
   BGSFlutterCreatedReports *_created;
   BGSFlutterFlowWorker _worker;
+  BGSFlutterFlowWorker _createdWorker;
   BGSFlutterFlowMain _main;
   id<BGSFlutterCreatedReportSdk> _sdk;
   BGSFlutterCreatedScheduler _scheduler;
@@ -40,41 +41,47 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   int64_t _uploadTimeoutMs;
 }
 
+/// A bounded serial queue: a loop of adds must not grow without limit, and a full queue refuses the call.
+static BGSFlutterFlowWorker BGSBoundedWorker(const char *label) {
+  dispatch_queue_t queue = dispatch_queue_create(label, DISPATCH_QUEUE_SERIAL);
+  static const int kCapacity = 64;
+  __block int waiting = 0;
+  os_unfair_lock_t lock = malloc(sizeof(os_unfair_lock));
+  *lock = OS_UNFAIR_LOCK_INIT;
+  return ^BOOL(dispatch_block_t task) {
+    os_unfair_lock_lock(lock);
+    if (waiting >= kCapacity) {
+      os_unfair_lock_unlock(lock);
+      return NO;
+    }
+    waiting++;
+    os_unfair_lock_unlock(lock);
+    dispatch_async(queue, ^{
+      task();
+      os_unfair_lock_lock(lock);
+      waiting--;
+      os_unfair_lock_unlock(lock);
+    });
+    return YES;
+  };
+}
+
 + (instancetype)shared {
   static BGSFlutterReportFileFlow *shared;
   static dispatch_once_t once;
   dispatch_once(&once, ^{
-    dispatch_queue_t queue = dispatch_queue_create("com.bugsee.flutter.report-files", DISPATCH_QUEUE_SERIAL);
-    // A bounded queue: a loop of adds must not grow without limit, and a full queue refuses the call.
-    static const int kCapacity = 64;
-    __block int waiting = 0;
-    os_unfair_lock_t lock = malloc(sizeof(os_unfair_lock));
-    *lock = OS_UNFAIR_LOCK_INIT;
+    dispatch_queue_t timers = dispatch_queue_create("com.bugsee.flutter.report-timers", DISPATCH_QUEUE_SERIAL);
     shared = [[BGSFlutterReportFileFlow alloc]
         initWithPipeline:[BGSFlutterReportHandlerPipeline shared]
                  created:[BGSFlutterCreatedReports shared]
-                  worker:^BOOL(dispatch_block_t task) {
-                    os_unfair_lock_lock(lock);
-                    if (waiting >= kCapacity) {
-                      os_unfair_lock_unlock(lock);
-                      return NO;
-                    }
-                    waiting++;
-                    os_unfair_lock_unlock(lock);
-                    dispatch_async(queue, ^{
-                      task();
-                      os_unfair_lock_lock(lock);
-                      waiting--;
-                      os_unfair_lock_unlock(lock);
-                    });
-                    return YES;
-                  }
+                  worker:BGSBoundedWorker("com.bugsee.flutter.report-files")
+           createdWorker:BGSBoundedWorker("com.bugsee.flutter.created-report")
                     main:^(dispatch_block_t task) {
                       dispatch_async(dispatch_get_main_queue(), task);
                     }
                      sdk:[[BGSFlutterRealCreatedReportSdk alloc] init]
                scheduler:^id(dispatch_block_t task, int64_t delayMs) {
-                 dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+                 dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, timers);
                  dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, delayMs * NSEC_PER_MSEC),
                                            DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
                  dispatch_source_set_event_handler(timer, ^{
@@ -96,6 +103,7 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
 - (instancetype)initWithPipeline:(BGSFlutterReportHandlerPipeline *)pipeline
                          created:(BGSFlutterCreatedReports *)created
                           worker:(BGSFlutterFlowWorker)worker
+                   createdWorker:(BGSFlutterFlowWorker)createdWorker
                             main:(BGSFlutterFlowMain)main
                              sdk:(id<BGSFlutterCreatedReportSdk>)sdk
                        scheduler:(BGSFlutterCreatedScheduler)scheduler
@@ -107,6 +115,7 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
     _pipeline = pipeline;
     _created = created;
     _worker = [worker copy];
+    _createdWorker = [createdWorker copy];
     _main = [main copy];
     _sdk = sdk;
     _scheduler = [scheduler copy];
@@ -308,18 +317,33 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   return YES;
 }
 
-/// A created report's operations run where the SDK uses the object: on main, in call order. Looked
-/// up NOW, so one called before an upload or a discard belongs to the report and one called after
-/// finds nothing.
-- (void)created:(NSString *)handle op:(BGSFlutterCreatedOp)op reply:(BGSFlutterFlowReply)reply {
+/// A created report's operations: the part that touches the file system or decodes an image (`prepare`)
+/// runs on the created-report worker, OFF main; the part that touches the object (`apply`) runs on main,
+/// where the SDK uses it, and replies. Every operation, the upload and nothing else goes through the same
+/// serial worker, so main sees them in the order Dart called them. Looked up NOW: an operation called
+/// before an upload or a discard belongs to the report and one called after finds nothing.
+- (void)created:(NSString *)handle
+        prepare:(id (^)(void))prepare
+          apply:(BGSFlutterFileOutcome * (^)(id prepared, id report))apply
+          reply:(BGSFlutterFlowReply)reply {
   id report = [_created reportForHandle:handle];
   if (report == nil) {
     [self answer:reply value:BGSFlutterFileNotLive];
     return;
   }
-  _main(^{
-    [self run:op on:report reply:reply];
+  const BOOL queued = _createdWorker(^{
+    id prepared = prepare != nil ? prepare() : nil;
+    self->_main(^{
+      [self run:^BGSFlutterFileOutcome *(id r) {
+        return apply(prepared, r);
+      }
+             on:report
+          reply:reply];
+    });
   });
+  if (!queued) {
+    [self answer:reply value:BGSFlutterFileBusy];
+  }
 }
 
 - (void)createdAddFile:(NSString *)handle
@@ -328,9 +352,12 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
               mimeType:(NSString *)mimeType
                  reply:(BGSFlutterFlowReply)reply {
   [self created:handle
-             op:^BGSFlutterFileOutcome *(id report) {
-               return [BGSFlutterCreatedReportOps addFileAtPath:path name:name mimeType:mimeType onReport:report];
-             }
+        prepare:^id {
+          return [BGSFlutterCreatedReportOps prepareFileAtPath:path name:name mimeType:mimeType];
+        }
+          apply:^BGSFlutterFileOutcome *(id prepared, id report) {
+            return [BGSFlutterCreatedReportOps applyPreparedFile:prepared name:name onReport:report];
+          }
           reply:reply];
 }
 
@@ -340,25 +367,30 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
               mimeType:(NSString *)mimeType
                  reply:(BGSFlutterFlowReply)reply {
   [self created:handle
-             op:^BGSFlutterFileOutcome *(id report) {
-               return [BGSFlutterCreatedReportOps addData:data name:name mimeType:mimeType onReport:report];
-             }
+        prepare:nil
+          apply:^BGSFlutterFileOutcome *(id prepared, id report) {
+            return [BGSFlutterCreatedReportOps addData:data name:name mimeType:mimeType onReport:report];
+          }
           reply:reply];
 }
 
 - (void)createdClearAttachments:(NSString *)handle reply:(BGSFlutterFlowReply)reply {
   [self created:handle
-             op:^BGSFlutterFileOutcome *(id report) {
-               return [BGSFlutterCreatedReportOps clearAttachmentsOnReport:report];
-             }
+        prepare:nil
+          apply:^BGSFlutterFileOutcome *(id prepared, id report) {
+            return [BGSFlutterCreatedReportOps clearAttachmentsOnReport:report];
+          }
           reply:reply];
 }
 
 - (void)createdSetScreenshot:(NSString *)handle path:(NSString *)path annotated:(BOOL)annotated reply:(BGSFlutterFlowReply)reply {
   [self created:handle
-             op:^BGSFlutterFileOutcome *(id report) {
-               return [BGSFlutterCreatedReportOps setScreenshotAtPath:path annotated:annotated onReport:report];
-             }
+        prepare:^id {
+          return [BGSFlutterCreatedReportOps prepareScreenshotAtPath:path annotated:annotated];
+        }
+          apply:^BGSFlutterFileOutcome *(id prepared, id report) {
+            return [BGSFlutterCreatedReportOps applyPreparedScreenshot:prepared onReport:report];
+          }
           reply:reply];
 }
 
@@ -408,7 +440,10 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
     timer = armed;
   }
   os_unfair_lock_unlock(&answeredLock);
-  _main(^{
+  // Behind the operations already queued for this report (they prepare off main and apply on main; this
+  // hops to main after them), so an attachment the app did or did not await is in the report when the
+  // SDK processes it.
+  dispatch_block_t send = ^{
     @try {
       [self->_sdk uploadReport:report
                     completion:^{
@@ -424,7 +459,14 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
            message:[@"upload: " stringByAppendingString:NSStringFromClass(exception.class)]];
       }
     }
-  });
+  };
+  // The hop to main is queued by the worker AFTER the earlier operations queued theirs; a full queue sends
+  // it directly rather than not at all.
+  if (!_createdWorker(^{
+        self->_main(send);
+      })) {
+    _main(send);
+  }
 }
 
 - (void)discardCreated:(NSString *)handle {

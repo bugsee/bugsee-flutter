@@ -12,6 +12,8 @@ const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
 @end
 @implementation BGSFlutterCreatedReportPatch
 @end
+@implementation BGSFlutterPreparedFile
+@end
 
 @implementation BGSFlutterCreatedReportOps
 
@@ -132,33 +134,44 @@ const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
                                     name:(NSString *)name
                                 mimeType:(NSString *)mimeType
                                 onReport:(BugseeExtendedReport *)report {
+  return [self applyPreparedFile:[self prepareFileAtPath:path name:name mimeType:mimeType] name:name onReport:report];
+}
+
++ (BGSFlutterPreparedFile *)prepareFileAtPath:(NSString *)path name:(NSString *)name mimeType:(NSString *)mimeType {
+  BGSFlutterPreparedFile *prepared = [[BGSFlutterPreparedFile alloc] init];
   // The MIME type is validated like everywhere, and then not kept: `BugseeAttachment` has none.
   NSString *problem = [BGSFlutterReportFiles problemWithPath:path] ?: [BGSFlutterReportFiles problemWithName:name]
                       ?: [BGSFlutterReportFiles problemWithMimeType:mimeType];
   if (problem != nil) {
-    return [BGSFlutterFileOutcome badArgument:problem];
+    prepared.failure = [BGSFlutterFileOutcome badArgument:problem];
+    return prepared;
   }
-  NSString *code = [BGSFlutterReportFiles codeForUnreadableFileAtPath:path] ?: [self codeForRoomOnReport:report];
+  NSString *code = [BGSFlutterReportFiles codeForUnreadableFileAtPath:path];
   if (code != nil) {
-    return [BGSFlutterFileOutcome refusedWithCode:code];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:code];
+    return prepared;
   }
   // The size of what the link points at, not of the link, and a read that cannot exceed the cap: the
   // size can grow between the stat and the read.
   NSString *resolved = path.stringByResolvingSymlinksInPath;
   NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:resolved error:NULL];
   if (attributes == nil) {
-    return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+    return prepared;
   }
   // iOS drops an empty attachment at upload, so neither platform takes one (Android's flow refuses too).
   if ([attributes[NSFileSize] unsignedLongLongValue] == 0) {
-    return [BGSFlutterFileOutcome badArgument:@"a created-report attachment must not be empty"];
+    prepared.failure = [BGSFlutterFileOutcome badArgument:@"a created-report attachment must not be empty"];
+    return prepared;
   }
   if ([attributes[NSFileSize] unsignedLongLongValue] > BGSFlutterCreatedReportMaxAttachmentBytes) {
-    return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileTooLarge];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileTooLarge];
+    return prepared;
   }
   NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:resolved];
   if (handle == nil) {
-    return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+    return prepared;
   }
   NSData *read = nil;
   @try {
@@ -168,12 +181,27 @@ const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
   }
   [handle closeFile];
   if (read == nil) {
-    return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+    return prepared;
   }
   // Own the bytes: the file belongs to the app, and overwriting it later must not change what the
   // report will upload.
-  NSData *owned = [NSData dataWithBytes:read.bytes length:read.length];
-  return [self attach:owned name:name fileName:path.lastPathComponent onReport:report];
+  prepared.data = [NSData dataWithBytes:read.bytes length:read.length];
+  prepared.fileName = path.lastPathComponent;
+  return prepared;
+}
+
++ (BGSFlutterFileOutcome *)applyPreparedFile:(BGSFlutterPreparedFile *)prepared
+                                        name:(NSString *)name
+                                    onReport:(BugseeExtendedReport *)report {
+  if (prepared.failure != nil) {
+    return prepared.failure;
+  }
+  NSString *code = [self codeForRoomOnReport:report];
+  if (code != nil) {
+    return [BGSFlutterFileOutcome refusedWithCode:code];
+  }
+  return [self attach:prepared.data name:name fileName:prepared.fileName onReport:report];
 }
 
 + (BGSFlutterFileOutcome *)addData:(NSData *)data
@@ -205,22 +233,39 @@ const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
 + (BGSFlutterFileOutcome *)setScreenshotAtPath:(NSString *)path
                                      annotated:(BOOL)annotated
                                       onReport:(BugseeExtendedReport *)report {
+  return [self applyPreparedScreenshot:[self prepareScreenshotAtPath:path annotated:annotated] onReport:report];
+}
+
++ (BGSFlutterPreparedFile *)prepareScreenshotAtPath:(NSString *)path annotated:(BOOL)annotated {
+  BGSFlutterPreparedFile *prepared = [[BGSFlutterPreparedFile alloc] init];
   NSString *problem = [BGSFlutterReportFiles problemWithPath:path];
   if (problem != nil) {
-    return [BGSFlutterFileOutcome badArgument:problem];
+    prepared.failure = [BGSFlutterFileOutcome badArgument:problem];
+    return prepared;
   }
   if (annotated) {
-    return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnsupported];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnsupported];
+    return prepared;
   }
   NSString *code = [BGSFlutterReportFiles codeForUnreadableFileAtPath:path];
   if (code != nil) {
-    return [BGSFlutterFileOutcome refusedWithCode:code];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:code];
+    return prepared;
   }
   UIImage *image = [BGSFlutterReportFiles imageAtPath:path code:&code];
   if (image == nil) {
-    return [BGSFlutterFileOutcome refusedWithCode:code ?: BGSFlutterFileImageUndecodable];
+    prepared.failure = [BGSFlutterFileOutcome refusedWithCode:code ?: BGSFlutterFileImageUndecodable];
+    return prepared;
   }
-  [report setScreenshot:image];
+  prepared.image = image;
+  return prepared;
+}
+
++ (BGSFlutterFileOutcome *)applyPreparedScreenshot:(BGSFlutterPreparedFile *)prepared onReport:(BugseeExtendedReport *)report {
+  if (prepared.failure != nil) {
+    return prepared.failure;
+  }
+  [report setScreenshot:prepared.image];
   return [BGSFlutterFileOutcome done];
 }
 

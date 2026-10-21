@@ -46,6 +46,45 @@ void main() {
       expect(callsOf('createReport'), ['createReport(180000)']);
     });
 
+    test(
+      'a first read that fails releases the report native already holds',
+      () async {
+        native.failing['createdReportRead'] = PlatformException(
+          code: 'sdk-error',
+        );
+        await expectLater(
+          Bugsee.createReport(),
+          throwsA(isA<BugseeException>()),
+        );
+        expect(callsOf('createdReportDiscard'), ['createdReportDiscard(cr-1)']);
+      },
+    );
+
+    test(
+      'a first read that finds the report gone releases it too and answers null',
+      () async {
+        native.createdSnapshot = null;
+        expect(await Bugsee.createReport(), isNull);
+        expect(callsOf('createdReportDiscard'), ['createdReportDiscard(cr-1)']);
+      },
+    );
+
+    test(
+      'a discard that itself fails does not hide the first failure',
+      () async {
+        native.failing['createdReportRead'] = PlatformException(
+          code: 'sdk-error',
+        );
+        native.failing['createdReportDiscard'] = PlatformException(
+          code: 'sdk-error',
+        );
+        await expectLater(
+          Bugsee.createReport(),
+          throwsA(isA<BugseeException>()),
+        );
+      },
+    );
+
     test('the default time to live is ten minutes', () async {
       await Bugsee.createReport();
       expect(callsOf('createReport'), ['createReport(600000)']);

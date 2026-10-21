@@ -36,6 +36,16 @@ FOUNDATION_EXPORT const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes;
 @property(nonatomic, copy, nullable) NSArray *removeAttributes;
 @end
 
+/// The half of an attachment or screenshot that touches the file system or decodes an image, done OFF the
+/// main queue (a 3 MiB read, a decode of up to 4096 x 4096 pixels): `failure` is set when it was refused,
+/// else `data` (and `fileName`) or `image` is ready for the half that touches the report, on main.
+@interface BGSFlutterPreparedFile : NSObject
+@property(nonatomic, strong, nullable) BGSFlutterFileOutcome *failure;
+@property(nonatomic, copy, nullable) NSData *data;
+@property(nonatomic, copy, nullable) NSString *fileName;
+@property(nonatomic, strong, nullable) UIImage *image;
+@end
+
 /// What the Dart `CreatedReport` does to the `BugseeExtendedReport` that
 /// `+[Bugsee createReportWithCompletion:]` hands out (`report` is typed `id` so this header needs no
 /// SDK import). iOS gives the app a different, smaller object than Android: no id, type or e-mail, one
@@ -56,6 +66,15 @@ FOUNDATION_EXPORT const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes;
                                     name:(nullable NSString *)name
                                 mimeType:(nullable NSString *)mimeType
                                 onReport:(id)report;
+/// The two halves of `addFileAtPath:...` (the flow runs the first off main, the second on main).
++ (BGSFlutterPreparedFile *)prepareFileAtPath:(nullable NSString *)path
+                                         name:(nullable NSString *)name
+                                     mimeType:(nullable NSString *)mimeType;
++ (BGSFlutterFileOutcome *)applyPreparedFile:(BGSFlutterPreparedFile *)prepared
+                                        name:(nullable NSString *)name
+                                    onReport:(id)report;
++ (BGSFlutterPreparedFile *)prepareScreenshotAtPath:(nullable NSString *)path annotated:(BOOL)annotated;
++ (BGSFlutterFileOutcome *)applyPreparedScreenshot:(BGSFlutterPreparedFile *)prepared onReport:(id)report;
 + (BGSFlutterFileOutcome *)addData:(nullable NSData *)data
                               name:(nullable NSString *)name
                           mimeType:(nullable NSString *)mimeType

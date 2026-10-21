@@ -65,7 +65,8 @@ final class ImageHeader {
         } catch (final IOException e) {
             throw new ReportOps.Refused(ReportOps.IMAGE_UNDECODABLE);
         }
-        if (size != null && size[0] > 0 && size[1] > 0 && size[0] * size[1] > maxPixels) {
+        // A division, not a product: two unsigned 32-bit sides can multiply past Long.MAX_VALUE and wrap negative.
+        if (size != null && size[0] > 0 && size[1] > 0 && size[0] > maxPixels / size[1]) {
             throw new ReportOps.Refused(ReportOps.IMAGE_TOO_LARGE);
         }
     }

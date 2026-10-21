@@ -52,13 +52,16 @@ typedef void (^BGSFlutterFlowMain)(dispatch_block_t task);
 /// to main. The report is CLAIMED first (`-acquireHandle:`): a handle that is live when the call is made
 /// stays valid for the operation, and the SDK's completion waits for the claim to end instead of racing
 /// it. A created report (`BugseeExtendedReport`) is unsynchronised and the SDK hands it out and takes it
-/// back on main, so its operations run on main (they are bounded: 3 attachments of 3 MiB).
+/// back on main, so what touches the object runs on main; the file read and the image decode run before that,
+/// on a second serial worker (so a slow handler copy never holds a created report up, and no read or decode
+/// freezes the UI), in the order Dart called.
 @interface BGSFlutterReportFileFlow : NSObject
 
 + (instancetype)shared;
 - (instancetype)initWithPipeline:(BGSFlutterReportHandlerPipeline *)pipeline
                          created:(BGSFlutterCreatedReports *)created
                           worker:(BGSFlutterFlowWorker)worker
+                   createdWorker:(BGSFlutterFlowWorker)createdWorker
                             main:(BGSFlutterFlowMain)main
                              sdk:(id<BGSFlutterCreatedReportSdk>)sdk
                        scheduler:(BGSFlutterCreatedScheduler)scheduler

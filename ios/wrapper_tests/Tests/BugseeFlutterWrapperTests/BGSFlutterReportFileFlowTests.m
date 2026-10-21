@@ -698,4 +698,38 @@
   XCTAssertEqual(_sdk.uploaded.count, 1u);
 }
 
+
+- (void)testCreatedOperationsLeaveRoomForTheUploadBehindThem {
+  BugseeExtendedReport *report = [self newCreated];
+  NSString *handle = [self createWith:[NSMutableArray array] report:report];
+  NSMutableArray *accepted = [NSMutableArray array];
+  for (NSInteger i = 0; i < BGSFlutterCreatedOpsLimit; i++) {
+    [_flow createdAddData:handle data:[NSData dataWithBytes:"x" length:1] name:@"b" mimeType:nil reply:[self collector:accepted]];
+  }
+  NSMutableArray *over = [NSMutableArray array];
+  [_flow createdAddData:handle data:[NSData dataWithBytes:"x" length:1] name:@"too many" mimeType:nil reply:[self collector:over]];
+  [_main drain];
+  XCTAssertEqualObjects(over, @[ BGSFlutterFileBusy ]);
+  XCTAssertEqual(_createdWorker.tasks.count, (NSUInteger)BGSFlutterCreatedOpsLimit);
+  [_flow uploadCreated:handle reply:[self collector:[NSMutableArray array]]];
+  XCTAssertEqual(_createdWorker.tasks.count, (NSUInteger)BGSFlutterCreatedOpsLimit + 1, @"queued behind them");
+  [self drainAll];
+  XCTAssertEqualObjects(_sdk.countsAtUpload, @[ @3 ], @"the SDK keeps 3 legacy attachments; all the adds ran first");
+  XCTAssertEqual(accepted.count, (NSUInteger)BGSFlutterCreatedOpsLimit);
+}
+
+- (void)testTheBudgetIsGivenBackWhenOperationsFinish {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  for (int round = 0; round < 3; round++) {
+    for (NSInteger i = 0; i < BGSFlutterCreatedOpsLimit; i++) {
+      [_flow createdClearAttachments:handle reply:[self collector:[NSMutableArray array]]];
+    }
+    [self drainAll];
+  }
+  NSMutableArray *again = [NSMutableArray array];
+  [_flow createdClearAttachments:handle reply:[self collector:again]];
+  [self drainAll];
+  XCTAssertEqualObjects(again, @[ @"ok" ]);
+}
+
 @end

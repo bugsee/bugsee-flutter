@@ -1,6 +1,7 @@
 #import "BGSFlutterReportFileFlow.h"
 
 #import <os/lock.h>
+#import <stdatomic.h>
 
 @import Bugsee;
 
@@ -10,6 +11,9 @@ NSString *const BGSFlutterCreateRateLimited = @"create-rate-limited";
 NSString *const BGSFlutterUploadTimeout = @"upload-timeout";
 NSString *const BGSFlutterFlowNotLive = @"not-live";
 const int64_t BGSFlutterUploadTimeoutMs = 45000;
+// The created worker's queue holds 64: the rest is kept for the one upload a report ends with, so it is
+// always queued BEHIND the operations the app called first.
+const NSInteger BGSFlutterCreatedOpsLimit = 48;
 NSString *const BGSFlutterFlowInvalidArgument = @"invalid-argument";
 NSString *const BGSFlutterFlowSdkError = @"sdk-error";
 const int64_t BGSFlutterCreateTimeoutMs = 45000;
@@ -39,6 +43,8 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   BGSFlutterCreatedCancel _cancel;
   int64_t _createTimeoutMs;
   int64_t _uploadTimeoutMs;
+  /// Created-report operations waiting for or on the worker: capped below its queue so an upload always fits behind them.
+  _Atomic NSInteger _createdOpsQueued;
 }
 
 /// A bounded serial queue: a loop of adds must not grow without limit, and a full queue refuses the call.
@@ -331,6 +337,11 @@ static BGSFlutterFlowWorker BGSBoundedWorker(const char *label) {
     [self answer:reply value:BGSFlutterFileNotLive];
     return;
   }
+  if (atomic_fetch_add(&_createdOpsQueued, 1) + 1 > BGSFlutterCreatedOpsLimit) {
+    atomic_fetch_sub(&_createdOpsQueued, 1);
+    [self answer:reply value:BGSFlutterFileBusy];
+    return;
+  }
   const BOOL queued = _createdWorker(^{
     id prepared = prepare != nil ? prepare() : nil;
     self->_main(^{
@@ -339,9 +350,11 @@ static BGSFlutterFlowWorker BGSBoundedWorker(const char *label) {
       }
              on:report
           reply:reply];
+      atomic_fetch_sub(&self->_createdOpsQueued, 1);
     });
   });
   if (!queued) {
+    atomic_fetch_sub(&_createdOpsQueued, 1);
     [self answer:reply value:BGSFlutterFileBusy];
   }
 }

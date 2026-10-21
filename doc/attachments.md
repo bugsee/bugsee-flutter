@@ -43,7 +43,7 @@ as the spec says (#136, #145) and beta7 = `0581aa02c` has them.
 Errors: `BugseeArgumentException` (found in Dart before anything crosses; native defends again with `invalid-argument`),
 `ReportAttachmentException(reason)` (`ReportAttachmentFailure`: fileNotFound, notAFile, unreadable, tooLarge,
 limitReached, rejected, busy, unsupported, imageUndecodable, imageTooLarge), `ReportClosedError` (a late call on a
-handler's report, as in 3c) and its subclass `CreatedReportClosedError`, `CreateReportException` (`busy`, `timeout`).
+handler's report, as in 3c) and its subclass `CreatedReportClosedError`, `CreateReportException` (`busy`, `timeout`, `rateLimited`, `uploadTimeout`).
 
 **Left out, with the reason:** `createAndAddAttachment` / `Attachment.openStream()` (a stream cannot cross a bridge, and the
 spec says callers should not use it on an imported file); mutating a returned `Attachment` (`setName`, `setMimeType`,

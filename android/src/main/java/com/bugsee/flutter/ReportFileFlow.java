@@ -75,6 +75,13 @@ final class ReportFileFlow {
     /** How long the SDK may take to answer {@code createReport}: it runs the before handler (20 s) first. */
     static final long CREATE_TIMEOUT_MS = 45_000L;
 
+    /**
+     * How many created-report operations may wait at once. The worker's queue holds 64: the rest is kept
+     * for the one upload or discard (and the expiry) a report ends with, so they are always queued BEHIND
+     * the operations the app called first, never started beside them on a thread of their own.
+     */
+    static final int CREATED_OPS_LIMIT = 48;
+
     /** How long the SDK may take to say it took an uploaded report (its callback runs after the after-handler). */
     static final long UPLOAD_TIMEOUT_MS = 45_000L;
 
@@ -113,6 +120,9 @@ final class ReportFileFlow {
     private final Worker worker;
     /** A created report's operations, its upload and every discard. */
     private final Worker createdWorker;
+    /** Created-report operations waiting for or on the worker: capped below its queue so an upload or a discard always fits behind them. */
+    private final java.util.concurrent.atomic.AtomicInteger createdOpsQueued =
+            new java.util.concurrent.atomic.AtomicInteger();
     private final Main main;
     private final ReportOps.ImageDecoder images;
     private final Sdk sdk;
@@ -324,15 +334,23 @@ final class ReportFileFlow {
             answer(reply, ReportOps.NOT_LIVE);
             return;
         }
+        if (createdOpsQueued.incrementAndGet() > CREATED_OPS_LIMIT) {
+            createdOpsQueued.decrementAndGet();
+            answer(reply, ReportOps.BUSY);
+            return;
+        }
         final boolean queued = createdWorker.execute(() -> {
             try {
                 op.apply(report, ReportOps.OPEN);
                 answer(reply, null);
             } catch (final Throwable t) {
                 failure(reply, t);
+            } finally {
+                createdOpsQueued.decrementAndGet();
             }
         });
         if (!queued) {
+            createdOpsQueued.decrementAndGet();
             answer(reply, ReportOps.BUSY);
         }
     }

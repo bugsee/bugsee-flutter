@@ -16,6 +16,8 @@ FOUNDATION_EXPORT NSString *const BGSFlutterUploadTimeout;
 /// A created report that is not (or no longer) live: uploaded, discarded, expired or released.
 FOUNDATION_EXPORT NSString *const BGSFlutterFlowNotLive;
 FOUNDATION_EXPORT const int64_t BGSFlutterUploadTimeoutMs;
+/// How many created-report operations may wait at once (the worker's queue holds 64; the rest is kept for the upload).
+FOUNDATION_EXPORT const NSInteger BGSFlutterCreatedOpsLimit;
 /// The facade's codes, for an argument or an SDK fault (`BGSFlutterFacadeOps`).
 FOUNDATION_EXPORT NSString *const BGSFlutterFlowInvalidArgument;
 FOUNDATION_EXPORT NSString *const BGSFlutterFlowSdkError;

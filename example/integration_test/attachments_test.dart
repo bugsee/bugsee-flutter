@@ -105,7 +105,13 @@ class Bundle {
 Future<Bundle?> bundleWithSummary(String summary, {int seconds = 60}) async {
   final deadline = DateTime.now().add(Duration(seconds: seconds));
   while (DateTime.now().isBefore(deadline)) {
-    for (final f in bundles(Directory.systemTemp.parent)) {
+    List<File> found;
+    try {
+      found = bundles(Directory.systemTemp.parent);
+    } on FileSystemException {
+      found = const [];
+    }
+    for (final f in found) {
       try {
         final bundle = Bundle.fromZip(f.path, f.readAsBytesSync());
         if (bundle.request['summary'] == summary) return bundle;
@@ -115,6 +121,10 @@ Future<Bundle?> bundleWithSummary(String summary, {int seconds = 60}) async {
         // Not a report bundle.
       } on TypeError {
         // Still being written.
+      } on RangeError {
+        // Truncated: still being written.
+      } on FileSystemException {
+        // Removed or replaced by the SDK while it was read.
       }
     }
     if (endpoint.isNotEmpty) {

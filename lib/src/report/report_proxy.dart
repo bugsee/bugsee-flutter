@@ -224,8 +224,9 @@ final class ReportProxy {
   ///
   /// [path] must be an absolute file system path (`File.path`), not a URL, and must name a readable
   /// regular file: Android 10+ scoped storage and both platforms' sandboxes decide which files that
-  /// is (the app's own directories always are). There is no size limit on this path; the copy is a
-  /// native file copy and is not read into memory. The SDK takes at most 1000 attachments per report.
+  /// is (the app's own directories always are). A file may be at most [maxAttachmentFileBytes]
+  /// (otherwise [ReportAttachmentFailure.tooLarge]); the copy is a native file copy and is not read
+  /// into memory. The SDK takes at most 1000 attachments per report.
   ///
   /// Throws [BugseeArgumentException] for a path, name or type that is malformed (nothing was
   /// sent), [ReportAttachmentException] when the SDK or the file system refused it, and

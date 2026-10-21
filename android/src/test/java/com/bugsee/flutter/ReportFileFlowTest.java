@@ -641,4 +641,46 @@ public class ReportFileFlowTest {
         assertEquals(List.of("error:invalid-argument"), reply.got);
         assertEquals(0, createdState.adds.size());
     }
+
+    @Test
+    public void createdOperationsLeaveRoomForTheUploadAndTheDiscardBehindThem() throws Exception {
+        final String handle = create(new Replies<>());
+        final Replies<String> accepted = new Replies<>();
+        for (int i = 0; i < ReportFileFlow.CREATED_OPS_LIMIT; i++) {
+            flow.createdAddBytes(handle, new byte[] {1}, "b" + i, null, accepted);
+        }
+        final Replies<String> over = new Replies<>();
+        flow.createdAddBytes(handle, new byte[] {1}, "one too many", null, over);
+        main.drain();
+        assertEquals(List.of(ReportOps.BUSY), over.got);
+        assertEquals(ReportFileFlow.CREATED_OPS_LIMIT, createdWorker.tasks.size());
+        // The upload is queued behind every operation the app called first, not started beside them.
+        final Replies<Boolean> up = new Replies<>();
+        flow.upload(handle, up);
+        assertEquals(ReportFileFlow.CREATED_OPS_LIMIT + 1, createdWorker.tasks.size());
+        assertTrue(sdk.uploaded.isEmpty());
+        createdWorker.drain();
+        assertEquals("every add landed before the SDK was handed the report",
+                ReportFileFlow.CREATED_OPS_LIMIT, createdState.adds.size());
+        assertEquals(1, sdk.uploaded.size());
+        main.drain();
+        assertEquals(ReportFileFlow.CREATED_OPS_LIMIT, accepted.got.size());
+    }
+
+    @Test
+    public void theBudgetIsGivenBackWhenOperationsFinish() throws Exception {
+        final String handle = create(new Replies<>());
+        for (int round = 0; round < 3; round++) {
+            for (int i = 0; i < ReportFileFlow.CREATED_OPS_LIMIT; i++) {
+                flow.createdAddBytes(handle, new byte[] {1}, "b", null, new Replies<>());
+            }
+            createdWorker.drain();
+            main.drain();
+        }
+        final Replies<String> again = new Replies<>();
+        flow.createdAddBytes(handle, new byte[] {1}, "still fine", null, again);
+        createdWorker.drain();
+        main.drain();
+        assertEquals(List.of("ok"), again.got);
+    }
 }

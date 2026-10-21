@@ -302,6 +302,13 @@ after its first chunk, a refused connection, a request to the SDK's own endpoint
 | `statusText` | `OK`, `Created`, `Not Found` | none |
 | HTTP breadcrumb URL | `.../json?token=abc123&q=hello` (raw, see Privacy 6) | `.../json?token=%3Credacted%3E&q=hello` |
 
+Review-round re-run (same harness, 34 requests: a URL with `user:pw@` and a token, a response with `location` /
+`content-location` and a request with `referer`, a redirect the app follows itself): no `pw-SECRET`, `user:`, `u:p@` or
+`LOCSECRET` anywhere in `network.json` or the breadcrumbs on either platform; the URL-valued headers read
+`/final?token=<redacted>&x=<redacted>`, `http://h.example/x?a=<redacted>`, `http://h.example/p?k=<redacted>`; the manual
+redirect is two exchanges (`before`+`complete` 302, `before`+`complete` 301, `redirect: true` on iOS); Android 32 of 34
+submitted (2 filtered), iOS 30 (2 filtered, 2 redirect hops refused by design).
+
 Not shown on a device: a launched SDK with `capture.network` off (covered by the policy tests), a real server's acceptance of
 the upload (the stand-in refuses it on purpose so the bundle stays), the iOS `Launching`-window drop (the Dart gate never sends
 then).

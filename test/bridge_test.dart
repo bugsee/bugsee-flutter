@@ -37,7 +37,6 @@ class FakeHost extends BugseeBridgeHostApi {
   int resets = 0;
   final List<(bool, bool)> phases = [];
 
-  @override
   int failReset = 0;
 
   @override

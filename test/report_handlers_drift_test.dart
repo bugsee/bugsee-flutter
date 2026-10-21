@@ -122,48 +122,69 @@ void main() {
   );
 
   group('terminating is decided before anything else', () {
+    // Everything inside dispatchOnce that comes before the isTerminating branch is sliced out and
+    // must contain none of the protected uses; each use must still exist after the branch (a
+    // first-occurrence search could be satisfied by a later use while an earlier one slips in).
+    void guardOrder(
+      String source,
+      String start,
+      String branch,
+      List<String> uses,
+    ) {
+      final from = source.indexOf(start);
+      expect(from, isNonNegative, reason: start);
+      final terminating = source.indexOf(branch, from);
+      expect(terminating, greaterThan(from), reason: branch);
+      final before = source.substring(from, terminating);
+      for (final use in uses) {
+        expect(before, isNot(contains(use)), reason: 'before the branch: $use');
+        expect(
+          source.indexOf(use, terminating),
+          greaterThan(terminating),
+          reason: 'after the branch: $use',
+        );
+      }
+    }
+
     test(
       'Android: the isTerminating branch precedes every use of Dart, time or the report',
       () {
-        final terminating = pipelineJava.indexOf('if (isTerminating)');
-        expect(terminating, isPositive);
-        for (final later in [
-          'registrationFor(',
-          'scheduler.schedule(',
-          'platform.post(',
-          'handles.put(',
-          'safeId(report)',
-          'ReportOps.typeOf(',
-        ]) {
-          final at = pipelineJava.indexOf(later);
-          expect(at, greaterThan(terminating), reason: later);
-        }
+        guardOrder(
+          pipelineJava,
+          'private void dispatchOnce(',
+          'if (isTerminating)',
+          [
+            'registrationFor(',
+            'scheduler.schedule(',
+            'platform.post(',
+            'handles.put(',
+            'safeId(',
+            'ReportOps.typeOf(',
+            'clock.nowMs(',
+            'readOption(',
+            'threadName.current(',
+          ],
+        );
       },
     );
 
     test(
       'iOS: the isTerminating branch precedes every use of Dart, time or the report',
       () {
-        final terminating = pipelineObjc.indexOf('if (isTerminating)');
-        expect(terminating, isPositive);
-        for (final later in [
-          '_registrations',
-          '_schedule(',
-          '_platformPost(',
-          '_handles[handleId]',
-          'SafeReportId(report)',
-          'typeOfReport:',
-        ]) {
-          final at = pipelineObjc.indexOf(later, terminating);
-          expect(at, greaterThan(terminating), reason: later);
-        }
-        // ...and the report is not read before it: only the nil check comes first.
-        final before = pipelineObjc.substring(
-          pipelineObjc.indexOf('- (void)dispatchOnce:'),
-          terminating,
+        guardOrder(
+          pipelineObjc,
+          '- (void)dispatchOnce:',
+          'if (isTerminating)',
+          [
+            '_registrations',
+            '_schedule(',
+            '_platformPost(',
+            '_handles[',
+            'SafeReportId',
+            'typeOfReport',
+            '_clock(',
+          ],
         );
-        expect(before, isNot(contains('SafeReportId')));
-        expect(before, isNot(contains('typeOfReport')));
       },
     );
 

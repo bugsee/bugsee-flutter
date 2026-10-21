@@ -1,0 +1,35 @@
+{
+  "_comment": "Extracted from the native SDK sources by scripts/extract_report_enums.dart; do not edit by hand. Compared by test/report_enum_parity_test.dart.",
+  "pins": {
+    "android": "7.4.2",
+    "ios": "7.0.0-beta7"
+  },
+  "android": {
+    "IssueSeverity": {
+      "VeryLow": 1,
+      "Medium": 2,
+      "High": 3,
+      "Critical": 4,
+      "Blocker": 5
+    },
+    "IssueType": {
+      "Bug": "bug",
+      "Crash": "crash",
+      "Error": "error"
+    }
+  },
+  "ios": {
+    "BugseeSeverityLevel": {
+      "BugseeSeverityLow": 1,
+      "BugseeSeverityMedium": 2,
+      "BugseeSeverityHigh": 3,
+      "BugseeSeverityCritical": 4,
+      "BugseeSeverityBlocker": 5
+    },
+    "issueTypeStrings": [
+      "bug",
+      "crash",
+      "error"
+    ]
+  }
+}

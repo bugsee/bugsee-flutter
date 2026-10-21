@@ -137,8 +137,14 @@ void main() {
         'maxPayloadLength',
         'maxDomainLength',
       ]) {
-        expect(header, contains('@property(class, readonly)'));
-        expect(header, contains(name));
+        // Each is a CLASS property of its own (a plain method, or one shared declaration, is not).
+        expect(
+          RegExp(
+            r'@property\(class, readonly\)[^;]*\b' + name + r'\s*;',
+          ).hasMatch(header),
+          isTrue,
+          reason: name,
+        );
       }
       expect(
         objcOps,
@@ -188,6 +194,8 @@ void main() {
           contains('Bugsee.logUnhandledException(throwable, options)'),
         );
         expect(javaSdk, isNot(contains('onUncaughtException')));
+        expect(javaCode, contains('if (handled)'));
+        expect(javaCode, contains('sdk.logUnhandledException'));
         expect(
           javaCode.indexOf('if (handled)'),
           lessThan(javaCode.indexOf('sdk.logUnhandledException')),

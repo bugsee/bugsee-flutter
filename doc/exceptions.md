@@ -118,7 +118,7 @@ and on the platform thread a snapshot of up to a couple of seconds is jank or an
 a minute). A full queue drops the call, counts it and answers `false`; the launch gate runs on that thread, when the
 SDK call does; the reply goes back to the platform thread. **iOS** keeps the call on the main queue: the SDK's public
 API reads UIKit state (the report is built with the view hierarchy), and nothing in its source says it may be called
-elsewhere, so moving the PLCrashReporter write off main is not done blind; its cost on a device is **not measured**
+elsewhere, so moving the PLCrashReporter write off the main queue is not done blind; its cost on a device is **not measured**
 (unhandled errors are rare by default now: section 4).
 
 Measured on a device (`example/integration_test/exceptions_test.dart`): Android emulator API 29 (arm64) with a local

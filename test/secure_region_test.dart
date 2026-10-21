@@ -1009,6 +1009,27 @@ void main() {
       expect(native.sent, hasLength(2));
     });
 
+    testWidgets('a native side that keeps failing is not hit every frame, but '
+        'a changed state is still sent', (tester) async {
+      registry.dispose();
+      registry = SecureRegionRegistry(
+        publish: native.call,
+        epoch: 7,
+        retryDelay: null,
+        maxRetries: 3,
+      );
+      native.failNext = 1000;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pumpWidget(app(registry, at(registry, 10, 20))); // a frame
+      }
+      expect(native.sent.length, lessThanOrEqualTo(5));
+      final before = native.sent.length;
+      await tester.pumpWidget(app(registry, at(registry, 11, 20)));
+      expect(native.sent.length, before + 1, reason: 'a new state is tried');
+    });
+
     testWidgets('a failed clear is sent again, even though it is empty', (
       tester,
     ) async {

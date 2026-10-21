@@ -63,7 +63,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   Phase 4): `BugseeSecureRegion`/`RenderSecureRegion` + `SecureRegionRegistry`, measured every frame in a
   post-frame callback, published only when the set changed, ordered by `(epoch, sequence)`. Regions are
   reported UNCLIPPED through every ancestor transform (bounding box, including paint outside their box); a region is dropped only on positive evidence
-  (paintsChild, IndexedStack, a clipping viewport); a disabled TickerMode is not evidence and never because its layer is detached; an unmeasurable one covers the whole view.
+  (paintsChild, IndexedStack, a clipping viewport); neither a disabled TickerMode nor a detached layer counts as such evidence. An unmeasurable region covers the whole view.
   First-frame exposure of a newly appearing region remains.
   Known limits: see "Secure rectangle limits" in `.claude/CLAUDE.md`.
 - Report handlers: always call completion; `isTerminating=true` → synchronous native-only

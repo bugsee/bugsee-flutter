@@ -308,6 +308,7 @@ class SecureRegionRegistry {
   int _sequence = 0;
   int _failures = 0;
   Timer? _retry;
+  SecureState? _failedState;
 
   /// What native is known to hold, or `null` when that is unknown (a publish
   /// failed): then the next measurement is sent even if it is empty.
@@ -358,6 +359,16 @@ class SecureRegionRegistry {
     final SecureState state = measure();
     final SecureState? published = _published;
     if (published != null && sameState(published, state)) return;
+    // Native keeps failing for this very state (no plugin on this platform, a broken
+    // channel): stop resending it every frame once the retries are used up. A changed
+    // state is still sent, and a success resets the count.
+    final SecureState? failed = _failedState;
+    if (published == null &&
+        _failures > maxRetries &&
+        failed != null &&
+        sameState(failed, state)) {
+      return;
+    }
     _send(state);
   }
 
@@ -413,6 +424,7 @@ class SecureRegionRegistry {
     sent.then<void>(
       (_) {
         _failures = 0;
+        _failedState = null;
       },
       onError: (Object error, StackTrace stack) {
         // Only the newest attempt decides: an older one failing after a newer
@@ -422,6 +434,7 @@ class SecureRegionRegistry {
         // (desktop, a test) would fire this on every retry. The retry below
         // and `lastError` are the record.
         _published = null;
+        _failedState = state;
         _failures++;
         lastError = error;
         final delay = retryDelay;

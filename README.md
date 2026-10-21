@@ -23,13 +23,18 @@ Future<void> main() async {
       reportingDefaultsCrashPriority: ReportSeverity.critical,
     ),
   );
-  // LaunchResult.launched, .alreadyRunning or .deferred (see below)
+  // LaunchResult.launched, .alreadyRunning or .deferred: none of them is a failure (see below)
 
   runApp(const MyApp());
 }
 ```
 
-`Bugsee.launch` completes once the SDK reports that capture started. It throws a
+`Bugsee.launch` completes when the SDK answers: `launched` once capture started, `alreadyRunning`
+at once when the SDK is already launching or launched (your options were not applied), `deferred`
+on iOS when the app is not active yet (the SDK starts it later; a plain `await Bugsee.launch` before
+`runApp` was `launched` on the simulator, but an engine started during `didFinishLaunching` can see
+`deferred`). Use `await Bugsee.waitUntilLaunched()` to know that capture is running; it returns
+`false` if the launch failed or nothing happened within its timeout. It throws a
 `BugseeLaunchException` (with a `LaunchFailure` reason) when the SDK did not launch: a blank token,
 a stop still in progress, a refusal, an exception on the native side, or a platform without an SDK.
 
@@ -42,8 +47,8 @@ await Bugsee.getLaunchOptions(); // what is in effect: yours over the SDK's defa
 
 ### Options
 
-`BugseeOptions` has a typed, documented field for every option the SDKs register (101 at the pinned
-versions), named after its key: `capture.video.frame-rate` is `captureVideoFrameRate`. A field you
+`BugseeOptions` has a typed, documented field for every option the SDKs register except the leak module's and the
+deprecated ones (100 at the pinned versions; `custom` reaches the rest), named after its key: `capture.video.frame-rate` is `captureVideoFrameRate`. A field you
 leave out keeps the SDK's own default; several defaults differ between Android and iOS, and each
 field's documentation says which. The fields are generated from the manifests the two SDKs publish
 (`test/fixtures/option_manifests`), so they cannot drift from the SDKs. Enums carry the SDK's
@@ -73,10 +78,11 @@ internal value, never an ordinal.
   android:value="false"/>`. Events that happened before the first call into the plugin are
   delivered when it attaches (the latest status is replayed), so `statusChanges` still reports
   `launching`, `launched`.
-- **iOS** has no auto-init. A launch while the app is in the background is deferred by the SDK until
-  the app is active (`LaunchResult.deferred`).
+- **iOS** has no auto-init. A launch while the app's state is still background is deferred by the SDK
+  until the app is active (`LaunchResult.deferred`); `waitUntilLaunched` settles it.
 - `stop()` and `launch()` again is how options change; a launch while a stop is still in progress
-  is refused (`LaunchFailure.stopping`), so `await Bugsee.stop()` first.
+  is refused (`LaunchFailure.stopping`), so `await Bugsee.stop()` first (on iOS too, even for a `stop()`
+you did not await: the plugin marks the stop before the SDK does).
 - `getHostLaunchOptions()` differs between the platforms: Android returns every option you passed,
   iOS only those that differ from the iOS default. `getLaunchOptions()` is the same on both.
 

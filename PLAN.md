@@ -95,8 +95,8 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
 ### 4a — options, launch, stop, status (done)
 
 The first public API: `Bugsee.launch(token, {options})`, `stop()`, `status`, `statusChanges`,
-`getStatus()`, `isLaunched()`, `getLaunchOptions()`, `getHostLaunchOptions()`, `BugseeOptions` (101
-typed fields), `LaunchResult`, `LaunchFailure`, `BugseeException`/`BugseeLaunchException`,
+`getStatus()`, `isLaunched()`, `getLaunchOptions()`, `getHostLaunchOptions()`, `BugseeOptions` (100
+typed fields), `waitUntilLaunched()`, `LaunchResult`, `LaunchFailure`, `BugseeException`/`BugseeLaunchException`,
 `BugseeStatus`, the option enums and `ReportSeverity`. The report-handler registration API and the
 secure-region widget stay internal (4b).
 
@@ -126,6 +126,12 @@ secure-region widget stay internal (4b).
 - **Runtime evidence** (emulator-5562, Android 7.4.2; iPhone 17 simulator, iOS 7.0.0-beta7): `example/integration_test/launch_test.dart`
   passes on both: `launching, launched, [already running], stopping, stopped, launching, launched, stopping`; the SDK reports our
   option values back (enums as internal integers); a blank token is a typed `invalidToken`.
+- Review follow-ups: a stop in flight is marked natively on iOS (the SDK sets Stopping a main-queue hop after `+stop:`; Android sets
+  it synchronously, no window); a custom enum NAME is mapped to its number; an unknown severity is left out (the SDK's
+  `fromIntValue` answers VeryLow); deprecated options (one: `capture.webview.domain-allowlist`, a documented no-op) have no typed field;
+  `deferred` is documented as not-a-failure with `waitUntilLaunched` to settle it. A cold-start `await Bugsee.launch` before `runApp`
+  returned `launched` on the iOS simulator (both under the test harness and a real `flutter run` cold start), so `deferred` there needs an
+  app that is not yet active (engine started in `didFinishLaunching`); not reproduced.
 - Not verified at runtime: launch refused while stopping (a race, covered by JUnit/XCTest/Dart with fakes), iOS background deferral,
   token rejection by the SDK itself (a placeholder token launches), the leak module, tvOS/visionOS.
 

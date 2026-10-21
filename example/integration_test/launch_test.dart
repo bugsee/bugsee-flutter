@@ -138,7 +138,23 @@ void main() {
       (await Bugsee.getLaunchOptions())['com.bugsee.option.config.duration'],
       20,
     );
-    await Bugsee.stop();
+    expect(await Bugsee.waitUntilLaunched(), isTrue);
+
+    // A launch right after a stop that was NOT awaited is refused (iOS marks the stop before the
+    // SDK moves to Stopping a main-queue hop later; Android sets it synchronously).
+    final stopping = Bugsee.stop();
+    await expectLater(
+      Bugsee.launch(defaultToken),
+      throwsA(
+        isA<BugseeLaunchException>().having(
+          (e) => e.reason,
+          'reason',
+          LaunchFailure.stopping,
+        ),
+      ),
+    );
+    await stopping;
+    expect(await Bugsee.getStatus(), BugseeStatus.stopped);
 
     debugPrint(
       'integration: transitions = ${seen.map((s) => s.name).join(', ')}',

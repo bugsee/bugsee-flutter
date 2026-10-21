@@ -9,7 +9,8 @@ enum LaunchResult {
   launched,
 
   /// The SDK was already launching or launched, so nothing was done and the options passed to
-  /// this call were NOT applied.
+  /// this call were NOT applied. Completes at once: if the SDK is still `launching`, capture has
+  /// not started yet (use `Bugsee.waitUntilLaunched`).
   ///
   /// The usual cause on Android is the SDK's own auto-init: when the app's manifest declares
   /// `com.bugsee.app-token` meta-data the SDK launches from a content provider before any Dart
@@ -18,8 +19,15 @@ enum LaunchResult {
   /// Dart is the other cause.
   alreadyRunning,
 
-  /// iOS only: the app was in the background when this was called, so the SDK starts when the
-  /// app becomes active. The options are kept for that start; `Bugsee.statusChanges` reports it.
+  /// iOS only: the SDK accepted the launch but starts it later, when the app becomes active; nothing
+  /// is capturing yet, and the options are kept for that start. NOT a failure, and not rare in
+  /// principle: the SDK defers every launch made while the app's state is still `background`, which
+  /// can include one made during `application(_:didFinishLaunchingWithOptions:)` (a plain
+  /// `await Bugsee.launch` before `runApp` was `launched` on the simulator, in the example app).
+  ///
+  /// Do not treat anything but `launched` as a failure. To know the outcome, await
+  /// `Bugsee.waitUntilLaunched`, or watch `Bugsee.statusChanges` (`launching`, then `launched`; a
+  /// launch that fails afterwards shows as `stopped` again, and is otherwise silent).
   deferred,
 }
 

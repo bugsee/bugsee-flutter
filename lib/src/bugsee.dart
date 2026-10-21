@@ -30,11 +30,14 @@ abstract final class Bugsee {
   /// [options] configure the SDK for this launch. They are ignored when the SDK is already
   /// running (see [LaunchResult.alreadyRunning]); stop it first to change them.
   ///
-  /// Completes with what happened:
-  ///  * [LaunchResult.launched]: capture started;
-  ///  * [LaunchResult.alreadyRunning]: the SDK was running already; nothing was changed;
-  ///  * [LaunchResult.deferred]: iOS, the app is in the background; the SDK starts when it is
-  ///    active.
+  /// Completes with what happened. This is when the SDK answered, which is not always "capture
+  /// started":
+  ///  * [LaunchResult.launched]: the SDK launched and capture started;
+  ///  * [LaunchResult.alreadyRunning]: the SDK was already `launching` or `launched`; nothing was
+  ///    changed and these options were not applied (if it is still `launching`, capture has not
+  ///    started: see [waitUntilLaunched]);
+  ///  * [LaunchResult.deferred]: iOS, the app is not active yet; the SDK starts when it is. Not a
+  ///    failure: do not write `if (result != LaunchResult.launched)`; see [waitUntilLaunched].
   ///
   /// Throws a [BugseeLaunchException] when the SDK did not launch (a blank token, a stop still in
   /// progress, a refusal, an exception native side, an unsupported platform), and an
@@ -48,6 +51,17 @@ abstract final class Bugsee {
     String token, {
     BugseeOptions options = const BugseeOptions(),
   }) => _runtime.launch(token, options);
+
+  /// Completes with whether the SDK is launched, waiting for a launch that is still starting:
+  /// the answer to [LaunchResult.deferred] (iOS, the usual result of launching before `runApp`)
+  /// and to [LaunchResult.alreadyRunning] while the SDK is still `launching`.
+  ///
+  /// `true` as soon as the status is `launched`. `false` when the launch failed (the status went
+  /// back to `stopped` after `launching`) or nothing happened within [timeout]. A deferred launch
+  /// that never starts (the app is never active) times out. Never throws for a failed launch.
+  static Future<bool> waitUntilLaunched({
+    Duration timeout = const Duration(seconds: 30),
+  }) => _runtime.waitUntilLaunched(timeout);
 
   /// Stops the SDK; completes when it has stopped (at once if it was not running). A launch
   /// before that is refused ([LaunchFailure.stopping]).

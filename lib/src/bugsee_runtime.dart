@@ -4,7 +4,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kDebugMode;
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart'
+    show MissingPluginException, PlatformException;
 import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 
 import 'bridge/bridge.dart';
@@ -28,7 +29,10 @@ final class BugseeRuntime {
     BugseeBridge? bridge,
     OptionPlatform? Function()? platform,
     void Function(String message)? warn,
-  }) : host = host ?? BugseeBridgeHostApi(),
+    void Function()? ensureBinding,
+  }) : _ensureBinding =
+           ensureBinding ?? WidgetsFlutterBinding.ensureInitialized,
+       host = host ?? BugseeBridgeHostApi(),
        _platform = platform ?? currentOptionPlatform,
        _warn = warn ?? _debugWarn {
     this.bridge = bridge ?? BugseeBridge(host: this.host);
@@ -38,6 +42,7 @@ final class BugseeRuntime {
   late final BugseeBridge bridge;
   final OptionPlatform? Function() _platform;
   final void Function(String) _warn;
+  final void Function() _ensureBinding;
 
   static void _debugWarn(String message) {
     if (kDebugMode) debugPrint('bugsee_flutter: $message');
@@ -47,9 +52,24 @@ final class BugseeRuntime {
   /// phases). Idempotent while it succeeds; an error is a [BugseeException] and the next call
   /// tries again.
   Future<void> ensureStarted() async {
-    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      _ensureBinding();
+    } catch (e) {
+      // A background isolate has no binding and no platform channels of its own.
+      throw BugseeException(
+        'Bugsee can only be used from the root isolate (the one that runs main); call it there '
+        'and pass results to other isolates. ($e)',
+        cause: e,
+      );
+    }
     try {
       await bridge.start();
+    } on MissingPluginException catch (e) {
+      throw BugseeException(
+        'the native Bugsee plugin is not registered (a platform without it, or a missing '
+        'rebuild after adding the dependency): ${e.message}',
+        cause: e,
+      );
     } on PlatformException catch (e) {
       throw BugseeException(
         'could not attach to the native Bugsee SDK: ${e.message ?? e.code}',
@@ -189,6 +209,34 @@ final class BugseeRuntime {
       for (final e in raw.entries)
         if (optionSpecForKey(e.key)?.hidden != true) e.key: e.value,
     });
+  }
+
+  /// Completes with whether the SDK is launched, waiting for a launch that is still starting or
+  /// was deferred. `false` when it fails (goes back to stopped after launching) or [timeout] passes.
+  Future<bool> waitUntilLaunched(Duration timeout) async {
+    await ensureStarted();
+    final done = Completer<bool>();
+    var sawLaunching = false;
+    // Subscribe BEFORE reading, so a transition between the read and the listen is not missed.
+    final sub = statusChanges.listen((s) {
+      if (s == BugseeStatus.launched) {
+        if (!done.isCompleted) done.complete(true);
+      } else if (s == BugseeStatus.launching) {
+        sawLaunching = true;
+      } else if (s == BugseeStatus.stopped && sawLaunching) {
+        if (!done.isCompleted) done.complete(false);
+      }
+    });
+    try {
+      final now = await getStatus();
+      if (now == BugseeStatus.launched && !done.isCompleted) {
+        done.complete(true);
+      }
+      if (now == BugseeStatus.launching) sawLaunching = true;
+      return await done.future.timeout(timeout, onTimeout: () => false);
+    } finally {
+      await sub.cancel();
+    }
   }
 
   Stream<BugseeStatus> get statusChanges => bridge.statusChanges;

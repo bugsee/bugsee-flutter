@@ -8,7 +8,8 @@ import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/bugsee_runtime.dart';
 import 'package:bugsee_flutter/src/launch.dart';
 import 'package:bugsee_flutter/src/options/option_registry.dart';
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart'
+    show MissingPluginException, PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A native end that records calls and answers as scripted.
@@ -80,6 +81,13 @@ class FakeNative extends BugseeBridgeHostApi {
     if (optionsThrows != null) throw optionsThrows!;
     return options;
   }
+}
+
+/// A host whose plugin is missing: every call is a MissingPluginException.
+class _MissingPlugin extends FakeNative {
+  @override
+  Future<void> attachLifecycle() async =>
+      throw MissingPluginException('no implementation');
 }
 
 LaunchOutcomeMessage refused(String reason) =>
@@ -345,6 +353,123 @@ void main() {
         expect(await Bugsee.launch('tok'), LaunchResult.launched);
       },
     );
+  });
+
+  group('waitUntilLaunched (the answer to deferred and to launching)', () {
+    Future<bool> waitWith(
+      List<String> events, {
+      String initial = 'stopped',
+      Duration timeout = const Duration(seconds: 2),
+    }) async {
+      native.statusName = initial;
+      final f = Bugsee.waitUntilLaunched(timeout: timeout);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      for (final e in events) {
+        runtime.bridge.onLifecycleEvent(LifecycleEventMessage(name: e));
+      }
+      return f;
+    }
+
+    test('true at once when the SDK is already launched', () async {
+      expect(await waitWith([], initial: 'launched'), isTrue);
+    });
+
+    test('true when launching then launched is heard', () async {
+      expect(await waitWith(['Launching', 'Launched']), isTrue);
+    });
+
+    test(
+      'a stopped BEFORE launching (still deferred) is not a failure',
+      () async {
+        expect(await waitWith(['Stopped', 'Launching', 'Launched']), isTrue);
+      },
+    );
+
+    test('false when a launch that began goes back to stopped', () async {
+      // Settled by the failure itself, not by the (long) timeout.
+      expect(
+        await waitWith(
+          ['Launching', 'Stopped'],
+          timeout: const Duration(seconds: 30),
+        ).timeout(const Duration(seconds: 2)),
+        isFalse,
+      );
+      // Already launching when asked, then it fails.
+      expect(
+        await waitWith(
+          ['Stopped'],
+          initial: 'launching',
+          timeout: const Duration(seconds: 30),
+        ).timeout(const Duration(seconds: 2)),
+        isFalse,
+      );
+    });
+
+    test('false when nothing happens within the timeout', () async {
+      expect(
+        await waitWith([], timeout: const Duration(milliseconds: 60)),
+        isFalse,
+      );
+    });
+  });
+
+  group('outside the root isolate', () {
+    test(
+      'a missing binding is a clear BugseeException, not a stray error',
+      () async {
+        final r = BugseeRuntime(
+          host: native,
+          platform: () => OptionPlatform.android,
+          warn: warnings.add,
+          ensureBinding: () =>
+              throw StateError('Binding has not yet been initialized'),
+        );
+        Bugsee.debugSetRuntime(r);
+        await expectLater(
+          Bugsee.launch('tok'),
+          throwsA(
+            isA<BugseeLaunchException>().having(
+              (e) => e.message,
+              'message',
+              contains('root isolate'),
+            ),
+          ),
+        );
+        await expectLater(
+          Bugsee.stop(),
+          throwsA(
+            isA<BugseeException>().having(
+              (e) => e.message,
+              'message',
+              contains('root isolate'),
+            ),
+          ),
+        );
+        // The getters that cannot wait do not throw.
+        expect(Bugsee.status, BugseeStatus.stopped);
+        await Future<void>.delayed(Duration.zero);
+        expect(native.calls, isEmpty, reason: 'nothing native was touched');
+      },
+    );
+
+    test('a plugin that is not registered is a BugseeException too', () async {
+      final r = BugseeRuntime(
+        host: _MissingPlugin(),
+        platform: () => OptionPlatform.ios,
+        warn: warnings.add,
+      );
+      Bugsee.debugSetRuntime(r);
+      await expectLater(
+        Bugsee.launch('tok'),
+        throwsA(
+          isA<BugseeLaunchException>().having(
+            (e) => e.message,
+            'message',
+            contains('not registered'),
+          ),
+        ),
+      );
+    });
   });
 
   group('stop', () {

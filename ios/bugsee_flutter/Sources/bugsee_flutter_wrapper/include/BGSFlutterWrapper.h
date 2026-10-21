@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 @class BGSFlutterLifecycleHub;
+@class BGSFlutterReportHandlerPipeline;
 @class BGSFlutterSecureRectangleStore;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -9,9 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// identity lives. Declared without conforming to `BugseeWrapper` here so the
 /// header needs no SDK import; the conformance is declared in the .m.
 ///
-/// Identity is real (workbook Part 3) and lifecycle events are forwarded (Part 4).
-/// The rest is a deliberately inert stub until Phase 3 gives it behaviour. None of
-/// it throws.
+/// Identity is real (workbook Part 3), lifecycle events are forwarded (Part 4), report
+/// handlers go through `BGSFlutterReportHandlerPipeline` (Part 7), and data requests are
+/// answered with nil until Phase 5. None of it throws.
 ///
 /// This object is replaced mid-session when Dart refines the identity, so it holds
 /// no state that must survive: lifecycle events go to the process-wide
@@ -41,6 +42,15 @@ NS_ASSUME_NONNULL_BEGIN
                         context:(nullable id)context
                             hub:(BGSFlutterLifecycleHub *)hub
                secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles;
+
+/// As above with every process-wide collaborator supplied; for tests.
++ (instancetype)wrapperWithType:(nullable id)type
+                        version:(nullable id)version
+                          build:(nullable id)build
+                        context:(nullable id)context
+                            hub:(BGSFlutterLifecycleHub *)hub
+               secureRectangles:(BGSFlutterSecureRectangleStore *)secureRectangles
+                        reports:(BGSFlutterReportHandlerPipeline *)reports;
 
 @end
 

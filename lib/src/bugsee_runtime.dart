@@ -21,6 +21,8 @@ import 'options/option_registry.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
+import 'view_hierarchy/controller.dart';
+import 'view_hierarchy/publisher.dart';
 
 /// The platform this runs on, as the options registry knows it; `null` for any other.
 OptionPlatform? currentOptionPlatform() => switch (defaultTargetPlatform) {
@@ -36,7 +38,9 @@ final class BugseeRuntime {
     OptionPlatform? Function()? platform,
     void Function(String message)? warn,
     void Function()? ensureBinding,
-  }) : _ensureBinding =
+    ViewHierarchyController? viewHierarchy,
+  }) : _viewHierarchyOverride = viewHierarchy,
+       _ensureBinding =
            ensureBinding ?? WidgetsFlutterBinding.ensureInitialized,
        host = host ?? BugseeBridgeHostApi(),
        _platform = platform ?? currentOptionPlatform,
@@ -49,6 +53,19 @@ final class BugseeRuntime {
   final OptionPlatform? Function() _platform;
   final void Function(String) _warn;
   final void Function() _ensureBinding;
+  final ViewHierarchyController? _viewHierarchyOverride;
+  bool _viewHierarchyAttached = false;
+
+  /// Publishes the managed view hierarchy (`vh`) while the SDK is launched, its capture option is
+  /// on and the app is in the foreground. Created on first use: nothing is observed before then.
+  late final ViewHierarchyController viewHierarchy =
+      _viewHierarchyOverride ??
+      ViewHierarchyController(
+        publisher: ViewHierarchyPublisher.instance,
+        readOption: () async =>
+            (await launchOptions(hostOnly: false))[viewHierarchyOptionKey] ==
+            true,
+      );
 
   static void _debugWarn(String message) {
     if (kDebugMode) debugPrint('bugsee_flutter: $message');
@@ -61,6 +78,11 @@ final class BugseeRuntime {
     _requireBinding();
     try {
       await bridge.start();
+      // After the bridge is attached its status is current (native replays the latest event).
+      if (!_viewHierarchyAttached) {
+        _viewHierarchyAttached = true;
+        viewHierarchy.attach(bridge.status, bridge.statusChanges);
+      }
     } on MissingPluginException catch (e) {
       throw BugseeException(
         'the native Bugsee plugin is not registered (a platform without it, or a missing '

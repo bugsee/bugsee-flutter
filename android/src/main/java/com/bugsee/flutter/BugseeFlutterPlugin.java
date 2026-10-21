@@ -57,6 +57,15 @@ public class BugseeFlutterPlugin
         return sharedEnvironment;
     }
 
+    /** On the main thread: now, so the answer is exact. Elsewhere: the pull's throttled post. */
+    private static void refreshForViewHierarchy() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            refreshPlacements();
+        } else {
+            PULLS.request();
+        }
+    }
+
     private static void refreshPlacements() {
         try {
             for (final SecurePlacement placement : PLACEMENTS) {
@@ -92,6 +101,9 @@ public class BugseeFlutterPlugin
         placement = new SecurePlacement(owner, binding.getFlutterEngine(), store, environment);
         PLACEMENTS.add(placement);
         store.setPullHook(PULLS::request);
+        // The SDK asks for `vh` on the main thread: re-read the placements right there (a post
+        // from the main thread would only be seen by the NEXT request).
+        ViewHierarchyStore.shared().setRefresher(BugseeFlutterPlugin::refreshForViewHierarchy);
         ReportHandlerPipeline.shared().attach(reportOwner, this::sendReportRequest);
         // No activity yet: where the view is is not known, so cover rather than guess.
         store.setPlacement(owner, SecurePlacement.IMPLICIT_VIEW_ID,
@@ -134,6 +146,7 @@ public class BugseeFlutterPlugin
         ReportHandlerPipeline.shared().detach(reportOwner);
         // The engine's UI is gone; there is nothing left of it to hide.
         SecureRectangleStore.shared().dropOwner(owner);
+        ViewHierarchyStore.shared().dropOwner(owner);
         final LifecycleHub.Sink stale = sink;
         if (stale != null) {
             LifecycleHub.shared().detach(stale);
@@ -193,6 +206,20 @@ public class BugseeFlutterPlugin
             placement.refresh();
         }
         return applied;
+    }
+
+    @NonNull
+    @Override
+    public Boolean setViewHierarchy(@NonNull final Messages.ViewHierarchyMessage snapshot) {
+        final List<Double> flat = snapshot.getBounds();
+        final double[] bounds = new double[flat.size()];
+        for (int i = 0; i < bounds.length; i++) {
+            bounds[i] = flat.get(i);
+        }
+        return ViewHierarchyStore.shared().publish(
+                owner, snapshot.getEpoch(), snapshot.getSequence(),
+                snapshot.getViewId().intValue(), snapshot.getDevicePixelRatio(),
+                snapshot.getSegments(), bounds);
     }
 
     // ---- Report handlers (workbook Part 7) --------------------------------------------

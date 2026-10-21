@@ -112,6 +112,8 @@ The wrapper queues nothing (same rule as every other call) and gates **both** pa
 being Launching or Launched, so the answer `false` means "not handed over" and iOS's ungated unhandled path cannot
 write a crash report with the SDK stopped.
 
+Like every facade call, a report attaches the plugin lazily (`_call` -> `ensureStarted`: lifecycle channel, wrapper identity, the serialized report-handler phases) on first use, so the first error may be the call that attaches; a failure to attach is a `BugseeException` for an explicit call and swallowed for an installed handler.
+
 **Threads.** The bridge method is `@async`. **Android** runs the SDK call on its own single daemon thread
 (`ExceptionDispatcher`) with a bounded queue of 32: the SDK writes an unhandled report on the thread that calls it,
 and on the platform thread a snapshot of up to a couple of seconds is jank or an ANR (the installed handlers allow ten

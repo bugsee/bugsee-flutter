@@ -304,7 +304,8 @@ abstract final class Bugsee {
   /// Every SDK lifecycle event ([LifecycleEvent]), from when a listener subscribes, including
   /// names this version does not know. A broadcast stream; the status transitions are also on
   /// [statusChanges]. Events the SDK raised before the plugin attached are delivered when it does
-  /// (the first call into this class attaches it); the app's event limits are in [LifecycleEvent].
+  /// (the first call into this class attaches it); what a late listener misses is described on
+  /// [LifecycleEvent].
   static Stream<LifecycleEvent> get lifecycleEvents {
     _runtime.ensureStartedInBackground();
     return _runtime.lifecycleEvents;

@@ -12,9 +12,9 @@ static const NSInteger kHeaderInts = 2;
 static const int32_t kFallbackDisplaySize = 16384;
 /// Largest magnitude served: keeps the SDK's own arithmetic away from overflow.
 static const double kLimit = 268435456.0;  // 2^28
-/// How long the previous set is served along with a changed one. Repeated in Java (GRACE_MS).
+/// How long each past set is served after it stopped being current. Repeated in Java (GRACE_MS).
 static const NSTimeInterval kGraceSeconds = 0.12;
-/// More rectangles than this and the previous set is collapsed to its bounding box.
+/// More rectangles than this and the past sets still being served are collapsed to their bounding box.
 static const NSUInteger kMaxRectangles = 64;
 /// How far a message's ratio may differ from the screen's (floating-point noise).
 static const double kRatioTolerance = 1e-3;

@@ -106,10 +106,10 @@ final class SecureRectangleStore {
     /** Largest magnitude served: keeps the SDK's own int arithmetic away from overflow. */
     private static final double LIMIT = 1 << 28;
 
-    /** How long the previous set is served along with a changed one. Repeated in ObjC. */
+    /** How long each past set is served after it stopped being current. Repeated in ObjC. */
     static final long GRACE_MS = 120;
 
-    /** More rectangles than this and the previous set is collapsed to its bounding box. */
+    /** More rectangles than this and the past sets still being served are collapsed to their bounding box. */
     private static final int MAX_RECTANGLES = 64;
 
     /** The densities a message may differ from the display's by (floating-point noise). */

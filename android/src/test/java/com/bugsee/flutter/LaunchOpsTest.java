@@ -27,6 +27,9 @@ public class LaunchOpsTest {
     private static final class FakeSdk implements LaunchOps.Sdk {
         String status = "stopped";
         boolean launchResult = true;
+        /** How many times the SDK calls its completion back (a misbehaving SDK calls it twice). */
+        int callbacks = 1;
+        boolean throwAfterCallback;
         RuntimeException launchThrows;
         final List<String> launches = new ArrayList<>();
         Map<String, Serializable> launchedWith;
@@ -47,7 +50,12 @@ public class LaunchOpsTest {
             }
             launches.add(token);
             launchedWith = opts;
-            done.run(launchResult);
+            for (int i = 0; i < callbacks; i++) {
+                done.run(launchResult);
+            }
+            if (throwAfterCallback) {
+                throw new IllegalStateException("after the callback");
+            }
         }
 
         @Override
@@ -99,6 +107,26 @@ public class LaunchOpsTest {
         assertEquals(java.util.Collections.singletonList(LaunchOps.LAUNCHED), r.outcomes);
         assertNull(r.reasons.get(0));
         assertTrue(r.errors.isEmpty());
+    }
+
+    @Test
+    public void anSdkThatCallsBackTwiceIsAnsweredOnce() {
+        final FakeSdk sdk = new FakeSdk();
+        sdk.callbacks = 2;
+        final Recorder r = new Recorder();
+        LaunchOps.launch(sdk, "tok", null, r, r);
+        assertEquals(java.util.Collections.singletonList(LaunchOps.LAUNCHED), r.outcomes);
+        assertTrue(r.errors.isEmpty());
+    }
+
+    @Test
+    public void anSdkThatCallsBackAndThenThrowsHasAlreadyBeenAnswered() {
+        final FakeSdk sdk = new FakeSdk();
+        sdk.throwAfterCallback = true;
+        final Recorder r = new Recorder();
+        LaunchOps.launch(sdk, "tok", null, r, r);
+        assertEquals(java.util.Collections.singletonList(LaunchOps.LAUNCHED), r.outcomes);
+        assertTrue("not also an error", r.errors.isEmpty());
     }
 
     @Test

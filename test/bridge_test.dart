@@ -38,9 +38,15 @@ class FakeHost extends BugseeBridgeHostApi {
   int resets = 0;
   final List<(bool, bool)> phases = [];
 
+  int failReset = 0;
+
   @override
   Future<void> resetReportHandlers() async {
     calls.add('reset');
+    if (failReset > 0) {
+      failReset--;
+      throw PlatformException(code: 'channel-error');
+    }
     resets++;
   }
 
@@ -252,6 +258,52 @@ void main() {
       expect(host.calls, ['attach', 'reset', 'phases', 'identity']);
       // A new isolate has no report handler yet: native must not wait on one.
       expect(host.phases, [(false, false)]);
+    });
+
+    test('handlers registered BEFORE start still sweep the old isolate, once, '
+        'before any phase registration', () async {
+      await bridge.setReportHandlers(onBefore: (_) {});
+      await bridge.start(facts: _facts);
+      expect(host.resets, 1);
+      expect(
+        host.calls.indexOf('reset'),
+        lessThan(host.calls.indexOf('phases')),
+        reason: 'the sweep also clears native phases: it must come first',
+      );
+      expect(host.calls.where((c) => c == 'reset'), hasLength(1));
+      // The handler registered before start() is what native was told.
+      expect(host.phases.last, (true, false));
+    });
+
+    test('handlers registered AFTER start() do not sweep again', () async {
+      await bridge.start(facts: _facts);
+      await bridge.setReportHandlers(onAfter: (_) {});
+      expect(host.resets, 1);
+      expect(host.phases, [(false, false), (false, true)]);
+    });
+
+    test('a failed sweep is not cached: the next registration repeats it, '
+        'before its phases', () async {
+      host.failReset = 1;
+      await expectLater(
+        bridge.setReportHandlers(onBefore: (_) {}),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(host.calls, ['reset']);
+      await bridge.setReportHandlers(onBefore: (_) {});
+      expect(host.calls, ['reset', 'reset', 'phases']);
+    });
+
+    test('start() and setReportHandlers racing sweep once', () async {
+      await Future.wait([
+        bridge.setReportHandlers(onBefore: (_) {}),
+        bridge.start(facts: _facts),
+      ]);
+      expect(host.resets, 1);
+      expect(
+        host.calls.indexOf('reset'),
+        lessThan(host.calls.indexOf('phases')),
+      );
     });
 
     test(

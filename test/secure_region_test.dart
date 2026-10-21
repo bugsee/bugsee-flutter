@@ -1015,6 +1015,181 @@ void main() {
       expect(native.sent.length, before + 1, reason: 'a new state is tried');
     });
 
+    // The registry's clock, advanced together with the fake time of the pumps.
+    var fakeNow = Duration.zero;
+    setUp(() => fakeNow = Duration.zero);
+
+    SecureRegionRegistry slowRetry(
+      Recorder native, {
+      int maxRetries = 5,
+      Duration retry = const Duration(milliseconds: 100),
+      Duration cap = const Duration(seconds: 1),
+    }) => SecureRegionRegistry(
+      publish: native.call,
+      epoch: 7,
+      retryDelay: retry,
+      maxRetryDelay: cap,
+      maxRetries: maxRetries,
+      clock: () => fakeNow,
+    );
+
+    /// Pumps [total] of fake time in 16 ms frames.
+    Future<void> runFrames(WidgetTester tester, Duration total) async {
+      for (
+        var t = Duration.zero;
+        t < total;
+        t += const Duration(milliseconds: 16)
+      ) {
+        fakeNow += const Duration(milliseconds: 16);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+
+    testWidgets('retries back off 1x, 2x, 4x ... and stop growing at the cap', (
+      tester,
+    ) async {
+      registry.dispose();
+      registry = slowRetry(native);
+      native.failNext = 1000;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await tester.pump(); // failure 1 delivered, next try in 100 ms
+      expect(native.sent, hasLength(1));
+      for (var i = 0; i < 3; i++) {
+        // frames in between do not resend the state that just failed
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      }
+      expect(native.sent, hasLength(1));
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(native.sent, hasLength(1));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(native.sent, hasLength(2)); // t = 110 ms, next in 200 ms
+      await tester.pump(const Duration(milliseconds: 190));
+      expect(native.sent, hasLength(2));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(native.sent, hasLength(3)); // next in 400 ms
+      await tester.pump(const Duration(milliseconds: 390));
+      expect(native.sent, hasLength(3));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(native.sent, hasLength(4)); // next in 800 ms
+      await tester.pump(const Duration(milliseconds: 820));
+      await tester.pump();
+      expect(native.sent, hasLength(5)); // next in 1000 ms (the cap)
+      await tester.pump(const Duration(milliseconds: 990));
+      expect(native.sent, hasLength(5));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(native.sent, hasLength(6));
+      await tester.pump(const Duration(milliseconds: 1010));
+      await tester.pump();
+      expect(native.sent, hasLength(7)); // still 1000 ms, not growing
+      registry.dispose(); // the retry timer would still be pending
+    });
+
+    testWidgets('a long outage does not make the registry give up: the state '
+        'is republished once native recovers', (tester) async {
+      registry.dispose();
+      registry = slowRetry(native);
+      native.failNext = 1000;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await runFrames(
+        tester,
+        const Duration(seconds: 60),
+      ); // far past the budget
+      native.failNext = 0;
+      native.sent.clear();
+      await runFrames(tester, const Duration(seconds: 2));
+      expect(native.sent, isNotEmpty, reason: 'the stale mask is repaired');
+      expect(native.latest[0], [10, 20, 110, 70]);
+      // And it is quiet again afterwards.
+      native.sent.clear();
+      await runFrames(tester, const Duration(seconds: 5));
+      expect(native.sent, isEmpty);
+    });
+
+    testWidgets('a transport that keeps failing is not flooded, frames or '
+        'not, even while the region moves', (tester) async {
+      registry.dispose();
+      registry = slowRetry(
+        native,
+        retry: const Duration(seconds: 1),
+        cap: const Duration(seconds: 30),
+      );
+      native.failNext = 1000000;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      for (var i = 0; i < 1250; i++) {
+        // ~20 s of frames, a region that moves in every one
+        await tester.pumpWidget(app(registry, at(registry, 10.0 + i, 20)));
+        fakeNow += const Duration(milliseconds: 16);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // 5 quick tries plus at most about one per second, not one per frame (1250).
+      expect(native.sent.length, lessThan(40));
+      registry.dispose();
+    });
+
+    testWidgets('the boundary: the retry after exactly maxRetries failures '
+        'is still made', (tester) async {
+      registry.dispose();
+      registry = slowRetry(native, maxRetries: 2);
+      native.failNext = 3; // the first send and two retries fail
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await runFrames(tester, const Duration(seconds: 3));
+      expect(native.sent.length, greaterThanOrEqualTo(4));
+      expect(native.latest[0], [10, 20, 110, 70]);
+      final settled = native.sent.length;
+      await runFrames(tester, const Duration(seconds: 3));
+      expect(native.sent, hasLength(settled), reason: 'delivered: quiet');
+    });
+
+    testWidgets('a state that changes after the retries are used up does not '
+        'wait for the whole backoff: it goes out within retryDelay of the '
+        'last attempt', (tester) async {
+      registry.dispose();
+      registry = slowRetry(native, cap: const Duration(seconds: 30));
+      native.failNext = 1000000;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      // Far past maxRetries: the retry timer is now several seconds long.
+      await runFrames(tester, const Duration(seconds: 20));
+      native.failNext = 0; // the transport is back
+      native.sent.clear();
+      await tester.pumpWidget(app(registry, at(registry, 40, 20)));
+      await runFrames(tester, const Duration(milliseconds: 300));
+      expect(native.sent, isNotEmpty, reason: 'sent within retryDelay');
+      expect(native.latest[0], [40, 20, 140, 70]);
+      await runFrames(tester, const Duration(seconds: 2));
+      final settled = native.sent.length;
+      await runFrames(tester, const Duration(seconds: 3));
+      expect(native.sent, hasLength(settled), reason: 'delivered: quiet');
+    });
+
+    testWidgets('changed states on a transport that is known bad go out at '
+        'most once per retryDelay, and the latest one wins', (tester) async {
+      registry.dispose();
+      registry = slowRetry(
+        native,
+        maxRetries: 1,
+        cap: const Duration(seconds: 30),
+      );
+      native.failNext = 1000000;
+      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
+      await runFrames(tester, const Duration(seconds: 2));
+      // Every frame brings a new state for the next second: at most ~10 sends.
+      native.sent.clear();
+      for (var i = 0; i < 62; i++) {
+        await tester.pumpWidget(app(registry, at(registry, 100.0 + i, 20)));
+        fakeNow += const Duration(milliseconds: 16);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(native.sent.length, lessThanOrEqualTo(11));
+      native.failNext = 0;
+      await runFrames(tester, const Duration(seconds: 2));
+      expect(native.latest[0], [161, 20, 261, 70]);
+    });
+
     testWidgets('a failed clear is sent again, even though it is empty', (
       tester,
     ) async {

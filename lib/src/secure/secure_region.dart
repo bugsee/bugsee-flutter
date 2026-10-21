@@ -274,8 +274,19 @@ class SecureRegionRegistry {
     required this.publish,
     int? epoch,
     this.retryDelay = const Duration(seconds: 1),
+    this.maxRetryDelay = const Duration(seconds: 30),
     this.maxRetries = 5,
-  }) : epoch = epoch ?? _randomEpoch();
+    Duration Function()? clock,
+  }) : epoch = epoch ?? _randomEpoch(),
+       _now = clock ?? _stopwatchClock();
+
+  /// Monotonic time since the registry was made; replaced in tests.
+  static Duration Function() _stopwatchClock() {
+    final watch = Stopwatch()..start();
+    return () => watch.elapsed;
+  }
+
+  final Duration Function() _now;
 
   /// A random id for this isolate, never a clock (a clock can go backwards
   /// before a hot restart, and native would then reject the new isolate).
@@ -299,8 +310,27 @@ class SecureRegionRegistry {
   final int epoch;
 
   /// How long to wait before trying again after a failed publish; `null`
-  /// leaves the retry to the next frame that happens.
+  /// leaves the retry to the next frame that happens (no timer, for tests).
+  ///
+  /// The delay doubles with every consecutive failure (1 s, 2 s, 4 s, ...) up
+  /// to [maxRetryDelay], and the registry NEVER gives up: native keeps the last
+  /// state it accepted, so a state that was never delivered leaves a stale mask
+  /// (a new region recorded in the clear) until something resends it. A
+  /// transport that is down for good (no plugin on this platform) therefore
+  /// costs one message per [maxRetryDelay], and one that recovers after a long
+  /// outage is republished within that time. Deterministic steps, no jitter.
   final Duration? retryDelay;
+
+  /// The longest wait between two retries of a failing publish.
+  final Duration maxRetryDelay;
+
+  /// After this many consecutive failures the transport counts as known bad:
+  /// with a [retryDelay], at most one message per [retryDelay] is sent (the
+  /// same failed state waits for the backoff timer; a CHANGED state, the only
+  /// kind that can add a region, waits only until [retryDelay] has passed since
+  /// the last attempt, so a transport that came back is not waited on for the
+  /// whole backoff, and one that did not is never hit per frame); without a
+  /// [retryDelay], only the resend of the very same failed state is suppressed.
   final int maxRetries;
 
   final Set<RenderSecureRegion> _regions = <RenderSecureRegion>{};
@@ -308,6 +338,10 @@ class SecureRegionRegistry {
   int _sequence = 0;
   int _failures = 0;
   Timer? _retry;
+  bool _retryDue = false;
+  bool _expedited = false;
+  Duration _lastSend = Duration.zero;
+  bool _disposed = false;
   SecureState? _failedState;
 
   /// What native is known to hold, or `null` when that is unknown (a publish
@@ -359,15 +393,28 @@ class SecureRegionRegistry {
     final SecureState state = measure();
     final SecureState? published = _published;
     if (published != null && sameState(published, state)) return;
-    // Native keeps failing for this very state (no plugin on this platform, a broken
-    // channel): stop resending it every frame once the retries are used up. A changed
-    // state is still sent, and a success resets the count.
-    final SecureState? failed = _failedState;
-    if (published == null &&
-        _failures > maxRetries &&
-        failed != null &&
-        sameState(failed, state)) {
-      return;
+    if (published == null && !_retryDue) {
+      final failed = _failedState;
+      final bool sameAsFailed = failed != null && sameState(failed, state);
+      if (_retry != null) {
+        // A retry timer is pending: it resends, frames do not. A changed state
+        // is still tried at once, unless the transport is known bad: then it
+        // goes out once `retryDelay` has passed since the last attempt (an
+        // animation cannot flood a dead transport, a recovered one is not
+        // waited on for the whole backoff).
+        if (sameAsFailed) return;
+        if (_failures > maxRetries) {
+          final Duration wait = retryDelay! - (_now() - _lastSend);
+          if (wait > Duration.zero) {
+            _expedite(wait);
+            return;
+          }
+        }
+      } else if (_failures > maxRetries && sameAsFailed) {
+        // No timer (frame-driven mode): stop resending this very state every
+        // frame. A changed state is still sent, and a success resets the count.
+        return;
+      }
     }
     _send(state);
   }
@@ -393,6 +440,11 @@ class SecureRegionRegistry {
 
   void _send(SecureState state) {
     final sequence = ++_sequence;
+    _retryDue = false;
+    _expedited = false;
+    _lastSend = _now();
+    _retry?.cancel();
+    _retry = null;
     final message = SecureRectanglesMessage(
       epoch: epoch,
       sequence: sequence,
@@ -423,6 +475,7 @@ class SecureRegionRegistry {
     }
     sent.then<void>(
       (_) {
+        if (sequence != _sequence) return;
         _failures = 0;
         _failedState = null;
       },
@@ -438,20 +491,43 @@ class SecureRegionRegistry {
         _failures++;
         lastError = error;
         final delay = retryDelay;
-        if (delay != null && _failures <= maxRetries) {
-          _retry?.cancel();
-          _retry = Timer(delay, _schedule);
-        }
+        if (delay != null && !_disposed) _armRetry(_backoff(delay));
       },
     );
+  }
+
+  void _armRetry(Duration wait) {
+    _retry?.cancel();
+    _retry = Timer(wait, () {
+      _retry = null;
+      _retryDue = true;
+      _schedule();
+    });
+  }
+
+  /// A changed state is waiting out the throttle: bring the retry forward to the end of it
+  /// (once; the frames in between would only move it to the same instant).
+  void _expedite(Duration wait) {
+    if (_expedited || _disposed) return;
+    _expedited = true;
+    _armRetry(wait);
+  }
+
+  /// The wait after the current run of failures: [base] doubled per failure
+  /// after the first, capped at [maxRetryDelay].
+  Duration _backoff(Duration base) {
+    final int doublings = math.min(_failures - 1, 20);
+    final Duration wait = base * (1 << (doublings < 0 ? 0 : doublings));
+    return wait > maxRetryDelay ? maxRetryDelay : wait;
   }
 
   /// The error of the most recent failed publish, if any. For diagnostics.
   Object? lastError;
 
-  /// Cancels any pending retry. For tests.
+  /// Cancels any pending retry and arms no more. For tests.
   @visibleForTesting
   void dispose() {
+    _disposed = true;
     _retry?.cancel();
     _retry = null;
   }

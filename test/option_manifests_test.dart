@@ -220,6 +220,25 @@ void main() {
       }
     });
 
+    test('no enum member NAME maps to different numbers on the two platforms', () {
+      // The Dart enum merges the two name tables by member name and lets Android win on a
+      // clash, so a name that meant two numbers would silently launch the wrong one on iOS.
+      for (final k in shared) {
+        final ea = a[k]!['enum'] as Map<String, dynamic>?;
+        final ei = i[k]!['enum'] as Map<String, dynamic>?;
+        if (ea == null || ei == null) continue;
+        final va = (ea['values'] as Map).cast<String, Object>();
+        final vi = (ei['values'] as Map).cast<String, Object>();
+        for (final name in va.keys.toSet().intersection(vi.keys.toSet())) {
+          expect(
+            vi[name],
+            va[name],
+            reason: '$k: $name is ${va[name]} on Android, ${vi[name]} on iOS',
+          );
+        }
+      }
+    });
+
     test('default differences are exactly the reviewed ones', () {
       final differing = <String, (Object?, Object?)>{
         for (final k in shared)

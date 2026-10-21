@@ -66,8 +66,10 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   /// The handler is registered BEFORE native is told to flush, or the flushed
   /// events would arrive at nothing.
   ///
-  /// It also tells native which report-handler phases have a Dart handler now (none, for
-  /// a new isolate), so a hot restart is not waited on for a handler it has not registered.
+  /// It also sweeps the previous isolate's report deliveries (once, shared with
+  /// `setReportHandlers`, whichever comes first) and tells native which report-handler
+  /// phases have a Dart handler now (none, for a new isolate), so a hot restart is not
+  /// waited on for a handler it has not registered.
   Future<void> start({RuntimeFacts? facts, String? build}) =>
       _started ??= _start(facts ?? RuntimeFacts.current(), build);
 
@@ -89,9 +91,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     }
     if (!_phasesSent) {
       try {
-        // This isolate is new (a hot restart makes a fresh one): native completes what it had
-        // handed to the previous isolate instead of leaving each report to wait for its deadline.
-        await _host.resetReportHandlers();
+        await _sweepPreviousIsolate();
         await _host.setReportHandlerPhases(_onBefore != null, _onAfter != null);
         _phasesSent = true;
       } catch (e, s) {
@@ -138,6 +138,22 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     _events.add(e);
   }
 
+  Future<void>? _swept;
+
+  /// This isolate is new (a hot restart makes a fresh one): native completes what it had
+  /// handed to the previous isolate instead of leaving each report to wait for its deadline.
+  /// Once per isolate and always BEFORE the first phase registration, whichever of `start()`
+  /// and `setReportHandlers` comes first (a registration before the sweep would be wiped by
+  /// it, and one without it would leave the old deliveries waiting). A failure is not cached.
+  Future<void> _sweepPreviousIsolate() => _swept ??= () async {
+    try {
+      await _host.resetReportHandlers();
+    } catch (_) {
+      _swept = null;
+      rethrow;
+    }
+  }();
+
   /// Registers the report handlers (either may be `null`: no handler for that phase).
   ///
   /// With a phase unregistered native completes the SDK's callback at once and never
@@ -174,6 +190,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     // The receiver first, then the flag: native must not call before Dart can answer.
     BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
     try {
+      await _sweepPreviousIsolate();
       await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
     } catch (_) {
       // Native still has the old phases, so the old handlers keep running: one truth.
@@ -218,7 +235,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     try {
       await handler(proxy);
     } catch (error, stack) {
-      FlutterError.reportError(
+      _reportSafely(
         FlutterErrorDetails(
           exception: error,
           stack: stack,
@@ -231,7 +248,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       if (overran) {
         // Not only an edit that failed: a handler that ran past the budget and made no further
         // edit would otherwise look like a success.
-        FlutterError.reportError(
+        _reportSafely(
           FlutterErrorDetails(
             exception: StateError(
               'A Bugsee report handler for report ${request.reportId} ran past its '
@@ -247,6 +264,16 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       // afterwards can be sent as if it were still live.
       closeReportProxy(proxy);
       await _complete(request.handle);
+    }
+  }
+
+  /// Reports to the app's error handler; one that itself throws must not keep the SDK's
+  /// completion from running (native would then wait out its deadline).
+  void _reportSafely(FlutterErrorDetails details) {
+    try {
+      FlutterError.reportError(details);
+    } catch (_) {
+      // Nothing left to tell.
     }
   }
 

@@ -484,25 +484,37 @@ public class ReportHandlerPipelineTest {
     // ---- check-and-apply is one step ------------------------------------------------------------
 
     /**
-     * An edit that was reported as applied must have landed BEFORE the completion ran. The report
-     * is slow to apply (the window the old check-then-apply race lived in) while the deadline
-     * fires on another thread, many times over.
+     * An edit that was reported as applied must have landed BEFORE the completion ran. The
+     * interleaving is forced, not hoped for: the edit signals that it is INSIDE its
+     * check-and-apply, and only then is the deadline fired on another thread; the edit keeps the
+     * report busy until the deadline thread has started (and then a little longer, or until the
+     * completion has run, which is what a broken lock lets happen). With the lock the completion
+     * waits for the edit, so the edit always applies and lands first; without it the completion
+     * runs mid-edit and the summary lands after it. Nothing depends on how fast a thread is
+     * scheduled: a starved machine only makes the broken variant less likely to be caught, never
+     * the correct one fail. The timeouts are ceilings, not assertions about speed.
      */
-    @Test(timeout = 60_000)
+    @Test(timeout = 120_000)
     public void anEditReportedAppliedNeverLandsAfterTheCompletion() throws Exception {
         final ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            int applied = 0;
-            int refused = 0;
-            for (int i = 0; i < 1500; i++) {
+            for (int i = 0; i < 300; i++) {
                 final ManualScheduler s = new ManualScheduler();
                 final AtomicInteger completed = new AtomicInteger();
                 final AtomicInteger landedAfterCompletion = new AtomicInteger();
+                final CountDownLatch inside = new CountDownLatch(1);
+                final CountDownLatch deadlineStarted = new CountDownLatch(1);
                 final FakeReports.State st = new FakeReports.State();
                 st.beforeSetSummary = () -> {
-                    // Widen the window between "the handle is live" and "the setter ran".
-                    final long until = System.nanoTime() + 30_000;
-                    while (System.nanoTime() < until) {
+                    inside.countDown();
+                    try {
+                        assertTrue(deadlineStarted.await(60, TimeUnit.SECONDS));
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    // Give a completion that is not held back by the edit the chance to run first.
+                    final long until = System.nanoTime() + 2_000_000;
+                    while (System.nanoTime() < until && completed.get() == 0) {
                         Thread.yield();
                     }
                 };
@@ -522,27 +534,19 @@ public class ReportHandlerPipelineTest {
                 };
                 p.dispatch(Phase.BEFORE, FakeReports.create(st), false, completed::incrementAndGet);
                 final String handle = rs.requests.get(0).handle;
-                final CountDownLatch go = new CountDownLatch(1);
-                final Future<Boolean> edit = pool.submit(() -> {
-                    await(go);
-                    return p.edit(handle, r -> r.setSummary("x"));
-                });
+                final Future<Boolean> edit = pool.submit(() -> p.edit(handle, r -> r.setSummary("x")));
                 final Future<?> deadline = pool.submit(() -> {
-                    await(go);
+                    // Only once the edit is inside its check-and-apply does the deadline fire.
+                    assertTrue(inside.await(60, TimeUnit.SECONDS));
+                    deadlineStarted.countDown();
                     s.fireEvenIfCancelled();
+                    return null;
                 });
-                go.countDown();
-                deadline.get(5, TimeUnit.SECONDS);
-                if (edit.get(5, TimeUnit.SECONDS)) {
-                    applied++;
-                } else {
-                    refused++;
-                }
+                deadline.get(60, TimeUnit.SECONDS);
+                assertTrue("round " + i + ": the edit was inside first", edit.get(60, TimeUnit.SECONDS));
                 assertEquals("round " + i, 0, landedAfterCompletion.get());
-                assertEquals(1, completed.get());
+                assertEquals("round " + i, 1, completed.get());
             }
-            assertTrue("the race was actually exercised both ways: applied=" + applied
-                    + " refused=" + refused, applied > 0 && refused > 0);
         } finally {
             pool.shutdownNow();
         }
@@ -697,12 +701,12 @@ public class ReportHandlerPipelineTest {
                 p.dispatch(Phase.BEFORE, report, false, completed::countDown);
                 final long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
                 // A wait that gave up after a timeout would still "return", so time it.
-                return completed.getCount() == 1 && elapsedMs < 500;
+                return completed.getCount() == 1 && elapsedMs < 5_000;
             });
             assertTrue("dispatch returned at once, before the completion ran",
-                    returnedBeforeCompletion.get(5, TimeUnit.SECONDS));
+                    returnedBeforeCompletion.get(60, TimeUnit.SECONDS));
             assertTrue("and Dart's reply, queued on the same thread, then completed it",
-                    completed.await(5, TimeUnit.SECONDS));
+                    completed.await(60, TimeUnit.SECONDS));
         } finally {
             main.shutdownNow();
         }
@@ -733,23 +737,23 @@ public class ReportHandlerPipelineTest {
             try {
                 final long start = System.nanoTime();
                 sdk.submit(() -> p.dispatch(Phase.BEFORE, report, false, done::countDown))
-                        .get(5, TimeUnit.SECONDS);
+                        .get(60, TimeUnit.SECONDS);
                 assertTrue("the SDK thread was not held up",
-                        (System.nanoTime() - start) / 1_000_000L < 500);
+                        (System.nanoTime() - start) / 1_000_000L < 5_000);
             } finally {
                 sdk.shutdownNow();
             }
             assertEquals("the SDK thread came back while main was still blocked", 1, done.getCount());
             // The deadline still ends it, with main blocked the whole time.
             scheduler.fireDue();
-            assertTrue(done.await(5, TimeUnit.SECONDS));
+            assertTrue(done.await(60, TimeUnit.SECONDS));
         } finally {
             release.countDown();
             main.shutdownNow();
         }
     }
 
-    @Test(timeout = 20_000)
+    @Test(timeout = 120_000)
     public void everyRaceForTheCompletionRunsItOnce() throws Exception {
         final int rounds = 100;
         final ExecutorService pool = Executors.newFixedThreadPool(4);
@@ -776,7 +780,7 @@ public class ReportHandlerPipelineTest {
                 all.add(pool.submit(() -> { await(go); rs.unreachable.get(0).run(); }));
                 go.countDown();
                 for (final Future<?> f : all) {
-                    f.get(5, TimeUnit.SECONDS);
+                    f.get(60, TimeUnit.SECONDS);
                 }
                 assertEquals("round " + i, 1, ran.get());
             }

@@ -419,21 +419,37 @@
 
 #pragma mark - check-and-apply is one step
 
-/// An edit reported as applied must have landed BEFORE the completion ran. The report is slow to
-/// apply (the window the old check-then-apply race lived in) while the deadline fires on another
-/// thread, many times over. The summary is `nonatomic, copy`, so the old race was also a data race.
+/// An edit reported as applied must have landed BEFORE the completion ran. The interleaving is
+/// forced, not hoped for: the edit signals that it is INSIDE the check-and-apply, and only then is
+/// the deadline fired on another thread; the edit keeps the report busy until the deadline thread
+/// has started (and then a little longer, or until the completion has run, which is what a broken
+/// lock lets happen). With the lock the completion waits for the edit, so the edit always applies
+/// and lands first; without it the completion runs mid-edit and the summary lands after it. Nothing
+/// here depends on how fast a thread is scheduled: a starved runner only makes the broken variant
+/// less likely to be caught, never the correct one fail. The semaphores' timeouts are ceilings.
+/// (The summary is `nonatomic, copy`, so the old check-then-apply race was also a data race.)
 - (void)testAnEditReportedAppliedNeverLandsAfterTheCompletion {
-  NSUInteger applied = 0, refused = 0;
-  for (NSUInteger i = 0; i < 1500; i++) {
+  const int64_t kCeiling = 60 * NSEC_PER_SEC;
+  for (NSUInteger i = 0; i < 300; i++) {
     __block dispatch_block_t deadline = nil;
     __block BGSFlutterReportRequest *request = nil;
     NSObject *lock = [[NSObject alloc] init];
     __block NSUInteger completed = 0;
     __block NSUInteger landedAfter = 0;
+    dispatch_semaphore_t inside = dispatch_semaphore_create(0);
+    dispatch_semaphore_t deadlineStarted = dispatch_semaphore_create(0);
     BGSFlutterFakeReport *report = [[BGSFlutterFakeReport alloc] init];
     report.beforeSetSummary = ^{
-      CFAbsoluteTime until = CFAbsoluteTimeGetCurrent() + 0.00003;
+      dispatch_semaphore_signal(inside);
+      XCTAssertEqual(dispatch_semaphore_wait(deadlineStarted, dispatch_time(DISPATCH_TIME_NOW, kCeiling)), 0);
+      // Give a completion that is not held back by the edit the chance to run first.
+      CFAbsoluteTime until = CFAbsoluteTimeGetCurrent() + 0.002;
       while (CFAbsoluteTimeGetCurrent() < until) {
+        @synchronized(lock) {
+          if (completed > 0) {
+            break;
+          }
+        }
         sched_yield();
       }
     };
@@ -472,9 +488,7 @@
     __block BGSFlutterReportEditResult result = BGSFlutterReportEditNotLive;
     dispatch_group_t group = dispatch_group_create();
     dispatch_queue_t q = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
-    dispatch_semaphore_t go = dispatch_semaphore_create(0);
     dispatch_group_async(group, q, ^{
-      dispatch_semaphore_wait(go, DISPATCH_TIME_FOREVER);
       result = [p editHandle:request.handle
                         edit:^BOOL(id r, NSError **e) {
                           ((id<BGSReportContract>)r).summary = @"x";
@@ -483,22 +497,16 @@
                        error:NULL];
     });
     dispatch_group_async(group, q, ^{
-      dispatch_semaphore_wait(go, DISPATCH_TIME_FOREVER);
+      // Only once the edit is inside its check-and-apply does the deadline fire.
+      XCTAssertEqual(dispatch_semaphore_wait(inside, dispatch_time(DISPATCH_TIME_NOW, kCeiling)), 0);
+      dispatch_semaphore_signal(deadlineStarted);
       deadline();
     });
-    dispatch_semaphore_signal(go);
-    dispatch_semaphore_signal(go);
-    XCTAssertEqual(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0);
-    if (result == BGSFlutterReportEditApplied) {
-      applied++;
-    } else {
-      refused++;
-    }
+    XCTAssertEqual(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, kCeiling)), 0);
+    XCTAssertEqual(result, BGSFlutterReportEditApplied, @"round %lu: the edit was inside first", (unsigned long)i);
     XCTAssertEqual(landedAfter, 0u, @"round %lu", (unsigned long)i);
-    XCTAssertEqual(completed, 1u);
+    XCTAssertEqual(completed, 1u, @"round %lu", (unsigned long)i);
   }
-  XCTAssertTrue(applied > 0 && refused > 0, @"the race was exercised both ways: applied=%lu refused=%lu",
-                (unsigned long)applied, (unsigned long)refused);
 }
 
 #pragma mark - the proxy is live only until the completion runs (7.3.4)
@@ -634,9 +642,9 @@
                  [completed fulfill];
                }];
   // A wait that gave up after a timeout would still "return", so time it.
-  XCTAssertLessThan(CFAbsoluteTimeGetCurrent() - start, 0.5, @"dispatch returned at once");
+  XCTAssertLessThan(CFAbsoluteTimeGetCurrent() - start, 5.0, @"dispatch returned at once (a ceiling; a blocking wait would last the whole window)");
   XCTAssertEqual(completions, 0u, @"dispatch returned before the completion ran");
-  [self waitForExpectations:@[ completed ] timeout:5];
+  [self waitForExpectations:@[ completed ] timeout:60];
   XCTAssertEqual(completions, 1u);
 }
 
@@ -679,7 +687,7 @@
   });
   // Main is held here, NOT servicing its queue (a semaphore, not a run loop), until the worker
   // has come back: the worker's dispatch must not have needed main.
-  XCTAssertEqual(dispatch_semaphore_wait(returned, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0,
+  XCTAssertEqual(dispatch_semaphore_wait(returned, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC)), 0,
                  @"the worker's dispatch returned while main was blocked");
   @synchronized(lock) {
     XCTAssertEqual(completions, 0u);
@@ -730,7 +738,7 @@
     dispatch_group_async(group, q, ^{ deadline(); });
     dispatch_group_async(group, q, ^{ [pipeline detachOwner:owner]; });
     dispatch_group_async(group, q, ^{ unreachable(); });
-    XCTAssertEqual(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0);
+    XCTAssertEqual(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC)), 0);
     XCTAssertEqual(ran, 1u, @"round %lu", (unsigned long)round);
   }
 }

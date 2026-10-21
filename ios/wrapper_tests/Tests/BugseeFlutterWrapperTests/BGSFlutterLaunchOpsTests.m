@@ -9,6 +9,10 @@
 @property(nonatomic, copy) NSString *status;
 /// What `started:` is told; nil = never called.
 @property(nonatomic, strong) NSNumber *startedWith;
+/// How many times `started:` is called (a misbehaving SDK calls it twice).
+@property(nonatomic) NSInteger startedCalls;
+/// Throws after calling `started:` back.
+@property(nonatomic) BOOL throwAfterStarted;
 /// The status the SDK is in when it calls `started:`.
 @property(nonatomic, copy) NSString *statusAtStarted;
 @property(nonatomic, strong) NSException *launchThrows;
@@ -30,6 +34,7 @@
     _startedWith = @YES;
     _statusAtStarted = @"launched";
     _launches = [NSMutableArray array];
+    _startedCalls = 1;
     _options = @{};
   }
   return self;
@@ -45,8 +50,11 @@
   _launchedWith = options;
   if (_startedWith) {
     _status = _statusAtStarted;
-    started(_startedWith.boolValue);
+    for (NSInteger i = 0; i < _startedCalls; i++) {
+      started(_startedWith.boolValue);
+    }
   }
+  if (_throwAfterStarted) @throw [NSException exceptionWithName:@"BugseeLate" reason:@"after started" userInfo:nil];
 }
 - (void)stop:(void (^)(void))done {
   if (_stopThrows) @throw _stopThrows;
@@ -162,6 +170,21 @@
     XCTAssertEqualObjects(a[1], BGSFlutterLaunchOps.invalidToken);
     XCTAssertEqual(sdk.launches.count, 0u);
   }
+}
+
+- (void)testAnSdkThatCallsStartedTwiceIsAnsweredOnce {
+  BGSFakeBugsee *sdk = [[BGSFakeBugsee alloc] init];
+  sdk.startedCalls = 2;
+  // The helper asserts the completion ran exactly once.
+  XCTAssertEqualObjects([self launch:sdk token:@"tok" options:nil][0], BGSFlutterLaunchOps.launched);
+}
+
+- (void)testAnSdkThatCallsStartedAndThenThrowsHasAlreadyBeenAnswered {
+  BGSFakeBugsee *sdk = [[BGSFakeBugsee alloc] init];
+  sdk.throwAfterStarted = YES;
+  NSArray *a = [self launch:sdk token:@"tok" options:nil];
+  XCTAssertEqualObjects(a[0], BGSFlutterLaunchOps.launched);
+  XCTAssertEqualObjects(a[2], [NSNull null], @"not also an error");
 }
 
 - (void)testAnSdkThatDeclinesIsRefusedAsFailed {

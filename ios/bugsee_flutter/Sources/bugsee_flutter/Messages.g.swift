@@ -404,6 +404,162 @@ struct SecureRectanglesMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// One report-handler delivery native hands to Dart: the report is reachable
+/// only through [handle] (a proxy, never a copy; workbook 7.3.1), and only until
+/// the handler's completion runs (7.3.4).
+///
+/// There is deliberately NO Pigeon enum anywhere in this bridge: Pigeon sends an
+/// enum as its ordinal, and workbook 7.4 forbids ordinals. Severity crosses as the
+/// SDK's internal integer, the phase as a bool, the issue type as the SDKs' string.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct ReportHandlerRequestMessage: Hashable, CustomStringConvertible {
+  /// Unique per delivery and opaque; names the live report in every report
+  /// operation and in [BugseeBridgeHostApi.completeReportHandler].
+  var handle: String
+  /// STABLE for the same report and phase (`before:<reportId>` /
+  /// `after:<reportId>`), so Dart can recognise a re-delivery: `onBefore` is
+  /// at-most-once and may be skipped, `onAfter` is at-least-once (7.2). Unique per
+  /// delivery (never shared) when the report's id could not be read.
+  var deliveryId: String
+  /// `false`: onBeforeReportCreated. `true`: onAfterReportCreated.
+  var after: Bool
+  var reportId: String
+  /// The SDK's issue type string (`bug`, `crash`, `error`), as it reads it. Not
+  /// evidence that the report is a recovered crash (7.2.3).
+  var type: String
+  /// How long native keeps the report live for this delivery: it runs the SDK's
+  /// completion itself when this has passed (always inside the SDK's own deadline,
+  /// 7.3.5), after which every operation on the handle is refused.
+  var deadlineMs: Int64
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> ReportHandlerRequestMessage? {
+    let handle = pigeonVar_list[0] as! String
+    let deliveryId = pigeonVar_list[1] as! String
+    let after = pigeonVar_list[2] as! Bool
+    let reportId = pigeonVar_list[3] as! String
+    let type = pigeonVar_list[4] as! String
+    let deadlineMs = pigeonVar_list[5] as! Int64
+
+    return ReportHandlerRequestMessage(
+      handle: handle,
+      deliveryId: deliveryId,
+      after: after,
+      reportId: reportId,
+      type: type,
+      deadlineMs: deadlineMs
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      handle,
+      deliveryId,
+      after,
+      reportId,
+      type,
+      deadlineMs,
+    ]
+  }
+  static func == (lhs: ReportHandlerRequestMessage, rhs: ReportHandlerRequestMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.handle, rhs.handle) && MessagesPigeonInternal.deepEquals(lhs.deliveryId, rhs.deliveryId) && MessagesPigeonInternal.deepEquals(lhs.after, rhs.after) && MessagesPigeonInternal.deepEquals(lhs.reportId, rhs.reportId) && MessagesPigeonInternal.deepEquals(lhs.type, rhs.type) && MessagesPigeonInternal.deepEquals(lhs.deadlineMs, rhs.deadlineMs)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("ReportHandlerRequestMessage")
+    MessagesPigeonInternal.deepHash(value: handle, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: deliveryId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: after, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: reportId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: type, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: deadlineMs, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "ReportHandlerRequestMessage(handle: \(String(describing: handle)), deliveryId: \(String(describing: deliveryId)), after: \(String(describing: after)), reportId: \(String(describing: reportId)), type: \(String(describing: type)), deadlineMs: \(String(describing: deadlineMs)))"
+  }
+}
+
+/// A read of a live report. [severity] is the SDK's internal integer (1..5), or
+/// null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
+  var id: String
+  var type: String
+  var summary: String? = nil
+  /// Named `reportDescription`: `description` collides with NSObject's in Swift.
+  var reportDescription: String? = nil
+  var email: String? = nil
+  var severity: Int64? = nil
+  var labels: [String]
+  /// Only values both SDKs accept: String, bool, int, double. Anything else the
+  /// report holds is left out rather than stringified.
+  var attributes: [String: Any]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> ReportSnapshotMessage? {
+    let id = pigeonVar_list[0] as! String
+    let type = pigeonVar_list[1] as! String
+    let summary: String? = nilOrValue(pigeonVar_list[2])
+    let reportDescription: String? = nilOrValue(pigeonVar_list[3])
+    let email: String? = nilOrValue(pigeonVar_list[4])
+    let severity: Int64? = nilOrValue(pigeonVar_list[5])
+    let labels = pigeonVar_list[6] as! [String]
+    let attributes = pigeonVar_list[7] as! [String: Any]
+
+    return ReportSnapshotMessage(
+      id: id,
+      type: type,
+      summary: summary,
+      reportDescription: reportDescription,
+      email: email,
+      severity: severity,
+      labels: labels,
+      attributes: attributes
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      id,
+      type,
+      summary,
+      reportDescription,
+      email,
+      severity,
+      labels,
+      attributes,
+    ]
+  }
+  static func == (lhs: ReportSnapshotMessage, rhs: ReportSnapshotMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.id, rhs.id) && MessagesPigeonInternal.deepEquals(lhs.type, rhs.type) && MessagesPigeonInternal.deepEquals(lhs.summary, rhs.summary) && MessagesPigeonInternal.deepEquals(lhs.reportDescription, rhs.reportDescription) && MessagesPigeonInternal.deepEquals(lhs.email, rhs.email) && MessagesPigeonInternal.deepEquals(lhs.severity, rhs.severity) && MessagesPigeonInternal.deepEquals(lhs.labels, rhs.labels) && MessagesPigeonInternal.deepEquals(lhs.attributes, rhs.attributes)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("ReportSnapshotMessage")
+    MessagesPigeonInternal.deepHash(value: id, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: type, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: summary, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: reportDescription, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: email, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: severity, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: labels, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: attributes, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "ReportSnapshotMessage(id: \(String(describing: id)), type: \(String(describing: type)), summary: \(String(describing: summary)), reportDescription: \(String(describing: reportDescription)), email: \(String(describing: email)), severity: \(String(describing: severity)), labels: \(String(describing: labels)), attributes: \(String(describing: attributes)))"
+  }
+}
+
 private class MessagesPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -415,6 +571,10 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
       return SecureViewRectanglesMessage.fromList(self.readValue() as! [Any?])
     case 132:
       return SecureRectanglesMessage.fromList(self.readValue() as! [Any?])
+    case 133:
+      return ReportHandlerRequestMessage.fromList(self.readValue() as! [Any?])
+    case 134:
+      return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -434,6 +594,12 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
       super.writeValue(value.toList())
     } else if let value = value as? SecureRectanglesMessage {
       super.writeByte(132)
+      super.writeValue(value.toList())
+    } else if let value = value as? ReportHandlerRequestMessage {
+      super.writeByte(133)
+      super.writeValue(value.toList())
+    } else if let value = value as? ReportSnapshotMessage {
+      super.writeByte(134)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -470,6 +636,34 @@ protocol BugseeBridgeHostApi {
   /// whether the message was applied (`false`: it was older than one already
   /// applied, which is not an error).
   func setSecureRectangles(state: SecureRectanglesMessage) throws -> Bool
+  /// Tells native whether a Dart handler exists for each phase. With none, native
+  /// completes the SDK's callback at once and never calls Dart (no waiting). Sent
+  /// again (false, false) by every new Dart isolate, so a hot restart that has not
+  /// registered one yet is not waited on.
+  func setReportHandlerPhases(before: Bool, after: Bool) throws
+  /// The Dart handler is done (or failed): run the SDK's completion. Idempotent;
+  /// a handle native already completed (its deadline) is a no-op.
+  func completeReportHandler(handle: String) throws
+  /// Report operations. Each returns whether it was APPLIED: `false` means the
+  /// handle is no longer live (the completion already ran), which Dart turns into
+  /// an error; native ignores the call (7.3.4). An argument the SDK cannot take
+  /// (a severity outside 1..5, an attribute value that is not a string, number or
+  /// bool) is a PlatformException `invalid-argument` and changes nothing.
+  ///
+  /// null: the handle is not live.
+  func reportRead(handle: String) throws -> ReportSnapshotMessage?
+  func reportSetSummary(handle: String, value: String?) throws -> Bool
+  func reportSetDescription(handle: String, value: String?) throws -> Bool
+  func reportSetEmail(handle: String, value: String?) throws -> Bool
+  /// [severity] is the SDK's internal integer, never an ordinal.
+  func reportSetSeverity(handle: String, severity: Int64) throws -> Bool
+  /// Atomic: a reader never sees the report without labels in between.
+  func reportReplaceLabels(handle: String, labels: [String]) throws -> Bool
+  func reportAddLabels(handle: String, labels: [String]) throws -> Bool
+  func reportClearLabels(handle: String) throws -> Bool
+  func reportSetAttribute(handle: String, name: String, value: Any) throws -> Bool
+  func reportRemoveAttribute(handle: String, name: String) throws -> Bool
+  func reportClearAttributes(handle: String) throws -> Bool
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -529,6 +723,226 @@ class BugseeBridgeHostApiSetup {
     } else {
       setSecureRectanglesChannel.setMessageHandler(nil)
     }
+    /// Tells native whether a Dart handler exists for each phase. With none, native
+    /// completes the SDK's callback at once and never calls Dart (no waiting). Sent
+    /// again (false, false) by every new Dart isolate, so a hot restart that has not
+    /// registered one yet is not waited on.
+    let setReportHandlerPhasesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setReportHandlerPhases\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setReportHandlerPhasesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let beforeArg = args[0] as! Bool
+        let afterArg = args[1] as! Bool
+        do {
+          try api.setReportHandlerPhases(before: beforeArg, after: afterArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      setReportHandlerPhasesChannel.setMessageHandler(nil)
+    }
+    /// The Dart handler is done (or failed): run the SDK's completion. Idempotent;
+    /// a handle native already completed (its deadline) is a no-op.
+    let completeReportHandlerChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.completeReportHandler\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      completeReportHandlerChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          try api.completeReportHandler(handle: handleArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      completeReportHandlerChannel.setMessageHandler(nil)
+    }
+    /// Report operations. Each returns whether it was APPLIED: `false` means the
+    /// handle is no longer live (the completion already ran), which Dart turns into
+    /// an error; native ignores the call (7.3.4). An argument the SDK cannot take
+    /// (a severity outside 1..5, an attribute value that is not a string, number or
+    /// bool) is a PlatformException `invalid-argument` and changes nothing.
+    ///
+    /// null: the handle is not live.
+    let reportReadChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRead\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportReadChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          let result = try api.reportRead(handle: handleArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportReadChannel.setMessageHandler(nil)
+    }
+    let reportSetSummaryChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetSummary\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportSetSummaryChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let valueArg: String? = nilOrValue(args[1])
+        do {
+          let result = try api.reportSetSummary(handle: handleArg, value: valueArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportSetSummaryChannel.setMessageHandler(nil)
+    }
+    let reportSetDescriptionChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetDescription\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportSetDescriptionChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let valueArg: String? = nilOrValue(args[1])
+        do {
+          let result = try api.reportSetDescription(handle: handleArg, value: valueArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportSetDescriptionChannel.setMessageHandler(nil)
+    }
+    let reportSetEmailChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetEmail\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportSetEmailChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let valueArg: String? = nilOrValue(args[1])
+        do {
+          let result = try api.reportSetEmail(handle: handleArg, value: valueArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportSetEmailChannel.setMessageHandler(nil)
+    }
+    /// [severity] is the SDK's internal integer, never an ordinal.
+    let reportSetSeverityChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetSeverity\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportSetSeverityChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let severityArg = args[1] as! Int64
+        do {
+          let result = try api.reportSetSeverity(handle: handleArg, severity: severityArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportSetSeverityChannel.setMessageHandler(nil)
+    }
+    /// Atomic: a reader never sees the report without labels in between.
+    let reportReplaceLabelsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportReplaceLabels\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportReplaceLabelsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let labelsArg = args[1] as! [String]
+        do {
+          let result = try api.reportReplaceLabels(handle: handleArg, labels: labelsArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportReplaceLabelsChannel.setMessageHandler(nil)
+    }
+    let reportAddLabelsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddLabels\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportAddLabelsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let labelsArg = args[1] as! [String]
+        do {
+          let result = try api.reportAddLabels(handle: handleArg, labels: labelsArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportAddLabelsChannel.setMessageHandler(nil)
+    }
+    let reportClearLabelsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearLabels\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportClearLabelsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          let result = try api.reportClearLabels(handle: handleArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportClearLabelsChannel.setMessageHandler(nil)
+    }
+    let reportSetAttributeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetAttribute\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportSetAttributeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let nameArg = args[1] as! String
+        let valueArg = args[2]!
+        do {
+          let result = try api.reportSetAttribute(handle: handleArg, name: nameArg, value: valueArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportSetAttributeChannel.setMessageHandler(nil)
+    }
+    let reportRemoveAttributeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRemoveAttribute\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportRemoveAttributeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let nameArg = args[1] as! String
+        do {
+          let result = try api.reportRemoveAttribute(handle: handleArg, name: nameArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportRemoveAttributeChannel.setMessageHandler(nil)
+    }
+    let reportClearAttributesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearAttributes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportClearAttributesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          let result = try api.reportClearAttributes(handle: handleArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      reportClearAttributesChannel.setMessageHandler(nil)
+    }
   }
 }
 
@@ -537,6 +951,11 @@ class BugseeBridgeHostApiSetup {
 /// Generated protocol from Pigeon that represents Flutter messages that can be called from Swift.
 protocol BugseeBridgeFlutterApiProtocol {
   @MainActor func onLifecycleEvent(event eventArg: LifecycleEventMessage) async throws
+  /// A report handler delivery. Native does NOT wait for this call's reply: the
+  /// SDK's completion runs when Dart calls `completeReportHandler`, when the
+  /// deadline passes, or when this call fails (Dart not listening). Never
+  /// delivered while the SDK says the process is terminating.
+  @MainActor func onReportHandlerRequest(request requestArg: ReportHandlerRequestMessage) async throws
 }
 class BugseeBridgeFlutterApi: BugseeBridgeFlutterApiProtocol {
   private let binaryMessenger: FlutterBinaryMessenger
@@ -553,6 +972,30 @@ class BugseeBridgeFlutterApi: BugseeBridgeFlutterApiProtocol {
       let channelName: String = "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeFlutterApi.onLifecycleEvent\(messageChannelSuffix)"
       let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
       channel.sendMessage([eventArg] as [Any?]) { response in
+        guard let listResponse = response as? [Any?] else {
+          continuation.resume(throwing: createConnectionError(withChannelName: channelName))
+          return
+        }
+        if listResponse.count > 1 {
+          let code: String = listResponse[0] as! String
+          let message: String? = nilOrValue(listResponse[1])
+          let details: String? = nilOrValue(listResponse[2])
+          continuation.resume(throwing: PigeonError(code: code, message: message, details: details))
+        } else {
+          continuation.resume()
+        }
+      }
+    }
+  }
+  /// A report handler delivery. Native does NOT wait for this call's reply: the
+  /// SDK's completion runs when Dart calls `completeReportHandler`, when the
+  /// deadline passes, or when this call fails (Dart not listening). Never
+  /// delivered while the SDK says the process is terminating.
+  @MainActor func onReportHandlerRequest(request requestArg: ReportHandlerRequestMessage) async throws {
+    return try await withCheckedThrowingContinuation { continuation in
+      let channelName: String = "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeFlutterApi.onReportHandlerRequest\(messageChannelSuffix)"
+      let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
+      channel.sendMessage([requestArg] as [Any?]) { response in
         guard let listResponse = response as? [Any?] else {
           continuation.resume(throwing: createConnectionError(withChannelName: channelName))
           return

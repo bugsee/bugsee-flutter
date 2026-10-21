@@ -2,14 +2,24 @@
 // package:bugsee_flutter; Phase 4 builds the public API on it.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show ErrorDescription, FlutterError, FlutterErrorDetails;
 import 'package:flutter/services.dart' show BinaryMessenger;
 
+import '../report/report_proxy.dart';
 import 'lifecycle.dart';
 import 'messages.g.dart';
 import 'runtime_facts.dart';
 
-/// Receives the SDK's lifecycle events from native and refines the wrapper
-/// identity.
+/// A report handler (`onBeforeReportCreated` / `onAfterReportCreated`).
+///
+/// The [report] is live only until the returned future completes (or the SDK's
+/// deadline passes, whichever is first): await every edit. An error it throws is
+/// reported through [FlutterError.reportError] and the report still proceeds.
+typedef ReportHandler = FutureOr<void> Function(ReportProxy report);
+
+/// Receives the SDK's lifecycle events from native, delivers report-handler
+/// requests, and refines the wrapper identity.
 ///
 /// Native keeps events in a bounded buffer until [start] attaches (see
 /// `LifecycleHub` / `BGSFlutterLifecycleHub`: capacity 64, oldest dropped), then
@@ -27,7 +37,15 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   Future<void>? _started;
   bool _attached = false;
   bool _identitySent = false;
+  bool _phasesSent = false;
   SdkStatus? _status;
+  ReportHandler? _onBefore;
+  ReportHandler? _onAfter;
+  final Set<String> _delivered = <String>{};
+
+  /// How many delivery ids are remembered for de-duplication. Old ones are
+  /// forgotten first.
+  static const int deliveredCapacity = 128;
 
   /// Every lifecycle event, in the order native delivered them, including names
   /// this version does not know. A broadcast stream: a listener sees events from
@@ -50,6 +68,9 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   ///
   /// The handler is registered BEFORE native is told to flush, or the flushed
   /// events would arrive at nothing.
+  ///
+  /// It also tells native which report-handler phases have a Dart handler now (none, for
+  /// a new isolate), so a hot restart is not waited on for a handler it has not registered.
   Future<void> start({RuntimeFacts? facts, String? build}) =>
       _started ??= _start(facts ?? RuntimeFacts.current(), build);
 
@@ -67,6 +88,15 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       } catch (e, s) {
         error = e;
         stack = s;
+      }
+    }
+    if (!_phasesSent) {
+      try {
+        await _host.setReportHandlerPhases(_onBefore != null, _onAfter != null);
+        _phasesSent = true;
+      } catch (e, s) {
+        error ??= e;
+        stack ??= s;
       }
     }
     if (!_identitySent) {
@@ -106,5 +136,96 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     final s = statusForEvent(e);
     if (s != null) _status = s;
     _events.add(e);
+  }
+
+  /// Registers the report handlers (either may be `null`: no handler for that phase).
+  ///
+  /// With a phase unregistered native completes the SDK's callback at once and never
+  /// calls Dart for it. `onBefore` is at most once and may be skipped; `onAfter` is at
+  /// least once and may run again, in a later process, for a report that already carries
+  /// part of the first run's contribution (workbook 7.2): the handler must be idempotent.
+  /// Within this isolate a second delivery of the same report and phase is not run again
+  /// (see [deliveredCapacity]); it is completed at once.
+  Future<void> setReportHandlers({
+    ReportHandler? onBefore,
+    ReportHandler? onAfter,
+  }) async {
+    _onBefore = onBefore;
+    _onAfter = onAfter;
+    // The receiver first, then the flag: native must not call before Dart can answer.
+    BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
+    await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
+    _phasesSent = true;
+  }
+
+  @override
+  void onReportHandlerRequest(ReportHandlerRequestMessage request) {
+    // Native does not wait for this reply; the SDK's completion runs when this
+    // isolate completes the handle (or the deadline passes). Return at once.
+    unawaited(_deliverReport(request));
+  }
+
+  Future<void> _deliverReport(ReportHandlerRequestMessage request) async {
+    final handler = request.after ? _onAfter : _onBefore;
+    if (handler == null || !_remember(request.deliveryId)) {
+      // Nothing to run (a stale flag natively) or this report and phase was already
+      // handled here: do not run the handler twice, and do not leave the SDK waiting.
+      await _complete(request.handle);
+      return;
+    }
+    final proxy = ReportProxy.internal(
+      id: request.reportId,
+      typeName: request.type,
+      deliveryId: request.deliveryId,
+      handle: request.handle,
+      host: _host,
+    );
+    // Native closes the report at its deadline whatever Dart does; closing here too
+    // makes a late edit fail without a round trip.
+    final deadline = Timer(
+      Duration(milliseconds: request.deadlineMs),
+      proxy.markCompleted,
+    );
+    try {
+      await handler(proxy);
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'bugsee_flutter',
+          context: ErrorDescription('while running a Bugsee report handler'),
+        ),
+      );
+    } finally {
+      deadline.cancel();
+      // Closed BEFORE the completion crosses, so nothing a stray continuation does
+      // afterwards can be sent as if it were still live.
+      proxy.markCompleted();
+      await _complete(request.handle);
+    }
+  }
+
+  /// Whether this delivery id is new. Remembers it either way.
+  bool _remember(String deliveryId) {
+    if (!_delivered.add(deliveryId)) {
+      // Most recently seen last, so the oldest is the one forgotten.
+      _delivered
+        ..remove(deliveryId)
+        ..add(deliveryId);
+      return false;
+    }
+    if (_delivered.length > deliveredCapacity) {
+      _delivered.remove(_delivered.first);
+    }
+    return true;
+  }
+
+  Future<void> _complete(String handle) async {
+    try {
+      await _host.completeReportHandler(handle);
+    } catch (_) {
+      // Native completes on its own deadline: nothing more to do from here.
+    }
   }
 }

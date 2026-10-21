@@ -356,6 +356,188 @@ class SecureRectanglesMessage {
   }
 }
 
+/// One report-handler delivery native hands to Dart: the report is reachable
+/// only through [handle] (a proxy, never a copy; workbook 7.3.1), and only until
+/// the handler's completion runs (7.3.4).
+///
+/// There is deliberately NO Pigeon enum anywhere in this bridge: Pigeon sends an
+/// enum as its ordinal, and workbook 7.4 forbids ordinals. Severity crosses as the
+/// SDK's internal integer, the phase as a bool, the issue type as the SDKs' string.
+class ReportHandlerRequestMessage {
+  ReportHandlerRequestMessage({
+    required this.handle,
+    required this.deliveryId,
+    required this.after,
+    required this.reportId,
+    required this.type,
+    required this.deadlineMs,
+  });
+
+  /// Unique per delivery and opaque; names the live report in every report
+  /// operation and in [BugseeBridgeHostApi.completeReportHandler].
+  String handle;
+
+  /// STABLE for the same report and phase (`before:<reportId>` /
+  /// `after:<reportId>`), so Dart can recognise a re-delivery: `onBefore` is
+  /// at-most-once and may be skipped, `onAfter` is at-least-once (7.2). Unique per
+  /// delivery (never shared) when the report's id could not be read.
+  String deliveryId;
+
+  /// `false`: onBeforeReportCreated. `true`: onAfterReportCreated.
+  bool after;
+
+  String reportId;
+
+  /// The SDK's issue type string (`bug`, `crash`, `error`), as it reads it. Not
+  /// evidence that the report is a recovered crash (7.2.3).
+  String type;
+
+  /// How long native keeps the report live for this delivery: it runs the SDK's
+  /// completion itself when this has passed (always inside the SDK's own deadline,
+  /// 7.3.5), after which every operation on the handle is refused.
+  int deadlineMs;
+
+  List<Object?> _toList() {
+    return <Object?>[handle, deliveryId, after, reportId, type, deadlineMs];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static ReportHandlerRequestMessage decode(Object result) {
+    result as List<Object?>;
+    return ReportHandlerRequestMessage(
+      handle: result[0]! as String,
+      deliveryId: result[1]! as String,
+      after: result[2]! as bool,
+      reportId: result[3]! as String,
+      type: result[4]! as String,
+      deadlineMs: result[5]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! ReportHandlerRequestMessage ||
+        other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(handle, other.handle) &&
+        _deepEquals(deliveryId, other.deliveryId) &&
+        _deepEquals(after, other.after) &&
+        _deepEquals(reportId, other.reportId) &&
+        _deepEquals(type, other.type) &&
+        _deepEquals(deadlineMs, other.deadlineMs);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'ReportHandlerRequestMessage(handle: $handle, deliveryId: $deliveryId, after: $after, reportId: $reportId, type: $type, deadlineMs: $deadlineMs)';
+  }
+}
+
+/// A read of a live report. [severity] is the SDK's internal integer (1..5), or
+/// null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
+class ReportSnapshotMessage {
+  ReportSnapshotMessage({
+    required this.id,
+    required this.type,
+    this.summary,
+    this.reportDescription,
+    this.email,
+    this.severity,
+    required this.labels,
+    required this.attributes,
+  });
+
+  String id;
+
+  String type;
+
+  String? summary;
+
+  /// Named `reportDescription`: `description` collides with NSObject's in Swift.
+  String? reportDescription;
+
+  String? email;
+
+  int? severity;
+
+  List<String> labels;
+
+  /// Only values both SDKs accept: String, bool, int, double. Anything else the
+  /// report holds is left out rather than stringified.
+  Map<String, Object> attributes;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      id,
+      type,
+      summary,
+      reportDescription,
+      email,
+      severity,
+      labels,
+      attributes,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static ReportSnapshotMessage decode(Object result) {
+    result as List<Object?>;
+    return ReportSnapshotMessage(
+      id: result[0]! as String,
+      type: result[1]! as String,
+      summary: result[2] as String?,
+      reportDescription: result[3] as String?,
+      email: result[4] as String?,
+      severity: result[5] as int?,
+      labels: (result[6]! as List<Object?>).cast<String>(),
+      attributes: (result[7]! as Map<Object?, Object?>).cast<String, Object>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! ReportSnapshotMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(id, other.id) &&
+        _deepEquals(type, other.type) &&
+        _deepEquals(summary, other.summary) &&
+        _deepEquals(reportDescription, other.reportDescription) &&
+        _deepEquals(email, other.email) &&
+        _deepEquals(severity, other.severity) &&
+        _deepEquals(labels, other.labels) &&
+        _deepEquals(attributes, other.attributes);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'ReportSnapshotMessage(id: $id, type: $type, summary: $summary, reportDescription: $reportDescription, email: $email, severity: $severity, labels: $labels, attributes: $attributes)';
+  }
+}
+
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -375,6 +557,12 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is SecureRectanglesMessage) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
+    } else if (value is ReportHandlerRequestMessage) {
+      buffer.putUint8(133);
+      writeValue(buffer, value.encode());
+    } else if (value is ReportSnapshotMessage) {
+      buffer.putUint8(134);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -391,6 +579,10 @@ class _PigeonCodec extends StandardMessageCodec {
         return SecureViewRectanglesMessage.decode(readValue(buffer)!);
       case 132:
         return SecureRectanglesMessage.decode(readValue(buffer)!);
+      case 133:
+        return ReportHandlerRequestMessage.decode(readValue(buffer)!);
+      case 134:
+        return ReportSnapshotMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -481,6 +673,296 @@ class BugseeBridgeHostApi {
     );
     return pigeonVar_replyValue! as bool;
   }
+
+  /// Tells native whether a Dart handler exists for each phase. With none, native
+  /// completes the SDK's callback at once and never calls Dart (no waiting). Sent
+  /// again (false, false) by every new Dart isolate, so a hot restart that has not
+  /// registered one yet is not waited on.
+  Future<void> setReportHandlerPhases(bool before, bool after) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setReportHandlerPhases$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[before, after],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// The Dart handler is done (or failed): run the SDK's completion. Idempotent;
+  /// a handle native already completed (its deadline) is a no-op.
+  Future<void> completeReportHandler(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.completeReportHandler$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Report operations. Each returns whether it was APPLIED: `false` means the
+  /// handle is no longer live (the completion already ran), which Dart turns into
+  /// an error; native ignores the call (7.3.4). An argument the SDK cannot take
+  /// (a severity outside 1..5, an attribute value that is not a string, number or
+  /// bool) is a PlatformException `invalid-argument` and changes nothing.
+  ///
+  /// null: the handle is not live.
+  Future<ReportSnapshotMessage?> reportRead(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRead$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as ReportSnapshotMessage?;
+  }
+
+  Future<bool> reportSetSummary(String handle, String? value) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetSummary$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, value],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportSetDescription(String handle, String? value) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetDescription$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, value],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportSetEmail(String handle, String? value) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetEmail$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, value],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// [severity] is the SDK's internal integer, never an ordinal.
+  Future<bool> reportSetSeverity(String handle, int severity) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetSeverity$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, severity],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Atomic: a reader never sees the report without labels in between.
+  Future<bool> reportReplaceLabels(String handle, List<String> labels) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportReplaceLabels$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, labels],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportAddLabels(String handle, List<String> labels) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddLabels$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, labels],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportClearLabels(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearLabels$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportSetAttribute(
+    String handle,
+    String name,
+    Object value,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetAttribute$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, name, value],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportRemoveAttribute(String handle, String name) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRemoveAttribute$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, name],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> reportClearAttributes(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearAttributes$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
 }
 
 /// Native calls Dart. Always from the platform (main) thread.
@@ -488,6 +970,12 @@ abstract class BugseeBridgeFlutterApi {
   static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
 
   void onLifecycleEvent(LifecycleEventMessage event);
+
+  /// A report handler delivery. Native does NOT wait for this call's reply: the
+  /// SDK's completion runs when Dart calls `completeReportHandler`, when the
+  /// deadline passes, or when this call fails (Dart not listening). Never
+  /// delivered while the SDK says the process is terminating.
+  void onReportHandlerRequest(ReportHandlerRequestMessage request);
 
   static void setUp(
     BugseeBridgeFlutterApi? api, {
@@ -512,6 +1000,32 @@ abstract class BugseeBridgeFlutterApi {
               args[0]! as LifecycleEventMessage;
           try {
             api.onLifecycleEvent(arg_event);
+            return wrapResponse(empty: true);
+          } on PlatformException catch (e) {
+            return wrapResponse(error: e);
+          } catch (e) {
+            return wrapResponse(
+              error: PlatformException(code: 'error', message: e.toString()),
+            );
+          }
+        });
+      }
+    }
+    {
+      final pigeonVar_channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeFlutterApi.onReportHandlerRequest$messageChannelSuffix',
+        pigeonChannelCodec,
+        binaryMessenger: binaryMessenger,
+      );
+      if (api == null) {
+        pigeonVar_channel.setMessageHandler(null);
+      } else {
+        pigeonVar_channel.setMessageHandler((Object? message) async {
+          final List<Object?> args = message! as List<Object?>;
+          final ReportHandlerRequestMessage arg_request =
+              args[0]! as ReportHandlerRequestMessage;
+          try {
+            api.onReportHandlerRequest(arg_request);
             return wrapResponse(empty: true);
           } on PlatformException catch (e) {
             return wrapResponse(error: e);

@@ -450,6 +450,39 @@ static int32_t VersionOf(NSData *buffer) {
   XCTAssertEqual(VersionOf([g snapshotForDisplay:0]), VersionOf(shrunk));
 }
 
+- (void)testAfterALongWalkTooManyPastRectanglesStillCoverTheLastStepToo {
+  __block NSTimeInterval now = 100;
+  BGSFlutterSecureRectangleStore *g = [[BGSFlutterSecureRectangleStore alloc]
+      initWithEnvironment:_screen
+                    clock:^NSTimeInterval {
+                      return now;
+                    }
+                    grace:[BGSFlutterSecureRectangleStore graceSeconds]];
+  [g setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
+  for (int i = 0; i < 60; i++) {
+    double step[] = {i * 5.0, 0, i * 5.0 + 5, 10};
+    [g publishForOwner:1 epoch:1 sequence:1 + i views:@{@0 : [self viewOf:Doubles(step, 4)]}];
+    [g snapshotForDisplay:0];
+    now += 0.08;
+  }
+  double many[4 * 70];
+  for (int i = 0; i < 70; i++) {
+    many[4 * i] = i;
+    many[4 * i + 1] = 0;
+    many[4 * i + 2] = i + 1;
+    many[4 * i + 3] = 5;
+  }
+  now += 1;
+  [g publishForOwner:1 epoch:1 sequence:100 views:@{@0 : [self viewOf:Doubles(many, 280)]}];
+  [g snapshotForDisplay:0];
+  now += 0.01;
+  double far[] = {300, 300, 310, 310};
+  [g publishForOwner:1 epoch:1 sequence:101 views:@{@0 : [self viewOf:Doubles(far, 4)]}];
+  // the walk's last step stopped being current only 10 ms ago, so it is covered too
+  XCTAssertEqualObjects(WithoutVersion([g snapshotForDisplay:0]),
+                        (@[ @3, @300, @300, @310, @310, @0, @0, @70, @5, @295, @0, @300, @10 ]));
+}
+
 - (void)testARegionThatWentIsStillCoveredForTheWindow {
   __block NSTimeInterval now = 100;
   BGSFlutterSecureRectangleStore *g = [[BGSFlutterSecureRectangleStore alloc]
@@ -490,10 +523,25 @@ static int32_t VersionOf(NSData *buffer) {
   now += 0.04;
   [g publishForOwner:1 epoch:1 sequence:3 views:@{@0 : [self viewOf:Doubles(c, 4)]}];
   XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 3, @"current + both earlier places");
-  now += [BGSFlutterSecureRectangleStore graceSeconds] - 0.001;
+  // Each past place is served for a window from when IT stopped being current: A at +0.01, B at +0.05.
+  now = 100 + 0.129;
   XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 3);
-  now += 0.001;
-  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 1);
+  now = 100 + 0.131;
+  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 2, @"A has had its window");
+  now = 100 + 0.169;
+  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 2);
+  now = 100 + 0.171;
+  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 1, @"B has had its window");
+
+  // A long movement must not widen the cover to its whole path.
+  NSInteger most = 0;
+  for (int i = 0; i < 60; i++) {
+    double step[] = {i * 10.0, 0, i * 10.0 + 10, 10};
+    [g publishForOwner:1 epoch:1 sequence:100 + i views:@{@0 : [self viewOf:Doubles(step, 4)]}];
+    most = MAX(most, (NSInteger)((const int32_t *)[g snapshotForDisplay:0].bytes)[1]);
+    now += 0.08;
+  }
+  XCTAssertLessThanOrEqual(most, 3, @"the current and at most the previous place");
 
   double many[4 * 70];
   for (int i = 0; i < 70; i++) {
@@ -502,14 +550,21 @@ static int32_t VersionOf(NSData *buffer) {
     many[4 * i + 2] = i + 1;
     many[4 * i + 3] = 5;
   }
+  // Too many past rectangles collapse to a box: a fresh store, so only the 70 are past.
+  g = [[BGSFlutterSecureRectangleStore alloc] initWithEnvironment:_screen
+                                                            clock:^NSTimeInterval {
+                                                              return now;
+                                                            }
+                                                            grace:[BGSFlutterSecureRectangleStore graceSeconds]];
+  [g setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   now += 1;
-  [g publishForOwner:1 epoch:1 sequence:4 views:@{@0 : [self viewOf:Doubles(many, 280)]}];
+  [g publishForOwner:1 epoch:1 sequence:1000 views:@{@0 : [self viewOf:Doubles(many, 280)]}];
   [g snapshotForDisplay:0];
   now += 0.01;
   double far[] = {300, 300, 310, 310};
-  [g publishForOwner:1 epoch:1 sequence:5 views:@{@0 : [self viewOf:Doubles(far, 4)]}];
+  [g publishForOwner:1 epoch:1 sequence:1001 views:@{@0 : [self viewOf:Doubles(far, 4)]}];
   XCTAssertEqualObjects(WithoutVersion([g snapshotForDisplay:0]),
-                        (@[ @2, @300, @300, @310, @310, @0, @0, @70, @10 ]), @"one box over the 70 old ones");
+                        (@[ @2, @300, @300, @310, @310, @0, @0, @70, @5 ]), @"one box over the 70 old ones");
 }
 
 - (void)testTheOrderingIsPerOwnerAndAPublishReplacesOnlyItsOwnersViews {

@@ -145,28 +145,41 @@ static const NSUInteger kRetiredEpochs = 32;
 }
 @end
 
+/// A set that stopped being current, and until when it is still served.
+@interface BGSFlutterPast : NSObject
+@property(nonatomic, readonly, copy) NSData *quads;
+@property(nonatomic, readonly) NSTimeInterval until;
+@end
+@implementation BGSFlutterPast
+- (instancetype)initWithQuads:(NSData *)quads until:(NSTimeInterval)until {
+  if ((self = [super init])) {
+    _quads = [quads copy];
+    _until = until;
+  }
+  return self;
+}
+@end
+
 /// What a display last served.
 @interface BGSFlutterServed : NSObject
 @property(nonatomic, readonly) int32_t version;
-/// What is served: the current set plus, within the grace window, the previous one.
+/// What is served: the current set plus every past set still inside its window.
 @property(nonatomic, readonly, copy) NSData *quads;
 @property(nonatomic, readonly, copy) NSData *current;
-@property(nonatomic, readonly, copy) NSData *previous;
-@property(nonatomic, readonly) NSTimeInterval changedAt;
+/// Newest first. Each is served until the grace period after it stopped being current.
+@property(nonatomic, readonly, copy) NSArray<BGSFlutterPast *> *past;
 @property(nonatomic, readonly, copy) NSData *buffer;
 @end
 @implementation BGSFlutterServed
 - (instancetype)initWithVersion:(int32_t)version
                           quads:(NSData *)quads
                         current:(NSData *)current
-                       previous:(NSData *)previous
-                      changedAt:(NSTimeInterval)changedAt {
+                           past:(NSArray<BGSFlutterPast *> *)past {
   if ((self = [super init])) {
     _version = version;
     _quads = [quads copy];
     _current = [current copy];
-    _previous = [previous copy];
-    _changedAt = changedAt;
+    _past = [past copy];
     NSMutableData *buffer = [NSMutableData dataWithCapacity:(kHeaderInts * 4) + quads.length];
     int32_t header[2] = {version, (int32_t)(quads.length / (4 * sizeof(int32_t)))};
     [buffer appendBytes:header length:sizeof(header)];
@@ -476,10 +489,6 @@ static NSData *BGSUnion(NSData *a, NSData *b) {
   return out;
 }
 
-- (BOOL)inGrace:(BGSFlutterServed *)served at:(NSTimeInterval)now {
-  return now - served.changedAt < _grace;
-}
-
 - (NSData *)snapshotForDisplay:(NSInteger)display {
   @synchronized(_serveLock) {
     NSTimeInterval now = _clock();
@@ -493,30 +502,29 @@ static NSData *BGSUnion(NSData *a, NSData *b) {
       BGSFlutterServed *first = [[BGSFlutterServed alloc] initWithVersion:1
                                                                     quads:target
                                                                   current:target
-                                                                 previous:[NSData data]
-                                                                changedAt:now];
+                                                                     past:@[]];
       _served[@(display)] = first;
       return first.buffer;
     }
-    NSData *previous;
-    NSTimeInterval changedAt = last.changedAt;
-    if (![target isEqualToData:last.current]) {
-      // Something moved: keep covering where it was, and where it was before that if that is recent.
-      previous = _grace <= 0 ? [NSData data]
-                             : BGSUnion(last.current, [self inGrace:last at:now] ? last.previous : [NSData data]);
-      changedAt = now;
-    } else {
-      previous = last.previous.length > 0 && ![self inGrace:last at:now] ? [NSData data] : last.previous;
+    // Sets that stopped being current are served for a window each, counted from the moment THEY
+    // stopped (not from the last change), so a long movement keeps only the last window's worth of
+    // places instead of its whole path.
+    NSMutableArray<BGSFlutterPast *> *past = [NSMutableArray array];
+    if (_grace > 0 && ![target isEqualToData:last.current] && last.current.length > 0) {
+      [past addObject:[[BGSFlutterPast alloc] initWithQuads:last.current until:now + _grace]];
     }
-    NSData *out = previous.length == 0 ? target : BGSUnion(target, previous);
+    for (BGSFlutterPast *p in last.past) {
+      if (p.until > now) [past addObject:p];
+    }
+    NSData *out = target;
+    for (BGSFlutterPast *p in past) out = BGSUnion(out, p.quads);
     int32_t version = [out isEqualToData:last.quads]
                           ? last.version
                           : [BGSFlutterSecureRectangleStore versionAfter:last.version];
     BGSFlutterServed *next = [[BGSFlutterServed alloc] initWithVersion:version
                                                                  quads:out
                                                                current:target
-                                                              previous:previous
-                                                             changedAt:changedAt];
+                                                                  past:past];
     _served[@(display)] = next;
     return next.buffer;
   }

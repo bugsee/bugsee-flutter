@@ -526,16 +526,60 @@ void main() {
       expect(registry.measure()[0]!.rects, hasLength(1));
     });
 
-    testWidgets('a disabled TickerMode (an inactive route or overlay entry) '
-        'hides it; enabling brings it back', (tester) async {
+    testWidgets('a disabled TickerMode only stops animations: the content is '
+        'still painted, so it stays covered', (tester) async {
       Widget tree(bool on) =>
           TickerMode(enabled: on, child: at(registry, 5, 5));
       await tester.pumpWidget(app(registry, tree(true)));
-      expect(native.latest[0], [5, 5, 105, 55]);
       await tester.pumpWidget(app(registry, tree(false)));
-      expect(native.sent.last.views, isEmpty);
-      await tester.pumpWidget(app(registry, tree(true)));
       expect(native.latest[0], [5, 5, 105, 55]);
+    });
+
+    testWidgets('paint that overflows back into a viewport keeps a scrolled-'
+        'out box covered', (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 200),
+              child: SizedBox(
+                width: 400,
+                height: 300,
+                child: ListView(
+                  controller: controller,
+                  cacheExtent: 1000,
+                  children: [
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: BugseeSecureRegion(
+                        registry: registry,
+                        child: SizedBox(
+                          width: 100,
+                          height: 100,
+                          // paints 150 px BELOW its own box
+                          child: Transform.translate(
+                            offset: const Offset(0, 150),
+                            child: const SizedBox(width: 100, height: 100),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 1000),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      controller.jumpTo(120); // the box (0..100) is wholly above the viewport
+      await tester.pump();
+      // its overflow (150..250 -> 30..130 in the viewport) is visible
+      expect(native.latest[0], [0, 80, 100, 330]);
     });
 
     testWidgets('IndexedStack: only the shown child is covered', (
@@ -615,6 +659,42 @@ void main() {
       controller.jumpTo(150); // wholly above the viewport, still built
       await tester.pump();
       expect(native.sent.last.views, isEmpty);
+    });
+
+    testWidgets('a subtree too big to follow is reported as the whole view', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          registry,
+          Align(
+            alignment: Alignment.topLeft,
+            child: BugseeSecureRegion(
+              registry: registry,
+              child: SizedBox(
+                width: 10,
+                height: 10,
+                child: OverflowBox(
+                  maxWidth: 10,
+                  maxHeight: 100000,
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < 2100; i++) const SizedBox(height: 1),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final view = tester.view;
+      expect(native.latest[0], [
+        0,
+        0,
+        view.physicalSize.width / view.devicePixelRatio,
+        view.physicalSize.height / view.devicePixelRatio,
+      ]);
     });
 
     testWidgets('paint outside the region box is covered too', (tester) async {

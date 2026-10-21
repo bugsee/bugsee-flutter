@@ -54,15 +54,16 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   physical pixels in the `View.getLocationOnScreen` space, display = `Display.getDisplayId()`;
   iOS 7.0.0-beta7: points in the screen's coordinate space, display 0 only.** Dart publishes Flutter
   logical pixels per view; native converts (Android: density of the Flutter view's `Resources`, read at every
-  pull and matched against the ratio Dart measured at; iOS: ratio / UIScreen.scale = 1, never the screen scale), adds the view's on-screen position and scale, a 0.12 s grace window that serves the previous set with a changed one, and the view's
-  on-screen position, then floors l/t and ceils r/b. Versions are derived from what is served (so a density
+  pull and matched against the ratio Dart measured at; iOS: ratio / UIScreen.scale = 1, never the screen scale), applies the view's on-screen scale, adds its on-screen position, then floors l/t and
+  ceils r/b; a 0.12 s grace window serves each past set for 0.12 s after it stopped being current, together with
+  the current one. Versions are derived from what is served (so a density
   or position change moves them with no write), per display, never 0; a display that never had a rectangle
   serves `[0, 0]` (unknown). Fail closed: an unplaceable view, a non-finite rectangle or a bad scale serves
   the whole display; a view known to be off screen serves nothing. Dart (`lib/src/secure`, internal until
   Phase 4): `BugseeSecureRegion`/`RenderSecureRegion` + `SecureRegionRegistry`, measured every frame in a
   post-frame callback, published only when the set changed, ordered by `(epoch, sequence)`. Regions are
   reported UNCLIPPED through every ancestor transform (bounding box, including paint outside their box); a region is dropped only on positive evidence
-  (paintsChild, IndexedStack, a disabled TickerMode, a clipping viewport) and never because its layer is detached; an unmeasurable one covers the whole view.
+  (paintsChild, IndexedStack, a clipping viewport); a disabled TickerMode is not evidence and never because its layer is detached; an unmeasurable one covers the whole view.
   First-frame exposure of a newly appearing region remains.
   Known limits: see "Secure rectangle limits" in `.claude/CLAUDE.md`.
 - Report handlers: always call completion; `isTerminating=true` → synchronous native-only

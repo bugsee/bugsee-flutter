@@ -295,28 +295,37 @@ final class SecureRectangleStore {
         }
     }
 
+    /** A set that stopped being current, and until when it is still served. Immutable. */
+    private static final class Past {
+        final int[] quads;
+        final long untilMs;
+
+        Past(@NonNull final int[] quads, final long untilMs) {
+            this.quads = quads;
+            this.untilMs = untilMs;
+        }
+    }
+
     /** What a display last served. Immutable. */
     private static final class Served {
         final int version;
-        /** What is served: the current set plus, within the grace window, the previous one. */
+        /** What is served: the current set plus every past set still inside its window. */
         final int[] quads;
         final int[] current;
-        final int[] previous;
-        final long changedAtMs;
+        /** Newest first. Each is served until {@code GRACE_MS} after it stopped being current. */
+        final List<Past> past;
         final int[] buffer;
 
         Served(
                 final int version,
                 @NonNull final int[] quads,
                 @NonNull final int[] current,
-                @NonNull final int[] previous,
-                final long changedAtMs
+                @NonNull final List<Past> past
         ) {
             this.version = version;
             this.quads = quads;
             this.current = current;
-            this.previous = previous;
-            this.changedAtMs = changedAtMs;
+            this.past = past;
             this.buffer = new int[HEADER_INTS + quads.length];
             buffer[0] = version;
             buffer[1] = quads.length / 4;
@@ -491,34 +500,32 @@ final class SecureRectangleStore {
                 if (target.length == 0) {
                     return new int[] {UNKNOWN_VERSION, 0};
                 }
-                final Served first = new Served(1, target, target, NONE, now);
+                final Served first = new Served(1, target, target, new ArrayList<>());
                 served.put(display, first);
                 return first.buffer.clone();
             }
-            final int[] previous;
-            long changedAt = last.changedAtMs;
-            if (!Arrays.equals(target, last.current)) {
-                // Something moved: keep covering where it was, and where it was before that if
-                // that is still recent.
-                previous = graceMs <= 0 ? NONE
-                        : union(last.current, inGrace(last, now) ? last.previous : NONE);
-                changedAt = now;
-            } else {
-                previous = last.previous.length > 0 && !inGrace(last, now) ? NONE : last.previous;
+            // Sets that stopped being current are served for a window each, counted from
+            // the moment THEY stopped (not from the last change), so a long movement keeps
+            // only the last window's worth of places instead of its whole path.
+            final List<Past> past = new ArrayList<>();
+            if (graceMs > 0 && !Arrays.equals(target, last.current) && last.current.length > 0) {
+                past.add(new Past(last.current, now + graceMs));
             }
-            final int[] out = previous.length == 0 ? target : union(target, previous);
+            for (final Past p : last.past) {
+                if (p.untilMs > now) {
+                    past.add(p);
+                }
+            }
+            int[] out = target;
+            for (final Past p : past) {
+                out = union(out, p.quads);
+            }
             final int version = Arrays.equals(out, last.quads)
                     ? last.version : advance(last.version);
-            final Served next = out == last.quads && previous == last.previous
-                    && Arrays.equals(target, last.current) && changedAt == last.changedAtMs
-                    ? last : new Served(version, out, target, previous, changedAt);
+            final Served next = new Served(version, out, target, past);
             served.put(display, next);
             return next.buffer.clone();
         }
-    }
-
-    private boolean inGrace(@NonNull final Served s, final long now) {
-        return now - s.changedAtMs < graceMs;
     }
 
     /** The rectangles of {@code a} then those of {@code b} that are not in {@code a}. */

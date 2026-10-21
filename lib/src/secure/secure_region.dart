@@ -19,9 +19,10 @@
 // * Hidden: a region is dropped ONLY on positive evidence that none of its
 //   pixels are on screen: an ancestor that does not paint it (`paintsChild`:
 //   Offstage, Visibility, zero Opacity), an IndexedStack showing another child,
-//   a disabled TickerMode (an inactive route or overlay entry, which is how a
-//   covered page is hidden), or a clipping scroll viewport that its region lies
-//   wholly outside of. Nothing else drops it. In particular a detached layer is
+//   or a clipping scroll viewport that its region (with what its descendants
+//   paint) lies wholly outside of. Nothing else drops it. TickerMode is NOT
+//   evidence: it only stops animations (reduce-motion, a paused tab), the
+//   content is still painted. In particular a detached layer is
 //   NOT evidence: SnapshotWidget (the Zoom page transition) paints a region into
 //   a temporary layer and draws the cached image, so its pixels are on screen
 //   while its own layer is not attached. A region that has never been laid out
@@ -129,10 +130,11 @@ bool sameState(SecureState a, SecureState b) {
 const int _maxDescendants = 2000;
 
 /// Whether [box] is PROVABLY not on screen. Only positive evidence counts; see
-/// the library comment. Never throws (an exception means "not provable").
-bool provablyHidden(RenderSecureRegion box) {
+/// the library comment. [painted] is the box together with what its
+/// descendants paint, in the view's logical pixels. Never throws (an exception
+/// means "not provable").
+bool provablyHidden(RenderSecureRegion box, Rect painted) {
   try {
-    if (!box.tickerEnabled) return true;
     RenderObject child = box;
     RenderObject? parent = box.parent;
     while (parent != null) {
@@ -147,14 +149,18 @@ bool provablyHidden(RenderSecureRegion box) {
         if (!identical(shown, child)) return true;
       }
       if (parent is RenderViewportBase && parent.clipBehavior != Clip.none) {
-        // A viewport clips what lies outside it: a region wholly outside is
-        // invisible (a child kept in the cache extent, scrolled out of view).
-        final Rect inViewport = MatrixUtils.transformRect(
-          box.getTransformTo(parent),
-          Offset.zero & box.size,
-        );
+        // A viewport clips what lies outside it: a region wholly outside (with
+        // everything it paints) is invisible (a child kept in the cache extent,
+        // scrolled out of view).
+        final Matrix4 toView = parent.getTransformTo(null);
+        final Matrix4 fromView = Matrix4.tryInvert(toView) ?? Matrix4.zero();
+        final Rect inViewport = MatrixUtils.transformRect(fromView, painted);
         final Rect port = Offset.zero & parent.size;
-        if (_rectFinite(inViewport) && !inViewport.overlaps(port)) return true;
+        if (Matrix4.tryInvert(toView) != null &&
+            _rectFinite(inViewport) &&
+            !inViewport.overlaps(port)) {
+          return true;
+        }
       }
       child = parent;
       parent = parent.parent;
@@ -166,13 +172,15 @@ bool provablyHidden(RenderSecureRegion box) {
 }
 
 /// The box of [box] and of everything its descendants paint outside it, in the
-/// view's logical pixels, or `null` when that is too much to follow.
+/// view's logical pixels, or `null` when that is too much to follow. One
+/// top-down pass: each child's transform is its parent's plus one
+/// `applyPaintTransform`, not a walk to the root per node.
 Rect? _paintedRect(RenderSecureRegion box) {
   final Matrix4 toView = box.getTransformTo(null);
   var rect = MatrixUtils.transformRect(toView, Offset.zero & box.size);
   var visited = 0;
   var tooMany = false;
-  void visit(RenderObject node) {
+  void visit(RenderObject node, Matrix4 nodeToView) {
     node.visitChildren((RenderObject child) {
       if (tooMany) return;
       // A child its parent does not paint has no meaningful geometry (a
@@ -182,17 +190,16 @@ Rect? _paintedRect(RenderSecureRegion box) {
         tooMany = true;
         return;
       }
+      final Matrix4 childToView = nodeToView.clone();
+      node.applyPaintTransform(child, childToView);
       rect = rect.expandToInclude(
-        MatrixUtils.transformRect(
-          child.getTransformTo(null),
-          child.paintBounds,
-        ),
+        MatrixUtils.transformRect(childToView, child.paintBounds),
       );
-      visit(child);
+      visit(child, childToView);
     });
   }
 
-  visit(box);
+  visit(box, toView);
   return tooMany ? null : rect;
 }
 
@@ -201,7 +208,7 @@ Rect? _paintedRect(RenderSecureRegion box) {
 MeasuredRegion? measureRegion(RenderSecureRegion box) {
   RenderView? view;
   try {
-    if (!box.attached || !box.hasSize || provablyHidden(box)) return null;
+    if (!box.attached || !box.hasSize) return null;
     // The root of this box's tree is its view.
     RenderObject root = box;
     while (root.parent != null) {
@@ -215,6 +222,9 @@ MeasuredRegion? measureRegion(RenderSecureRegion box) {
       return null; // zero or negative size: nothing to hide
     }
     final Rect? rect = _paintedRect(box);
+    if (rect != null && _rectFinite(rect) && provablyHidden(box, rect)) {
+      return null;
+    }
     return rect != null && _rectFinite(rect)
         ? MeasuredRegion(
             view.flutterView.viewId,
@@ -312,9 +322,6 @@ class SecureRegionRegistry {
   void remove(RenderSecureRegion region) {
     if (_regions.remove(region)) _schedule();
   }
-
-  /// Something a measurement depends on changed: measure this frame.
-  void touch() => _schedule();
 
   void _schedule() {
     final binding = SchedulerBinding.instance;
@@ -436,24 +443,11 @@ class RenderSecureRegion extends RenderProxyBox {
   RenderSecureRegion({
     required bool enabled,
     required SecureRegionRegistry registry,
-    bool tickerEnabled = true,
   }) : _enabled = enabled,
-       _registry = registry,
-       _tickerEnabled = tickerEnabled;
+       _registry = registry;
 
   bool _enabled;
   SecureRegionRegistry _registry;
-  bool _tickerEnabled;
-
-  /// `false` when an enclosing [TickerMode] is disabled: Flutter's way of
-  /// saying a route or overlay entry is inactive (covered, offstage). Positive
-  /// evidence that the region is not on screen.
-  bool get tickerEnabled => _tickerEnabled;
-  set tickerEnabled(bool value) {
-    if (value == _tickerEnabled) return;
-    _tickerEnabled = value;
-    if (attached && _enabled) _registry.touch();
-  }
 
   bool get enabled => _enabled;
   set enabled(bool value) {
@@ -514,7 +508,6 @@ class BugseeSecureRegion extends SingleChildRenderObjectWidget {
       RenderSecureRegion(
         enabled: enabled,
         registry: registry ?? SecureRegionRegistry.instance,
-        tickerEnabled: TickerMode.valuesOf(context).enabled,
       );
 
   @override
@@ -524,7 +517,6 @@ class BugseeSecureRegion extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..registry = registry ?? SecureRegionRegistry.instance
-      ..enabled = enabled
-      ..tickerEnabled = TickerMode.valuesOf(context).enabled;
+      ..enabled = enabled;
   }
 }

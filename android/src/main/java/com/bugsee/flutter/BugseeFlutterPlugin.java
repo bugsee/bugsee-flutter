@@ -39,6 +39,17 @@ public class BugseeFlutterPlugin
             MAIN::post,
             BugseeFlutterPlugin::refreshPlacements);
 
+    private static SecureEnvironment sharedEnvironment;
+
+    /** One per process: every engine's placement records its view's resources in it. */
+    private static synchronized SecureEnvironment environment(
+            @NonNull final android.content.Context context) {
+        if (sharedEnvironment == null) {
+            sharedEnvironment = new SecureEnvironment(context);
+        }
+        return sharedEnvironment;
+    }
+
     private static void refreshPlacements() {
         for (final SecurePlacement placement : PLACEMENTS) {
             placement.refresh();
@@ -57,7 +68,7 @@ public class BugseeFlutterPlugin
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
-        final SecureEnvironment environment = new SecureEnvironment(binding.getApplicationContext());
+        final SecureEnvironment environment = environment(binding.getApplicationContext());
         // One environment for the process; it keeps what each engine's view reports.
         store.setEnvironment(environment);
         placement = new SecurePlacement(owner, binding.getFlutterEngine(), store, environment);

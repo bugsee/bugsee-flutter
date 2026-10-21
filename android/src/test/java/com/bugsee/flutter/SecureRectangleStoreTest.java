@@ -634,22 +634,37 @@ public class SecureRectangleStoreTest {
     }
 
     @Test
-    public void continuousMovementCoversEveryRecentPlace() {
+    public void everyPastPlaceIsServedForAWindowFromWhenItStoppedBeingCurrent() {
         final SecureRectangleStore g = graced();
-        put(g, 0, 0, 10, 10);
+        put(g, 0, 0, 10, 10); // A
         g.snapshot(0);
         now[0] += 10;
-        put(g, 5, 0, 15, 10);
+        put(g, 5, 0, 15, 10); // B: A stops at +10, served until +130
         g.snapshot(0);
         now[0] += 40;
-        put(g, 10, 0, 20, 10);
-        final int[] s = g.snapshot(0);
-        assertEquals("current + both earlier places", 3, s[1]);
-        now[0] += SecureRectangleStore.GRACE_MS - 1;
-        assertEquals("all recent places stay until a window after the LAST change", 3,
-                g.snapshot(0)[1]);
-        now[0] += 1;
-        assertEquals(1, g.snapshot(0)[1]);
+        put(g, 10, 0, 20, 10); // C: B stops at +50, served until +170
+        assertEquals("current + both earlier places", 3, g.snapshot(0)[1]);
+        now[0] = 1000 + 129;
+        assertEquals(3, g.snapshot(0)[1]);
+        now[0] = 1000 + 130;
+        assertEquals("A has had its window", 2, g.snapshot(0)[1]);
+        now[0] = 1000 + 169;
+        assertEquals(2, g.snapshot(0)[1]);
+        now[0] = 1000 + 170;
+        assertEquals("B has had its window", 1, g.snapshot(0)[1]);
+    }
+
+    /** A long movement must not widen the cover to its whole path. */
+    @Test
+    public void aLongMovementKeepsOnlyTheLastWindowsWorthOfPlaces() {
+        final SecureRectangleStore g = graced();
+        int max = 0;
+        for (int i = 0; i < 60; i++) {
+            put(g, i * 10, 0, i * 10 + 10, 10);
+            max = Math.max(max, g.snapshot(0)[1]);
+            now[0] += 80; // slower than a frame, like a few pulls a second
+        }
+        assertTrue("at most the current and the previous place, got " + max, max <= 3);
     }
 
     @Test
@@ -669,6 +684,30 @@ public class SecureRectangleStoreTest {
         final int[] s = g.snapshot(0);
         assertArrayEquals("the new one, then ONE box over the 70 old ones",
                 new int[] {2, 500, 500, 510, 510, 0, 0, 70, 5}, withoutVersion(s));
+    }
+
+    @Test
+    public void afterALongWalkTooManyPastRectanglesStillCoverTheLastStepToo() {
+        final SecureRectangleStore g = graced();
+        for (int i = 0; i < 60; i++) {
+            put(g, i * 10, 0, i * 10 + 10, 10);
+            g.snapshot(0);
+            now[0] += 80;
+        }
+        final double[] many = new double[4 * 70];
+        for (int i = 0; i < 70; i++) {
+            many[4 * i] = i;
+            many[4 * i + 2] = i + 1;
+            many[4 * i + 3] = 5;
+        }
+        now[0] += 1000;
+        put(g, many);
+        g.snapshot(0);
+        now[0] += 10;
+        put(g, 300, 300, 310, 310);
+        // the walk's last step stopped being current only 10 ms ago, so it is covered too
+        assertArrayEquals(new int[] {3, 300, 300, 310, 310, 0, 0, 70, 5, 590, 0, 600, 10},
+                withoutVersion(g.snapshot(0)));
     }
 
     @Test

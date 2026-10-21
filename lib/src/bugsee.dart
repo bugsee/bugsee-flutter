@@ -323,28 +323,54 @@ abstract final class Bugsee {
 
   // ---- Dart errors ------------------------------------------------------------------------------
 
-  /// Reports a Dart [error] to Bugsee, with the [stackTrace] it was caught with (`null` takes the
-  /// current stack): `catch (error, stack) { Bugsee.logException(error, stack); }`.
-  ///
-  /// [handled] (default `true`) says whether the app dealt with it: a handled error becomes an
-  /// **error** report, an unhandled one a **crash** report (the app lives on; it is the report type
-  /// the dashboard files unhandled errors under). [domain] groups issues on the dashboard (1 to 256
-  /// characters); on iOS it is dropped for an unhandled error (the SDK has no domain there). There is
-  /// no severity: neither SDK takes one for an exception; set it in a report handler
-  /// ([setReportHandler]).
+  /// Reports a handled Dart [error] to Bugsee as an **error** report, with the [stackTrace] it was
+  /// caught with: `catch (error, stack) { Bugsee.logException(error, stack); }`. Without a stack the
+  /// current one is taken at this call (it starts where you called). Mirrors the SDKs' and the React
+  /// Native `logException`. For an unhandled error (a crash report) see [logUnhandledException]; for a
+  /// grouping domain, [reportException].
   ///
   /// Any object can be thrown in Dart, so any object is accepted: its type (`StateError`,
   /// `FormatException`, ...) and `toString()` are what is reported. A [FlutterError] contributes its
   /// summary only. The stack is sent as the VM printed it: in a build with `--obfuscate` or
   /// `--split-debug-info` the backend symbolicates it from the symbols you upload (see
-  /// doc/exceptions.md, which also has what each SDK does with the call).
+  /// doc/exceptions.md, which also has what each SDK does with the call). There is no severity:
+  /// neither SDK takes one for an exception; set it in a report handler ([setReportHandler]).
   ///
   /// Completes with whether the SDK was handed the error; `false` before [launch] and after [stop],
-  /// where both SDKs drop it (nothing is queued). Throws a [BugseeArgumentException] for a bad
-  /// [domain] and a [BugseeException] when native cannot be reached; never because of [error].
-  static Future<bool> logException(
-    Object error,
-    StackTrace? stackTrace, {
+  /// where both SDKs drop it (nothing is queued). Throws a [BugseeException] when native cannot be
+  /// reached; never because of [error].
+  static Future<bool> logException(Object error, [StackTrace? stackTrace]) =>
+      _runtime.logException(
+        error,
+        stackTrace ?? StackTrace.current,
+        handled: true,
+        stackCaptured: stackTrace == null,
+      );
+
+  /// Reports an unhandled Dart [error] as a **crash** report (the app lives on: both SDKs file it
+  /// under crashes, for what a Flutter app has no way to terminate over). This is for an error you
+  /// caught at the top of something yourself; the hooks of [installErrorHandlers] do not use it
+  /// unless told to (`reportAsCrash: true`). Like the SDKs' `logUnhandledException`; the same answer and failures as
+  /// [logException]. Android's SDK writes the report on the calling thread (the plugin calls it from its own thread) and iOS delivers it at
+  /// the next launch, one at a time (doc/exceptions.md).
+  static Future<bool> logUnhandledException(
+    Object error, [
+    StackTrace? stackTrace,
+  ]) => _runtime.logException(
+    error,
+    stackTrace ?? StackTrace.current,
+    handled: false,
+    stackCaptured: stackTrace == null,
+  );
+
+  /// [logException] / [logUnhandledException] in one call with the options Dart cannot put on those
+  /// two (an optional positional stack and named options do not mix): [handled] (default `true`: an
+  /// error report; `false` a crash report) and the grouping [domain] (1 to 256 characters; the issues
+  /// of one domain group together on the dashboard; on iOS dropped when [handled] is false, where the
+  /// SDK has none). A bad [domain] is a [BugseeArgumentException].
+  static Future<bool> reportException(
+    Object error, {
+    StackTrace? stackTrace,
     bool handled = true,
     String? domain,
   }) => _runtime.logException(
@@ -362,27 +388,36 @@ abstract final class Bugsee {
   /// ([platformErrors]) and the root isolate's error listener ([isolateErrors]); errors in a zone
   /// you create need [runGuarded], and in isolates you spawn [listenToIsolateErrors].
   ///
-  /// It never replaces or swallows a handler: the one that was installed first (the app's,
-  /// Crashlytics', Sentry's) is still called, after ours, and its answer is returned; without one
-  /// the engine reports the error as it would have. Call it once, after the other tools installed
-  /// theirs or before, either order keeps them all called. A second call while installed does
-  /// nothing. Hot restart starts clean (the handlers are Dart statics of the new isolate).
+  /// It never replaces or swallows a handler: the one that was installed before (the app's,
+  /// Crashlytics', Sentry's) is still called, and its answer is returned; without one the engine
+  /// reports the error as it would have. **Call it AFTER the tools that assign these handlers**:
+  /// Crashlytics' documented setup (`FlutterError.onError = recordFlutterFatalError`) REPLACES
+  /// the handler, so a Bugsee installed before it is dropped from the chain and reports nothing
+  /// ([errorHandlersActive] tells; a debug build says so at [launch]). A tool that wraps the
+  /// current handler (Sentry's `init`) keeps ours in its chain either way. A second call while
+  /// installed does nothing. Hot restart starts clean (the handlers are Dart statics of the new
+  /// isolate).
   ///
-  /// An error is reported once (the same object by identity; text by fingerprint) and the same
-  /// error at most once in 30 s, at most 10 reports in 60 s: a build error that repeats every frame
-  /// opens one report, not sixty. `FlutterErrorDetails.silent` errors are not reported. Nothing from
-  /// `FlutterErrorDetails` but the exception and its stack is read (no widget trees, no
+  /// An error is reported once (the same object, or the same text, seen twice within a second counts
+  /// as one: a root-zone error reaches both `PlatformDispatcher.onError` and the isolate listener),
+  /// the same error at most once in 30 s and at most 10 reports in 60 s: a build error that repeats
+  /// every frame opens one report, not sixty. `FlutterErrorDetails.silent` errors are not reported.
+  /// Nothing from `FlutterErrorDetails` but the exception and its stack is read (no widget trees, no
   /// information collector).
   ///
-  /// [reportAsCrash] (default `true`) files them as **crash** reports, like unhandled errors in the
-  /// native SDKs; `false` files **error** reports. iOS writes a crash report that the NEXT launch
-  /// sends, and keeps one at a time; the simulator files nothing (see doc/exceptions.md). Nothing is
-  /// reported while `detect.crash` was false in the last launch made through [launch].
+  /// By default they are filed as **error** reports ([reportAsCrash] `false`): a Dart error never
+  /// ends the app (neither SDK terminates it), the React Native SDK files only fatal JS errors as
+  /// crashes, and a crash report counts against crash-free sessions and, on iOS, replaces the one
+  /// stored crash report (so ten a minute would still deliver only the last, at the next launch).
+  /// `reportAsCrash: true` files **crash** reports instead (what 9.x did for `FlutterError.onError`);
+  /// an error the previous `PlatformDispatcher` handler says it handled (`true`) is never a crash.
+  /// The simulator files nothing on iOS (doc/exceptions.md). Nothing is reported while `detect.crash`
+  /// was false in the last launch made through [launch].
   static void installErrorHandlers({
     bool flutterErrors = true,
     bool platformErrors = true,
     bool isolateErrors = true,
-    bool reportAsCrash = true,
+    bool reportAsCrash = false,
   }) => _runtime.errorCapture.install(
     flutterErrors: flutterErrors,
     platformErrors: platformErrors,
@@ -395,14 +430,20 @@ abstract final class Bugsee {
   /// stay in that tool's chain and pass every error on, reporting nothing.
   static void uninstallErrorHandlers() => _runtime.errorCapture.uninstall();
 
-  /// Whether [installErrorHandlers] is in effect.
+  /// Whether [installErrorHandlers] was called (and not undone).
   static bool get errorHandlersInstalled => _runtime.errorCapture.isInstalled;
+
+  /// Whether [installErrorHandlers] is in effect AND its handlers are still the current
+  /// `FlutterError.onError` / `PlatformDispatcher.onError`. `false` after another tool replaced them
+  /// (install after it); also `false` when a tool wrapped them, in which case Bugsee still reports
+  /// whenever that tool calls the handler it wrapped, which cannot be told from here.
+  static bool get errorHandlersActive => _runtime.errorCapture.isActive;
 
   /// `runZonedGuarded` that reports what escapes [body] (errors from timers, futures and microtasks
   /// started in it) and then calls [onError]; without [onError] the error goes to
   /// `FlutterError.reportError`, so it is still printed and still reaches the app's handlers.
-  /// Reported as unhandled (a crash report; an error report when [installErrorHandlers] was told
-  /// `reportAsCrash: false`).
+  /// Reported like the installed handlers report: an error report, or a crash report when
+  /// [installErrorHandlers] was told `reportAsCrash: true`.
   static R? runGuarded<R>(
     R Function() body, {
     void Function(Object error, StackTrace stack)? onError,

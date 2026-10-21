@@ -72,14 +72,66 @@ void main() {
     });
 
     test('handled: false and a domain cross as given', () async {
-      await Bugsee.logException(
+      await Bugsee.reportException(
         StateError('x'),
-        null,
         handled: false,
         domain: 'checkout',
       );
       expect(native.last['logException']![1], false);
       expect(native.last['logException']![2], 'checkout');
+    });
+
+    test(
+      'logException needs no stack: Bugsee.logException(e) works, handled',
+      () async {
+        expect(await Bugsee.logException(StateError('x')), isTrue);
+        expect(native.last['logException']![1], true);
+        expect(native.last['logException']![2], isNull);
+      },
+    );
+
+    test(
+      'logUnhandledException is the crash path, with or without a stack',
+      () async {
+        await Bugsee.logUnhandledException(StateError('x'));
+        expect(native.last['logException']![1], false);
+        await Bugsee.logUnhandledException(
+          StateError('y'),
+          StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
+        );
+        expect(native.last['logException']![1], false);
+        expect(
+          document(native)['originalStackTrace'],
+          '#0      f (package:app/a.dart:1:1)\n',
+        );
+      },
+    );
+
+    test(
+      'reportException with nothing but the error is a handled one with the current stack',
+      () async {
+        Future<bool> callerOfReport() =>
+            Bugsee.reportException(StateError('x'));
+        await callerOfReport();
+        expect(native.last['logException']![1], true);
+        final frames = (document(native)['frames']! as List).cast<Map>();
+        expect(frames.first['trace'], contains('callerOfReport'));
+      },
+    );
+
+    test('the SDK refusing the document is not blamed on the domain', () async {
+      native.failing['logException'] = refusal(
+        'invalid-argument',
+        'the exception document is longer than 262144 UTF-16 units',
+      );
+      await expectLater(
+        Bugsee.logException(StateError('x')),
+        throwsA(
+          isA<BugseeArgumentException>()
+              .having((e) => e.argument, 'argument', 'error')
+              .having((e) => e.message, 'message', contains('document')),
+        ),
+      );
     });
 
     test(
@@ -119,7 +171,7 @@ void main() {
     test('a bad domain is refused in Dart, nothing crosses', () async {
       for (final domain in ['', 'd' * 257]) {
         await expectLater(
-          Bugsee.logException('x', null, domain: domain),
+          Bugsee.reportException('x', domain: domain),
           throwsA(
             isA<BugseeArgumentException>().having(
               (e) => e.argument,
@@ -130,7 +182,7 @@ void main() {
         );
       }
       expect(native.calls, isNot(contains(startsWith('logException'))));
-      expect(await Bugsee.logException('x', null, domain: 'd' * 256), isTrue);
+      expect(await Bugsee.reportException('x', domain: 'd' * 256), isTrue);
     });
 
     test(
@@ -174,29 +226,55 @@ void main() {
       },
     );
 
-    test('a FlutterError reaches native as an unhandled error, once', () async {
-      Bugsee.installErrorHandlers(isolateErrors: false);
-      expect(Bugsee.errorHandlersInstalled, isTrue);
-      FlutterError.onError!(
-        FlutterErrorDetails(
-          exception: StateError('from the framework'),
-          stack: StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
-        ),
-      );
-      await settle();
-      expect(
-        native.calls.where((c) => c.startsWith('logException')),
-        hasLength(1),
-      );
-      expect(native.last['logException']![1], false);
-      expect(document(native)['reason'], 'Bad state: from the framework');
-    });
+    test(
+      'a FlutterError reaches native as an error report by default, once',
+      () async {
+        Bugsee.installErrorHandlers(isolateErrors: false);
+        expect(Bugsee.errorHandlersInstalled, isTrue);
+        FlutterError.onError!(
+          FlutterErrorDetails(
+            exception: StateError('from the framework'),
+            stack: StackTrace.fromString(
+              '#0      f (package:app/a.dart:1:1)\n',
+            ),
+          ),
+        );
+        await settle();
+        expect(
+          native.calls.where((c) => c.startsWith('logException')),
+          hasLength(1),
+        );
+        expect(native.last['logException']![1], true);
+        expect(document(native)['reason'], 'Bad state: from the framework');
+      },
+    );
 
-    test('reportAsCrash false reports handled', () async {
-      Bugsee.installErrorHandlers(isolateErrors: false, reportAsCrash: false);
+    test('reportAsCrash true files crash reports', () async {
+      PlatformDispatcher.instance.onError = null;
+      Bugsee.installErrorHandlers(isolateErrors: false, reportAsCrash: true);
       PlatformDispatcher.instance.onError!(StateError('x'), StackTrace.empty);
       await settle();
-      expect(native.last['logException']![1], true);
+      expect(native.last['logException']![1], false);
+    });
+
+    test(
+      'errorHandlersActive follows whether ours is still the current handler',
+      () async {
+        expect(Bugsee.errorHandlersActive, isFalse);
+        Bugsee.installErrorHandlers(isolateErrors: false);
+        expect(Bugsee.errorHandlersInstalled, isTrue);
+        expect(Bugsee.errorHandlersActive, isTrue);
+        FlutterError.onError = (_) {};
+        expect(Bugsee.errorHandlersInstalled, isTrue);
+        expect(Bugsee.errorHandlersActive, isFalse);
+      },
+    );
+
+    test('a launch says (debug) that the handlers were replaced', () async {
+      Bugsee.installErrorHandlers(isolateErrors: false);
+      FlutterError.onError = (_) {};
+      await Bugsee.launch('TOKEN');
+      expect(warnings.where((w) => w.contains('AFTER')), hasLength(1));
     });
 
     test('uninstall stops reporting', () async {
@@ -277,7 +355,7 @@ void main() {
       await done.future;
       await settle();
       expect(seen.single, isA<StateError>());
-      expect(native.last['logException']![1], false);
+      expect(native.last['logException']![1], true);
       expect(document(native)['reason'], 'Bad state: from a timer');
     });
 

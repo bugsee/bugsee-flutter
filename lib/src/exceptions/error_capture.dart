@@ -27,18 +27,42 @@ import 'exception_payload.dart';
 typedef ErrorReporter =
     Future<void> Function(ExceptionPayload payload, {required bool handled});
 
+/// A monotonic clock: time since something fixed, never going backwards (a wall clock does, when it
+/// is set). Injectable for tests.
+typedef MonotonicClock = Duration Function();
+
+MonotonicClock _stopwatchClock() {
+  final stopwatch = Stopwatch()..start();
+  return () => stopwatch.elapsed;
+}
+
+/// What the limiter says about an error.
+enum LimiterVerdict {
+  /// Report it.
+  allowed,
+
+  /// The same error was reported within [ReportLimiter.duplicateWindow]: the same throw arriving by
+  /// a second route (a root-zone error reaches `PlatformDispatcher.onError` and the isolate
+  /// listener). Dropped without counting it, and without a warning.
+  duplicate,
+
+  /// Over a limit: counted, and warned about once.
+  limited,
+}
+
 /// Flood protection for the installed handlers (an explicit `Bugsee.logException` is never limited).
 ///
 /// A render error repeats every frame, a timer error every tick: without a limit one bug would
-/// open a report (video, logs, a disk write on the main thread) sixty times a second.
+/// open a report (video, logs, a disk write) sixty times a second.
 final class ReportLimiter {
   ReportLimiter({
     this.perFingerprint = const Duration(seconds: 30),
     this.window = const Duration(seconds: 60),
     this.maxInWindow = 10,
     this.maxTracked = 64,
-    DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+    this.duplicateWindow = const Duration(seconds: 1),
+    MonotonicClock? now,
+  }) : _now = now ?? _stopwatchClock();
 
   /// The same error is reported at most once in this long.
   final Duration perFingerprint;
@@ -49,33 +73,43 @@ final class ReportLimiter {
 
   /// How many fingerprints are remembered; the oldest is forgotten first.
   final int maxTracked;
-  final DateTime Function() _now;
 
-  final Map<String, DateTime> _last = <String, DateTime>{};
-  final List<DateTime> _recent = <DateTime>[];
+  /// An error reported within this long ago is the same throw seen twice, not a repeat.
+  final Duration duplicateWindow;
+  final MonotonicClock _now;
+
+  /// The current time of this limiter's clock.
+  Duration get now => _now();
+
+  final Map<String, Duration> _last = <String, Duration>{};
+  final List<Duration> _recent = <Duration>[];
   int _suppressed = 0;
 
-  /// How many errors were turned away so far.
+  /// How many errors were turned away for a limit (not the duplicates).
   int get suppressed => _suppressed;
 
-  /// Whether an error with [fingerprint] may be reported now (and counts it if so).
-  bool allow(String fingerprint) {
+  /// What to do with an error with [fingerprint] now; [allowed] counts it.
+  LimiterVerdict check(String fingerprint) {
     final now = _now();
     final last = _last[fingerprint];
-    if (last != null && now.difference(last) < perFingerprint) {
-      _suppressed++;
-      return false;
+    if (last != null) {
+      final age = now - last;
+      if (age < duplicateWindow) return LimiterVerdict.duplicate;
+      if (age < perFingerprint) {
+        _suppressed++;
+        return LimiterVerdict.limited;
+      }
     }
-    _recent.removeWhere((t) => now.difference(t) >= window);
+    _recent.removeWhere((t) => now - t >= window);
     if (_recent.length >= maxInWindow) {
       _suppressed++;
-      return false;
+      return LimiterVerdict.limited;
     }
     _recent.add(now);
     _last.remove(fingerprint);
     _last[fingerprint] = now;
     if (_last.length > maxTracked) _last.remove(_last.keys.first);
-    return true;
+    return LimiterVerdict.allowed;
   }
 }
 
@@ -125,10 +159,42 @@ final class ErrorCapture {
   _Installation? _installation;
   bool _busy = false;
   bool _warnedSuppression = false;
-  final Expando<bool> _seen = Expando<bool>('bugsee reported errors');
+  bool _warnedReplaced = false;
+  final Expando<Duration> _seen = Expando<Duration>('bugsee reported errors');
 
-  /// Whether handlers are installed.
+  /// Whether [install] was called (and not undone).
   bool get isInstalled => _installation != null;
+
+  /// Whether every hook this installed is still the CURRENT handler. False after another tool
+  /// assigned `FlutterError.onError` / `PlatformDispatcher.onError` without calling ours (Crashlytics'
+  /// documented setup does), and also when a tool wrapped ours (which still reports whenever it calls
+  /// through: that case cannot be told apart from the first by looking at the handler).
+  bool get isActive {
+    final installation = _installation;
+    if (installation == null) return false;
+    final flutter = installation.flutterHandler;
+    if (flutter != null && !identical(FlutterError.onError, flutter)) {
+      return false;
+    }
+    final platform = installation.platformHandler;
+    if (platform != null && !identical(_platform.onError, platform)) {
+      return false;
+    }
+    return true;
+  }
+
+  /// Debug aid: says so (once) when [install]ed handlers are no longer the current ones.
+  void warnIfReplaced() {
+    if (isInstalled && !isActive && !_warnedReplaced) {
+      _warnedReplaced = true;
+      _warn(
+        'the Dart error handlers installed by Bugsee.installErrorHandlers are no longer '
+        'FlutterError.onError / PlatformDispatcher.onError: another tool replaced or wrapped them. '
+        'If it replaced them, Bugsee reports nothing from them: call installErrorHandlers AFTER the '
+        'tools that assign these handlers (Crashlytics, Sentry).',
+      );
+    }
+  }
 
   /// Where the root isolate's error listener receives messages (a test sends it the
   /// `[error, stack]` pair the VM would).
@@ -144,7 +210,7 @@ final class ErrorCapture {
     bool flutterErrors = true,
     bool platformErrors = true,
     bool isolateErrors = true,
-    bool reportAsCrash = true,
+    bool reportAsCrash = false,
   }) {
     if (_installation != null) return;
     final installation = _Installation(handled: !reportAsCrash);
@@ -169,10 +235,24 @@ final class ErrorCapture {
       final previous = dispatcher.onError;
       installation.previousPlatform = previous;
       bool handler(Object error, StackTrace stack) {
-        if (installation.active) {
-          _guarded(() => _captureObject(error, stack, installation.handled));
+        // The previous handler first: its answer decides what this is. `true` says the app dealt
+        // with the error, so it is not reported as a crash whatever `reportAsCrash` says. The report
+        // is still made when the previous handler throws (its exception goes on to the app).
+        bool? answer;
+        try {
+          answer = previous?.call(error, stack);
+        } finally {
+          if (installation.active) {
+            _guarded(
+              () => _captureObject(
+                error,
+                stack,
+                installation.handled || answer == true,
+              ),
+            );
+          }
         }
-        return previous?.call(error, stack) ?? false;
+        return answer ?? false;
       }
 
       installation.platformHandler = handler;
@@ -220,7 +300,7 @@ final class ErrorCapture {
     }
   }
 
-  /// An error that reached a `runZonedGuarded` handler. Reported as unhandled like the hooks, whether
+  /// An error that reached a `runZonedGuarded` handler. Reported like the hooks (an error report unless crash reports were asked for), whether
   /// or not they are installed (the zone is the app's own choice).
   void captureZoneError(Object error, StackTrace stack, {bool? handled}) {
     final installation = _installation;
@@ -228,7 +308,7 @@ final class ErrorCapture {
       () => _captureObject(
         error,
         stack,
-        handled ?? installation?.handled ?? false,
+        handled ?? installation?.handled ?? true,
       ),
     );
   }
@@ -240,7 +320,7 @@ final class ErrorCapture {
       _guarded(
         () => _onIsolateMessage(
           message,
-          handled ?? _installation?.handled ?? false,
+          handled ?? _installation?.handled ?? true,
         ),
       );
     });
@@ -293,14 +373,16 @@ final class ErrorCapture {
     required ExceptionPayload Function() build,
   }) {
     if (!_enabled()) return;
-    if (identityKey != null && !_firstSighting(identityKey)) return;
+    if (identityKey != null && _seenJustNow(identityKey)) return;
     String? raw;
     try {
       raw = stack == null
           ? null
           : FlutterError.demangleStackTrace(stack).toString();
     } catch (_) {}
-    if (!_limiter.allow(exceptionFingerprint(reason, raw))) {
+    final verdict = _limiter.check(exceptionFingerprint(reason, raw));
+    if (verdict == LimiterVerdict.duplicate) return;
+    if (verdict == LimiterVerdict.limited) {
       if (!_warnedSuppression) {
         _warnedSuppression = true;
         _warn(
@@ -323,14 +405,21 @@ final class ErrorCapture {
     } catch (_) {}
   }
 
-  /// True the first time [error] is seen. Strings, numbers and the like cannot be remembered by
-  /// identity (an Expando refuses them): they are always "first" here and the limiter decides.
-  bool _firstSighting(Object error) {
+  /// Whether this very object was reported within the limiter's duplicate window: the same throw
+  /// arriving by two routes. An older sighting does not count (a constant error such as
+  /// `throw const FormatException('x')` is the same object every time; the per-fingerprint limit
+  /// decides about it). Strings, numbers and the like cannot be remembered by identity (an Expando
+  /// refuses them); the fingerprint covers them.
+  bool _seenJustNow(Object error) {
     try {
-      if (_seen[error] == true) return false;
-      _seen[error] = true;
+      final now = _limiter.now;
+      final before = _seen[error];
+      if (before != null && now - before < _limiter.duplicateWindow) {
+        return true;
+      }
+      _seen[error] = now;
     } catch (_) {}
-    return true;
+    return false;
   }
 
   /// Runs [body] so that nothing it does reaches the app, and so that an error raised while

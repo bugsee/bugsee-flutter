@@ -26,12 +26,32 @@ negotiated.
   |---|---|
   | `internalType` | routing fallback (above) |
   | `name` | the exception type the dashboard shows and the signature hashes |
-  | `reason` | the message (hashed into the signature) |
+  | `reason` | the message (hashed into the worker's signature) |
+  | `signature` | **read by both SDKs, not by the worker**: see below |
   | `frames` | `[{trace, module, user, data{source, member, line, column, package, library, isCore}}]`; `trace` is `member (location)`: the worker hashes the first non-hidden user frame's `trace` into the signature, and decides `user` itself from `(package:flutter` / `(dart:` |
   | `originalStackTrace` | `stack.toString()`: where the worker finds the **build id** and, for a non-symbolic stack, the frames it symbolicates |
 
-  9.x also sent `signature` (a SHA-1 of the app version and the locations): the worker never reads it, so it is
-  gone. Keys are exactly those (`test/exception_payload_test.dart`, `test/exceptions_worker_contract_test.dart`).
+  **`signature` is load-bearing although the worker ignores it.** Android hashes the carrier's class name, this
+  key (`ExceptionSignature.updateMessageDigestFromThrowable`: `extractFromReason`) and the Java stack of the
+  calling thread; iOS the name, this key (`BGSExceptionSignature.m` `extractSignatureFromReason`) and the exception's
+  frames (none for an `NSException` made from a name and a reason). The Java stack and the name are the same for
+  EVERY Dart error, so without this key every Dart error has one signature. That matters: Android sends it in
+  `signatures` (`IssueReportingRequest.java:1366`), the appserver matches issues on `signatures: {$in}` before the
+  worker looks at anything (`code/components/app/issue/issue.service.js:1355-1435`), and once the first Flutter issue reaches its recording
+  limit every later Dart error of ANY type gets `SimilarCrashExistsError` (12003) and is dropped by the device
+  (`ReportUploadExecutor.java:790-798`); past the server's hard cap (12004) the device blacklists that signature for good
+  (`IssueReportingPreferences.storeBlacklistedReportSignature`) and sends no Dart error again. So the key is a
+  SHA-1 (`exceptionSignature`) over the type, the first line of the reason with what varies between runs removed
+  (hex addresses, UUIDs, numbers of three digits or more), and the top five user frames by location (a non-symbolic
+  frame by its `virt` address and symbol, which are stable, not by `abs`, which moves with ASLR): different errors
+  differ, one error on two days is one. 9.x hashed the application version too; the plugin cannot read it. Tests: the
+  Dart builder (`test/exception_payload_test.dart`, group "the signature"), and the SDKs' OWN signature code fed
+  the same documents (`ExceptionSignatureTest`, which calls `BugseeExceptionProcessor.generateSignature` of the
+  shipped 7.4.2 AAR, and `BGSFlutterExceptionSignatureTests`, which calls `BGSExceptionSignature` of the pinned
+  framework): equal errors share a signature, different ones do not, and without the key all of them would share one
+  (both tests prove that too). Measured: the real bundles' `signatures` differ for every error
+  (`test/fixtures/exceptions/android_7_4_2_crash_entry.json` keeps one). Keys are exactly the table's
+  (`test/exception_payload_test.dart`, `test/exceptions_worker_contract_test.dart`).
 * **Handled or not** is not in the document: the worker reads it from crash.json (`dart.py:154`:
   `is_handled`/`handled`), which each SDK writes from the call it received. Handled exceptions hash the word
   `handled` into the signature and the summary reads `Handled <type> at <location>` (`common.py`, `dart.py:243`).
@@ -48,78 +68,109 @@ What differs from 9.x, deliberately: a `FlutterError` contributes its summary on
 checks `IndexError`/`RangeError` before `ArgumentError` and `FlutterError` before `AssertionError` (9.x checked them
 after their superclasses, so they never matched); `AsyncError` is `AsyncError` (9.x said `FutureTimeout`); a string
 that arrives from an isolate listener is typed by the VM's own message prefixes instead of by building sample errors;
-file paths of the developer's machine are reduced to the file name; `signature` is not sent; handled/unhandled go
+file paths of the developer's machine are reduced to the file name; `signature` no longer hashes the application version; handled/unhandled go
 through the SDKs' own APIs (9.x used `onUncaughtException(Thread, ...)`).
 
 ## 2. Public API
 
 ```dart
-Future<bool> Bugsee.logException(Object error, StackTrace? stackTrace, {bool handled = true, String? domain})
-void Bugsee.installErrorHandlers({bool flutterErrors = true, bool platformErrors = true, bool isolateErrors = true, bool reportAsCrash = true})
-void Bugsee.uninstallErrorHandlers();   bool Bugsee.errorHandlersInstalled
+Future<bool> Bugsee.logException(Object error, [StackTrace? stackTrace])            // an error report
+Future<bool> Bugsee.logUnhandledException(Object error, [StackTrace? stackTrace])   // a crash report
+Future<bool> Bugsee.reportException(Object error, {StackTrace? stackTrace, bool handled = true, String? domain})
+void Bugsee.installErrorHandlers({bool flutterErrors = true, bool platformErrors = true, bool isolateErrors = true, bool reportAsCrash = false})
+void Bugsee.uninstallErrorHandlers();   bool Bugsee.errorHandlersInstalled;   bool Bugsee.errorHandlersActive
 R? Bugsee.runGuarded<R>(R Function() body, {void Function(Object, StackTrace)? onError})
 IsolateErrorListener Bugsee.listenToIsolateErrors(Isolate isolate)   // .cancel()
 ```
 
-* `logException` mirrors the SDKs' `logException`/`logUnhandledException` and RN's. **No severity**: neither SDK
-  takes one for an exception (Android `ExceptionOptions` has `domain` and `skipFrames` only; iOS the same). Set it
+* `logException` / `logUnhandledException` mirror the SDKs' and React Native's; `Bugsee.logException(e)` works as in
+  9.x and `catch (e, s) { Bugsee.logException(e, s); }` is the usual call. Dart cannot mix an optional positional
+  stack with named options, so `domain` (and `handled` as a flag) live on `reportException`. **No severity**: neither
+  SDK takes one for an exception (Android `ExceptionOptions` has `domain` and `skipFrames` only; iOS the same). Set it
   in a report handler (`Bugsee.setReportHandler`: it runs for error and crash reports). **No `skipFrames`**: the
   SDKs apply it to the Java/Objective-C stack of the carrier, which is not the app's; the Dart frames are in the document.
 * `domain` (1 to 256 characters) is the SDK's grouping domain. iOS has no domain on its unhandled path: dropped there.
-* Any object can be thrown in Dart: `error` is `Object`. A `null` stack takes `StackTrace.current` at the call, minus the plugin's own leading frames.
-* The answer is whether the SDK was handed the error (section 3). Argument errors (`domain`) are
-  `BugseeArgumentException`s, failures to reach native `BugseeException`s; never because of `error` itself.
+* Any object can be thrown in Dart: `error` is `Object`. A missing stack is `StackTrace.current` at the call, minus the
+  plugin's own leading frames.
+* The answer is whether the SDK was handed the error (section 3). A bad `domain` is a `BugseeArgumentException('domain')`;
+  a refusal of the document by native names the document (`argument: 'error'`), never the domain; failures to reach
+  native are `BugseeException`s; never because of `error` itself.
 
 ## 3. What each SDK does, before launch and after stop
 
 | | Android 7.4.2 | iOS 7.0.0-beta7 |
 |---|---|---|
 | handled | `Bugsee.logException(Throwable, domain, skipFrames)`: an **error** report, built on the SDK's aux thread (`BugseeInternal.java:1339-1356`, `BugseeIssueReportingCoordinator.java:458`) | `+logException:reason:domain:skipFrames:completion:`: an error report (`Bugsee.m:1517-1575`) |
-| unhandled | `Bugsee.logUnhandledException(Throwable, Map)`: a **crash** report, `isTerminating` false (the capture keeps running), written **synchronously on the calling (main) thread** (`BugseeInternal.java:1358-1410`; the SDK's own comment names the Flutter cost and the main-thread I/O: `BugseeIssueReportingCoordinator.java:338`) | `+logUnhandledException:reason:completion:`: writes a PLCrashReporter report to disk that the **next launch** sends, one at a time (`Bugsee.m:1578`, `BGSCrashManager.m:296`); with a debugger attached it falls back to the handled path with `handled=NO` |
+| unhandled | `Bugsee.logUnhandledException(Throwable, Map)`: a **crash** report, `isTerminating` false (the capture keeps running), written **synchronously on the calling thread**, which snapshots the capture ring ("up to a couple of seconds": `BugseeInternal.java:1358-1410`; the SDK's own comment names the Flutter cost: `BugseeIssueReportingCoordinator.java:329-346`) | `+logUnhandledException:reason:completion:`: writes a PLCrashReporter report to disk that the **next launch** sends, one at a time (`Bugsee.m:1578`, `BGSCrashManager.m:296`); with a debugger attached it falls back to the handled path with `handled=NO` |
 | before launch | dropped, log line (`isRunningOrStaring`, `:1344`, `:1370`) | handled: dropped, `NSLog` (`Bugsee.m:1544`); **unhandled: not gated by the SDK** |
 | after stop | dropped | handled: dropped; unhandled: **not gated** (the crash manager outlives a stop) |
 | simulator | n/a | **nothing is filed** (`Bugsee.m:1555`, logs `logged exceptions are not filed on the simulator`) |
 
 The wrapper queues nothing (same rule as every other call) and gates **both** paths on both platforms on the SDK
 being Launching or Launched, so the answer `false` means "not handed over" and iOS's ungated unhandled path cannot
-write a crash report with the SDK stopped. A call made while launched and answered `true` can still be dropped by
-the SDK later (a blacklisted signature: the SDK computes its signature from the carrier, which is the same for every
-Dart error, and the dashboard's ignore list is server-side; **ignoring a Flutter issue in the dashboard does not
-reach the device**).
+write a crash report with the SDK stopped.
+
+**Threads.** The bridge method is `@async`. **Android** runs the SDK call on its own single daemon thread
+(`ExceptionDispatcher`) with a bounded queue of 32: the SDK writes an unhandled report on the thread that calls it,
+and on the platform thread a snapshot of up to a couple of seconds is jank or an ANR (the installed handlers allow ten
+a minute). A full queue drops the call, counts it and answers `false`; the launch gate runs on that thread, when the
+SDK call does; the reply goes back to the platform thread. **iOS** keeps the call on the main queue: the SDK's public
+API reads UIKit state (the report is built with the view hierarchy), and nothing in its source says it may be called
+elsewhere, so moving the PLCrashReporter write off main is not done blind; its cost on a device is **not measured**
+(unhandled errors are rare by default now: section 4).
 
 Measured on a device (`example/integration_test/exceptions_test.dart`): Android emulator API 29 (arm64) with a local
-HTTP server standing in for the API, so the real bundles could be read: an error report for a handled call, crash
-reports for an unhandled call, a `FlutterError`, an uncaught error in the root zone, a guarded zone and a spawned
-isolate; each bundle's crash.json has `exception.name = com.bugsee.flutter.FlutterManagedException`, the document as
-`reason`, `handled` false/true, `domain` for the handled call with a domain. All of those were also seen by the
+HTTP server standing in for the API, so the real bundles could be read: an error report for a handled call, a crash
+report for `logUnhandledException`, error reports for a `FlutterError`, an uncaught error in the root zone, a guarded
+zone and a spawned isolate (the default), a crash report with `reportAsCrash: true`; each bundle's crash.json has
+`exception.name = com.bugsee.flutter.FlutterManagedException`, the document as `reason`, `handled` false/true,
+`domain` for the handled call with a domain, and a DIFFERENT SDK `signatures` entry per error. All were also seen by the
 report handler as `error`/`crash` reports. After `stop` and before `launch` both calls answered `false`. iOS 26.5
 simulator: the calls reached the SDK (its log says it files nothing on a simulator). **Not verified: an iOS device**
-(no device here; the next-launch delivery and the one-slot behaviour are read from source), the main-thread cost on
-a real Android device, and the real server's processing (the worker module was run offline, section 1).
+(no device here; the next-launch delivery and the one-slot behaviour are read from source), the main-thread cost of
+the iOS write, hot restart on a device, and the real server's processing (the worker module was run offline, section 1).
 
 ## 4. The installed handlers
 
 `Bugsee.installErrorHandlers` is opt-in and never called by `launch`. Design, each point with a test
 (`test/error_capture_test.dart`):
 
-* **Chains, never replaces**: ours runs first, then the handler that was installed (the app's, Crashlytics',
-  Sentry's), whatever ours did (it runs even if reporting threw). `PlatformDispatcher.onError` returns the previous
-  handler's answer; with none it answers `false`, so the engine reports as it would have. An exception of the
-  previous handler is the app's: not swallowed.
+* **Chains, never replaces**: the handler that was installed (the app's, Crashlytics', Sentry's) is still called and
+  its answer is returned; with none, `PlatformDispatcher.onError` answers `false`, so the engine reports as it would
+  have. For `FlutterError.onError` ours runs first (it reports even if the previous handler throws). For
+  `PlatformDispatcher.onError` the previous handler runs first, because its answer decides what the error is (below);
+  the report is made in a `finally`, so it is made when that handler throws, and its exception goes on to the app.
+* **Install AFTER the tools that assign these handlers.** Crashlytics' documented setup
+  (`FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError`,
+  `PlatformDispatcher.instance.onError = ...`) REPLACES whatever is there, so a Bugsee installed before it is dropped
+  from the chain and reports nothing; Sentry's `init` wraps what is there and keeps ours. `Bugsee.errorHandlersInstalled`
+  says only that it was called; **`Bugsee.errorHandlersActive`** says that ours are still the current handlers (false
+  also when a tool wrapped them: that case reports whenever the wrapper calls through, and cannot be told from here), and
+  a debug build prints a warning at `Bugsee.launch` when they are not.
 * **Uninstall restores** the previous handlers only if ours are still the current ones. If another tool wrapped ours
   since, they cannot be unlinked: ours turn into inert pass-throughs and the chain below keeps running.
 * **Idempotent**: a second install does nothing. **Hot restart** is a new isolate: statics are fresh, nothing to clean.
-* **Once per error**: an object is reported once per process (Expando); text from an isolate listener and anything
-  else by fingerprint (reason + top frames), so the same error through `FlutterError` and an isolate listener is one
-  report. The same fingerprint at most once in 30 s, at most 10 reports in 60 s, 64 fingerprints remembered (a render
-  error that repeats every frame opens one report). Explicit `logException` is not limited.
+* **Once per error, and floods are limited**: the same throw arriving by two routes within a second (an uncaught
+  root-zone error reaches `PlatformDispatcher.onError` and the isolate listener; a thrown `String` in `runGuarded` is
+  seen by the zone and by `FlutterError.reportError`) is ONE report and is neither counted as suppressed nor warned
+  about: the object by identity (an Expando holding WHEN it was seen, so `throw const FormatException('x')`, the same
+  object every time, is not remembered for good), anything else by fingerprint. The fingerprint is the first line of the
+  reason and the top frames, so the object route (a `FlutterError`'s summary) and the isolate-text route (its whole
+  `toString`) agree. After that the same fingerprint at most once in 30 s, at most 10 reports in 60 s, 64 fingerprints
+  remembered (a render error that repeats every frame opens one report). The clock is a monotonic `Stopwatch`: a wall
+  clock moved backwards would never let the window empty. Explicit `logException` is not limited.
 * **Never throws, never blocks**: our part of each handler is guarded; the report is sent without waiting and a failure
   is swallowed; an error raised while reporting does not report itself.
-* **Unhandled**: reported as **crash** reports by default (what 9.x did for `FlutterError.onError`, what RN does for
-  fatal errors and what the Android SDK documents Flutter's hooks as); `reportAsCrash: false` files error reports. Costs, from
-  section 3: Android does disk I/O on the main thread per crash report (hence the limiter), iOS delivers at the next
-  launch and keeps one. `FlutterErrorDetails.silent` errors are skipped. Nothing is reported while the last launch
-  made through `Bugsee.launch` had `detect.crash: false` (an auto-init or native launch is not seen: default on).
+* **Error reports by default (`reportAsCrash: false`), crash reports on request.** A Dart error never ends the app
+  (neither SDK terminates it); React Native files only FATAL errors as crashes (`handlers.ts:5-7`); a crash report counts
+  against crash-free sessions, so every non-silent `FlutterError` (an image failing to load offline) would; and on iOS
+  each unhandled call replaces the single stored crash report (`BGSCrashManager.m:308`), so ten a minute still deliver
+  only the last, at the next launch. An error the previous `PlatformDispatcher` handler answers `true` for (the app
+  handled it) is never a crash, whatever the flag. Neither SDK has an "unhandled but not a crash" call (Android's
+  internal `asHandled` is not public), so the handled error path is used. 9.x reported `FlutterError.onError` as
+  unhandled: `reportAsCrash: true` restores that, and the default is a one-line flip (`installErrorHandlers`, the
+  example screen, `ErrorCapture.install`). `FlutterErrorDetails.silent` errors are skipped. Nothing is reported while the
+  last launch made through `Bugsee.launch` had `detect.crash: false` (an auto-init or native launch is not seen: default on).
 * **Privacy**: only the exception and its stack are read from `FlutterErrorDetails`: not `informationCollector` (the
   widget trees), `context` or `library`. A `FlutterError` contributes its **summary**; its full message carries the
   framework's diagnostics (widget descriptions, property dumps) and unstable text. Any other object contributes its
@@ -128,7 +179,7 @@ a real Android device, and the real server's processing (the worker module was r
 * **Zones and isolates**: `FlutterError.onError` and `PlatformDispatcher.onError` are the framework's; errors in a zone the
   app creates need `Bugsee.runGuarded`, in isolates it spawns `listenToIsolateErrors` (start the isolate paused, listen,
   resume). The root isolate listener is installed with `isolateErrors`; on Android API 29 an uncaught root-zone error
-  reached the report once, not twice.
+  reached the SDK once.
 
 ## 5. Obfuscation and `--split-debug-info`
 
@@ -175,11 +226,12 @@ is not committed (it holds the build machine's paths).
 ## 6. Limits (known, not bugs)
 
 * iOS: the simulator files nothing; an unhandled error is a crash report delivered at the next launch, one at a time (source-read).
-* Android: an unhandled error writes its report on the main thread; the limiter is what bounds it.
+* Android: the SDK call runs on the plugin's own thread (bounded queue of 32, drops and counts beyond it).
+* iOS: the SDK call runs on the main queue; the PLCrashReporter write's cost is not measured.
 * An error before `launch` (or after `stop`) is dropped, not queued; install the handlers before `launch` anyway, they
   cost nothing until an error happens, but the first reports start when the SDK does.
 * A launch made natively (Android manifest auto-init) is not seen by `detect.crash` gating.
 * Several engines or isolates: the handlers are Dart statics of one isolate; an engine started later needs its own install.
-* The SDK's own signature (blacklist) cannot tell Dart errors apart (section 3).
+* The document's `signature` does not include the application version (the plugin cannot read it): the same error in two app versions is one issue.
 * A custom exception class of an obfuscated build whose message does not start with its name is reported as `Exception`
   or the obfuscated name; the stack is symbolicated regardless.

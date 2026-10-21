@@ -31,16 +31,9 @@ void main() {
     final android = defaultTargetPlatform == TargetPlatform.android;
 
     // Before launch both SDKs drop the call, so the answer is false, for both paths.
+    expect(await Bugsee.logException(StateError('before launch')), isFalse);
     expect(
-      await Bugsee.logException(StateError('before launch'), null),
-      isFalse,
-    );
-    expect(
-      await Bugsee.logException(
-        StateError('before launch'),
-        null,
-        handled: false,
-      ),
+      await Bugsee.logUnhandledException(StateError('before launch')),
       isFalse,
     );
     say('before launch: handled and unhandled answered false');
@@ -101,7 +94,7 @@ void main() {
       throw FormatException('handled in the integration test');
     } catch (e, s) {
       await expectHanded(
-        Bugsee.logException(e, s, domain: 'integration'),
+        Bugsee.reportException(e, stackTrace: s, domain: 'integration'),
         await Bugsee.isLaunched(),
         what: 'handled',
       );
@@ -112,10 +105,8 @@ void main() {
     }
 
     await expectHanded(
-      Bugsee.logException(
+      Bugsee.logUnhandledException(
         StateError('unhandled in the integration test'),
-        null,
-        handled: false,
       ),
       await Bugsee.isLaunched(),
       what: 'unhandled',
@@ -170,15 +161,16 @@ void main() {
     final listener = Bugsee.listenToIsolateErrors(isolate);
     isolate.resume(isolate.pauseCapability!);
 
+    // By default the hooks file ERROR reports (Dart errors never end the app).
     await waitFor(
-      () => count('after:crash') >= 5,
+      () => count('after:error') >= 5,
       'four hooks (FlutterError, root zone, guarded zone, isolate)',
     );
     listener.cancel();
     isolate.kill(priority: Isolate.immediate);
 
     // Flood: the same error 100 times is one report.
-    final flood = count('after:crash');
+    final flood = count('after:error');
     for (var i = 0; i < 100; i++) {
       FlutterError.reportError(
         FlutterErrorDetails(exception: FlutterError('the same error, again')),
@@ -187,8 +179,21 @@ void main() {
     }
     await Future<void>.delayed(const Duration(seconds: 3));
     say(
-      'flood: ${count('after:crash') - flood} crash report(s) for 100 equal errors',
+      'flood: ${count('after:error') - flood} error report(s) for 100 equal errors',
     );
+
+    // reportAsCrash: true files a crash report for the same hook.
+    Bugsee.uninstallErrorHandlers();
+    final crashes = count('after:crash');
+    Bugsee.installErrorHandlers(reportAsCrash: true);
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: StateError('hook: FlutterError.reportError as a crash'),
+        stack: StackTrace.current,
+      ),
+    );
+    tester.takeException();
+    await waitFor(() => count('after:crash') > crashes, 'reportAsCrash: true');
 
     Bugsee.uninstallErrorHandlers();
     expect(FlutterError.onError, same(previous));
@@ -197,22 +202,23 @@ void main() {
     say('summaries: $summaries');
     say('${deliveries.length - before} deliveries from the hooks');
     if (android) {
-      // FlutterError, root-zone error (if the engine routed it), guarded zone, isolate, flood.
-      expect(count('after:crash'), greaterThanOrEqualTo(4));
+      // FlutterError, root-zone error, guarded zone, isolate, flood: error reports; the opt-in crash.
+      expect(count('after:error'), greaterThanOrEqualTo(5));
       expect(
-        count('after:crash') - flood,
+        count('after:error') - flood,
         1,
         reason: 'the limiter lets one of 100 equal errors through',
       );
+      expect(count('after:crash'), crashes + 1);
     }
 
     await Bugsee.setReportHandler(null);
     await Bugsee.stop();
 
     // After stop the SDK drops it: the answer says so.
-    expect(await Bugsee.logException(StateError('after stop'), null), isFalse);
+    expect(await Bugsee.logException(StateError('after stop')), isFalse);
     expect(
-      await Bugsee.logException(StateError('after stop'), null, handled: false),
+      await Bugsee.logUnhandledException(StateError('after stop')),
       isFalse,
     );
     say('after stop: handled and unhandled answered false');

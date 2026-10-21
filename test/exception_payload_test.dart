@@ -571,6 +571,7 @@ void main() {
         'internalType',
         'name',
         'reason',
+        'signature',
         'frames',
         'originalStackTrace',
       ]);
@@ -689,6 +690,234 @@ void main() {
       );
     });
   });
+
+  group(
+    'the signature (both SDKs hash it; without it every Dart error would share one)',
+    () {
+      String sig(Object error, String stack, {String? name}) =>
+          buildExceptionPayload(error, StackTrace.fromString(stack)).signature;
+
+      String stackOf(List<String> frames) =>
+          '${[for (var i = 0; i < frames.length; i++) '#$i      ${frames[i]}'].join('\n')}\n';
+
+      final base = stackOf([
+        'a (package:app/a.dart:1:1)',
+        'b (package:app/b.dart:2:1)',
+        'c (package:app/c.dart:3:1)',
+      ]);
+
+      test('SHA-1 is right (known vectors, the block boundary, UTF-8)', () {
+        expect(sha1Hex(''), 'da39a3ee5e6b4b0d3255bfef95601890afd80709');
+        expect(sha1Hex('abc'), 'a9993e364706816aba3e25717850c26c9cd0d89d');
+        expect(
+          sha1Hex('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'),
+          '84983e441c3bd26ebaae4aa1f95129e5e54670f1',
+        );
+        expect(sha1Hex('a' * 1000), '291e9a6c66994949b57ba5e650361e98fc36b1ba');
+        expect(
+          sha1Hex('caf\u00e9'),
+          'f424452a9673918c6f09b0cdd35b20be8e6ae7d7',
+        );
+      });
+
+      test(
+        'is a key of the document, 40 hex digits, the one on the payload',
+        () {
+          final p = buildExceptionPayload(
+            StateError('x'),
+            StackTrace.fromString(base),
+          );
+          expect(decode(p)['signature'], p.signature);
+          expect(p.signature, matches(RegExp(r'^[0-9a-f]{40}$')));
+        },
+      );
+
+      test(
+        'is there without a stack too, and survives a document that had to be degraded',
+        () {
+          expect(
+            buildExceptionPayload(StateError('x'), null).signature,
+            hasLength(40),
+          );
+          final lines = [
+            for (var i = 0; i < 256; i++)
+              '#$i      ${'m' * 90} (package:${'p' * 20}/${'f' * 110}.dart:$i:1)',
+          ].join('\n');
+          final p = buildExceptionPayload(
+            StateError('x'),
+            StackTrace.fromString('$lines\n'),
+          );
+          expect(framesOf(p).every((f) => !f.containsKey('data')), isTrue);
+          expect(decode(p)['signature'], p.signature);
+        },
+      );
+
+      test('two different errors have two different signatures', () {
+        final a = sig(StateError('x'), base);
+        expect(sig(StateError('y'), base), isNot(a), reason: 'the reason');
+        expect(sig(ArgumentError('x'), base), isNot(a), reason: 'the type');
+        expect(
+          sig(
+            StateError('x'),
+            base.replaceFirst('package:app/a.dart:1', 'package:app/a.dart:9'),
+          ),
+          isNot(a),
+          reason: 'the top frame',
+        );
+        expect(
+          sig(
+            StateError('x'),
+            base.replaceFirst(
+              'c (package:app/c.dart:3:1)',
+              'other (package:app/c.dart:3:1)',
+            ),
+          ),
+          isNot(a),
+          reason: 'a user frame under the top',
+        );
+      });
+
+      test(
+        'two equal errors have the same one, whatever varies between runs',
+        () {
+          final a = sig(
+            StateError(
+              'item 12345 at 0x7fa1b2 id 3f2a9c1e-1111-2222-3333-444455556666',
+            ),
+            base,
+          );
+          expect(
+            sig(
+              StateError(
+                'item 99999 at 0x1234 id aaaaaaaa-1111-2222-3333-444455556666',
+              ),
+              base,
+            ),
+            a,
+          );
+          expect(
+            sig(StateError('item 1 at'), base),
+            isNot(sig(StateError('item 2 at'), base)),
+            reason: 'a short number is part of what was said',
+          );
+        },
+      );
+
+      test(
+        'the detail lines of a message do not count (only its first line)',
+        () {
+          expect(
+            sig(FlutterError('summary\ndetail one'), base),
+            sig(FlutterError('summary\ndetail two'), base),
+          );
+        },
+      );
+
+      test(
+        'framework and core frames do not count while there are user frames',
+        () {
+          final with1 = stackOf([
+            'a (package:app/a.dart:1:1)',
+            'build (package:flutter/src/x.dart:5:1)',
+            'run (dart:async/zone.dart:7:1)',
+          ]);
+          final with2 = stackOf([
+            'a (package:app/a.dart:1:1)',
+            'build (package:flutter/src/y.dart:99:1)',
+            'run (dart:async/zone.dart:70:1)',
+          ]);
+          expect(sig(StateError('x'), with1), sig(StateError('x'), with2));
+        },
+      );
+
+      test('only the top five user frames count', () {
+        List<String> frames(String sixth) => [
+          for (var i = 0; i < 5; i++) 'f$i (package:app/f$i.dart:$i:1)',
+          sixth,
+        ];
+        expect(
+          sig(StateError('x'), stackOf(frames('a (package:app/s.dart:1:1)'))),
+          sig(StateError('x'), stackOf(frames('b (package:app/t.dart:2:1)'))),
+        );
+      });
+
+      test('with no user frame the first five frames count', () {
+        expect(
+          sig(StateError('x'), stackOf(['a (package:flutter/a.dart:1:1)'])),
+          isNot(
+            sig(StateError('x'), stackOf(['b (package:flutter/b.dart:1:1)'])),
+          ),
+        );
+      });
+
+      test(
+        'a non-symbolic frame is keyed by virt and symbol, not by the address that moves with ASLR',
+        () {
+          String stackAt(String abs, String virt) =>
+              "build_id: 'abc'\n    #00 abs $abs virt $virt _kDartIsolateSnapshotInstructions+0x1\n";
+          final a = sig(
+            StateError('x'),
+            stackAt('00000078fb02217f', '000000000021a17f'),
+          );
+          expect(
+            sig(
+              StateError('x'),
+              stackAt('00000099aa11bb22', '000000000021a17f'),
+            ),
+            a,
+          );
+          expect(
+            sig(
+              StateError('x'),
+              stackAt('00000078fb02217f', '000000000021a999'),
+            ),
+            isNot(a),
+          );
+        },
+      );
+
+      test(
+        'the documents the JUnit and XCTest feed to the SDKs\' own signature code are these',
+        () {
+          final stack =
+              '#0      Cart.checkout (package:shop/cart.dart:41:7)\n'
+              '#1      onTap (package:shop/home.dart:88:3)\n'
+              '#2      build (package:flutter/src/gestures/x.dart:5:1)\n';
+          final documents = <String, String>{
+            'a1': buildExceptionPayload(
+              StateError('item 12345 failed'),
+              StackTrace.fromString(stack),
+            ).json,
+            // The same error on another day: only the volatile parts differ.
+            'a2': buildExceptionPayload(
+              StateError('item 99999 failed'),
+              StackTrace.fromString(stack),
+            ).json,
+            'b': buildExceptionPayload(
+              const FormatException('unrelated'),
+              StackTrace.fromString(
+                '#0      Parser.parse (package:shop/parse.dart:9:1)\n',
+              ),
+            ).json,
+          };
+          final file = File('test/fixtures/exceptions/signature_cases.json');
+          final wanted =
+              '${const JsonEncoder.withIndent(' ').convert({'_source': 'Documents built by buildExceptionPayload (test/exception_payload_test.dart, group "the signature"). a1 and a2 are one error on two days, b another. ExceptionSignatureTest (JUnit) and BGSFlutterExceptionSignatureTests (XCTest) feed them to the SDKs\' own signature code. Regenerate with UPDATE_FIXTURES=1.', 'documents': documents})}\n';
+          if (Platform.environment['UPDATE_FIXTURES'] == '1') {
+            file.writeAsStringSync(wanted);
+          }
+          expect(file.readAsStringSync(), wanted);
+        },
+      );
+
+      test(
+        'is the same for the same error built twice (no clock, no counter in it)',
+        () {
+          expect(sig(StateError('x'), base), sig(StateError('x'), base));
+        },
+      );
+    },
+  );
 }
 
 Object _typeError() {

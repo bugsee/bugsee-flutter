@@ -309,10 +309,21 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
 
   private let exceptionSdk = BGSFlutterRealExceptionSdk()
 
-  func logException(payload: String, handled: Bool, domain: String?) throws -> Bool {
-    (try unwrap(
-      BGSFlutterExceptionOps.log(sdk: exceptionSdk, payload: payload, handled: handled, domain: domain)
-    ) as? NSNumber)?.boolValue ?? false
+  func logException(payload: String, handled: Bool, domain: String?) async throws -> Bool {
+    // On the main queue, where the SDK's public API is used (it reads UIKit state); the generated
+    // async handler would otherwise run on the cooperative pool.
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+      DispatchQueue.main.async {
+        let result = BGSFlutterExceptionOps.log(
+          sdk: self.exceptionSdk, payload: payload, handled: handled, domain: domain)
+        if let code = result.errorCode {
+          continuation.resume(
+            throwing: PigeonError(code: code, message: result.errorMessage ?? code, details: nil))
+        } else {
+          continuation.resume(returning: (result.value as? NSNumber)?.boolValue ?? false)
+        }
+      }
+    }
   }
 
   // MARK: Report handlers

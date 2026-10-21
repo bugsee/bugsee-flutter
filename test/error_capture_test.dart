@@ -2,6 +2,7 @@
 // Each test builds its own `ErrorCapture` over the real `FlutterError` / `PlatformDispatcher`
 // statics, which it puts back.
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' show ErrorCallback, PlatformDispatcher;
 
@@ -20,10 +21,12 @@ class Reported {
 
 /// A clock a test moves.
 class Clock {
-  DateTime now = DateTime(2026, 10, 21, 12);
-  DateTime call() => now;
-  void advance(Duration d) => now = now.add(d);
+  Duration now = const Duration(hours: 1);
+  Duration call() => now;
+  void advance(Duration d) => now += d;
 }
+
+bool ok(ReportLimiter l, String f) => l.check(f) == LimiterVerdict.allowed;
 
 final stack = StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n');
 
@@ -244,6 +247,120 @@ void main() {
     });
   });
 
+  group('a previous PlatformDispatcher handler that handled the error', () {
+    test(
+      'makes it an error report, never a crash, even with reportAsCrash',
+      () {
+        PlatformDispatcher.instance.onError = (e, s) => true;
+        capture.install(
+          flutterErrors: false,
+          isolateErrors: false,
+          reportAsCrash: true,
+        );
+        PlatformDispatcher.instance.onError!(
+          StateError('app handled it'),
+          stack,
+        );
+        expect(reports.single.handled, isTrue);
+      },
+    );
+
+    test('one that did not handle it leaves it a crash with reportAsCrash', () {
+      PlatformDispatcher.instance.onError = (e, s) => false;
+      capture.install(
+        flutterErrors: false,
+        isolateErrors: false,
+        reportAsCrash: true,
+      );
+      PlatformDispatcher.instance.onError!(
+        StateError('nobody handled it'),
+        stack,
+      );
+      expect(reports.single.handled, isFalse);
+    });
+
+    test('no previous handler: nobody handled it', () {
+      PlatformDispatcher.instance.onError = null;
+      capture.install(
+        flutterErrors: false,
+        isolateErrors: false,
+        reportAsCrash: true,
+      );
+      PlatformDispatcher.instance.onError!(StateError('x'), stack);
+      expect(reports.single.handled, isFalse);
+    });
+
+    test(
+      'one that throws: the error is still reported, and its exception goes on',
+      () {
+        PlatformDispatcher.instance.onError = (e, s) =>
+            throw StateError('handler bug');
+        capture.install(flutterErrors: false, isolateErrors: false);
+        expect(
+          () => PlatformDispatcher.instance.onError!(StateError('x'), stack),
+          throwsStateError,
+        );
+        expect(reports, hasLength(1));
+      },
+    );
+  });
+
+  group('isActive: is ours still the current handler', () {
+    test('true after install, false before it and after uninstall', () {
+      expect(capture.isActive, isFalse);
+      capture.install(isolateErrors: false);
+      expect(capture.isActive, isTrue);
+      capture.uninstall();
+      expect(capture.isActive, isFalse);
+    });
+
+    test(
+      'false when another tool replaced FlutterError.onError (Crashlytics\' setup)',
+      () {
+        capture.install(isolateErrors: false);
+        FlutterError.onError = (_) {};
+        expect(capture.isInstalled, isTrue);
+        expect(capture.isActive, isFalse);
+      },
+    );
+
+    test('false when another tool replaced PlatformDispatcher.onError', () {
+      capture.install(flutterErrors: false, isolateErrors: false);
+      PlatformDispatcher.instance.onError = (e, s) => true;
+      expect(capture.isActive, isFalse);
+    });
+
+    test('only the hooks that were installed count', () {
+      capture.install(platformErrors: false, isolateErrors: false);
+      PlatformDispatcher.instance.onError = (e, s) => true;
+      expect(capture.isActive, isTrue);
+    });
+
+    test('warnIfReplaced says so once, and only when replaced', () {
+      capture.install(isolateErrors: false);
+      capture.warnIfReplaced();
+      expect(warnings, isEmpty);
+      FlutterError.onError = (_) {};
+      capture.warnIfReplaced();
+      capture.warnIfReplaced();
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('AFTER'));
+    });
+  });
+
+  test('the limiter runs on a monotonic clock, not the wall clock', () {
+    final limiter = ReportLimiter();
+    final first = limiter.now;
+    final second = limiter.now;
+    expect(second, greaterThanOrEqualTo(first));
+    expect(limiter.check('a'), LimiterVerdict.allowed);
+    expect(limiter.check('a'), LimiterVerdict.duplicate);
+    expect(
+      File('lib/src/exceptions/error_capture.dart').readAsStringSync(),
+      isNot(contains('DateTime')),
+    );
+  });
+
   group('install and uninstall', () {
     test(
       'install is idempotent: one wrapper, one report, the previous called once',
@@ -355,14 +472,81 @@ void main() {
       },
     );
 
-    test('the same object again, much later, is still not reported again', () {
-      capture.install(isolateErrors: false);
-      final error = StateError('x');
-      FlutterError.onError!(details(error));
-      clock.advance(const Duration(hours: 1));
-      FlutterError.onError!(details(error));
-      expect(reports, hasLength(1));
-    });
+    test(
+      'a constant error object is reported again after 30 s, not before',
+      () {
+        capture.install(isolateErrors: false);
+        const error = FormatException(
+          'bad input',
+        ); // the same object at every throw
+        FlutterError.onError!(details(error));
+        clock.advance(const Duration(seconds: 10));
+        FlutterError.onError!(details(error));
+        expect(
+          reports,
+          hasLength(1),
+          reason: 'limited: an equal error within 30 s',
+        );
+        clock.advance(const Duration(seconds: 25));
+        FlutterError.onError!(details(error));
+        expect(
+          reports,
+          hasLength(2),
+          reason: 'the same object is not remembered for good',
+        );
+      },
+    );
+
+    test(
+      'the same object arriving by two routes within a second is one, silently',
+      () {
+        capture.install(isolateErrors: false);
+        final error = StateError('x');
+        FlutterError.onError!(details(error));
+        clock.advance(const Duration(milliseconds: 500));
+        PlatformDispatcher.instance.onError!(error, stack);
+        expect(reports, hasLength(1));
+        expect(
+          capture.suppressedCount,
+          0,
+          reason: 'a duplicate is not a flood',
+        );
+        expect(warnings, isEmpty);
+      },
+    );
+
+    test(
+      'the same text by two routes (zone and FlutterError, a thrown String) is one, silently',
+      () {
+        capture.install(isolateErrors: false);
+        capture.captureZoneError('boom', stack);
+        FlutterError.onError!(details('boom'));
+        expect(reports, hasLength(1));
+        expect(capture.suppressedCount, 0);
+        expect(warnings, isEmpty);
+      },
+    );
+
+    test(
+      'an async FlutterError by the object route and the isolate-text route is one, silently',
+      () async {
+        capture.install(platformErrors: false);
+        final error = FlutterError(
+          'A summary line\nthe detail that only toString has',
+        );
+        FlutterError.onError!(details(error));
+        // The isolate listener gets `error.toString()`, the whole message.
+        capture.debugIsolateSendPort!.send([
+          error.toString(),
+          '${FlutterError.demangleStackTrace(stack)}',
+        ]);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(reports, hasLength(1));
+        expect(reports.single.reason, 'A summary line');
+        expect(capture.suppressedCount, 0);
+        expect(warnings, isEmpty);
+      },
+    );
 
     test(
       'an equal error (a new object) within 30 s is limited, after 30 s it is reported',
@@ -428,13 +612,13 @@ void main() {
           perFingerprint: const Duration(seconds: 10),
         );
         for (final f in ['a', 'b', 'c']) {
-          limiter.allow(f);
+          ok(limiter, f);
         }
         clock.advance(const Duration(seconds: 11));
-        expect(limiter.allow('a'), isTrue, reason: 'refreshed');
-        expect(limiter.allow('d'), isTrue, reason: 'evicts b, the oldest now');
-        expect(limiter.allow('a'), isFalse, reason: 'a is still tracked');
-        expect(limiter.allow('b'), isTrue, reason: 'b was forgotten');
+        expect(ok(limiter, 'a'), isTrue, reason: 'refreshed');
+        expect(ok(limiter, 'd'), isTrue, reason: 'evicts b, the oldest now');
+        expect(ok(limiter, 'a'), isFalse, reason: 'a is still tracked');
+        expect(ok(limiter, 'b'), isTrue, reason: 'b was forgotten');
       },
     );
 
@@ -445,23 +629,23 @@ void main() {
         maxInWindow: 1000,
       );
       for (final f in ['a', 'b', 'c', 'd']) {
-        expect(limiter.allow(f), isTrue);
+        expect(ok(limiter, f), isTrue);
       }
-      expect(limiter.allow('d'), isFalse, reason: 'still tracked');
-      expect(limiter.allow('a'), isTrue, reason: 'forgotten, so allowed');
+      expect(ok(limiter, 'd'), isFalse, reason: 'still tracked');
+      expect(ok(limiter, 'a'), isTrue, reason: 'forgotten, so allowed');
     });
   });
 
   group('what is reported', () {
     test(
-      'unhandled by default (a crash report), handled with reportAsCrash false',
+      'handled (an error report) by default, unhandled (a crash report) with reportAsCrash true',
       () {
         capture.install(isolateErrors: false);
         FlutterError.onError!(details(StateError('a')));
         capture.uninstall();
-        capture.install(isolateErrors: false, reportAsCrash: false);
+        capture.install(isolateErrors: false, reportAsCrash: true);
         FlutterError.onError!(details(StateError('b')));
-        expect(reports.map((r) => r.handled), [false, true]);
+        expect(reports.map((r) => r.handled), [true, false]);
       },
     );
 
@@ -570,7 +754,7 @@ void main() {
         expect(reports, hasLength(1));
         expect(reports.single.name, 'StateError');
         expect(reports.single.reason, 'Bad state: no element');
-        expect(reports.single.handled, isFalse);
+        expect(reports.single.handled, isTrue);
       },
     );
 
@@ -637,21 +821,24 @@ void main() {
   });
 
   group('zone errors', () {
-    test('are reported as unhandled', () {
-      capture.captureZoneError(StateError('zone'), stack);
-      expect(reports.single.handled, isFalse);
-      expect(reports.single.name, 'StateError');
-    });
+    test(
+      'are reported as handled (error reports) unless crash reports were asked for',
+      () {
+        capture.captureZoneError(StateError('zone'), stack);
+        expect(reports.single.handled, isTrue);
+        expect(reports.single.name, 'StateError');
+      },
+    );
 
     test('follow reportAsCrash of the installation', () {
       capture.install(
         flutterErrors: false,
         platformErrors: false,
         isolateErrors: false,
-        reportAsCrash: false,
+        reportAsCrash: true,
       );
       capture.captureZoneError(StateError('zone'), stack);
-      expect(reports.single.handled, isTrue);
+      expect(reports.single.handled, isFalse);
     });
 
     test('are limited and deduplicated like the hooks', () {

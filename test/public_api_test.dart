@@ -187,9 +187,12 @@ void main() {
         'setReportHandler',
         'lifecycleEvents',
         'logException',
+        'logUnhandledException',
+        'reportException',
         'installErrorHandlers',
         'uninstallErrorHandlers',
         'errorHandlersInstalled',
+        'errorHandlersActive',
         'runGuarded',
         'listenToIsolateErrors',
       });

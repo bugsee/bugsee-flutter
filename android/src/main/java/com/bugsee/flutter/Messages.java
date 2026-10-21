@@ -1768,9 +1768,13 @@ public class Messages {
      * launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
      * handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
      * payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+     *
+     * `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+     * is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+     * of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+     * answers `false`. iOS answers at once on the platform thread.
      */
-    @NonNull 
-    Boolean logException(@NonNull String payload, @NonNull Boolean handled, @Nullable String domain);
+    void logException(@NonNull String payload, @NonNull Boolean handled, @Nullable String domain, @NonNull Result<Boolean> result);
 
     /** The codec used by BugseeBridgeHostApi. */
     static @NonNull MessageCodec<Object> getCodec() {
@@ -2685,14 +2689,20 @@ public class Messages {
                 String payloadArg = (String) args.get(0);
                 Boolean handledArg = (Boolean) args.get(1);
                 String domainArg = (String) args.get(2);
-                try {
-                  Boolean output = api.logException(payloadArg, handledArg, domainArg);
-                  wrapped.add(0, output);
-                }
- catch (Throwable exception) {
-                  wrapped = wrapError(exception);
-                }
-                reply.reply(wrapped);
+                Result<Boolean> resultCallback =
+                    new Result<Boolean>() {
+                      public void success(Boolean result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.logException(payloadArg, handledArg, domainArg, resultCallback);
               });
         } else {
           channel.setMessageHandler(null);

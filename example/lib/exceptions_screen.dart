@@ -22,7 +22,7 @@ void _isolateThatThrows(Object? _) =>
 class _ExceptionsScreenState extends State<ExceptionsScreen> {
   final _log = <String>[];
   bool _installed = false;
-  bool _asCrash = true;
+  bool _asCrash = false;
 
   void _note(String line) {
     debugPrint('example: $line');
@@ -91,12 +91,9 @@ class _ExceptionsScreenState extends State<ExceptionsScreen> {
                 }),
                 _button('log unhandled', () {
                   _run(
-                    'logException(handled: false)',
-                    () => Bugsee.logException(
+                    'logUnhandledException',
+                    () => Bugsee.logUnhandledException(
                       StateError('reported as unhandled'),
-                      null,
-                      handled: false,
-                      domain: 'example',
                     ),
                   );
                 }),

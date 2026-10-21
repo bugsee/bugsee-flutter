@@ -864,7 +864,12 @@ protocol BugseeBridgeHostApi {
   /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
   /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
   /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
-  func logException(payload: String, handled: Bool, domain: String?) throws -> Bool
+  ///
+  /// `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+  /// is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+  /// of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+  /// answers `false`. iOS answers at once on the platform thread.
+  func logException(payload: String, handled: Bool, domain: String?) async throws -> Bool
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -1523,6 +1528,11 @@ class BugseeBridgeHostApiSetup {
     /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
     /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
     /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+    ///
+    /// `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+    /// is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+    /// of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+    /// answers `false`. iOS answers at once on the platform thread.
     let logExceptionChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.logException\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       logExceptionChannel.setMessageHandler { message, reply in
@@ -1530,11 +1540,13 @@ class BugseeBridgeHostApiSetup {
         let payloadArg = args[0] as! String
         let handledArg = args[1] as! Bool
         let domainArg: String? = nilOrValue(args[2])
-        do {
-          let result = try api.logException(payload: payloadArg, handled: handledArg, domain: domainArg)
-          reply(wrapResult(result))
-        } catch {
-          reply(wrapError(error))
+        Task { @MainActor in
+          do {
+            let result = try await api.logException(payload: payloadArg, handled: handledArg, domain: domainArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
         }
       }
     } else {

@@ -141,6 +141,7 @@ final class BugseeRuntime {
     switch (outcome.outcome) {
       case LaunchWire.launched:
         _detectCrash = _detectCrashOf(encoded.values);
+        errorCapture.warnIfReplaced();
         return LaunchResult.launched;
       case LaunchWire.alreadyRunning:
         if (encoded.values.isNotEmpty) {
@@ -595,6 +596,8 @@ final class BugseeRuntime {
     'logException',
     false,
     () => host.logException(payload.json, handled, domain),
-    argument: 'domain',
+    // Dart checked the domain and built a document under the limit, so a refusal is about the
+    // document: the native message says what (never the domain, which was valid).
+    argument: 'error',
   );
 }

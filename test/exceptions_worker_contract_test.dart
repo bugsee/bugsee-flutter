@@ -138,10 +138,7 @@ void main() {
       final doc = parseReason(exception['reason']! as String)!;
       expect(doc['internalType'], 'FlutterManagedException');
       expect(doc['name'], 'StateError');
-      expect(
-        doc['reason'],
-        'Bad state: hook: unhandled async error, root zone',
-      );
+      expect(doc['reason'], 'Bad state: unhandled in the integration test');
       expect((doc['frames']! as List), isNotEmpty);
       expect(entry['handled'], false);
     });
@@ -157,6 +154,9 @@ void main() {
               )
               as Map<String, Object?>;
       expect(doc.keys.toSet(), mine.keys.toSet());
+      expect(doc['signature'], matches(RegExp(r'^[0-9a-f]{40}$')));
+      // What the SDK made of it: its own signature, a hash that includes the document's.
+      expect(entry['signatures'], hasLength(1));
       final frame = (doc['frames']! as List).first as Map;
       final mineFrame = (mine['frames']! as List).first as Map;
       expect(frame.keys.toSet(), mineFrame.keys.toSet());
@@ -184,11 +184,11 @@ void main() {
         final stack = doc['originalStackTrace']! as String;
         expect(
           buildIdFromStackTrace(stack),
-          '7a3ef930e9a262963fa36f07686d5bff',
+          '7a3ef930595208393fa36f079aa65921',
         );
         final frames = obfuscatedFrameLines(stack)!;
         expect(frames.first, startsWith('#00 abs '));
-        expect(frames.length, 14);
+        expect(frames.length, 3);
         expect(entry['obfuscated'], true);
       });
 

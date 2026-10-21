@@ -11,7 +11,7 @@
 // name cannot be read all degrade to a smaller document, never to an exception in the app's error
 // path.
 import 'dart:async' show AsyncError, DeferredLoadException, TimeoutException;
-import 'dart:convert' show jsonEncode;
+import 'dart:convert' show jsonEncode, utf8;
 import 'dart:io'
     show
         CertificateException,
@@ -68,6 +68,7 @@ final class ExceptionPayload {
     required this.reason,
     required this.json,
     required this.frameCount,
+    required this.signature,
   });
 
   /// The exception type the dashboard shows (`StateError`, `FormatException`, ...).
@@ -81,6 +82,10 @@ final class ExceptionPayload {
 
   /// How many frames the document carries.
   final int frameCount;
+
+  /// The document's `signature`: what both SDKs hash into the report's signature (see
+  /// [exceptionSignature]).
+  final String signature;
 }
 
 /// Cuts [text] to [max] UTF-16 units without splitting a surrogate pair; a cut text ends in `…`
@@ -470,10 +475,16 @@ ExceptionPayload buildExceptionPayload(
     });
   }
 
+  final signature = _safe(
+    () => exceptionSignature(type, message, document.frames),
+    '',
+  );
+
   String encode(List<Map<String, Object?>> f, String? raw) => jsonEncode({
     'internalType': ExceptionWire.managedName,
     'name': type,
     'reason': message,
+    'signature': signature,
     'frames': f,
     'originalStackTrace': ?raw,
   });
@@ -494,6 +505,7 @@ ExceptionPayload buildExceptionPayload(
     reason: message,
     json: json,
     frameCount: frames.length,
+    signature: signature,
   );
 }
 
@@ -505,9 +517,10 @@ T _safe<T>(T Function() body, T fallback) {
   }
 }
 
-/// What identifies "the same error" for the limiter: the reason and the first lines of the raw
-/// stack. The same error reported through two routes (an isolate listener gets the text of what the
-/// Dart handler got as an object) has the same one.
+/// What identifies "the same error" for the limiter: the FIRST LINE of the reason and the first
+/// lines of the raw stack. The same error reported through two routes has the same one: an isolate
+/// listener gets the full `toString` of what the handlers got as an object, whose reason for a
+/// `FlutterError` is its summary, and only the first line is common to both.
 String exceptionFingerprint(String reason, String? raw) {
   final top = raw == null
       ? ''
@@ -517,5 +530,116 @@ String exceptionFingerprint(String reason, String? raw) {
             .take(5)
             .map((l) => l.trim())
             .join('|');
-  return '${capText(reason, 512)}\u0000$top';
+  return '${capText(reason.split('\n').first, 512)}\u0000$top';
+}
+
+// ---- The signature ------------------------------------------------------------------------------
+
+/// How many frames (user frames first) the signature looks at.
+const signatureFrames = 5;
+
+final _volatileReason = RegExp(
+  r'0x[0-9a-fA-F]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|\d{3,}',
+);
+final _nonSymbolicFrame = RegExp(r'^#\d+\s+abs\s+[0-9a-fA-F]+\s+(.*)$');
+
+/// The `signature` of a document.
+///
+/// Both SDKs hash this key (Android `ExceptionSignature.updateMessageDigestFromThrowable`, iOS
+/// `BGSExceptionSignature.m` `extractSignatureFromReason`) together with the carrier's class name
+/// and the Java/Objective-C stack of the platform thread, which is the same for every Dart error.
+/// Without it every unhandled Dart error would have ONE signature: the server matches issues on it
+/// before the worker looks at the document, drops what it already has too many of
+/// (`SimilarCrashExistsError`) and tells the device to blacklist a signature for good.
+///
+/// So it must tell different errors apart and keep equal ones together: SHA-1 over the type, the
+/// reason with what varies between runs removed (hex addresses, UUIDs, numbers of three digits or
+/// more: ids, timestamps, sizes), and the top [signatureFrames] user frames by location. A
+/// non-symbolic frame is keyed by its `virt` address and symbol, not by `abs` (which moves with
+/// ASLR). 9.x also hashed the application version; the plugin has no way to read it.
+String exceptionSignature(
+  String type,
+  String reason,
+  List<Map<String, Object?>> frames,
+) {
+  final user = frames.where((f) => f['user'] == true).take(signatureFrames);
+  final chosen = user.isNotEmpty ? user : frames.take(signatureFrames);
+  final parts = <String>[
+    type,
+    reason.split('\n').first.replaceAll(_volatileReason, '#'),
+    for (final f in chosen) _frameKey('${f['trace']}'),
+  ];
+  return sha1Hex(parts.join('\u0000'));
+}
+
+String _frameKey(String trace) =>
+    _nonSymbolicFrame.firstMatch(trace.trim())?.group(1) ?? trace;
+
+/// SHA-1 of the UTF-8 bytes of [text], as 40 lowercase hex digits. (The SDKs compute theirs the same
+/// way; written here to avoid a dependency for one hash.)
+String sha1Hex(String text) {
+  final bytes = utf8.encode(text);
+  final padded = <int>[...bytes, 0x80];
+  while (padded.length % 64 != 56) {
+    padded.add(0);
+  }
+  final bits = bytes.length * 8;
+  for (var i = 7; i >= 0; i--) {
+    padded.add((bits >> (i * 8)) & 0xff);
+  }
+  var h0 = 0x67452301,
+      h1 = 0xEFCDAB89,
+      h2 = 0x98BADCFE,
+      h3 = 0x10325476,
+      h4 = 0xC3D2E1F0;
+  int rotl(int v, int n) => ((v << n) | (v >> (32 - n))) & 0xffffffff;
+  final w = List<int>.filled(80, 0);
+  for (var chunk = 0; chunk < padded.length; chunk += 64) {
+    for (var i = 0; i < 16; i++) {
+      final o = chunk + i * 4;
+      w[i] =
+          (padded[o] << 24) |
+          (padded[o + 1] << 16) |
+          (padded[o + 2] << 8) |
+          padded[o + 3];
+    }
+    for (var i = 16; i < 80; i++) {
+      w[i] = rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+    }
+    var a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (var i = 0; i < 80; i++) {
+      int f, k;
+      if (i < 20) {
+        f = (b & c) | ((~b & 0xffffffff) & d);
+        k = 0x5A827999;
+      } else if (i < 40) {
+        f = b ^ c ^ d;
+        k = 0x6ED9EBA1;
+      } else if (i < 60) {
+        f = (b & c) | (b & d) | (c & d);
+        k = 0x8F1BBCDC;
+      } else {
+        f = b ^ c ^ d;
+        k = 0xCA62C1D6;
+      }
+      final temp = (rotl(a, 5) + f + e + k + w[i]) & 0xffffffff;
+      e = d;
+      d = c;
+      c = rotl(b, 30);
+      b = a;
+      a = temp;
+    }
+    h0 = (h0 + a) & 0xffffffff;
+    h1 = (h1 + b) & 0xffffffff;
+    h2 = (h2 + c) & 0xffffffff;
+    h3 = (h3 + d) & 0xffffffff;
+    h4 = (h4 + e) & 0xffffffff;
+  }
+  return [
+    h0,
+    h1,
+    h2,
+    h3,
+    h4,
+  ].map((v) => v.toRadixString(16).padLeft(8, '0')).join();
 }

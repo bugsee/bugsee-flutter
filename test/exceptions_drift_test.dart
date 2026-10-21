@@ -234,9 +234,82 @@ void main() {
         read(
           'ios/bugsee_flutter/Sources/bugsee_flutter/BugseeFlutterPlugin.swift',
         ),
-        contains('BGSFlutterExceptionOps.log(sdk: exceptionSdk'),
+        contains('BGSFlutterExceptionOps.log('),
       );
     });
+
+    test(
+      'Android: the SDK call runs on the dispatcher\'s thread, never on the platform thread',
+      () {
+        final plugin = stripComments(read('$java/BugseeFlutterPlugin.java'));
+        // The only call of the ops is inside the lambda handed to the dispatcher.
+        expect(plugin, contains('ExceptionDispatcher.shared().submit('));
+        expect(
+          RegExp(r'\(\) -> ExceptionOps\.log\(').allMatches(plugin).length,
+          1,
+        );
+        expect(
+          RegExp(r'ExceptionOps\.log\(').allMatches(plugin).length,
+          1,
+          reason: 'no second, inline call',
+        );
+        // The reply goes back to the platform thread.
+        expect(plugin, contains('onMain(() -> result.success(handedToSdk))'));
+      },
+    );
+
+    test(
+      'the dispatcher is one daemon thread with a bounded queue that drops',
+      () {
+        final dispatcher = stripComments(
+          read('$java/ExceptionDispatcher.java'),
+        );
+        expect(dispatcher, contains('new ThreadPoolExecutor(1, 1,'));
+        expect(
+          dispatcher,
+          contains('new ArrayBlockingQueue<Runnable>(capacity)'),
+        );
+        expect(dispatcher, contains('thread.setDaemon(true)'));
+        expect(dispatcher, contains('catch (final RejectedExecutionException'));
+        expect(dispatcher, contains('done.success(false)'));
+        expect(dispatcher, isNot(contains('LinkedBlockingQueue')));
+        expect(dispatcher, isNot(contains('newCachedThreadPool')));
+      },
+    );
+
+    test(
+      'the bridge method is async (the answer comes from another thread) and says why',
+      () {
+        final bridge = read('pigeons/bridge.dart');
+        expect(
+          bridge,
+          contains(
+            '@async\n  bool logException(String payload, bool handled, String? domain);',
+          ),
+        );
+        expect(
+          read('$java/Messages.java'),
+          contains(
+            'void logException(@NonNull String payload, @NonNull Boolean handled, @Nullable String domain, @NonNull Result<Boolean> result);',
+          ),
+        );
+      },
+    );
+
+    test(
+      'iOS: the SDK call stays on the main queue (it reads UIKit state)',
+      () {
+        final swift = read(
+          'ios/bugsee_flutter/Sources/bugsee_flutter/BugseeFlutterPlugin.swift',
+        );
+        final start = swift.indexOf('func logException(');
+        final body = swift.substring(
+          start,
+          swift.indexOf('// MARK: Report handlers'),
+        );
+        expect(body, contains('DispatchQueue.main.async'));
+      },
+    );
 
     test(
       'nothing blocks and nothing is queued: no wait, no lock, no thread hop',

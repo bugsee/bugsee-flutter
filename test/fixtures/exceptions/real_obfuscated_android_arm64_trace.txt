@@ -1,20 +1,9 @@
 *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
-pid: 2349, tid: 523806428880, name 1.ui
+pid: 7277, tid: 519499960016, name 2.ui
 os: android arch: arm64 comp: yes sim: no
-build_id: '7a3ef930e9a262963fa36f07686d5bff'
-isolate_dso_base: 78fae08000, vm_dso_base: 78fae08000
-isolate_instructions: 78faebea40, vm_instructions: 78faea8000
-    #00 abs 00000078fb02217f virt 000000000021a17f _kDartIsolateSnapshotInstructions+0x16373f
-    #01 abs 00000078fb03f9d7 virt 00000000002379d7 _kDartIsolateSnapshotInstructions+0x180f97
-    #02 abs 00000078faec1bbb virt 00000000000b9bbb _kDartIsolateSnapshotInstructions+0x317b
-    #03 abs 00000078fb042343 virt 000000000023a343 _kDartIsolateSnapshotInstructions+0x183903
-    #04 abs 00000078fb042217 virt 000000000023a217 _kDartIsolateSnapshotInstructions+0x1837d7
-    #05 abs 00000078faec0a4b virt 00000000000b8a4b _kDartIsolateSnapshotInstructions+0x200b
-    #06 abs 00000078faeccf8f virt 00000000000c4f8f _kDartIsolateSnapshotInstructions+0xe54f
-    #07 abs 00000078faf32a67 virt 000000000012aa67 _kDartIsolateSnapshotInstructions+0x74027
-    #08 abs 00000078faed4593 virt 00000000000cc593 _kDartIsolateSnapshotInstructions+0x15b53
-    #09 abs 00000078fb04426b virt 000000000023c26b _kDartIsolateSnapshotInstructions+0x18582b
-    #10 abs 00000078faed2e2b virt 00000000000cae2b _kDartIsolateSnapshotInstructions+0x143eb
-    #11 abs 00000078faed2db3 virt 00000000000cadb3 _kDartIsolateSnapshotInstructions+0x14373
-    #12 abs 00000078fb06b1a7 virt 00000000002631a7 _kDartIsolateSnapshotInstructions+0x1ac767
-    #13 abs 00000078faed2b7b virt 00000000000cab7b _kDartIsolateSnapshotInstructions+0x1413b
+build_id: '7a3ef930595208393fa36f079aa65921'
+isolate_dso_base: 77fd30e000, vm_dso_base: 77fd30e000
+isolate_instructions: 77fd3c4a40, vm_instructions: 77fd3ae000
+    #00 abs 00000077fd527faf virt 0000000000219faf _kDartIsolateSnapshotInstructions+0x16356f
+    #01 abs 00000077fd5674ab virt 00000000002594ab _kDartIsolateSnapshotInstructions+0x1a2a6b
+<asynchronous suspension>

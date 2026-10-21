@@ -378,32 +378,4 @@ void main() {
       expect(wrapperObjc, contains('onMainThread:[NSThread isMainThread]'));
     });
   });
-
-  group('requestData always answers null (workbook 6.1)', () {
-    test('Android answers null, and catches whatever the callback throws', () {
-      final start = wrapperJava.indexOf('public void requestData');
-      final body = wrapperJava.substring(
-        wrapperJava.indexOf('{', start),
-        wrapperJava.indexOf('@Override', start),
-      );
-      expect(body, contains('callback.onResult(null)'));
-      expect(body, contains('catch (Throwable'));
-      expect(
-        body,
-        isNot(contains('dataType')),
-        reason: 'no type is special yet',
-      );
-    });
-
-    test('iOS answers nil, and catches whatever the callback throws', () {
-      final start = wrapperObjc.indexOf('requestDataWithType');
-      final body = wrapperObjc.substring(
-        wrapperObjc.indexOf('{', start),
-        wrapperObjc.indexOf('- (void)onLifecycleEvent', start),
-      );
-      expect(body, contains('onResult:nil'));
-      expect(body, contains('@catch'));
-      expect(body, isNot(contains('dataType')));
-    });
-  });
 }

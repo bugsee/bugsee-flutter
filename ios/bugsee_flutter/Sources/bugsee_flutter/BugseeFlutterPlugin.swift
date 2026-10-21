@@ -293,6 +293,10 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     _ = try unwrap(BGSFlutterFacadeOps.endBlackout(sdk: facadeSdk))
   }
 
+  func captureViewHierarchy() throws {
+    _ = try unwrap(BGSFlutterFacadeOps.captureViewHierarchy(sdk: facadeSdk))
+  }
+
   func isBlackout() throws -> Bool {
     (try unwrap(BGSFlutterFacadeOps.isBlackout(sdk: facadeSdk)) as? NSNumber)?.boolValue ?? false
   }

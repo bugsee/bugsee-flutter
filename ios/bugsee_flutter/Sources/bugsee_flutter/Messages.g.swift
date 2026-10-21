@@ -934,6 +934,10 @@ protocol BugseeBridgeHostApi {
   func log(message: String, level: Int64) throws
   func startBlackout() throws
   func endBlackout() throws
+  /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+  /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+  /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+  func captureViewHierarchy() throws
   func isBlackout() throws -> Bool
   /// Opens the SDK's report dialog. A no-op before the SDK is launched.
   func showReportDialog(summary: String?, description: String?, severity: Int64?, labels: [String]?) throws
@@ -1551,6 +1555,22 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       endBlackoutChannel.setMessageHandler(nil)
+    }
+    /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+    /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+    /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+    let captureViewHierarchyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.captureViewHierarchy\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      captureViewHierarchyChannel.setMessageHandler { _, reply in
+        do {
+          try api.captureViewHierarchy()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      captureViewHierarchyChannel.setMessageHandler(nil)
     }
     let isBlackoutChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.isBlackout\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

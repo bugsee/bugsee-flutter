@@ -491,6 +491,18 @@ final class BugseeRuntime {
     );
   }
 
+  /// Brings native's copy of the managed hierarchy up to date (when publishing is on), THEN asks the
+  /// SDK for a pass, so the pass sees the screen as it is and not as it was 300 ms ago.
+  Future<void> captureViewHierarchy() =>
+      _call<void>('captureViewHierarchy', null, () async {
+        try {
+          await viewHierarchy.publisher.flush();
+        } catch (_) {
+          // The pass still runs; it then sees native's last copy, or none.
+        }
+        await host.captureViewHierarchy();
+      });
+
   Future<void> startBlackout() =>
       _call<void>('startBlackout', null, () => host.startBlackout());
 

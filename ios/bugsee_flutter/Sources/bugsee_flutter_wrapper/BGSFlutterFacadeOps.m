@@ -123,6 +123,9 @@ static BugseeSeverityLevel DefaultBugSeverity(void) {
 - (BOOL)isBlackout {
   return [Bugsee isBlackout];
 }
+- (void)captureViewHierarchy {
+  [Bugsee captureViewHierarchy];
+}
 - (void)showReportDialogSummary:(NSString *)summary
                     description:(NSString *)description
                        severity:(NSInteger)severity
@@ -550,6 +553,20 @@ static BOOL IsString(id v) {
   } @catch (NSException *exception) {
     return SdkFailure(@"isBlackout", exception);
   }
+}
+
+// ---- View hierarchy ----------------------------------------------------------------------------
+
+// SDK source (BGSCaptureDataProviderViewHierarchy.m): a pass only while the provider runs (launched,
+// `capture.view-hierarchy` on, not blacked out); it asks the wrapper for `vh` (answered from the
+// cache). The wrapper adds nothing, with no launch gate of its own.
++ (BGSFlutterFacadeResult *)captureViewHierarchyWithSdk:(id<BGSFlutterFacadeSDK>)sdk {
+  @try {
+    [sdk captureViewHierarchy];
+  } @catch (NSException *exception) {
+    return SdkFailure(@"captureViewHierarchy", exception);
+  }
+  return Ok(nil);
 }
 
 // ---- Reports -----------------------------------------------------------------------------------

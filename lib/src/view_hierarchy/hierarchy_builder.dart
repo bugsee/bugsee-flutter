@@ -114,16 +114,16 @@ class HierarchySnapshot {
   /// The payload with every box taken as it is and the age as given, for tests and tools: the
   /// logical-pixel view of what native would serve.
   String render({int ageMs = 0}) {
-    final b = StringBuffer(segments[0])..write(ageMs);
+    final out = StringBuffer(segments[0])..write(ageMs);
     for (var i = 1; i < segments.length; i++) {
-      b.write(segments[i]);
+      out.write(segments[i]);
       if (i - 1 < bounds.length ~/ 4) {
         final k = (i - 1) * 4;
         final l = bounds[k], t = bounds[k + 1];
-        b.write('[$l,$t,${bounds[k + 2] - l},${bounds[k + 3] - t}]');
+        out.write('[$l,$t,${bounds[k + 2] - l},${bounds[k + 3] - t}]');
       }
     }
-    return b.toString();
+    return out.toString();
   }
 }
 
@@ -177,14 +177,15 @@ class _Context {
 bool _finite(Rect r) =>
     r.left.isFinite && r.top.isFinite && r.right.isFinite && r.bottom.isFinite;
 
-/// Whether [rect] touches [clip] (edges count: a hairline on the screen's edge is on screen).
+/// Whether [rect] (which has an area) shares an area with [clip]: a box that only touches the edge
+/// of the visible region shows no pixel of it.
 bool _touches(Rect rect, Rect clip) =>
-    clip.left <= clip.right &&
-    clip.top <= clip.bottom &&
-    rect.left <= clip.right &&
-    rect.right >= clip.left &&
-    rect.top <= clip.bottom &&
-    rect.bottom >= clip.top;
+    clip.left < clip.right &&
+    clip.top < clip.bottom &&
+    rect.left < clip.right &&
+    rect.right > clip.left &&
+    rect.top < clip.bottom &&
+    rect.bottom > clip.top;
 
 /// Builds the snapshot of the implicit view (or [viewId]), or `null` when there is nothing to
 /// describe or anything went wrong (fail closed: no partial answer on an error). Never throws.
@@ -322,23 +323,31 @@ class _Walker {
     // A composite (StatelessWidget, StatefulWidget, ...): named, no geometry of its own; its box
     // is its painted children's, and it is absent when none of them is painted.
     final node = _Node(_typeName(e.widget));
+    _reserve(node); // before its children, so the caps see it
     _children(e, ctx, node, depth + 1);
-    if (node.children.isEmpty) return;
     Rect? box;
     for (final _Node c in node.children) {
       final Rect? r = c.rect;
       if (r != null) box = box == null ? r : box.expandToInclude(r);
     }
-    if (box == null) return;
+    if (box == null) {
+      // Nothing of it is painted: no node, and its slot is given back. What a cap cut below it
+      // is still said, by the node above.
+      if (node.truncated) into.truncated = true;
+      _nodes--;
+      _bytes -= _estimate(node);
+      return;
+    }
     node.rect = box;
-    _count(node);
     into.children.add(node);
   }
 
-  void _count(_Node node) {
+  int _estimate(_Node node) =>
+      150 + node.className.length * 2 + (node.baseClassName?.length ?? 0);
+
+  void _reserve(_Node node) {
     _nodes++;
-    _bytes +=
-        150 + node.className.length * 2 + (node.baseClassName?.length ?? 0);
+    _bytes += _estimate(node);
   }
 
   void _visitRender(
@@ -389,13 +398,18 @@ class _Walker {
       final secure = _Node(secureNodeClassName)
         ..rect = region.rect
         ..secure = true;
-      _count(secure);
+      _reserve(secure);
       into.children.add(secure);
       return;
     }
-    if (ro is RenderSemanticsGestureHandler &&
-        (ro.onTap != null || ro.onLongPress != null)) {
-      node.clickable = true;
+    // Whether something can be tapped here, as the widgets declare it: a `GestureDetector`'s
+    // semantics handler, or a `Semantics` annotation with a tap or long-press action (Material
+    // buttons, `InkWell`, text fields). Only whether a callback EXISTS is read, never a label.
+    if (ro is RenderSemanticsGestureHandler) {
+      node.clickable = ro.onTap != null || ro.onLongPress != null;
+    } else if (ro is RenderSemanticsAnnotations) {
+      final SemanticsProperties p = ro.properties;
+      node.clickable = p.onTap != null || p.onLongPress != null;
     } else if (ro is RenderOpacity) {
       node.alpha = ro.opacity;
     } else if (ro is RenderAnimatedOpacity) {
@@ -407,7 +421,7 @@ class _Walker {
         ro is PlatformViewRenderBox) {
       node.contentKind = 'surface';
     }
-    _count(node);
+    _reserve(node);
     _children(e, _Context(ro, toView, clip), node, depth + 1);
     into.children.add(node);
   }

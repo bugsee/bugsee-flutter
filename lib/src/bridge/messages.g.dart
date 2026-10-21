@@ -1644,6 +1644,27 @@ class BugseeBridgeHostApi {
     );
   }
 
+  /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+  /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+  /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+  Future<void> captureViewHierarchy() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.captureViewHierarchy$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
   Future<bool> isBlackout() async {
     final pigeonVar_channelName =
         'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.isBlackout$pigeonVar_messageChannelSuffix';

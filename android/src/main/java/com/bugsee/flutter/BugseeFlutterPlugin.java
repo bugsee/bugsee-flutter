@@ -555,6 +555,14 @@ public class BugseeFlutterPlugin
     }
 
     @Override
+    public void captureViewHierarchy() {
+        facade(sdk -> {
+            FacadeOps.captureViewHierarchy(sdk);
+            return null;
+        });
+    }
+
+    @Override
     public void endBlackout() {
         facade(sdk -> {
             FacadeOps.endBlackout(sdk);

@@ -1974,6 +1974,12 @@ public class Messages {
     void startBlackout();
 
     void endBlackout();
+    /**
+     * Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+     * wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+     * before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+     */
+    void captureViewHierarchy();
 
     @NonNull 
     Boolean isBlackout();
@@ -2822,6 +2828,27 @@ public class Messages {
                 ArrayList<Object> wrapped = new ArrayList<>();
                 try {
                   api.endBlackout();
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.captureViewHierarchy" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  api.captureViewHierarchy();
                   wrapped.add(0, null);
                 }
  catch (Throwable exception) {

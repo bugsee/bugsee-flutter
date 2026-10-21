@@ -401,6 +401,11 @@ abstract class BugseeBridgeHostApi {
 
   void endBlackout();
 
+  /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+  /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+  /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+  void captureViewHierarchy();
+
   bool isBlackout();
 
   /// Opens the SDK's report dialog. A no-op before the SDK is launched.

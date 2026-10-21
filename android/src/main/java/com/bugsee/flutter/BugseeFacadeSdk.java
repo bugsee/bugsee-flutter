@@ -153,6 +153,11 @@ final class BugseeFacadeSdk implements FacadeOps.Sdk {
     }
 
     @Override
+    public void captureViewHierarchy() {
+        Bugsee.captureViewHierarchy();
+    }
+
+    @Override
     public void showReportDialog(
             @Nullable final String summary,
             @Nullable final String description,

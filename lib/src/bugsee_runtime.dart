@@ -15,6 +15,10 @@ import 'facade/breadcrumb.dart';
 import 'facade/validation.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'network/network_event.dart';
+import 'network/network_pipeline.dart';
+import 'network/network_policy.dart';
+import 'network/network_service.dart';
 import 'options/bugsee_options.g.dart';
 import 'options/launch_options.dart';
 import 'options/option_registry.dart';
@@ -136,6 +140,9 @@ final class BugseeRuntime {
       );
     }
 
+    // The capture's policy follows the SDK's status; the lifecycle event may arrive after this
+    // returns, so ask now too.
+    unawaited(network.refreshPolicy());
     switch (outcome.outcome) {
       case LaunchWire.launched:
         return LaunchResult.launched;
@@ -185,6 +192,8 @@ final class BugseeRuntime {
         'the Bugsee SDK threw while stopping: ${e.message ?? e.code}',
         cause: e,
       );
+    } finally {
+      unawaited(network.refreshPolicy());
     }
   }
 
@@ -508,6 +517,46 @@ final class BugseeRuntime {
       argument: 'severity',
     );
   }
+
+  // ---- Network capture (Phase 5b) ---------------------------------------------------------------
+
+  /// The capture, the filter and the queue to the SDK; see `lib/src/network`.
+  late final NetworkCaptureService network = NetworkCaptureService(
+    send: (batch) => host.addNetworkEvents(batch),
+    loadPolicy: _loadNetworkPolicy,
+    ensureAttached: ensureStartedInBackground,
+    statuses: () => bridge.statusChanges,
+    supported: () => _platform() != null,
+    warn: _warn,
+  );
+
+  Future<NetworkPolicy> _loadNetworkPolicy() async {
+    final status = await host.status();
+    final options = await host.launchOptions(false);
+    return NetworkPolicy.from(
+      options,
+      launched: status == BugseeStatus.launched.name,
+    );
+  }
+
+  /// Installs the `dart:io` capture (see `Bugsee.installNetworkCapture`). A call from a
+  /// background isolate is a [BugseeException]: it has no platform channels to reach the SDK
+  /// with.
+  bool installNetworkCapture() {
+    _requireBinding();
+    return network.install();
+  }
+
+  void uninstallNetworkCapture() => network.uninstall();
+
+  bool get networkCaptureInstalled => network.installed;
+
+  void setNetworkFilter(BugseeNetworkFilter? filter, Duration timeout) =>
+      network.setFilter(filter, timeout);
+
+  BugseeNetworkFilter? get networkFilter => network.pipeline.filter;
+
+  NetworkCaptureStats get networkCaptureStats => network.pipeline.stats;
 
   // ---- Report handler and lifecycle events ------------------------------------------------------
 

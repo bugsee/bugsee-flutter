@@ -6,6 +6,8 @@ import 'errors.dart';
 import 'facade/breadcrumb.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'network/network_event.dart';
+import 'network/network_pipeline.dart' show NetworkCaptureStats;
 import 'options/bugsee_options.g.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
@@ -288,6 +290,91 @@ abstract final class Bugsee {
     List<String>? labels,
   }) =>
       _runtime.upload(summary, description, severity: severity, labels: labels);
+
+  // ---- Network capture --------------------------------------------------------------------------
+
+  /// Starts recording the app's HTTP traffic from Dart into the report: everything built on
+  /// `dart:io`'s `HttpClient` (`package:http`, `dio`'s default adapter, `Image.network`, the
+  /// WebSocket handshake, ...). The SDKs' own interception cannot see it (Dart does not use the
+  /// platform's networking stack), so this plugin captures it in Dart and hands each event to the
+  /// SDK, which applies its network options and privacy rules exactly as it does to the traffic it
+  /// intercepts itself. Call it **once, early in `main`**, before the app makes a request:
+  ///
+  /// ```dart
+  /// void main() {
+  ///   Bugsee.installNetworkCapture();
+  ///   runApp(const MyApp());
+  /// }
+  /// ```
+  ///
+  /// Installs `HttpOverrides` **in front of** whatever `HttpOverrides` the app has installed: it
+  /// chains to them (clients, certificate callbacks, proxy settings and `findProxy` are theirs and
+  /// untouched). Idempotent: calling it again while it is in effect does nothing. Returns whether
+  /// the capture is in effect, `false` on a platform with no SDK (desktop, web).
+  ///
+  /// Nothing is recorded until the SDK is `launched`, and only while `capture.network` is on
+  /// (`BugseeOptions.captureNetwork`, on by default); a request that began before the launch is
+  /// never recorded. Bodies follow `captureNetworkBodySizeLimit` (20 KiB by default; a longer body
+  /// is dropped, not cut) and `captureNetworkBodyWithoutType`; only text is kept. Requests to
+  /// Bugsee itself are never recorded. See `doc/network.md` for the full list of what is and is
+  /// not captured.
+  ///
+  /// **Limits**: other isolates (their own `HttpOverrides`, and no channel to the SDK), a client
+  /// made before this call by code that keeps it (a static `HttpClient`, the first `WebSocket`),
+  /// an app that replaces `HttpOverrides` without chaining to the current ones, and a zone that
+  /// scopes its own overrides are not captured. Native networking plugins (`cronet_http`,
+  /// `cupertino_http`, a WebView) are captured by the SDK's own interception instead.
+  ///
+  /// Throws a [BugseeException] when called from a background isolate.
+  static bool installNetworkCapture() => _runtime.installNetworkCapture();
+
+  /// Stops recording. Restores the `HttpOverrides` that were in place before when this capture is
+  /// still the one set; if the app chained its own over it, it stays in the chain and forwards
+  /// without recording. Clients already created stop recording too. Events already queued are
+  /// still handed to the SDK. [installNetworkCapture] starts it again.
+  static void uninstallNetworkCapture() => _runtime.uninstallNetworkCapture();
+
+  /// Whether [installNetworkCapture] was called and not undone.
+  static bool get networkCaptureInstalled => _runtime.networkCaptureInstalled;
+
+  /// Sets the filter every captured event goes through **before** it is handed to the SDK; `null`
+  /// removes it. Return the event (changed in place or a copy) to record it, `null` to drop it:
+  ///
+  /// ```dart
+  /// Bugsee.setNetworkFilter((event) {
+  ///   if (Uri.parse(event.url).host == 'internal.example.com') return null; // not recorded
+  ///   event.headers.remove('x-session');
+  ///   return event;
+  /// });
+  /// ```
+  ///
+  /// The filter runs in Dart, so it cannot be bypassed: nothing reaches the SDK without passing
+  /// it. It sees the event raw (the SDK's default sanitizer runs after it, on what it returns,
+  /// and so does a filter the app set on the native SDK). It runs on the isolate that made the
+  /// request (normally the UI isolate), one event at a time, in order, **never inside the HTTP
+  /// call**: the request is not held up. A slow synchronous filter still takes UI time: keep it
+  /// fast. It may return a `Future`.
+  ///
+  /// **Fails closed.** A filter that throws, returns something other than a `BugseeNetworkEvent`
+  /// or `null`, or returns a future that does not complete within [timeout] drops that event (and
+  /// a debug warning is printed once; [networkCaptureStats] counts them). A filter that never
+  /// answers therefore drops every event it is given, at one per [timeout] while the queue
+  /// fills and the rest are dropped. [timeout] defaults to 10 seconds, the SDK's own network
+  /// filter timeout, and must be positive and at most 5 minutes (a [BugseeArgumentException]
+  /// otherwise).
+  static void setNetworkFilter(
+    BugseeNetworkFilter? filter, {
+    // The SDK's own network filter timeout; `test/network_drift_test.dart` compares the copies.
+    Duration timeout = const Duration(seconds: 10),
+  }) => _runtime.setNetworkFilter(filter, timeout);
+
+  /// The filter set with [setNetworkFilter], or `null`.
+  static BugseeNetworkFilter? get networkFilter => _runtime.networkFilter;
+
+  /// What happened to the captured events so far (for diagnosis): captured, handed to the SDK,
+  /// dropped by a full queue, by the filter, or by a failure to deliver.
+  static NetworkCaptureStats get networkCaptureStats =>
+      _runtime.networkCaptureStats;
 
   // ---- Report handler and lifecycle events ------------------------------------------------------
 

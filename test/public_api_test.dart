@@ -39,6 +39,13 @@ void main() {
       'LaunchResult',
     ],
     'src/lifecycle_event.dart': ['LifecycleEvent'],
+    'src/network/network_event.dart': [
+      'BugseeNetworkEvent',
+      'BugseeNetworkFilter',
+      'NetworkStage',
+      'NoBodyReason',
+    ],
+    'src/network/network_pipeline.dart': ['NetworkCaptureStats'],
     'src/options/bugsee_options.g.dart': [
       'BugseeOptions',
       'BugseeStyle',
@@ -175,6 +182,12 @@ void main() {
         'reportHandler',
         'setReportHandler',
         'lifecycleEvents',
+        'installNetworkCapture',
+        'uninstallNetworkCapture',
+        'networkCaptureInstalled',
+        'setNetworkFilter',
+        'networkFilter',
+        'networkCaptureStats',
       });
     });
 
@@ -341,6 +354,59 @@ void main() {
       'AttributeFailure': (
         'src/errors.dart',
         {'invalidName', 'invalidValue', 'rejected'},
+      ),
+      'BugseeNetworkEvent': (
+        'src/network/network_event.dart',
+        {
+          'BugseeNetworkEvent',
+          'id',
+          'stage',
+          'method',
+          'statusCode',
+          'size',
+          'time',
+          'url',
+          'headers',
+          'body',
+          'noBodyReason',
+          'statusText',
+          'error',
+          'errorDescription',
+          'redirectedFrom',
+          'timings',
+          'copy',
+          'monotonicUs',
+        },
+      ),
+      'NetworkStage': (
+        'src/network/network_event.dart',
+        {'before', 'redirect', 'complete', 'error', 'abort'},
+      ),
+      'NoBodyReason': (
+        'src/network/network_event.dart',
+        {
+          'NoBodyReason',
+          'noData',
+          'sizeTooLarge',
+          'unsupportedContentType',
+          'noContentType',
+          'cantReadData',
+          'wire',
+        },
+      ),
+      'NetworkCaptureStats': (
+        'src/network/network_pipeline.dart',
+        {
+          'NetworkCaptureStats',
+          'captured',
+          'handedToSdk',
+          'droppedQueueFull',
+          'droppedNotAccepting',
+          'droppedByFilter',
+          'filterFailures',
+          'refusedByNative',
+          'sendFailures',
+        },
       ),
       'BugseeStatus': (
         'src/status.dart',

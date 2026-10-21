@@ -91,7 +91,8 @@ public class FlutterWrapperTest {
         final LifecycleHub hub = new LifecycleHub(Runnable::run);
         hub.attach(seen::add);
         final FlutterWrapper w = FlutterWrapper.create(
-                "flutter", "1", null, null, hub, new SecureRectangleStore());
+                "flutter", "1", null, null, hub,
+                new SecureRectangleStore(SecureRectangleStore.UNKNOWN_ENVIRONMENT));
         w.onLifecycleEvent("com.bugsee.lifecycle.Launched", null);
         w.onLifecycleEvent("unknown-future-event", new Object());
         assertEquals(2, seen.size());
@@ -99,6 +100,30 @@ public class FlutterWrapperTest {
         assertEquals("unknown-future-event", seen.get(1).name);
         // The default (process-wide) hub also copes with anything.
         FlutterWrapper.atProcessStart().onLifecycleEvent("x", null);
+    }
+
+    private static final class FixedEnvironment implements SecureRectangleStore.Environment {
+        @Override
+        public double nativePixelRatio(final int display) {
+            return 3;
+        }
+
+        @Override
+        public double unitsPerPhysicalPixel(final int display) {
+            return 1;
+        }
+
+        @Override
+        public int[] displayBounds(final int display) {
+            return new int[] {1080, 2400};
+        }
+    }
+
+    private static void publishOnDisplay(final SecureRectangleStore store, final int display) {
+        store.setEnvironment(new FixedEnvironment());
+        store.setPlacement(1, 0, SecureRectangleStore.Placement.known(display, 0, 0));
+        store.publish(1, 1, 1, Collections.singletonMap(0,
+                new SecureRectangleStore.ViewRects(3, new double[] {10, 20, 30, 40})));
     }
 
     /**
@@ -110,12 +135,13 @@ public class FlutterWrapperTest {
         final SecureRectangleStore store = SecureRectangleStore.shared();
         store.clearForTests();
         try {
-            final int[] set = {7, 1, 10, 20, 30, 40};
-            store.publish(0, set);
+            publishOnDisplay(store, 0);
+            final int[] set = {1, 1, 30, 60, 90, 120};
             final FlutterWrapper placeholder = FlutterWrapper.atProcessStart();
             assertArrayEquals(set, placeholder.getSecureRectangles(0));
             final FlutterWrapper refined = FlutterWrapper.create(
                     "flutter", "1.0.0", null, Collections.singletonMap("flutter", "3.41.0"));
+            assertNotSame(placeholder, refined);
             assertArrayEquals(set, refined.getSecureRectangles(0));
             // Other displays are unaffected.
             assertEquals(0, refined.getSecureRectangles(1)[1]);
@@ -130,7 +156,7 @@ public class FlutterWrapperTest {
         final SecureRectangleStore store = SecureRectangleStore.shared();
         store.clearForTests();
         try {
-            store.publish(2, new int[] {9, 1, 1, 2, 3, 4});
+            publishOnDisplay(store, 2);
             final List<BugseeWrapper> registered = new ArrayList<>();
             FlutterWrapperInitProvider.registerEarly(registered::add);
             final Map<String, String> ctx = new HashMap<>();
@@ -145,8 +171,16 @@ public class FlutterWrapperTest {
             assertEquals("1.2.3", second.getWrapperVersion());
             assertEquals("dbg", second.getWrapperBuild());
             assertEquals("3.41.0", second.getContext().get("flutter"));
-            assertArrayEquals(new int[] {9, 1, 1, 2, 3, 4}, first.getSecureRectangles(2));
-            assertArrayEquals(new int[] {9, 1, 1, 2, 3, 4}, second.getSecureRectangles(2));
+            final int[] set = {1, 1, 30, 60, 90, 120};
+            assertArrayEquals(set, first.getSecureRectangles(2));
+            assertArrayEquals(set, second.getSecureRectangles(2));
+            // A change after the replacement reaches the SDK through the new wrapper, and
+            // moves the version it sees.
+            store.publish(1, 1, 2, Collections.singletonMap(0,
+                    new SecureRectangleStore.ViewRects(3, new double[] {10, 20, 31, 40})));
+            final int[] changed = second.getSecureRectangles(2);
+            assertEquals(2, changed[0]);
+            assertEquals(93, changed[4]);
         } finally {
             store.clearForTests();
         }

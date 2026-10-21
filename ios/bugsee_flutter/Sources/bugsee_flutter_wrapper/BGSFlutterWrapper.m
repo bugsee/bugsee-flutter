@@ -85,7 +85,7 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
 
 - (NSData *)secureRectanglesForDisplay:(NSInteger)display {
   // From the store, not from this object: this wrapper is replaced.
-  return [_secureRectangles snapshotForDisplay:display];
+  return [_secureRectangles pullForDisplay:display];
 }
 
 - (void)onBeforeReportCreated:(id<BGSReportContract>)report

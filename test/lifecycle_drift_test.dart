@@ -210,7 +210,7 @@ void main() {
     test('secure rectangles come from the process-wide store (5.4.2)', () {
       expect(
         code('$java/FlutterWrapper.java'),
-        contains('return secureRectangles.snapshot(display);'),
+        contains('return secureRectangles.pull(display);'),
       );
       final store = code('$java/SecureRectangleStore.java');
       expect(store, contains('SECURE_RECTANGLES_VERSION_UNKNOWN'));

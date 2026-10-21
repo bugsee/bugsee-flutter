@@ -162,7 +162,7 @@ final class FlutterWrapper implements BugseeWrapper {
     @Override
     public int[] getSecureRectangles(final int display) {
         // From the store, not from this object: this wrapper is replaced.
-        return secureRectangles.snapshot(display);
+        return secureRectangles.pull(display);
     }
 
     @Override

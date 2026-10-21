@@ -19,7 +19,7 @@ and checkout with `persist-credentials: false`.
 |---|---|---|---|
 | `format` | `format` | ubuntu | `dart format --set-exit-if-changed` over `lib test example/lib scripts pigeons`, run on the floor Flutter because formatter output changes between Dart releases |
 | `bridge-codegen` | `bridge codegen is current` | ubuntu | `dart scripts/generate_pigeon.dart --check`: regenerates the Dart/Java/Swift bridge from `pigeons/bridge.dart` with the pinned pigeon and fails if a committed generated file differs (the tree is left untouched). Runs on the floor Flutter because the generated Dart is `dart format`ted and formatter output varies by release. It also runs `dart analyze` in `pigeons/` (excluded from the root analysis, which has no `pub get` for it). Fix: run `dart scripts/generate_pigeon.dart` and commit |
-| `test` | `analyze + test + ios build (floor)`, `analyze + test + ios build (stable)` | macOS | `flutter analyze`, `flutter test` (includes the drift guards), debug iOS build with SwiftPM, and (stable leg only) the XCTests of the Objective-C wrapper target via `xcodebuild test` on a simulator in `ios/wrapper_tests`. macOS is required: SwiftPM and the simulator only exist there |
+| `test` | `analyze + test + ios build (floor)`, `analyze + test + ios build (stable)` | macOS | `flutter analyze`, `flutter test` (includes the drift guards, among them `test/secure_rects_drift_test.dart` for the constants the secure-rectangle store repeats in Java and Objective-C), debug iOS build with SwiftPM, and (stable leg only) the XCTests of the Objective-C wrapper target via `xcodebuild test` on a simulator in `ios/wrapper_tests`. macOS is required: SwiftPM and the simulator only exist there |
 | `build-android` | `build apk (floor)`, `build apk (stable)` | ubuntu | Debug APK of the example app, then the plugin's JUnit tests (`:bugsee_flutter:testDebugUnitTest`). Frees runner disk first (otherwise "No space left on device") |
 | `publish-check` | `pub publish dry-run` | ubuntu | Runs on the floor Flutter. Package validity only. Fails on warnings (e.g. CHANGELOG missing the pubspec version, dirty git tree). Never uploads, needs no credentials |
 | `ci-ok` | `ci-ok` | ubuntu | `if: always()`; fails unless every job above succeeded (failed, cancelled and skipped needed jobs all fail it). Deliberately not `!cancelled()`: that would skip `ci-ok` on a cancelled run, and a skipped required check counts as passing |
@@ -63,7 +63,7 @@ The plugin's own Swift package cannot host a test target (its Swift target impor
 `Flutter`, which only the Flutter tool supplies). `ios/wrapper_tests` is a test-only
 package whose `Sources/BugseeFlutterWrapper` is a symlink to the shipped Objective-C
 target, so XCTest runs against exactly the shipped code. Locally:
-`cd ios/wrapper_tests && xcodebuild test -scheme bugsee_flutter_wrapper_tests -destination 'platform=iOS Simulator,name=iPhone 17'`.
+`cd ios/wrapper_tests && xcodebuild test -collect-test-diagnostics never -scheme bugsee_flutter_wrapper_tests -destination 'platform=iOS Simulator,name=iPhone 17'` (without `-collect-test-diagnostics never` a failing run can sit for 10 minutes collecting diagnostics). The secure-rectangle tests need a simulator whose screen scale is not 1 (every current iPhone): two of them assert that and fail rather than pass vacuously on a 1x screen (workbook 5.3.3). The tracker tests create real `UIWindow`/`UIView`s.
 
 ## JDK
 

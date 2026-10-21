@@ -227,6 +227,135 @@ class WrapperIdentityMessage {
   }
 }
 
+/// The rectangles of one Flutter view, flat `[l, t, r, b, l, t, r, b, ...]`, in
+/// the view's own LOGICAL pixels (Flutter logical pixels: iOS points, Android
+/// dp), origin at the view's top-left, right/bottom exclusive. Native converts
+/// them to the SDK's unit and places the view on the screen.
+class SecureViewRectanglesMessage {
+  SecureViewRectanglesMessage({
+    required this.viewId,
+    required this.devicePixelRatio,
+    required this.rectangles,
+  });
+
+  /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
+  int viewId;
+
+  /// `FlutterView.devicePixelRatio` the rectangles were measured with. Native
+  /// scales by THIS, not by what the display reports now: a density change is
+  /// applied natively before Dart has laid out again, so rectangles measured at
+  /// the old ratio must not be scaled by the new one. When the two differ,
+  /// native covers the whole display until Dart republishes.
+  double devicePixelRatio;
+
+  List<double> rectangles;
+
+  List<Object?> _toList() {
+    return <Object?>[viewId, devicePixelRatio, rectangles];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static SecureViewRectanglesMessage decode(Object result) {
+    result as List<Object?>;
+    return SecureViewRectanglesMessage(
+      viewId: result[0]! as int,
+      devicePixelRatio: result[1]! as double,
+      rectangles: (result[2]! as List<Object?>).cast<double>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! SecureViewRectanglesMessage ||
+        other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(viewId, other.viewId) &&
+        _deepEquals(devicePixelRatio, other.devicePixelRatio) &&
+        _deepEquals(rectangles, other.rectangles);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'SecureViewRectanglesMessage(viewId: $viewId, devicePixelRatio: $devicePixelRatio, rectangles: $rectangles)';
+  }
+}
+
+/// The COMPLETE set of secure rectangles of this Dart isolate: a view that is
+/// absent from [views] has none. Whole-state, not a delta, so a lost or late
+/// message can never leave a rectangle behind.
+///
+/// Ordering: within one `epoch` native ignores a message whose `sequence` is
+/// not newer than the newest it accepted. `epoch` is a random id of the Dart
+/// isolate (never a clock: a clock can go backwards). A message with an epoch
+/// native has not seen starts a new isolate (a hot restart; its counter restarts
+/// at 1) and replaces the old one's state; a message of an epoch native has
+/// already retired is a late straggler of a dead isolate and is ignored.
+class SecureRectanglesMessage {
+  SecureRectanglesMessage({
+    required this.epoch,
+    required this.sequence,
+    required this.views,
+  });
+
+  int epoch;
+
+  int sequence;
+
+  List<SecureViewRectanglesMessage> views;
+
+  List<Object?> _toList() {
+    return <Object?>[epoch, sequence, views];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static SecureRectanglesMessage decode(Object result) {
+    result as List<Object?>;
+    return SecureRectanglesMessage(
+      epoch: result[0]! as int,
+      sequence: result[1]! as int,
+      views: (result[2]! as List<Object?>).cast<SecureViewRectanglesMessage>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! SecureRectanglesMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(epoch, other.epoch) &&
+        _deepEquals(sequence, other.sequence) &&
+        _deepEquals(views, other.views);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'SecureRectanglesMessage(epoch: $epoch, sequence: $sequence, views: $views)';
+  }
+}
+
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -240,6 +369,12 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is WrapperIdentityMessage) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
+    } else if (value is SecureViewRectanglesMessage) {
+      buffer.putUint8(131);
+      writeValue(buffer, value.encode());
+    } else if (value is SecureRectanglesMessage) {
+      buffer.putUint8(132);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -252,6 +387,10 @@ class _PigeonCodec extends StandardMessageCodec {
         return LifecycleEventMessage.decode(readValue(buffer)!);
       case 130:
         return WrapperIdentityMessage.decode(readValue(buffer)!);
+      case 131:
+        return SecureViewRectanglesMessage.decode(readValue(buffer)!);
+      case 132:
+        return SecureRectanglesMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -316,6 +455,31 @@ class BugseeBridgeHostApi {
       pigeonVar_channelName,
       isNullValid: true,
     );
+  }
+
+  /// Publishes the secure rectangles (see [SecureRectanglesMessage]). Never
+  /// throws on content: an unusable value fails closed natively. Returns
+  /// whether the message was applied (`false`: it was older than one already
+  /// applied, which is not an error).
+  Future<bool> setSecureRectangles(SecureRectanglesMessage state) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setSecureRectangles$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[state],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
   }
 }
 

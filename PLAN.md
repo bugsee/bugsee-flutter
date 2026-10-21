@@ -48,11 +48,24 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   Launching/Launched/Stopping/Stopped, never treat an event as proof of a report (4.7).
 - Lifecycle delivery limit (3a): guarantees end at the hop into the channel sink. A message sent while the Dart side has no handler is held only by Flutter's channel buffer, which by default keeps ONE message per channel (a restarted isolate may see that one after it sets a handler; any older ones are dropped, and the engine reports an error that native only logs). The hub replays the latest status to each new receiver, flushes report events still in its own buffer and, when the final receiver detaches, puts its in-flight events back in front of it; only an event already SENT over the channel while Dart has no handler is not retried. Phase 4/6 consumers must not rely on delivery surviving a restart.
 - `requestData`: always answer; unknown type → `null`; never throw.
-- Secure rectangles: pull model, `[version,count,l,t,r,b…]` int32 LE; outward rounding;
-  version moves on any change and never on a no-op, per display; **scale to platform unit
-  (iOS points, Android px) before rounding**; immutable snapshots. Dart side: `Bugsee.secure`
-  widget/`RenderObject` publishing global rects (including clipped/scrolling cases).
-  Tests: mutation (hold version constant), non-1 scale on iOS.
+- Secure rectangles (3b, done): pull model, `[version,count,l,t,r,b…]` int32 LE; outward rounding;
+  version moves on any change and never on a no-op, per display; immutable snapshots.
+  What the pinned SDKs take today (from source, not the workbook's in-flight note): **Android 7.4.2:
+  physical pixels in the `View.getLocationOnScreen` space, display = `Display.getDisplayId()`;
+  iOS 7.0.0-beta7: points in the screen's coordinate space, display 0 only.** Dart publishes Flutter
+  logical pixels per view; native converts (Android: density of the Flutter view's `Resources`, read at every
+  pull and matched against the ratio Dart measured at; iOS: ratio / UIScreen.scale = 1, never the screen scale), applies the view's on-screen scale, adds its on-screen position, then floors l/t and
+  ceils r/b; a 0.12 s grace window serves each past set for 0.12 s after it stopped being current, together with
+  the current one. Versions are derived from what is served (so a density
+  or position change moves them with no write), per display, never 0; a display that never had a rectangle
+  serves `[0, 0]` (unknown). Fail closed: an unplaceable view, a non-finite rectangle or a bad scale serves
+  the whole display; a view known to be off-screen serves nothing. Dart (`lib/src/secure`, internal until
+  Phase 4): `BugseeSecureRegion`/`RenderSecureRegion` + `SecureRegionRegistry`, measured every frame in a
+  post-frame callback, published when the set changed (and again, with a capped backoff that never gives up, after a failed publish), ordered by `(epoch, sequence)`. Regions are
+  reported UNCLIPPED through every ancestor transform (bounding box, including paint outside their box); a region is dropped only on positive evidence
+  (an ancestor that does not paint it, an IndexedStack showing another child, or the region and all its paint lying wholly outside a clipping viewport); neither a disabled TickerMode nor a detached layer counts as such evidence. An unmeasurable region covers the whole view.
+  First-frame exposure of a newly appearing region remains.
+  Known limits: see "Secure rectangle limits" in `.claude/CLAUDE.md`.
 - Report handlers: always call completion; `isTerminating=true` → synchronous native-only
   work, no round-trip to Dart.
 

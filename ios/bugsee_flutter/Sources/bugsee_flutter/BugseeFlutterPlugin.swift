@@ -18,9 +18,31 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   private var pumpTask: Task<Void, Never>?
   private var wake: AsyncStream<Void>.Continuation?
 
-  init(messenger: FlutterBinaryMessenger) {
+  // Secure rectangles. One owner id per engine identifies its Dart isolate in the
+  // process-wide store.
+  private static let ownerLock = NSLock()
+  private static var lastOwner: Int64 = 0
+  private static func newOwner() -> Int64 {
+    ownerLock.lock()
+    defer { ownerLock.unlock() }
+    lastOwner += 1
+    return lastOwner
+  }
+  private static let environment = BGSFlutterUIKitEnvironment()
+  private let owner: Int64
+  private var tracker: BGSFlutterSecurePlacementTracker?
+
+  init(messenger: FlutterBinaryMessenger, registrar: FlutterPluginRegistrar) {
     self.messenger = messenger
+    self.owner = BugseeFlutterPlugin.newOwner()
     super.init()
+    let store = BGSFlutterSecureRectangleStore.shared()
+    store.setEnvironment(BugseeFlutterPlugin.environment)
+    // The registrar is weak: it retains this instance (published below).
+    tracker = BGSFlutterSecurePlacementTracker(
+      owner: owner, store: store, environment: BugseeFlutterPlugin.environment,
+      viewProvider: { [weak registrar] in registrar?.viewController?.view })
+    tracker?.refresh()
   }
 
   public static func register(with registrar: FlutterPluginRegistrar) {
@@ -28,7 +50,7 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     // `+load` out of the static archive.
     BGSFlutterWrapperRegistrar.ensureRegistered()
 
-    let instance = BugseeFlutterPlugin(messenger: registrar.messenger())
+    let instance = BugseeFlutterPlugin(messenger: registrar.messenger(), registrar: registrar)
     BugseeBridgeHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: instance)
     // Keeps the instance alive and gets `detachFromEngine(for:)`.
     registrar.publish(instance)
@@ -37,6 +59,10 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
     BugseeBridgeHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: nil)
     stopForwarding()
+    tracker?.detach()
+    tracker = nil
+    // The engine's UI is gone; there is nothing left of it to hide.
+    BGSFlutterSecureRectangleStore.shared().dropOwner(owner)
   }
 
   func attachLifecycle() throws {
@@ -95,5 +121,22 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
       build: identity.build,
       context: identity.context
     )
+  }
+
+  func setSecureRectangles(state: SecureRectanglesMessage) throws -> Bool {
+    var views: [NSNumber: BGSFlutterSecureViewRects] = [:]
+    for view in state.views {
+      views[NSNumber(value: view.viewId)] = BGSFlutterSecureViewRects(
+        ratio: view.devicePixelRatio,
+        rects: view.rectangles.withUnsafeBufferPointer { Data(buffer: $0) })
+    }
+    let applied = BGSFlutterSecureRectangleStore.shared().publish(
+      forOwner: owner, epoch: state.epoch, sequence: state.sequence, views: views)
+    if applied {
+      // Dart just measured, so look at where the view is now rather than trusting what an
+      // earlier read saw.
+      tracker?.refresh()
+    }
+    return applied
   }
 }

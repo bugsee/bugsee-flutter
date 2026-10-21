@@ -190,9 +190,21 @@ behaviour table with source line references, value rules, errors and threading: 
 - Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
   wrapper, filters chained ahead of app filters) — spec is **Proposed, unimplemented on both
   SDKs**; build against the interface, gate on SDK support.
-- Dart exceptions: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
-  obfuscation symbolication (debug-info) — port the useful parts of the 9.x `exceptions*`
-  and `symbols.py` approach, as new code.
+- **5a — Dart exceptions (done, see below)**: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
+  obfuscation symbolication (debug-info).
+
+### 5a — Dart exceptions (done)
+
+Contract, SDK behaviour per platform with source refs, handler design, symbols and limits: **`doc/exceptions.md`**.
+
+- **Added**: `Bugsee.logException(error, stack, {handled, domain})`, `installErrorHandlers`/`uninstallErrorHandlers`/`errorHandlersInstalled`,
+  `runGuarded`, `listenToIsolateErrors` (+ `IsolateErrorListener`); one bridge call `logException(payload, handled, domain)`; `ExceptionOps.java`
+  + `FlutterManagedException` + `consumer-rules.pro`, `BGSFlutterExceptionOps`; Dart `lib/src/exceptions` (document builder, classifier, `ErrorCapture`, `ReportLimiter`).
+- **Backend contract** (worker `crash/managed/dart.py`): routed on the literal `FlutterManagedException`, document `{internalType, name, reason, frames, originalStackTrace}`; build id from `originalStackTrace`; symbols by build id via `dart_symbolize`.
+- **Decisions**: unhandled hooks file crash reports by default (`reportAsCrash`), chained and restored, once per error, 30 s per equal error / 10 per 60 s; both natives gate on Launching/Launched (iOS's unhandled path is not gated by the SDK); no severity and no `skipFrames` (neither SDK takes them for exceptions); symbols are uploaded with the 9.x `symbols.py` protocol (bugsee-cli has no Flutter support), documented and verified offline, not reimplemented.
+- **Runtime evidence**: Android emulator API 29 arm64 against a local mock of the API: the real bundles' crash.json for handled/unhandled/FlutterError/root-zone/guarded-zone/isolate, the flood limited to one; a release `--obfuscate --split-debug-info` stack read from a bundle and symbolized with the worker's `dart_symbolize` (build id in the symbols file); R8 kept the carrier's name. iOS 26.5 simulator: calls reach the SDK, which files nothing there. The worker's real `dart.py` run offline on the captured entries.
+- **Not verified**: an iOS device (next-launch delivery, one slot: source-read), the main-thread cost on a real Android device, the production backend end to end.
+
 - Network: HttpClient/`HttpOverrides` and package interceptors (dio/http).
 - View hierarchy (`vh`): Flutter semantic/render tree → JSON, **no text content or free-text
   labels on secure nodes**, bounds in screen coords in platform units.

@@ -10,6 +10,11 @@
   with `ReportProxy`, the `lifecycleEvents` stream and the `BugseeSecureView` widget. See `doc/api-surface.md`
   for the inventory of both SDKs, what is left out and why, and what each call does before `launch`.
 
+* Dart errors: `Bugsee.logException(error, stack, {handled, domain})`, the opt-in
+  `installErrorHandlers`/`uninstallErrorHandlers` (chained, restored, once per error, rate limited),
+  `runGuarded` and `listenToIsolateErrors`. The backend's `FlutterManagedException` document, the
+  non-symbolic (obfuscated / `--split-debug-info`) stack sent untouched. See `doc/exceptions.md`.
+
 ## 0.0.1
 
 * TODO: Describe initial release.

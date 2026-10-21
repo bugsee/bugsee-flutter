@@ -67,7 +67,7 @@ here. Attachments and `createReport` are Phase 6; wrapper-owned log/network/exce
 | showReportDialog | x4 | x4 | **expose** `Bugsee.showReportDialog({summary, description, severity, labels})` |
 | upload (no UI) | `upload(summary, description[, severity[, labels]])` | `uploadWithSummary:` x3 | **expose** `Bugsee.upload(summary, description, {severity, labels})` |
 | createReport / upload(Report) | `createReport(listener)`, `upload(Report[, cb])` | `createReportWithCompletion:`, `uploadReport:` x2 | **skip (Phase 6)** |
-| logException / logUnhandledException / onUncaughtException / logError | yes | yes | **skip (Phase 5)**: Dart exceptions are captured by the wrapper (`FlutterError.onError`, `PlatformDispatcher.onError`) |
+| logException / logUnhandledException / onUncaughtException / logError | yes | yes | **expose (Phase 5a)** `Bugsee.logException(error, stack, {handled, domain})` over `logException` / `logUnhandledException` (never `onUncaughtException`; `logError(NSError)` has no Dart meaning), plus the opt-in handlers `installErrorHandlers` / `runGuarded` / `listenToIsolateErrors`. `skipFrames` and `includeVideo`/`labels` are skipped (they act on the carrier's native stack / are ignored by the SDKs). Before launch and after stop both are dropped (the wrapper gates the iOS unhandled path, which the SDK does not). See `doc/exceptions.md` |
 | `testCrash` | yes | yes | **skip** (Phase 7 device verification owns crash recipes) |
 
 ### Wrapper-internal, capture-side and extension points

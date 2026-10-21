@@ -406,8 +406,7 @@ Map<String, Object?> _frame(Frame frame) {
     ExceptionWire.maxFieldLength,
   );
   final user =
-      !(uri.scheme == 'hooks' ||
-          uri.scheme == 'dart' ||
+      !(uri.scheme == 'dart' ||
           package == 'flutter' ||
           package == 'bugsee_flutter');
   return {
@@ -479,15 +478,13 @@ ExceptionPayload buildExceptionPayload(
     'originalStackTrace': ?raw,
   });
 
-  // Degrade step by step to stay under what native accepts; the reason is capped far below it.
+  // Degrade to stay under what native accepts (the raw stack is capped, so the frames parsed from it
+  // are bounded too: dropping their `data` is enough in practice; the last step is the floor).
   var json = encode(frames, document.raw);
   if (json.length > ExceptionWire.maxPayloadLength) {
     json = encode([
       for (final f in frames) {...f}..remove('data'),
     ], document.raw);
-  }
-  if (json.length > ExceptionWire.maxPayloadLength) {
-    json = encode(const [], document.raw);
   }
   if (json.length > ExceptionWire.maxPayloadLength) {
     json = encode(const [], null);

@@ -418,6 +418,26 @@ void main() {
   });
 
   group('limiter', () {
+    test(
+      'a fingerprint that is reported again becomes the newest, not the oldest',
+      () {
+        final limiter = ReportLimiter(
+          now: clock.call,
+          maxTracked: 3,
+          maxInWindow: 1000,
+          perFingerprint: const Duration(seconds: 10),
+        );
+        for (final f in ['a', 'b', 'c']) {
+          limiter.allow(f);
+        }
+        clock.advance(const Duration(seconds: 11));
+        expect(limiter.allow('a'), isTrue, reason: 'refreshed');
+        expect(limiter.allow('d'), isTrue, reason: 'evicts b, the oldest now');
+        expect(limiter.allow('a'), isFalse, reason: 'a is still tracked');
+        expect(limiter.allow('b'), isTrue, reason: 'b was forgotten');
+      },
+    );
+
     test('forgets the oldest fingerprint beyond what it tracks', () {
       final limiter = ReportLimiter(
         now: clock.call,
@@ -494,6 +514,26 @@ void main() {
         // nothing escaped into the zone: the test would have failed
       },
     );
+
+    test('a callback that throws never reaches the app, in either hook', () {
+      var previousCalls = 0;
+      FlutterError.onError = (_) => previousCalls++;
+      PlatformDispatcher.instance.onError = (e, s) => true;
+      final throwing = ErrorCapture(
+        report: (p, {required handled}) async {},
+        enabled: () => throw StateError('enabled() blew up'),
+        limiter: ReportLimiter(now: clock.call),
+      );
+      throwing.install(isolateErrors: false);
+      FlutterError.onError!(details(StateError('a')));
+      expect(
+        PlatformDispatcher.instance.onError!(StateError('b'), stack),
+        isTrue,
+        reason: 'and the previous handler still answers',
+      );
+      expect(previousCalls, 1);
+      throwing.uninstall();
+    });
 
     test(
       'an error raised while reporting does not report itself (re-entrancy)',

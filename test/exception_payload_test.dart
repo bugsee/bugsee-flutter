@@ -441,10 +441,54 @@ void main() {
         expect(kept, contains("build_id: '9344508edcd3e9114c9429829b80f965'"));
         expect(kept.endsWith('…'), isTrue);
         // Cut at a line boundary, not inside a frame.
-        expect(kept.split('\n').reversed.skip(1).first, startsWith('    #'));
+        final lines = kept.split('\n');
+        for (final line in lines.skip(1).take(lines.length - 2)) {
+          expect(
+            line,
+            matches(
+              RegExp(r'^(    #\d+ abs [0-9a-f]+ virt [0-9a-f]+ \S+|\S.*)$'),
+            ),
+            reason: 'a whole line, never half a frame: $line',
+          );
+        }
+        expect(lines[lines.length - 2], endsWith('+0x419ad5'));
       });
     },
   );
+
+  group('local paths', () {
+    test(
+      'a file path on the developer machine is reduced to the file name everywhere',
+      () {
+        final p = buildExceptionPayload(
+          StateError('x'),
+          StackTrace.fromString(
+            '#0      f (file:///Users/someone/secret-project/lib/a.dart:1:1)\n',
+          ),
+        );
+        final frame = framesOf(p).single;
+        final data = frame['data']! as Map<String, Object?>;
+        expect(frame['trace'], 'f (a.dart:1)');
+        expect(data['source'], 'a.dart');
+        expect(data['library'], 'a.dart');
+        expect(
+          decode(p)['originalStackTrace'],
+          '#0      f (file:///a.dart:1:1)\n',
+        );
+        expect(p.json, isNot(contains('someone')));
+      },
+    );
+
+    test('a non-symbolic stack is never rewritten, whatever it contains', () {
+      const raw =
+          "build_id: 'abc'\n#00 abs 01 virt 02 _kDartIsolateSnapshotInstructions+0x1 (file:///keep/this/path.dart)\n";
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString(raw),
+      );
+      expect(decode(p)['originalStackTrace'], raw);
+    });
+  });
 
   group('limits', () {
     test(
@@ -484,6 +528,28 @@ void main() {
         ExceptionWire.maxReasonLength + 1,
       );
     });
+
+    test(
+      'a document too big for native loses the frames\' data first, nothing else',
+      () {
+        final lines = [
+          for (var i = 0; i < 256; i++)
+            '#$i      ${'m' * 90} (package:${'p' * 20}/${'f' * 110}.dart:$i:1)',
+        ].join('\n');
+        final p = buildExceptionPayload(
+          StateError('x'),
+          StackTrace.fromString('$lines\n'),
+        );
+        expect(
+          p.json.length,
+          lessThanOrEqualTo(ExceptionWire.maxPayloadLength),
+        );
+        final frames = framesOf(p);
+        expect(frames, isNotEmpty);
+        expect(frames.every((f) => !f.containsKey('data')), isTrue);
+        expect(decode(p)['originalStackTrace'], isNotNull);
+      },
+    );
 
     test('a long frame field is cut', () {
       final p = buildExceptionPayload(
@@ -598,6 +664,19 @@ void main() {
           exceptionFingerprint(reason, '$stack'),
           exceptionFingerprint(describeError('Bad state: x'), vmStack),
         );
+      },
+    );
+
+    test(
+      'looks at the first five frames: the fifth counts, the sixth does not',
+      () {
+        String stackWith(int changed) => [
+          for (var i = 0; i < 8; i++)
+            '#$i      ${i == changed ? 'other' : 'f$i'} (package:app/a.dart:$i:1)',
+        ].join('\n');
+        final base = exceptionFingerprint('r', stackWith(-1));
+        expect(exceptionFingerprint('r', stackWith(4)), isNot(base));
+        expect(exceptionFingerprint('r', stackWith(5)), base);
       },
     );
 

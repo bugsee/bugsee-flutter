@@ -189,11 +189,11 @@ void main() {
       'both gate on the SDK being launching or launched BEFORE they hand anything over',
       () {
         expect(
-          javaCode.indexOf('isLaunchedOrLaunching()'),
+          javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
           lessThan(javaCode.indexOf('sdk.logException(')),
         );
         expect(
-          javaCode.indexOf('isLaunchedOrLaunching()'),
+          javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
           lessThan(javaCode.indexOf('sdk.logUnhandledException(')),
         );
         expect(

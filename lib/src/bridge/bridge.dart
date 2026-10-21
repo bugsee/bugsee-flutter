@@ -6,18 +6,14 @@ import 'package:flutter/foundation.dart'
     show ErrorDescription, FlutterError, FlutterErrorDetails;
 import 'package:flutter/services.dart' show BinaryMessenger;
 
+import '../report/report_handler.dart';
 import '../report/report_proxy.dart';
 import '../status.dart';
 import 'lifecycle.dart';
 import 'messages.g.dart';
 import 'runtime_facts.dart';
 
-/// A report handler (`onBeforeReportCreated` / `onAfterReportCreated`).
-///
-/// The [report] is live only until the returned future completes (or the SDK's
-/// deadline passes, whichever is first): await every edit. An error it throws is
-/// reported through [FlutterError.reportError] and the report still proceeds.
-typedef ReportHandler = FutureOr<void> Function(ReportProxy report);
+export '../report/report_handler.dart' show ReportHandler;
 
 /// Receives the SDK's lifecycle events from native, delivers report-handler
 /// requests, and refines the wrapper identity.

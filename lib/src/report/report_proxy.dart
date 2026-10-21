@@ -1,5 +1,7 @@
-// A proxy of the SDK's report, for the report handlers (workbook Part 7).
-// Internal: not exported from package:bugsee_flutter; Phase 4 exposes it.
+// A proxy of the SDK's report, for the report handlers (workbook Part 7). Public: exported from
+// package:bugsee_flutter (the types a handler receives); only its constructor is internal.
+import 'package:meta/meta.dart';
+
 import '../bridge/messages.g.dart';
 import 'report_enums.dart';
 
@@ -62,11 +64,13 @@ final class ReportSnapshot {
 /// carries part of the first run's contribution: set attributes and labels rather
 /// than append, and do no one-shot work.
 ///
-/// Attachments and screenshots are not here yet. // TODO(phase-6): path-first
+/// Attachments and screenshots are not here yet (the report handler's public API documents that).
+/// // TODO(phase-6): path-first
 /// attachments (`addAttachment(path, name, mimeType, move)`): native does the file
 /// work and no bytes or streams cross the bridge (workbook 7.3.3).
 final class ReportProxy {
   /// Created by the bridge, one per delivery.
+  @internal
   ReportProxy.internal({
     required this.id,
     required this.typeName,
@@ -97,6 +101,7 @@ final class ReportProxy {
   bool get isLive => _live;
 
   /// For the bridge: the completion is about to run (or has). Idempotent.
+  @internal
   void markCompleted() => _live = false;
 
   void _ensureLive() {

@@ -219,47 +219,47 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   private let facadeSdk = BGSFlutterRealFacade()
 
   func setAttribute(name: String, value: Any) throws {
-    _ = try unwrap(BGSFlutterFacadeOps.setAttribute(with: facadeSdk, name: name, value: value))
+    _ = try unwrap(BGSFlutterFacadeOps.setAttribute(sdk: facadeSdk, name: name, value: value))
   }
 
   func getAttribute(name: String) throws -> Any? {
-    try unwrap(BGSFlutterFacadeOps.getAttribute(with: facadeSdk, name: name))
+    try unwrap(BGSFlutterFacadeOps.getAttribute(sdk: facadeSdk, name: name))
   }
 
   func getAllAttributes() throws -> [String: Any] {
-    (try unwrap(BGSFlutterFacadeOps.getAllAttributes(with: facadeSdk)) as? [String: Any]) ?? [:]
+    (try unwrap(BGSFlutterFacadeOps.getAllAttributes(sdk: facadeSdk)) as? [String: Any]) ?? [:]
   }
 
   func clearAttribute(name: String) throws {
-    _ = try unwrap(BGSFlutterFacadeOps.clearAttribute(with: facadeSdk, name: name))
+    _ = try unwrap(BGSFlutterFacadeOps.clearAttribute(sdk: facadeSdk, name: name))
   }
 
   func clearAllAttributes() throws {
-    _ = try unwrap(BGSFlutterFacadeOps.clearAllAttributes(with: facadeSdk))
+    _ = try unwrap(BGSFlutterFacadeOps.clearAllAttributes(sdk: facadeSdk))
   }
 
   func setUserIdentifier(identifier: String?) throws {
-    _ = try unwrap(BGSFlutterFacadeOps.setUserIdentifier(with: facadeSdk, identifier: identifier))
+    _ = try unwrap(BGSFlutterFacadeOps.setUserIdentifier(sdk: facadeSdk, identifier: identifier))
   }
 
   func getUserIdentifier() throws -> String? {
-    try unwrap(BGSFlutterFacadeOps.getUserIdentifier(with: facadeSdk)) as? String
+    try unwrap(BGSFlutterFacadeOps.getUserIdentifier(sdk: facadeSdk)) as? String
   }
 
   func trace(name: String, value: Any) throws {
-    _ = try unwrap(BGSFlutterFacadeOps.trace(with: facadeSdk, name: name, value: value))
+    _ = try unwrap(BGSFlutterFacadeOps.trace(sdk: facadeSdk, name: name, value: value))
   }
 
   func event(name: String, params: [String: Any?]?) throws {
     // A null member must arrive as null (NSNull), not be dropped.
     let converted = params?.mapValues { $0 ?? NSNull() }
-    _ = try unwrap(BGSFlutterFacadeOps.event(with: facadeSdk, name: name, params: converted))
+    _ = try unwrap(BGSFlutterFacadeOps.event(sdk: facadeSdk, name: name, params: converted))
   }
 
   func addBreadcrumb(breadcrumb: BreadcrumbMessage) throws -> Bool {
     let data = breadcrumb.data?.mapValues { $0 ?? NSNull() }
     let result = BGSFlutterFacadeOps.addBreadcrumb(
-      with: facadeSdk, category: breadcrumb.category, level: breadcrumb.level,
+      sdk: facadeSdk, category: breadcrumb.category, level: breadcrumb.level,
       message: breadcrumb.message, type: breadcrumb.type, data: data)
     return (try unwrap(result) as? NSNumber)?.boolValue ?? false
   }
@@ -269,24 +269,24 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   ) throws {
     _ = try unwrap(
       BGSFlutterFacadeOps.relayNotification(
-        with: facadeSdk, title: title, body: body, severity: severity.map { NSNumber(value: $0) },
+        sdk: facadeSdk, title: title, body: body, severity: severity.map { NSNumber(value: $0) },
         fields: fields, urgent: urgent))
   }
 
   func log(message: String, level: Int64) throws {
-    _ = try unwrap(BGSFlutterFacadeOps.log(with: facadeSdk, message: message, level: level))
+    _ = try unwrap(BGSFlutterFacadeOps.log(sdk: facadeSdk, message: message, level: level))
   }
 
   func startBlackout() throws {
-    _ = try unwrap(BGSFlutterFacadeOps.startBlackout(with: facadeSdk))
+    _ = try unwrap(BGSFlutterFacadeOps.startBlackout(sdk: facadeSdk))
   }
 
   func endBlackout() throws {
-    _ = try unwrap(BGSFlutterFacadeOps.endBlackout(with: facadeSdk))
+    _ = try unwrap(BGSFlutterFacadeOps.endBlackout(sdk: facadeSdk))
   }
 
   func isBlackout() throws -> Bool {
-    (try unwrap(BGSFlutterFacadeOps.isBlackout(with: facadeSdk)) as? NSNumber)?.boolValue ?? false
+    (try unwrap(BGSFlutterFacadeOps.isBlackout(sdk: facadeSdk)) as? NSNumber)?.boolValue ?? false
   }
 
   func showReportDialog(
@@ -294,14 +294,14 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   ) throws {
     _ = try unwrap(
       BGSFlutterFacadeOps.showReportDialog(
-        with: facadeSdk, summary: summary, description: description,
+        sdk: facadeSdk, summary: summary, description: description,
         severity: severity.map { NSNumber(value: $0) }, labels: labels))
   }
 
   func upload(summary: String, description: String, severity: Int64?, labels: [String]?) throws {
     _ = try unwrap(
       BGSFlutterFacadeOps.upload(
-        with: facadeSdk, summary: summary, description: description,
+        sdk: facadeSdk, summary: summary, description: description,
         severity: severity.map { NSNumber(value: $0) }, labels: labels))
   }
 

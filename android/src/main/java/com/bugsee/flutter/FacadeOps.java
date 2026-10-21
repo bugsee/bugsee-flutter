@@ -354,14 +354,14 @@ final class FacadeOps {
         if (message == null) {
             throw new Failure(INVALID_ARGUMENT, "a log message is required");
         }
-        final Object constant = level >= Integer.MIN_VALUE && level <= Integer.MAX_VALUE
-                ? LaunchOptionValues.ENUM_OPTIONS.get("com.bugsee.option.capture.logs.level").fromValue((int) level)
+        final LogLevel constant = level >= Integer.MIN_VALUE && level <= Integer.MAX_VALUE
+                ? LaunchOptionValues.logLevel((int) level)
                 : null;
-        if (!(constant instanceof LogLevel)) {
+        if (constant == null) {
             throw new Failure(INVALID_ARGUMENT, "level must be an SDK log level value (1..5)");
         }
         try {
-            sdk.log(message, (LogLevel) constant);
+            sdk.log(message, constant);
         } catch (final RuntimeException e) {
             throw sdkError("log", e);
         }

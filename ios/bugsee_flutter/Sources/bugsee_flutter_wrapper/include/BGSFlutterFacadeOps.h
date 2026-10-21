@@ -74,11 +74,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property(class, readonly) NSInteger attributeStringMaxLength;
 
 // Attributes. `value` of the result: nothing (set, clear), the value (get) or the dictionary.
-+ (BGSFlutterFacadeResult *)setAttributeWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name value:(nullable id)value;
-+ (BGSFlutterFacadeResult *)getAttributeWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name;
-+ (BGSFlutterFacadeResult *)getAllAttributesWithSdk:(id<BGSFlutterFacadeSDK>)sdk;
-+ (BGSFlutterFacadeResult *)clearAttributeWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name;
-+ (BGSFlutterFacadeResult *)clearAllAttributesWithSdk:(id<BGSFlutterFacadeSDK>)sdk;
++ (BGSFlutterFacadeResult *)setAttributeWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name value:(nullable id)value NS_SWIFT_NAME(setAttribute(sdk:name:value:));
++ (BGSFlutterFacadeResult *)getAttributeWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name NS_SWIFT_NAME(getAttribute(sdk:name:));
++ (BGSFlutterFacadeResult *)getAllAttributesWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(getAllAttributes(sdk:));
++ (BGSFlutterFacadeResult *)clearAttributeWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name NS_SWIFT_NAME(clearAttribute(sdk:name:));
++ (BGSFlutterFacadeResult *)clearAllAttributesWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(clearAllAttributes(sdk:));
 
 /// A stored value as the channel carries it (string, number, array of strings), or nil.
 + (nullable id)dartValueFromStored:(nullable id)stored;
@@ -86,13 +86,13 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)sentValue:(id)sent matchesStored:(nullable id)stored;
 
 // User identifier.
-+ (BGSFlutterFacadeResult *)setUserIdentifierWithSdk:(id<BGSFlutterFacadeSDK>)sdk identifier:(nullable NSString *)identifier;
-+ (BGSFlutterFacadeResult *)getUserIdentifierWithSdk:(id<BGSFlutterFacadeSDK>)sdk;
++ (BGSFlutterFacadeResult *)setUserIdentifierWithSdk:(id<BGSFlutterFacadeSDK>)sdk identifier:(nullable NSString *)identifier NS_SWIFT_NAME(setUserIdentifier(sdk:identifier:));
++ (BGSFlutterFacadeResult *)getUserIdentifierWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(getUserIdentifier(sdk:));
 
 // Events, traces, logs.
-+ (BGSFlutterFacadeResult *)traceWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name value:(nullable id)value;
-+ (BGSFlutterFacadeResult *)eventWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name params:(nullable id)params;
-+ (BGSFlutterFacadeResult *)logWithSdk:(id<BGSFlutterFacadeSDK>)sdk message:(nullable NSString *)message level:(int64_t)level;
++ (BGSFlutterFacadeResult *)traceWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name value:(nullable id)value NS_SWIFT_NAME(trace(sdk:name:value:));
++ (BGSFlutterFacadeResult *)eventWithSdk:(id<BGSFlutterFacadeSDK>)sdk name:(nullable NSString *)name params:(nullable id)params NS_SWIFT_NAME(event(sdk:name:params:));
++ (BGSFlutterFacadeResult *)logWithSdk:(id<BGSFlutterFacadeSDK>)sdk message:(nullable NSString *)message level:(int64_t)level NS_SWIFT_NAME(log(sdk:message:level:));
 
 // Breadcrumbs, notifications.
 /// `BugseeLogLevel` for a wire name, or -1. error and fatal are both `BugseeLogLevelError` (iOS has
@@ -103,30 +103,30 @@ NS_ASSUME_NONNULL_BEGIN
                                            level:(nullable NSString *)level
                                          message:(nullable NSString *)message
                                             type:(nullable NSString *)type
-                                            data:(nullable id)data;
+                                            data:(nullable id)data NS_SWIFT_NAME(addBreadcrumb(sdk:category:level:message:type:data:));
 + (BGSFlutterFacadeResult *)relayNotificationWithSdk:(id<BGSFlutterFacadeSDK>)sdk
                                                title:(nullable NSString *)title
                                                 body:(nullable NSString *)body
                                             severity:(nullable NSNumber *)severity
                                               fields:(nullable NSArray *)flatFields
-                                              urgent:(BOOL)urgent;
+                                              urgent:(BOOL)urgent NS_SWIFT_NAME(relayNotification(sdk:title:body:severity:fields:urgent:));
 
 // Blackout.
-+ (BGSFlutterFacadeResult *)startBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk;
-+ (BGSFlutterFacadeResult *)endBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk;
-+ (BGSFlutterFacadeResult *)isBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk;
++ (BGSFlutterFacadeResult *)startBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(startBlackout(sdk:));
++ (BGSFlutterFacadeResult *)endBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(endBlackout(sdk:));
++ (BGSFlutterFacadeResult *)isBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(isBlackout(sdk:));
 
 // Reports.
 + (BGSFlutterFacadeResult *)showReportDialogWithSdk:(id<BGSFlutterFacadeSDK>)sdk
                                             summary:(nullable NSString *)summary
                                         description:(nullable NSString *)description
                                            severity:(nullable NSNumber *)severity
-                                             labels:(nullable NSArray *)labels;
+                                             labels:(nullable NSArray *)labels NS_SWIFT_NAME(showReportDialog(sdk:summary:description:severity:labels:));
 + (BGSFlutterFacadeResult *)uploadWithSdk:(id<BGSFlutterFacadeSDK>)sdk
                                   summary:(nullable NSString *)summary
                               description:(nullable NSString *)description
                                  severity:(nullable NSNumber *)severity
-                                   labels:(nullable NSArray *)labels;
+                                   labels:(nullable NSArray *)labels NS_SWIFT_NAME(upload(sdk:summary:description:severity:labels:));
 
 @end
 

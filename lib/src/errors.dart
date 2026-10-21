@@ -38,9 +38,9 @@ class BugseeAttributeException extends BugseeArgumentException {
   const BugseeAttributeException(
     this.reason,
     String argument,
-    super.message, {
-    super.cause,
-  }) : super(argument);
+    String message, {
+    Object? cause,
+  }) : super(argument, message, cause: cause);
 
   final AttributeFailure reason;
 

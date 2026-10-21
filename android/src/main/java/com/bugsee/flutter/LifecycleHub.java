@@ -45,8 +45,9 @@ import java.util.Set;
  * torn-down isolate) is held only by Flutter's channel buffer, which by default keeps
  * ONE message per channel; older ones are dropped and only logged. What does
  * recover: the latest status is replayed to every new receiver, report events still in
- * this hub's buffer are flushed to the next receiver, and events in flight to a receiver
- * that detaches go back to the buffer. What does not: an event already SENT over the
+ * this hub's buffer are flushed to the next receiver, and events in flight to the LAST
+ * receiver that detaches go back to the buffer (another receiver still attached has already
+ * had them). What does not: an event already SENT over the
  * channel while Dart has no handler is not retried. Consumers must not rely on delivery
  * surviving a restart.
  *

@@ -1,0 +1,12 @@
+{
+ "_source": "The exception entry of crash.json from a real Android 7.4.2 report made by a RELEASE build of the example (flutter build apk --release --obfuscate --split-debug-info, arm64, emulator API 29) for an unhandled error thrown in level3() <- level2() <- level1() of a probe app (Bugsee.logUnhandledException); symbolizes with dart_symbolize and the build's app.android-arm64.symbols (build id 7a3ef930595208393fa36f079aa65921), plus the `signatures` the SDK computed. Captured 2026-10-21.",
+ "handled": false,
+ "obfuscated": true,
+ "signatures": [
+  "5b5ec09f0f4cbe504661ea6ae258cf473cdc99f2"
+ ],
+ "exception": {
+  "name": "com.bugsee.flutter.FlutterManagedException",
+  "reason": "{\"internalType\":\"FlutterManagedException\",\"name\":\"ObfuscationProbeError\",\"reason\":\"ObfuscationProbeError: probe\",\"signature\":\"7f63a5196c43b48516c907dfb5c33e86b92ab5ba\",\"frames\":[{\"trace\":\"#00 abs 00000077fd527faf virt 0000000000219faf _kDartIsolateSnapshotInstructions+0x16356f\",\"module\":\"dart\",\"user\":true,\"data\":{\"member\":\"#00 abs 00000077fd527faf virt 0000000000219faf _kDartIsolateSnapshotInstructions+0x16356f\"}},{\"trace\":\"#01 abs 00000077fd5674ab virt 00000000002594ab _kDartIsolateSnapshotInstructions+0x1a2a6b\",\"module\":\"dart\",\"user\":true,\"data\":{\"member\":\"#01 abs 00000077fd5674ab virt 00000000002594ab _kDartIsolateSnapshotInstructions+0x1a2a6b\"}}],\"originalStackTrace\":\"*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***\\npid: 7277, tid: 519499960016, name 2.ui\\nos: android arch: arm64 comp: yes sim: no\\nbuild_id: '7a3ef930595208393fa36f079aa65921'\\nisolate_dso_base: 77fd30e000, vm_dso_base: 77fd30e000\\nisolate_instructions: 77fd3c4a40, vm_instructions: 77fd3ae000\\n    #00 abs 00000077fd527faf virt 0000000000219faf _kDartIsolateSnapshotInstructions+0x16356f\\n    #01 abs 00000077fd5674ab virt 00000000002594ab _kDartIsolateSnapshotInstructions+0x1a2a6b\\n<asynchronous suspension>\\n\"}"
+ }
+}

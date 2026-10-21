@@ -138,6 +138,26 @@ await Bugsee.setReportHandler(
 Bugsee.lifecycleEvents.listen((e) => print('${e.name} ${e.reportId ?? ''}'));
 ```
 
+Dart errors ([doc/exceptions.md](doc/exceptions.md): the backend contract, what each SDK does, symbols):
+
+```dart
+try { risky(); } catch (e, stack) { await Bugsee.logException(e, stack); }   // an error report; the stack is optional
+await Bugsee.logUnhandledException(e, stack);                                // a crash report
+await Bugsee.reportException(e, domain: 'checkout');                         // with a grouping domain
+
+// Opt in to the errors nobody handled. Chained: Crashlytics/Sentry/your own handlers still run.
+// Call it AFTER the tools that assign FlutterError.onError / PlatformDispatcher.onError (Crashlytics replaces them).
+Bugsee.installErrorHandlers();                   // FlutterError.onError, PlatformDispatcher.onError, isolate errors
+assert(Bugsee.errorHandlersActive);              // false when another tool replaced them
+Bugsee.runGuarded(() => runApp(const MyApp()));  // a zone: what escapes it is reported, then printed as usual
+final listener = Bugsee.listenToIsolateErrors(isolate);   // an isolate you spawned
+```
+
+The installed handlers file **error** reports once per error and rate limited (`reportAsCrash: true` files crash
+reports instead: see doc/exceptions.md for why error is the default). Build with
+`--obfuscate --split-debug-info=<dir>` and upload `<dir>/*.symbols` for readable stacks (doc/exceptions.md,
+section 5). iOS files nothing on a simulator.
+
 Hide a part of the UI from the recording and the report screenshot:
 
 ```dart

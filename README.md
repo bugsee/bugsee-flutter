@@ -2,9 +2,9 @@
 
 > **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options, `stop`,
 > status, attributes, user identity, events and traces, breadcrumbs, notifications, blackout, the
-> report handler, the lifecycle event stream, the secure-view widget and the `dart:io` network capture
-> work on Android and iOS. Not
-> yet: Dart exception and `print` capture, report attachments and `createReport`, APM spans.
+> report handler, the lifecycle event stream, the secure-view widget, Dart error reporting and the
+> `dart:io` network capture work on Android and iOS. Not yet: `print` capture, report attachments and
+> `createReport`, APM spans.
 > Existing users should stay on the latest published release until the migration guide is available.
 > This API is a clean break from 9.x.
 

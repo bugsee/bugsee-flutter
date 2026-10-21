@@ -591,7 +591,7 @@ public class SecureRectangleStoreTest {
     @Test
     public void aPlacementRefreshThatIsNeverAnsweredCoversTheWholeDisplayUntilItIs() {
         final SecureRectangleStore g = pulledStore();
-        g.setPullHook(() -> { /* posts to a main thread that is not answering */ });
+        g.setPullHook(g::refreshRequested); // posts to a main thread that is not answering
         now[0] = 1000;
         assertArrayEquals(new int[] {10, 10, 20, 20}, tail(g.pull(0)));
         now[0] = 1000 + SecureRectangleStore.REFRESH_STALE_MS;
@@ -604,9 +604,34 @@ public class SecureRectangleStoreTest {
     }
 
     @Test
+    public void aPullTheThrottleDroppedLeavesNothingPending() {
+        final SecureRectangleStore g = pulledStore();
+        final java.util.ArrayList<Runnable> posted = new java.util.ArrayList<>();
+        final PullThrottle throttle = new PullThrottle(() -> now[0], task -> {
+            g.refreshRequested(); // as the plugin's executor does, only for a posted request
+            posted.add(task);
+        }, g::refreshCompleted);
+        g.setPullHook(throttle::request);
+        now[0] = 1000;
+        g.pull(0);
+        assertEquals(1, posted.size());
+        posted.remove(0).run(); // the main thread answers
+        now[0] = 1050;
+        g.pull(0); // dropped by the throttle: nothing in flight
+        assertTrue(posted.isEmpty());
+        // The SDK goes quiet, then pulls again: the main thread has not answered THIS one yet.
+        now[0] = 1050 + 2 * SecureRectangleStore.REFRESH_STALE_MS;
+        assertArrayEquals("healthy main thread: the rectangle, not the whole display",
+                new int[] {10, 10, 20, 20}, tail(g.pull(0)));
+    }
+
+    @Test
     public void aRefreshThatCompletesEachTimeNeverCovers_whateverTheRateOfThePulls() {
         final SecureRectangleStore g = pulledStore();
-        g.setPullHook(g::refreshCompleted);
+        g.setPullHook(() -> {
+            g.refreshRequested();
+            g.refreshCompleted();
+        });
         for (final long interval : new long[] {100, 400, 5000}) {
             for (int i = 0; i < 10; i++) {
                 now[0] += interval;

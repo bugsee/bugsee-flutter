@@ -36,8 +36,8 @@ typedef void (^BGSFlutterLifecycleSink)(BGSFlutterLifecycleEvent *event);
 /// engine knows the status.
 ///
 /// Limit: the guarantees end at the hop into the sink. Report events still in this buffer are
-/// flushed to the next receiver and events in flight to a detaching receiver go back to the
-/// buffer; an event already SENT over the channel while Dart has no handler is held only by
+/// flushed to the next receiver and events in flight to the LAST receiver that detaches go
+/// back to the buffer; an event already SENT over the channel while Dart has no handler is held only by
 /// Flutter's channel buffer (one message by default) and is not retried. Consumers must not
 /// rely on delivery surviving a restart.
 ///

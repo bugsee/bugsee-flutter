@@ -30,6 +30,9 @@ public class LaunchOpsTest {
         /** How many times the SDK calls its completion back (a misbehaving SDK calls it twice). */
         int callbacks = 1;
         boolean throwAfterCallback;
+        /** Throws, but leaves its callback to be called later (another thread). */
+        boolean throwLeavingCallback;
+        LaunchOps.Done leftCallback;
         RuntimeException launchThrows;
         final List<String> launches = new ArrayList<>();
         Map<String, Serializable> launchedWith;
@@ -52,6 +55,10 @@ public class LaunchOpsTest {
             }
             launches.add(token);
             launchedWith = opts;
+            if (throwLeavingCallback) {
+                leftCallback = done;
+                throw new IllegalStateException("threw, callback comes later");
+            }
             for (int i = 0; i < callbacks; i++) {
                 done.run(launchResult);
             }
@@ -124,6 +131,17 @@ public class LaunchOpsTest {
         LaunchOps.launch(sdk, "tok", null, r, r);
         assertEquals(java.util.Collections.singletonList(LaunchOps.LAUNCHED), r.outcomes);
         assertTrue(r.errors.isEmpty());
+    }
+
+    @Test
+    public void anSdkThatThrowsAndCallsBackLaterAnswersOnlyTheError() {
+        final FakeSdk sdk = new FakeSdk();
+        sdk.throwLeavingCallback = true;
+        final Recorder r = new Recorder();
+        LaunchOps.launch(sdk, "tok", null, r, r);
+        assertEquals(1, r.errors.size());
+        sdk.leftCallback.run(true); // the SDK's other thread, later
+        assertTrue("no second answer", r.outcomes.isEmpty());
     }
 
     @Test

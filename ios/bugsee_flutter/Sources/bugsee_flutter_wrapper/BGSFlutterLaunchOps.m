@@ -152,8 +152,10 @@ static BOOL StopInFlight(void) {
                               nil, nil);
                  }];
   } @catch (NSException *exception) {
+    // Claimed, not just read: a callback the SDK scheduled elsewhere must not also answer.
     [answeredLock lock];
     const BOOL already = answered;
+    answered = YES;
     [answeredLock unlock];
     // An SDK that called back and then threw has already been answered.
     if (!already) {

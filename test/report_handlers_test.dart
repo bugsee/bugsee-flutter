@@ -21,7 +21,10 @@ class FakeNative {
   FakeNative(this.messenger) {
     for (final method in _methods) {
       messenger.setMockMessageHandler('$_host.$method', (data) async {
-        final args = _codec.decodeMessage(data)! as List<Object?>;
+        // A call with no arguments (resetReportHandlers) sends no payload.
+        final args = data == null
+            ? const <Object?>[]
+            : _codec.decodeMessage(data)! as List<Object?>;
         try {
           return _codec.encodeMessage(<Object?>[_handle(method, args)]);
         } on PlatformException catch (e) {
@@ -469,6 +472,17 @@ void main() {
         expect(native.completions, 1);
       },
     );
+
+    test('an error handler that itself throws does not keep the completion '
+        'from running', () async {
+      final old = FlutterError.onError;
+      FlutterError.onError = (_) => throw StateError('the app handler broke');
+      addTearDown(() => FlutterError.onError = old);
+      await bridge.setReportHandlers(onBefore: (r) => throw StateError('boom'));
+      await native.deliver(handle: 'h1');
+      await settle();
+      expect(native.completions, 1);
+    });
 
     test('an asynchronous failure in the handler also completes', () async {
       final old = FlutterError.onError;

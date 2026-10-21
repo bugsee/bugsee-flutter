@@ -18,6 +18,7 @@ progress; `PLAN.md` is the source of intent. The authoritative wrapper spec is
 - Flutter floor is 3.41.0 / Dart 3.11 (SwiftPM-only plugin fails `pub get` on Linux/Windows earlier; measured, see PLAN.md D5).
 - Android builds need JDK 17 or 21. JDK 25 breaks the Gradle version in use.
 - The Android initialization provider must never be named `Bugsee*InitProvider`.
+- The wrapper type (`flutter`, the backend's identifier) and version (pubspec `version:`) are repeated in Dart, Android and iOS because native registers before Dart exists; `test/wrapper_identity_test.dart` compares every copy. Bump the iOS `BGSFlutterWrapper.m` and Dart `wrapper_identity.dart` with pubspec.
 - Secure-rect units differ per platform (Android pixels, iOS points); convert explicitly.
 - Never treat lifecycle events as proof that a report exists or was sent.
 

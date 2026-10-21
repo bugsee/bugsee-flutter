@@ -19,10 +19,19 @@ let package = Package(
         .package(url: "https://github.com/bugsee/spm", exact: "7.0.0-beta7")
     ],
     targets: [
+        // Objective-C so `+load` can register the wrapper at image load, before
+        // any Flutter engine exists. Imports the SDK's ObjC module directly.
+        .target(
+            name: "BugseeFlutterWrapper",
+            dependencies: [
+                .product(name: "Bugsee", package: "spm")
+            ],
+            path: "Sources/bugsee_flutter_wrapper"
+        ),
         .target(
             name: "bugsee_flutter",
             dependencies: [
-                .product(name: "Bugsee", package: "spm")
+                "BugseeFlutterWrapper"
             ],
             resources: [
                 .process("PrivacyInfo.xcprivacy")

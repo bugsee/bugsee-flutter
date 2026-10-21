@@ -101,6 +101,8 @@ jobs:
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
       - run: cd example && flutter build apk --debug
+      # JUnit tests of the wrapper and its init provider (android/src/test).
+      - run: cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest
 
   publish-check:
     # Package validity only: `--dry-run` never uploads and needs no credentials.

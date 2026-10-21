@@ -29,6 +29,19 @@ if (!nativeVersionsFile.isFile()) {
 }
 def nativeVersions = new groovy.json.JsonSlurper().parse(nativeVersionsFile)
 
+// The wrapper version is the plugin's own version: `version:` in pubspec.yaml,
+// which sits next to native-versions.json. Read here so the provider, which
+// registers before Dart exists, cannot disagree with the package.
+def pubspecFile = new File(projectDir.canonicalFile.parentFile, "pubspec.yaml")
+if (!pubspecFile.isFile()) {
+    throw new GradleException("pubspec.yaml not found at ${pubspecFile}")
+}
+def wrapperVersionMatch = (pubspecFile.getText("UTF-8") =~ /(?m)^version:[ \t]*(?!#)(\S+)[ \t]*(?:#.*)?$/)
+if (!wrapperVersionMatch.find()) {
+    throw new GradleException("no top-level `version:` in ${pubspecFile}")
+}
+def wrapperVersion = wrapperVersionMatch.group(1)
+
 android {
     namespace = "com.bugsee.flutter"
 
@@ -44,6 +57,14 @@ android {
     defaultConfig {
         // The SDK's own floor; a wrapper must not raise it.
         minSdk = nativeVersions.android.minSdk
+
+        // Read by FlutterWrapperInitProvider, which registers the wrapper before
+        // Dart exists and so cannot be handed this.
+        buildConfigField "String", "WRAPPER_VERSION", "\"${wrapperVersion}\""
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     dependencies {
@@ -57,6 +78,8 @@ android {
     }
 
     testOptions {
+        // android.util.Log in the provider's never-throws path.
+        unitTests.returnDefaultValues = true
         unitTests.all {
             testLogging {
                events "passed", "skipped", "failed"

@@ -19,7 +19,7 @@ and checkout with `persist-credentials: false`.
 |---|---|---|---|
 | `format` | `format` | ubuntu | `dart format --set-exit-if-changed` over `lib test example/lib scripts`, run on the floor Flutter because formatter output changes between Dart releases |
 | `test` | `analyze + test + ios build (floor)`, `analyze + test + ios build (stable)` | macOS | `flutter analyze`, `flutter test` (includes the drift guard), debug iOS build with SwiftPM. macOS is required: SwiftPM only exists there |
-| `build-android` | `build apk (floor)`, `build apk (stable)` | ubuntu | Debug APK of the example app. Frees runner disk first (otherwise "No space left on device") |
+| `build-android` | `build apk (floor)`, `build apk (stable)` | ubuntu | Debug APK of the example app, then the plugin's JUnit tests (`:bugsee_flutter:testDebugUnitTest`). Frees runner disk first (otherwise "No space left on device") |
 | `publish-check` | `pub publish dry-run` | ubuntu | Runs on the floor Flutter. Package validity only. Fails on warnings (e.g. CHANGELOG missing the pubspec version, dirty git tree). Never uploads, needs no credentials |
 | `ci-ok` | `ci-ok` | ubuntu | `if: always()`; fails unless every job above succeeded (failed, cancelled and skipped needed jobs all fail it). Deliberately not `!cancelled()`: that would skip `ci-ok` on a cancelled run, and a skipped required check counts as passing |
 

@@ -456,6 +456,7 @@ void main() {
 
     test('Dart closes the proxy itself when the deadline passes', () async {
       final gate = Completer<void>();
+      final attempted = Completer<void>();
       Object? caught;
       int? callsWhenClosed;
       await bridge.setReportHandlers(
@@ -467,11 +468,13 @@ void main() {
           } catch (e) {
             caught = e;
           }
+          attempted.complete();
           await gate.future;
         },
       );
       await native.deliver(handle: 'h1', deadlineMs: 30);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      // Not a fixed sleep: a loaded runner may take longer than any number picked here.
+      await attempted.future.timeout(const Duration(seconds: 10));
       expect(caught, isA<ReportClosedError>());
       expect(
         native.calls.length,

@@ -3,6 +3,7 @@
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data' show ByteData;
 
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/secure/secure_region.dart';
@@ -578,6 +579,59 @@ void main() {
         wrapWithView: false,
       );
       expect(native.latest.keys, [tester.view.viewId]);
+    });
+  });
+
+  group('over the real channel', () {
+    testWidgets('the process-wide registry sends the pigeon message natively '
+        'decodes, and handles a refusal of an old message', (tester) async {
+      const channel =
+          'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setSecureRectangles';
+      final codec = BugseeBridgeHostApi.pigeonChannelCodec;
+      final received = <SecureRectanglesMessage>[];
+      var answer = true;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMessageHandler(channel, (ByteData? data) async {
+        final args = codec.decodeMessage(data) as List<Object?>;
+        received.add(args[0]! as SecureRectanglesMessage);
+        return codec.encodeMessage(<Object?>[answer]);
+      });
+      addTearDown(() => messenger.setMockMessageHandler(channel, null));
+
+      final real = SecureRegionRegistry.instance;
+      await tester.pumpWidget(
+        app(
+          real,
+          Stack(
+            children: [
+              Positioned(
+                left: 4,
+                top: 8,
+                child: BugseeSecureRegion(
+                  child: const SizedBox(width: 10, height: 20),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(received, hasLength(1));
+      expect(received.single.epoch, real.epoch);
+      expect(received.single.sequence, greaterThan(0));
+      expect(received.single.views.single.viewId, tester.view.viewId);
+      expect(received.single.views.single.rectangles, [4, 8, 14, 28]);
+
+      // A "not applied" answer (an older message) is not an error: no retry storm.
+      answer = false;
+      await tester.pumpWidget(app(real, const SizedBox()));
+      await tester.pump();
+      expect(received.last.views, isEmpty);
+      final before = received.length;
+      await tester.pump(const Duration(seconds: 2));
+      expect(received, hasLength(before));
+      expect(real.lastError, isNull);
     });
   });
 

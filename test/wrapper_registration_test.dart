@@ -148,18 +148,18 @@ void main() {
     });
 
     test(
-      'secure rectangles come from the process-wide store, empty with version 0',
+      'secure rectangles come from the process-wide store, never-published display is [0, 0]',
       () {
         final m = code('$base/bugsee_flutter_wrapper/BGSFlutterWrapper.m');
         expect(
           m,
-          contains('[_secureRectangles snapshotForDisplay:display]'),
+          contains('[_secureRectangles pullForDisplay:display]'),
           reason: 'the set must not live in the replaceable wrapper (5.4.2)',
         );
         final store = code(
           '$base/bugsee_flutter_wrapper/BGSFlutterSecureRectangleStore.m',
         );
-        expect(store, contains('int32_t ints[2] = {0, 0};'));
+        expect(store, contains('int32_t empty[2] = {kUnknownVersion, 0};'));
       },
     );
 

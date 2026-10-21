@@ -36,7 +36,11 @@ public class BugseeFlutterPlugin
     private static final List<SecurePlacement> PLACEMENTS = new CopyOnWriteArrayList<>();
     private static final PullThrottle PULLS = new PullThrottle(
             () -> System.nanoTime() / 1_000_000L,
-            MAIN::post,
+            task -> {
+                // Only a request that is really posted counts as one in flight (see the store).
+                SecureRectangleStore.shared().refreshRequested();
+                MAIN.post(task);
+            },
             BugseeFlutterPlugin::refreshPlacements);
 
     private static SecureEnvironment sharedEnvironment;

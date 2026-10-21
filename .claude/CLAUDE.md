@@ -33,7 +33,7 @@ progress; `PLAN.md` is the source of intent. The authoritative wrapper spec is
 
 ```bash
 flutter analyze && flutter test
-dart scripts/extract_report_enums.dart --check ...   # see the script header; inputs are SDK source files
+# report enums: scripts/extract_report_enums.dart [--check] needs the SDK source files named in its header (not a CI step: the private SDKs are not vendored)
 (cd example && flutter build apk --debug)        # JDK 17 or 21
 (cd example && flutter build ios --debug --no-codesign)
 dart scripts/generate_pigeon.dart --check          # bridge outputs current

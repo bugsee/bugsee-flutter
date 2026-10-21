@@ -79,7 +79,7 @@ public class ReportOpsFilesTest {
 
     @Test
     public void aCopyHandsTheSdkTheFileAndLeavesTheSourceAlone() throws Exception {
-        ReportOps.addFile(report, source.getPath(), "Log", "text/plain", false);
+        ReportOps.addFile(report, source.getPath(), "Log", "text/plain", false, ReportOps.OPEN);
         assertEquals(1, state.adds.size());
         final Object[] add = state.adds.get(0);
         assertEquals(source, add[0]);
@@ -91,9 +91,10 @@ public class ReportOpsFilesTest {
     }
 
     @Test
-    public void aMoveIsPassedOnAndTheSdkConsumesTheSource() throws Exception {
-        ReportOps.addFile(report, source.getPath(), "Log", null, true);
-        assertEquals(Boolean.TRUE, state.adds.get(0)[3]);
+    public void aMoveIsACopyThenDeletingTheSourceOnceTheAddLanded() throws Exception {
+        ReportOps.addFile(report, source.getPath(), "Log", null, true, ReportOps.OPEN);
+        assertEquals("the SDK is only ever asked to copy: its rename cannot be undone",
+                Boolean.FALSE, state.adds.get(0)[3]);
         assertNull("no type is passed as null", state.adds.get(0)[2]);
         assertFalse("the move consumed the source", source.exists());
     }
@@ -102,10 +103,122 @@ public class ReportOpsFilesTest {
     public void aRefusedMoveDoesNotConsumeTheSource() throws Exception {
         state.refuseAdds = true;
         assertEquals(ReportOps.REJECTED, refusalOf(
-                () -> ReportOps.addFile(report, source.getPath(), "Log", null, true)));
+                () -> ReportOps.addFile(report, source.getPath(), "Log", null, true, ReportOps.OPEN)));
         assertTrue("the SDK declined: the source is untouched", source.exists());
         assertEquals("hello", new String(Files.readAllBytes(source.toPath()), StandardCharsets.UTF_8));
         assertEquals(0, state.attachments.size());
+    }
+
+    // ---- the SDK's missing re-check (Android 7.4.2, IssueReport.java:292-299, :361-372) -----------
+
+    @Test
+    public void anAddThatLandedAfterTheWindowClosedIsUndoneAndAMovedSourceSurvives() throws Exception {
+        final boolean[] closed = {false};
+        // The SDK's own handler timer fires while the file is being imported: processing is scheduled,
+        // and the model SDK (like the real one) registers the attachment anyway.
+        state.duringAdd = () -> closed[0] = true;
+        final String code = refusalOf(() -> ReportOps.addFile(
+                report, source.getPath(), "Log", "text/plain", true, () -> closed[0]));
+        assertEquals(ReportOps.REJECTED, code);
+        assertTrue("a move of an orphaned add must not lose the user's file", source.exists());
+        assertEquals("hello", new String(Files.readAllBytes(source.toPath()), StandardCharsets.UTF_8));
+        assertEquals("the orphan's stored file was deleted", java.util.Collections.singletonList("Log"), state.deleted);
+        assertEquals(1, state.adds.size());
+        assertEquals("and the SDK never renamed anything", Boolean.FALSE, state.adds.get(0)[3]);
+    }
+
+    @Test
+    public void aCopyThatLostTheRaceIsUndoneToo() throws Exception {
+        final boolean[] closed = {false};
+        state.duringAdd = () -> closed[0] = true;
+        assertEquals(ReportOps.REJECTED, refusalOf(() -> ReportOps.addFile(
+                report, source.getPath(), "Log", null, false, () -> closed[0])));
+        assertTrue(source.exists());
+        assertEquals(java.util.Collections.singletonList("Log"), state.deleted);
+    }
+
+    @Test
+    public void aByteAddThatLostTheRaceIsUndone() throws Exception {
+        final boolean[] closed = {false};
+        state.duringAdd = () -> closed[0] = true;
+        assertEquals(ReportOps.REJECTED, refusalOf(() -> ReportOps.addBytes(
+                report, new byte[3], "raw", null, () -> closed[0])));
+        assertEquals(java.util.Collections.singletonList("raw"), state.deleted);
+    }
+
+    @Test
+    public void aWindowThatIsAlreadyClosedStartsNothing() throws Exception {
+        assertEquals(ReportOps.REJECTED, refusalOf(() -> ReportOps.addFile(
+                report, source.getPath(), "Log", null, true, () -> true)));
+        assertEquals(ReportOps.REJECTED, refusalOf(() -> ReportOps.addBytes(
+                report, new byte[1], "raw", null, () -> true)));
+        assertEquals("the SDK was not asked", 0, state.adds.size());
+        assertTrue(source.exists());
+    }
+
+    @Test
+    public void anAddInsideTheWindowIsKeptAndTheDeletedListStaysEmpty() throws Exception {
+        ReportOps.addFile(report, source.getPath(), "Log", null, true, () -> false);
+        assertTrue(state.deleted.isEmpty());
+        assertFalse("the move consumed the source once the add was known to have landed", source.exists());
+    }
+
+    @Test
+    public void aMoveWhoseSourceCannotBeDeletedStillKeepsTheAttachment() throws Exception {
+        // A directory the source lives in that cannot be written: the delete fails, the add stands.
+        final File dir = tmp.newFolder("ro");
+        final File inside = new File(dir, "a.txt");
+        Files.write(inside.toPath(), new byte[] {1});
+        if (!dir.setWritable(false, false) || dir.canWrite()) {
+            org.junit.Assume.assumeTrue("file permissions do not apply to this user", false);
+        }
+        try {
+            ReportOps.addFile(report, inside.getPath(), "n", null, true, ReportOps.OPEN);
+        } finally {
+            dir.setWritable(true, false);
+        }
+        assertEquals(1, state.attachments.size());
+        assertTrue(inside.exists());
+    }
+
+    @Test
+    public void aFileOverTheSoftLimitIsTooLargeAndTheSourceStays() throws Exception {
+        final File big = tmp.newFile("big.bin");
+        try (java.io.RandomAccessFile f = new java.io.RandomAccessFile(big, "rw")) {
+            f.setLength(ReportOps.MAX_ATTACHMENT_FILE_BYTES + 1);
+        }
+        assertEquals(ReportOps.TOO_LARGE, refusalOf(() -> ReportOps.addFile(
+                report, big.getPath(), "big", null, true, ReportOps.OPEN)));
+        assertEquals(0, state.adds.size());
+        assertTrue(big.exists());
+        try (java.io.RandomAccessFile f = new java.io.RandomAccessFile(big, "rw")) {
+            f.setLength(ReportOps.MAX_ATTACHMENT_FILE_BYTES);
+        }
+        ReportOps.addFile(report, big.getPath(), "edge", null, false, ReportOps.OPEN);
+        assertEquals("the limit itself is allowed", 1, state.adds.size());
+    }
+
+    @Test
+    public void blankMeansTheSameSetEverywhere() {
+        for (final String blank : new String[] {" ", "\t", "\u00a0", "\u0085", "\u3000", "\u2003", " \u00a0 "}) {
+            assertBad(() -> ReportOps.checkedName(blank));
+        }
+        for (final String fine : new String[] {"a", "\u200bx", "x\u00a0", "\ufeff"}) {
+            try {
+                ReportOps.checkedName(fine);
+            } catch (final ReportOps.BadArgument e) {
+                fail("accepted by Dart and iOS, so accepted here: " + fine);
+            }
+        }
+    }
+
+    @Test
+    public void anEmptyFileIsRefusedForACreatedReportButNotForAHandlerReport() throws Exception {
+        final File empty = tmp.newFile("empty.txt");
+        assertBad(() -> ReportOps.requireNonEmpty(empty.getPath()));
+        ReportOps.requireNonEmpty(source.getPath());
+        ReportOps.addFile(report, empty.getPath(), "empty", null, false, ReportOps.OPEN);
+        assertEquals(1, state.adds.size());
     }
 
     @Test
@@ -114,7 +227,7 @@ public class ReportOpsFilesTest {
         for (final String path : new String[] {
                 null, "", "relative/a.txt", "a.txt", "file:///data/a.txt", "content://media/1",
                 "http://x/y", "/data/a\u0000b", "/data/a\nb", longPath}) {
-            assertBad(() -> ReportOps.addFile(report, path, "n", null, false));
+            assertBad(() -> ReportOps.addFile(report, path, "n", null, false, ReportOps.OPEN));
         }
         assertEquals("nothing reached the SDK", 0, state.adds.size());
     }
@@ -124,11 +237,11 @@ public class ReportOpsFilesTest {
         final String path = source.getPath();
         final String tooLong = new String(new char[ReportOps.MAX_ATTACHMENT_NAME_LENGTH + 1]).replace('\0', 'n');
         for (final String name : new String[] {null, "", "   ", "../x", "a/b", "a\\b", "a\nb", "a\u007fb", tooLong}) {
-            assertBad(() -> ReportOps.addFile(report, path, name, null, false));
+            assertBad(() -> ReportOps.addFile(report, path, name, null, false, ReportOps.OPEN));
         }
         for (final String mime : new String[] {"", "text", "text/", "/plain", "text/plain; charset=utf-8",
                 "te xt/plain", "text/pl/ain", "a/b\n"}) {
-            assertBad(() -> ReportOps.addFile(report, path, "n", mime, false));
+            assertBad(() -> ReportOps.addFile(report, path, "n", mime, false, ReportOps.OPEN));
         }
         assertEquals(0, state.adds.size());
     }
@@ -136,24 +249,24 @@ public class ReportOpsFilesTest {
     @Test
     public void goodNamesAndTypesAreAccepted() throws Exception {
         final String path = source.getPath();
-        ReportOps.addFile(report, path, "My log (1).txt", "application/vnd.api+json", false);
-        ReportOps.addFile(report, path, "é日本", "image/svg+xml", false);
+        ReportOps.addFile(report, path, "My log (1).txt", "application/vnd.api+json", false, ReportOps.OPEN);
+        ReportOps.addFile(report, path, "é日本", "image/svg+xml", false, ReportOps.OPEN);
         ReportOps.addFile(report, path,
-                new String(new char[ReportOps.MAX_ATTACHMENT_NAME_LENGTH]).replace('\0', 'n'), null, false);
+                new String(new char[ReportOps.MAX_ATTACHMENT_NAME_LENGTH]).replace('\0', 'n'), null, false, ReportOps.OPEN);
         assertEquals(3, state.adds.size());
     }
 
     @Test
     public void aMissingFileIsNamedAndNothingIsAdded() {
         assertEquals(ReportOps.FILE_NOT_FOUND, refusalOf(() -> ReportOps.addFile(
-                report, new File(tmp.getRoot(), "nope.txt").getPath(), "n", null, true)));
+                report, new File(tmp.getRoot(), "nope.txt").getPath(), "n", null, true, ReportOps.OPEN)));
         assertEquals(0, state.adds.size());
     }
 
     @Test
     public void aDirectoryIsNotAFile() throws Exception {
         assertEquals(ReportOps.NOT_A_FILE, refusalOf(() -> ReportOps.addFile(
-                report, tmp.newFolder("dir").getPath(), "n", null, true)));
+                report, tmp.newFolder("dir").getPath(), "n", null, true, ReportOps.OPEN)));
         assertEquals(0, state.adds.size());
     }
 
@@ -165,7 +278,7 @@ public class ReportOpsFilesTest {
             org.junit.Assume.assumeTrue("file permissions do not apply to this user", false);
         }
         assertEquals(ReportOps.UNREADABLE, refusalOf(() -> ReportOps.addFile(
-                report, secret.getPath(), "n", null, true)));
+                report, secret.getPath(), "n", null, true, ReportOps.OPEN)));
         assertTrue(secret.exists());
         assertEquals(0, state.adds.size());
     }
@@ -174,7 +287,7 @@ public class ReportOpsFilesTest {
     public void aSymbolicLinkToAFileIsFollowedAndAMoveOfALinkIsThePassedThrough() throws Exception {
         final File link = new File(tmp.getRoot(), "link.log");
         Files.createSymbolicLink(link.toPath(), source.toPath());
-        ReportOps.addFile(report, link.getPath(), "via link", null, false);
+        ReportOps.addFile(report, link.getPath(), "via link", null, false, ReportOps.OPEN);
         assertEquals(link, state.adds.get(0)[0]);
         assertTrue("the target is untouched", source.exists());
     }
@@ -184,19 +297,19 @@ public class ReportOpsFilesTest {
         final File dangling = new File(tmp.getRoot(), "dangling");
         Files.createSymbolicLink(dangling.toPath(), new File(tmp.getRoot(), "gone").toPath());
         assertEquals(ReportOps.FILE_NOT_FOUND, refusalOf(() -> ReportOps.addFile(
-                report, dangling.getPath(), "n", null, true)));
+                report, dangling.getPath(), "n", null, true, ReportOps.OPEN)));
     }
 
     @Test
     public void theSdksAttachmentCountIsNamedBeforeItsBareNull() throws Exception {
         for (int i = 0; i < ReportOps.MAX_REPORT_ATTACHMENTS; i++) {
-            ReportOps.addBytes(report, new byte[0], "n" + i, null);
+            ReportOps.addBytes(report, new byte[0], "n" + i, null, ReportOps.OPEN);
         }
         assertEquals(ReportOps.MAX_REPORT_ATTACHMENTS, state.attachments.size());
         final int before = state.adds.size();
         assertEquals(ReportOps.LIMIT, refusalOf(() -> ReportOps.addFile(
-                report, source.getPath(), "n", null, true)));
-        assertEquals(ReportOps.LIMIT, refusalOf(() -> ReportOps.addBytes(report, new byte[1], "n", null)));
+                report, source.getPath(), "n", null, true, ReportOps.OPEN)));
+        assertEquals(ReportOps.LIMIT, refusalOf(() -> ReportOps.addBytes(report, new byte[1], "n", null, ReportOps.OPEN)));
         assertEquals("the SDK was not asked", before, state.adds.size());
         assertTrue("and the source is untouched", source.exists());
     }
@@ -210,9 +323,9 @@ public class ReportOpsFilesTest {
 
     @Test
     public void bytesAreHandedOverUpToTheCapAndEmptyIsValid() throws Exception {
-        ReportOps.addBytes(report, new byte[] {1, 2, 3}, "raw.bin", "application/octet-stream");
-        ReportOps.addBytes(report, new byte[0], "empty", null);
-        ReportOps.addBytes(report, new byte[ReportOps.MAX_ATTACHMENT_BYTES], "max", null);
+        ReportOps.addBytes(report, new byte[] {1, 2, 3}, "raw.bin", "application/octet-stream", ReportOps.OPEN);
+        ReportOps.addBytes(report, new byte[0], "empty", null, ReportOps.OPEN);
+        ReportOps.addBytes(report, new byte[ReportOps.MAX_ATTACHMENT_BYTES], "max", null, ReportOps.OPEN);
         assertArrayEquals(new byte[] {1, 2, 3}, (byte[]) state.adds.get(0)[0]);
         assertEquals(3, state.attachments.size());
         assertEquals("raw.bin", state.attachments.get(0).getFileName(null));
@@ -221,27 +334,27 @@ public class ReportOpsFilesTest {
     @Test
     public void oneByteOverTheCapIsTooLargeAndNeverReachesTheSdk() {
         assertEquals(ReportOps.TOO_LARGE, refusalOf(() -> ReportOps.addBytes(
-                report, new byte[ReportOps.MAX_ATTACHMENT_BYTES + 1], "big", null)));
+                report, new byte[ReportOps.MAX_ATTACHMENT_BYTES + 1], "big", null, ReportOps.OPEN)));
         assertEquals(0, state.adds.size());
     }
 
     @Test
     public void nullBytesAreAnArgumentErrorAndABadNameIsToo() {
-        assertBad(() -> ReportOps.addBytes(report, null, "n", null));
-        assertBad(() -> ReportOps.addBytes(report, new byte[1], "../n", null));
-        assertBad(() -> ReportOps.addBytes(report, new byte[1], "n", "bad"));
+        assertBad(() -> ReportOps.addBytes(report, null, "n", null, ReportOps.OPEN));
+        assertBad(() -> ReportOps.addBytes(report, new byte[1], "../n", null, ReportOps.OPEN));
+        assertBad(() -> ReportOps.addBytes(report, new byte[1], "n", "bad", ReportOps.OPEN));
         assertEquals(0, state.adds.size());
     }
 
     @Test
     public void aDeclinedByteAddIsRejected() {
         state.refuseAdds = true;
-        assertEquals(ReportOps.REJECTED, refusalOf(() -> ReportOps.addBytes(report, new byte[1], "n", null)));
+        assertEquals(ReportOps.REJECTED, refusalOf(() -> ReportOps.addBytes(report, new byte[1], "n", null, ReportOps.OPEN)));
     }
 
     @Test
     public void clearAttachmentsReachesTheSdk() throws Exception {
-        ReportOps.addBytes(report, new byte[1], "n", null);
+        ReportOps.addBytes(report, new byte[1], "n", null, ReportOps.OPEN);
         ReportOps.clearAttachments(report);
         assertTrue(state.calls.contains("clearAttachments"));
         assertEquals(0, state.attachments.size());
@@ -333,8 +446,8 @@ public class ReportOpsFilesTest {
 
     @Test
     public void readListsAttachmentMetadataAndScreenshotsAscending() throws Exception {
-        ReportOps.addFile(report, source.getPath(), "Log", "text/plain", false);
-        ReportOps.addBytes(report, new byte[2], "raw", null);
+        ReportOps.addFile(report, source.getPath(), "Log", "text/plain", false, ReportOps.OPEN);
+        ReportOps.addBytes(report, new byte[2], "raw", null, ReportOps.OPEN);
         final Decoder decoder = new Decoder();
         decoder.result = bitmap();
         ReportOps.setScreenshot(report, decoder, source.getPath(), 3, false);

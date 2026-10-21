@@ -17,6 +17,8 @@ NSString *const BGSFlutterFileImageUndecodable = @"image-undecodable";
 NSString *const BGSFlutterFileImageTooLarge = @"image-too-large";
 
 const NSUInteger BGSFlutterMaxAttachmentBytes = 1024 * 1024;
+// The soft limit of ONE attached file: 20 MiB (see Dart `maxAttachmentFileBytes`).
+const unsigned long long BGSFlutterMaxAttachmentFileBytes = 20ULL * 1024ULL * 1024ULL;
 const NSUInteger BGSFlutterMaxAttachmentNameLength = 255;
 const NSUInteger BGSFlutterMaxMimeTypeLength = 255;
 const NSUInteger BGSFlutterMaxPathLength = 4096;
@@ -53,6 +55,13 @@ static BOOL HasControl(NSString *s) {
   return NO;
 }
 
+// The code points that make a name blank: the same explicit set in Dart (`_blankRanges`) and Java
+// (`ReportOps.BLANK_RANGES`); a drift guard compares them.
+static const unichar kBlankRanges[][2] = {
+    {0x09, 0x0D}, {0x20, 0x20}, {0x85, 0x85}, {0xA0, 0xA0}, {0x1680, 0x1680}, {0x2000, 0x200A},
+    {0x2028, 0x2029}, {0x202F, 0x202F}, {0x205F, 0x205F}, {0x3000, 0x3000},
+};
+
 static NSRegularExpression *MimeExpression(void) {
   static NSRegularExpression *expression;
   static dispatch_once_t once;
@@ -88,9 +97,26 @@ static NSRegularExpression *MimeExpression(void) {
   return nil;
 }
 
++ (BOOL)isBlank:(NSString *)s {
+  for (NSUInteger i = 0; i < s.length; i++) {
+    const unichar c = [s characterAtIndex:i];
+    BOOL blank = NO;
+    for (size_t r = 0; r < sizeof(kBlankRanges) / sizeof(kBlankRanges[0]); r++) {
+      if (c >= kBlankRanges[r][0] && c <= kBlankRanges[r][1]) {
+        blank = YES;
+        break;
+      }
+    }
+    if (!blank) {
+      return NO;
+    }
+  }
+  return YES;
+}
+
 + (NSString *)problemWithName:(NSString *)name {
   if (![name isKindOfClass:[NSString class]] ||
-      [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length == 0 ||
+      [self isBlank:name] ||
       name.length > BGSFlutterMaxAttachmentNameLength || HasControl(name) ||
       [name containsString:@"/"] || [name containsString:@"\\"]) {
     return @"an attachment name must be 1..255 characters without control characters or a path separator";
@@ -181,6 +207,10 @@ static NSRegularExpression *MimeExpression(void) {
   NSString *code = [self codeForUnreadableFileAtPath:path];
   if (code != nil) {
     return [BGSFlutterFileOutcome refusedWithCode:code];
+  }
+  NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path.stringByResolvingSymlinksInPath error:NULL];
+  if ([attributes[NSFileSize] unsignedLongLongValue] > BGSFlutterMaxAttachmentFileBytes) {
+    return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileTooLarge];
   }
   if (report.attachments.count >= BGSFlutterMaxReportAttachments) {
     return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileLimit];

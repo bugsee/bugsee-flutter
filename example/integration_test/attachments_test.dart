@@ -1,9 +1,14 @@
-// Runs on a device or simulator (it needs the native SDKs and, to read the bundle, a local stand-in
-// for the API that refuses the upload so the bundle stays on disk):
+// Runs on a device or simulator (it needs the native SDKs) and the stand-in API next to it,
+// `support/mock_api.py`, which is NOT optional: it answers the issue request with an upload URL, then
+// refuses the upload (so Android keeps the bundle on disk) and stores the bundle it received, which is the
+// only place iOS (it hands the upload to the system and keeps no file) shows it, through `GET /__bundles`:
 //
-//   python3 mock_api.py 8196 &         # any HTTP server answering 503 to POST /v2/issues and 200 otherwise
+//   ISSUE_OK=1 UPLOAD_STATUS=503 python3 example/integration_test/support/mock_api.py 8196 /tmp/mock.log &
 //   cd example && flutter test integration_test/attachments_test.dart -d <device> \
 //       --dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:8196      # Android emulator; iOS: http://localhost:8196
+//
+// The server listens on 127.0.0.1 only. Without BUGSEE_ENDPOINT the test still checks everything the SDK
+// reads back (the snapshot), and says it could not read a bundle.
 //
 // Attachments, annotated screenshots and createReport through the real SDKs. The readback is the report
 // BUNDLE the SDK wrote (a zip in the app's own data directory, which the app can read): its manifest has

@@ -19,6 +19,7 @@ FOUNDATION_EXPORT NSString *const BGSFlutterFileImageTooLarge;
 
 /// The numbers repeated from Dart (`attachments.dart`) and Java (`ReportOps`).
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxAttachmentBytes;
+FOUNDATION_EXPORT const unsigned long long BGSFlutterMaxAttachmentFileBytes;
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxAttachmentNameLength;
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxMimeTypeLength;
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxPathLength;
@@ -45,6 +46,9 @@ FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxReportAttachments;
 + (nullable NSString *)problemWithName:(nullable NSString *)name;
 + (nullable NSString *)problemWithMimeType:(nullable NSString *)mimeType;
 + (nullable NSString *)problemWithDisplayId:(int64_t)displayId;
+
+/// Whether `s` is blank: only code points of one explicit set shared with Dart and Java (not each language's own trim).
++ (BOOL)isBlank:(NSString *)s;
 
 /// Says why the file at an (already validated) path cannot be attached, in the order a developer
 /// would fix it: nothing there, not a regular file, not readable. A symbolic link is followed (the

@@ -762,6 +762,19 @@ void main() {
                 r.addAttachment('/${'a' * maxAttachmentPathLength}', name: 'n'),
           );
           await bad('empty name', () => r.addAttachment('/a', name: ''));
+          for (final blank in [
+            '\u00a0',
+            '\u0085',
+            '\u3000',
+            '\u2003',
+            ' \u00a0 ',
+            '\t',
+          ]) {
+            await bad(
+              'blank name U+${blank.codeUnitAt(0).toRadixString(16)}',
+              () => r.addAttachment('/a', name: blank),
+            );
+          }
           await bad('blank name', () => r.addAttachment('/a', name: '   '));
           await bad('slash in name', () => r.addAttachment('/a', name: '../x'));
           await bad(
@@ -829,10 +842,14 @@ void main() {
         );
         await r.addAttachment('/a', name: 'n', mimeType: 'image/svg+xml');
         await r.addAttachment('/a', name: 'n' * maxAttachmentNameLength);
+        // Not blank in any of the three languages' shared definition.
+        await r.addAttachment('/a', name: '\u200bx');
+        await r.addAttachment('/a', name: 'x\u00a0');
+        await r.addAttachment('/a', name: '\ufeff');
       });
       expect(
         native.calls.where((c) => c.startsWith('reportAddAttachment(')).length,
-        3,
+        6,
       );
     });
 

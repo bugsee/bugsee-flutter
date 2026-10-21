@@ -1,8 +1,16 @@
 #import "BGSFlutterCreatedReports.h"
 
 #import <os/lock.h>
+#import <time.h>
+
+const NSUInteger BGSFlutterCreatedRateLimited = NSUIntegerMax;
+const NSUInteger BGSFlutterCreatedRateLimit = 6;
+const int64_t BGSFlutterCreatedRateWindowMs = 60000;
 
 @implementation BGSFlutterCreatedReports {
+  BGSFlutterCreatedClock _clock;
+  NSMutableArray<NSNumber *> *_recent;
+  id _owner;
   BGSFlutterCreatedScheduler _schedule;
   BGSFlutterCreatedCancel _cancel;
   os_unfair_lock _lock;
@@ -34,15 +42,21 @@
         }
         cancel:^(id token) {
           dispatch_source_cancel((dispatch_source_t)token);
+        }
+        clock:^int64_t {
+          return (int64_t)(clock_gettime_nsec_np(CLOCK_MONOTONIC) / NSEC_PER_MSEC);
         }];
   });
   return shared;
 }
 
 - (instancetype)initWithScheduler:(BGSFlutterCreatedScheduler)scheduler
-                           cancel:(BGSFlutterCreatedCancel)cancel {
+                           cancel:(BGSFlutterCreatedCancel)cancel
+                            clock:(BGSFlutterCreatedClock)clock {
   self = [super init];
   if (self) {
+    _clock = [clock copy];
+    _recent = [NSMutableArray array];
     _schedule = [scheduler copy];
     _cancel = [cancel copy];
     _lock = OS_UNFAIR_LOCK_INIT;
@@ -65,15 +79,25 @@
   }
 }
 
-- (NSUInteger)reserveWithCreateTimeoutMs:(int64_t)createTimeoutMs onTimeout:(dispatch_block_t)onTimeout {
+- (NSUInteger)reserveForOwner:(id)owner createTimeoutMs:(int64_t)createTimeoutMs onTimeout:(dispatch_block_t)onTimeout {
   os_unfair_lock_lock(&_lock);
   if (_creating || _report != nil) {
     os_unfair_lock_unlock(&_lock);
     return 0;
   }
+  const int64_t now = _clock();
+  while (_recent.count > 0 && now - _recent.firstObject.longLongValue >= BGSFlutterCreatedRateWindowMs) {
+    [_recent removeObjectAtIndex:0];
+  }
+  if (_recent.count >= BGSFlutterCreatedRateLimit) {
+    os_unfair_lock_unlock(&_lock);
+    return BGSFlutterCreatedRateLimited;
+  }
+  [_recent addObject:@(now)];
+  _owner = owner;
   _creating = YES;
   const NSUInteger stamp = _nextStamp;
-  _nextStamp = _nextStamp == NSUIntegerMax ? 1 : _nextStamp + 1;
+  _nextStamp = _nextStamp >= NSUIntegerMax - 1 ? 1 : _nextStamp + 1;
   _currentStamp = stamp;
   _timer = _schedule(^{
     os_unfair_lock_lock(&self->_lock);
@@ -82,6 +106,7 @@
       self->_creating = NO;
       self->_currentStamp = 0;
       self->_timer = nil;
+      self->_owner = nil;
     }
     os_unfair_lock_unlock(&self->_lock);
     if (timedOut && onTimeout != nil) {
@@ -105,6 +130,7 @@
   _creating = NO;
   _currentStamp = 0;
   if (report == nil) {
+    _owner = nil;
     os_unfair_lock_unlock(&_lock);
     return nil;
   }
@@ -142,19 +168,25 @@
     [self cancelTimerLocked];
     _report = nil;
     _handle = nil;
+    _owner = nil;
   }
   os_unfair_lock_unlock(&_lock);
   return report;
 }
 
-- (id)clear {
+- (id)clearOwner:(id)owner {
   os_unfair_lock_lock(&_lock);
+  if (_owner != owner) {
+    os_unfair_lock_unlock(&_lock);
+    return nil;
+  }
   [self cancelTimerLocked];
   id report = _report;
   _creating = NO;
   _currentStamp = 0;
   _report = nil;
   _handle = nil;
+  _owner = nil;
   os_unfair_lock_unlock(&_lock);
   return report;
 }

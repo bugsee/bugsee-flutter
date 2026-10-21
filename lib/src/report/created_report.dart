@@ -32,6 +32,15 @@ enum CreateReportFailure {
 
   /// The SDK did not answer in time. Whatever it makes later is discarded.
   timeout,
+
+  /// Too many created reports were started in a minute. The SDKs have no way to cancel a created report:
+  /// each one the app discards or forgets leaves the SDK's opened snapshot on disk until its next
+  /// launch's recovery drops it, so the plugin allows a handful a minute.
+  rateLimited,
+
+  /// Thrown by [CreatedReport.upload]: the SDK did not say in time whether it took the report. The
+  /// report is gone from the plugin's side and the SDK MAY STILL SEND IT: do not upload it again.
+  uploadTimeout,
 }
 
 /// `Bugsee.createReport` failed. [reason] says why.
@@ -300,12 +309,24 @@ final class CreatedReport {
 
   /// Hands the report to the SDK to process and upload (the report handler's after phase runs first).
   /// The report is dead from now on, whatever the answer: it completes with whether the SDK scheduled
-  /// it. Calling it twice throws a [CreatedReportClosedError] without reaching native.
+  /// it (`false`: the SDK declined). Calling it twice, or after it expired, throws a
+  /// [CreatedReportClosedError]; an SDK that does not answer in 45 s is a [CreateReportException]
+  /// (`uploadTimeout`) and the report may still be sent.
   Future<bool> upload() async {
     _ensureLive();
     // Before the call, not after it: two overlapping uploads must cross once.
     _end();
-    return _host.createdReportUpload(_handle);
+    try {
+      return await _host.createdReportUpload(_handle);
+    } on PlatformException catch (e) {
+      if (e.code == ReportWire.notLive) {
+        // Native already released it (its time to live started before Dart's timer did).
+        throw CreatedReportClosedError(reportId ?? '');
+      }
+      final failure = createReportFailure(e);
+      if (failure != null) throw failure;
+      rethrow;
+    }
   }
 
   /// Releases the report without uploading it, and deletes the attachments added to it (Android). The
@@ -367,6 +388,17 @@ CreateReportException? createReportFailure(PlatformException e) {
     ReportWire.createTimeout => CreateReportException(
       CreateReportFailure.timeout,
       'the SDK did not answer in time',
+      cause: e,
+    ),
+    ReportWire.createRateLimited => CreateReportException(
+      CreateReportFailure.rateLimited,
+      'too many created reports were started in a minute (the SDKs cannot cancel one)',
+      cause: e,
+    ),
+    ReportWire.uploadTimeout => CreateReportException(
+      CreateReportFailure.uploadTimeout,
+      'the SDK did not say in time whether it took the report; it may still send it, '
+      'so do not upload it again',
       cause: e,
     ),
     _ => null,

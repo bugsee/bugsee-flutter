@@ -304,4 +304,74 @@
   XCTAssertEqual(BGSFlutterMaxAttachmentBytes, 1024u * 1024u);
 }
 
+
+#pragma mark - Phase 6 review
+
+- (void)testBlankMeansTheSameSetEverywhere {
+  NSString *nel = [NSString stringWithFormat:@"%C", (unichar)0x85];
+  for (NSString *blank in @[ @" ", @"\t", @"\u00a0", nel, @"\u3000", @"\u2003", @" \u00a0 " ]) {
+    XCTAssertNotNil([BGSFlutterReportFiles problemWithName:blank], @"%@", blank);
+  }
+  for (NSString *fine in @[ @"a", @"\u200bx", @"x\u00a0", @"\ufeff" ]) {
+    XCTAssertNil([BGSFlutterReportFiles problemWithName:fine], @"accepted by Dart and Android, so accepted here: %@", fine);
+  }
+}
+
+- (void)testAFileOverTheSoftLimitIsTooLargeAndTheSourceStays {
+  NSString *big = [_dir stringByAppendingPathComponent:@"big.bin"];
+  [NSFileManager.defaultManager createFileAtPath:big contents:nil attributes:nil];
+  NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:big];
+  [h truncateFileAtOffset:BGSFlutterMaxAttachmentFileBytes + 1];
+  [h closeFile];
+  [self assertRefused:[BGSFlutterReportFiles addFileAtPath:big name:@"big" mimeType:nil move:YES onReport:_report] code:BGSFlutterFileTooLarge];
+  XCTAssertEqual(_report.adds.count, 0u);
+  XCTAssertTrue([self exists:big]);
+  h = [NSFileHandle fileHandleForWritingAtPath:big];
+  [h truncateFileAtOffset:BGSFlutterMaxAttachmentFileBytes];
+  [h closeFile];
+  [self assertDone:[BGSFlutterReportFiles addFileAtPath:big name:@"edge" mimeType:nil move:NO onReport:_report]];
+}
+
+/// A JPEG made by ImageIO, with EXIF orientation 6 (rotated 90 degrees): UIImage applies it, so the
+/// picture's size is swapped, but the PIXEL COUNT the cap is about is the same, and the screenshot is stored.
+- (void)testAnExifRotatedJpegIsJudgedByItsPixelCount {
+  CGColorSpaceRef space = CGColorSpaceCreateDeviceGray();
+  CGContextRef context = CGBitmapContextCreate(NULL, 64, 48, 8, 64, space, (CGBitmapInfo)kCGImageAlphaNone);
+  CGColorSpaceRelease(space);
+  CGImageRef image = CGBitmapContextCreateImage(context);
+  CGContextRelease(context);
+  NSString *path = [_dir stringByAppendingPathComponent:@"rotated.jpg"];
+  NSMutableData *data = [NSMutableData data];
+  CGImageDestinationRef destination = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data, (__bridge CFStringRef)@"public.jpeg", 1, NULL);
+  CGImageDestinationAddImage(destination, image, (__bridge CFDictionaryRef) @{(__bridge NSString *)kCGImagePropertyOrientation : @6});
+  CGImageDestinationFinalize(destination);
+  CFRelease(destination);
+  CGImageRelease(image);
+  [data writeToFile:path atomically:YES];
+  [self assertDone:[BGSFlutterReportFiles setScreenshotAtPath:path displayId:0 annotated:NO onReport:_report]];
+  UIImage *stored = _report.fakeScreenshots[@0][0];
+  XCTAssertEqual(stored.size.width * stored.size.height, 64.0 * 48.0, @"same pixel count, rotated or not");
+  XCTAssertEqual(stored.size.width, 48.0, @"iOS applies the EXIF orientation (Android's BitmapFactory does not: documented)");
+}
+
+/// A two-frame GIF: judged by its canvas, the first frame is what is stored.
+- (void)testAMultiFrameGifIsAcceptedByItsCanvas {
+  CGColorSpaceRef space = CGColorSpaceCreateDeviceGray();
+  CGContextRef context = CGBitmapContextCreate(NULL, 10, 10, 8, 10, space, (CGBitmapInfo)kCGImageAlphaNone);
+  CGColorSpaceRelease(space);
+  CGImageRef frame = CGBitmapContextCreateImage(context);
+  CGContextRelease(context);
+  NSMutableData *data = [NSMutableData data];
+  CGImageDestinationRef destination = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data, (__bridge CFStringRef)@"com.compuserve.gif", 2, NULL);
+  CGImageDestinationAddImage(destination, frame, NULL);
+  CGImageDestinationAddImage(destination, frame, NULL);
+  CGImageDestinationFinalize(destination);
+  CFRelease(destination);
+  CGImageRelease(frame);
+  NSString *path = [_dir stringByAppendingPathComponent:@"two.gif"];
+  [data writeToFile:path atomically:YES];
+  [self assertDone:[BGSFlutterReportFiles setScreenshotAtPath:path displayId:0 annotated:NO onReport:_report]];
+  XCTAssertNotNil(_report.fakeScreenshots[@0]);
+}
+
 @end

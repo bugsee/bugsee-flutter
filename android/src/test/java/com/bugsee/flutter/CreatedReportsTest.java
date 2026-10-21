@@ -66,30 +66,32 @@ public class CreatedReportsTest {
         }
     }
 
+    private final long[] now = {0L};
+    private final Object owner = new Object();
     private final Manual scheduler = new Manual();
-    private final CreatedReports reports = new CreatedReports(scheduler);
+    private final CreatedReports reports = new CreatedReports(scheduler, () -> now[0]);
     private final Recorder expiry = new Recorder();
     private final Report one = FakeReports.create(new FakeReports.State());
     private final Report two = FakeReports.create(new FakeReports.State());
 
     @Test
     public void aSecondReservationIsRefusedWhileOneIsOpenOrHeld() {
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         assertNotEquals(0, stamp);
-        assertEquals("reserved", 0, reports.reserve(1000, expiry));
+        assertEquals("reserved", 0, reports.reserve(owner, 1000, expiry));
         final String handle = reports.fulfil(stamp, one, 5000, expiry);
         assertNotNull(handle);
-        assertEquals("held", 0, reports.reserve(1000, expiry));
+        assertEquals("held", 0, reports.reserve(owner, 1000, expiry));
         assertSame(one, reports.take(handle));
-        assertNotEquals("free again", 0, reports.reserve(1000, expiry));
+        assertNotEquals("free again", 0, reports.reserve(owner, 1000, expiry));
     }
 
     @Test
     public void handlesAreNumberedAndNeverReused() {
-        int stamp = reports.reserve(1000, expiry);
+        int stamp = reports.reserve(owner, 1000, expiry);
         final String first = reports.fulfil(stamp, one, 5000, expiry);
         reports.take(first);
-        stamp = reports.reserve(1000, expiry);
+        stamp = reports.reserve(owner, 1000, expiry);
         final String second = reports.fulfil(stamp, two, 5000, expiry);
         assertEquals("cr-1", first);
         assertEquals("cr-2", second);
@@ -99,28 +101,28 @@ public class CreatedReportsTest {
 
     @Test
     public void aNullAnswerFreesTheSlotAndMintsNothing() {
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         assertNull(reports.fulfil(stamp, null, 5000, expiry));
-        assertNotEquals(0, reports.reserve(1000, expiry));
+        assertNotEquals(0, reports.reserve(owner, 1000, expiry));
     }
 
     @Test
     public void theCreateTimeoutFreesTheSlotAndTellsTheCaller() {
-        final int stamp = reports.reserve(45_000, expiry);
+        final int stamp = reports.reserve(owner, 45_000, expiry);
         final Manual.Task timer = scheduler.last();
         assertEquals(45_000, timer.delayMs);
         timer.runnable.run();
         assertEquals(1, expiry.timedOut);
-        assertNotEquals("the slot is free", 0, reports.reserve(1000, expiry));
+        assertNotEquals("the slot is free", 0, reports.reserve(owner, 1000, expiry));
         // The SDK's late answer for the timed-out reservation is refused by its stamp.
         assertNull(reports.fulfil(stamp, one, 5000, expiry));
     }
 
     @Test
     public void aLateAnswerCannotTakeANewerReservationsPlace() {
-        final int old = reports.reserve(1000, expiry);
+        final int old = reports.reserve(owner, 1000, expiry);
         scheduler.last().runnable.run(); // timed out
-        final int fresh = reports.reserve(1000, expiry);
+        final int fresh = reports.reserve(owner, 1000, expiry);
         assertNotEquals(old, fresh);
         assertNull("the stale listener is refused", reports.fulfil(old, one, 5000, expiry));
         assertTrue("the fresh reservation is intact", reports.isReserved(fresh));
@@ -129,7 +131,7 @@ public class CreatedReportsTest {
 
     @Test
     public void aFulfilCancelsTheCreateTimerAndAnAnswerAfterItDoesNothing() {
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         final Manual.Task createTimer = scheduler.last();
         final String handle = reports.fulfil(stamp, one, 5000, expiry);
         assertTrue(createTimer.cancelled);
@@ -141,7 +143,7 @@ public class CreatedReportsTest {
 
     @Test
     public void theTimeToLiveReleasesTheReportOnce() {
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         final String handle = reports.fulfil(stamp, one, 60_000, expiry);
         final Manual.Task ttl = scheduler.last();
         assertEquals(60_000, ttl.delayMs);
@@ -151,12 +153,12 @@ public class CreatedReportsTest {
         assertNull("gone", reports.get(handle));
         ttl.runnable.run(); // the race again
         assertEquals("released once", 1, expiry.expired.size());
-        assertNotEquals("the slot is free", 0, reports.reserve(1000, expiry));
+        assertNotEquals("the slot is free", 0, reports.reserve(owner, 1000, expiry));
     }
 
     @Test
     public void takeCancelsTheTimeToLiveSoAnUploadedReportIsNotDiscarded() {
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         final String handle = reports.fulfil(stamp, one, 60_000, expiry);
         final Manual.Task ttl = scheduler.last();
         assertSame(one, reports.take(handle));
@@ -168,7 +170,7 @@ public class CreatedReportsTest {
 
     @Test
     public void anUnknownHandleTakesAndGetsNothing() {
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         final String handle = reports.fulfil(stamp, one, 5000, expiry);
         assertNull(reports.get("cr-99"));
         assertNull(reports.take("cr-99"));
@@ -178,13 +180,77 @@ public class CreatedReportsTest {
 
     @Test
     public void clearReleasesWhatIsHeldAndInvalidatesOpenStamps() {
-        final int open = reports.reserve(1000, expiry);
-        assertNull(reports.clear());
+        final int open = reports.reserve(owner, 1000, expiry);
+        assertNull(reports.clearOwner(owner));
         assertNull(reports.fulfil(open, one, 5000, expiry));
-        final int stamp = reports.reserve(1000, expiry);
+        final int stamp = reports.reserve(owner, 1000, expiry);
         final String handle = reports.fulfil(stamp, two, 5000, expiry);
-        assertSame(two, reports.clear());
+        assertSame(two, reports.clearOwner(owner));
         assertNull(reports.get(handle));
-        assertNotEquals(0, reports.reserve(1000, expiry));
+        assertNotEquals(0, reports.reserve(owner, 1000, expiry));
+    }
+
+    // ---- Phase 6 review: engines and the rate limit ----------------------------------------------------
+
+    @Test
+    public void anotherEnginesResetLeavesMyReportAndMyReservationAlone() {
+        final Object other = new Object();
+        final int open = reports.reserve(owner, 1000, expiry);
+        assertNull(reports.clearOwner(other));
+        assertTrue("the reservation survived", reports.isReserved(open));
+        final String handle = reports.fulfil(open, one, 5000, expiry);
+        assertNotNull(handle);
+        assertNull(reports.clearOwner(other));
+        assertSame("the held report survived", one, reports.get(handle));
+        assertSame("its own engine's reset releases it", one, reports.clearOwner(owner));
+        assertNull(reports.get(handle));
+    }
+
+    @Test
+    public void aSecondEnginesRequestIsBusyNotAStolenSlot() {
+        final Object other = new Object();
+        final int stamp = reports.reserve(owner, 1000, expiry);
+        assertEquals(0, reports.reserve(other, 1000, expiry));
+        final String handle = reports.fulfil(stamp, one, 5000, expiry);
+        assertEquals(0, reports.reserve(other, 1000, expiry));
+        assertSame(one, reports.get(handle));
+    }
+
+    @Test
+    public void theOwnerIsForgottenWhenTheSlotIsFree() {
+        final Object other = new Object();
+        final String handle = reports.fulfil(reports.reserve(owner, 1000, expiry), one, 5000, expiry);
+        reports.take(handle);
+        final int stamp = reports.reserve(other, 1000, expiry);
+        assertNull("the first engine no longer owns anything", reports.clearOwner(owner));
+        assertTrue(reports.isReserved(stamp));
+    }
+
+    @Test
+    public void tooManyCreatesInAMinuteAreRateLimitedAndTheWindowSlides() {
+        for (int i = 0; i < CreatedReports.RATE_LIMIT; i++) {
+            final int stamp = reports.reserve(owner, 1000, expiry);
+            assertNotEquals(0, stamp);
+            assertNotEquals(CreatedReports.RATE_LIMITED, stamp);
+            reports.take(reports.fulfil(stamp, one, 5000, expiry));
+            now[0] += 1000;
+        }
+        assertEquals(CreatedReports.RATE_LIMITED, reports.reserve(owner, 1000, expiry));
+        now[0] = CreatedReports.RATE_WINDOW_MS - 1;
+        assertEquals("the oldest is still inside the window", CreatedReports.RATE_LIMITED,
+                reports.reserve(owner, 1000, expiry));
+        now[0] = CreatedReports.RATE_WINDOW_MS;
+        assertNotEquals("the oldest left the window", CreatedReports.RATE_LIMITED,
+                reports.reserve(owner, 1000, expiry));
+    }
+
+    @Test
+    public void aBusyRefusalDoesNotSpendTheRateBudget() {
+        final int stamp = reports.reserve(owner, 1000, expiry);
+        for (int i = 0; i < 20; i++) {
+            assertEquals(0, reports.reserve(owner, 1000, expiry));
+        }
+        reports.take(reports.fulfil(stamp, one, 5000, expiry));
+        assertNotEquals(CreatedReports.RATE_LIMITED, reports.reserve(owner, 1000, expiry));
     }
 }

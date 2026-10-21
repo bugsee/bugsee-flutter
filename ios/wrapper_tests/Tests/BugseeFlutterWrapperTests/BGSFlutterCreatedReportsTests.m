@@ -20,12 +20,16 @@
   NSMutableArray<BGSCreatedTask *> *_tasks;
   NSMutableArray *_expired;
   NSUInteger _timedOut;
+  int64_t _now;
+  id _owner;
 }
 
 - (void)setUp {
   _tasks = [NSMutableArray array];
   _expired = [NSMutableArray array];
   _timedOut = 0;
+  _now = 0;
+  _owner = [NSObject new];
   __weak typeof(self) weakSelf = self;
   _reports = [[BGSFlutterCreatedReports alloc]
       initWithScheduler:^id(dispatch_block_t task, int64_t delayMs) {
@@ -37,7 +41,14 @@
       }
       cancel:^(id token) {
         ((BGSCreatedTask *)token).cancelled = YES;
+      }
+      clock:^int64_t {
+        return weakSelf.nowForTest;
       }];
+}
+
+- (int64_t)nowForTest {
+  return _now;
 }
 
 - (NSMutableArray<BGSCreatedTask *> *)tasksForTest {
@@ -45,7 +56,7 @@
 }
 
 - (NSUInteger)reserve {
-  return [_reports reserveWithCreateTimeoutMs:1000 onTimeout:^{
+  return [_reports reserveForOwner:_owner createTimeoutMs:1000 onTimeout:^{
     self->_timedOut++;
   }];
 }
@@ -145,12 +156,70 @@
 
 - (void)testClearReleasesWhatIsHeldAndInvalidatesOpenStamps {
   const NSUInteger open = [self reserve];
-  XCTAssertNil([_reports clear]);
+  XCTAssertNil([_reports clearOwner:_owner]);
   XCTAssertNil([self fulfil:open report:@"one" ttl:5000]);
   NSString *handle = [self fulfil:[self reserve] report:@"two" ttl:5000];
-  XCTAssertEqualObjects([_reports clear], @"two");
+  XCTAssertEqualObjects([_reports clearOwner:_owner], @"two");
   XCTAssertNil([_reports reportForHandle:handle]);
   XCTAssertNotEqual([self reserve], 0u);
+}
+
+
+#pragma mark - Phase 6 review: engines and the rate limit
+
+- (void)testAnotherEnginesResetLeavesMyReportAndMyReservationAlone {
+  id other = [NSObject new];
+  const NSUInteger open = [self reserve];
+  XCTAssertNil([_reports clearOwner:other]);
+  XCTAssertTrue([_reports isReserved:open], @"the reservation survived");
+  NSString *handle = [self fulfil:open report:@"one" ttl:5000];
+  XCTAssertNotNil(handle);
+  XCTAssertNil([_reports clearOwner:other]);
+  XCTAssertEqualObjects([_reports reportForHandle:handle], @"one", @"the held report survived");
+  XCTAssertEqualObjects([_reports clearOwner:_owner], @"one", @"its own engine's reset releases it");
+  XCTAssertNil([_reports reportForHandle:handle]);
+}
+
+- (void)testASecondEnginesRequestIsBusyNotAStolenSlot {
+  id other = [NSObject new];
+  const NSUInteger stamp = [self reserve];
+  XCTAssertEqual([_reports reserveForOwner:other createTimeoutMs:1000 onTimeout:^{}], 0u);
+  NSString *handle = [self fulfil:stamp report:@"one" ttl:5000];
+  XCTAssertEqual([_reports reserveForOwner:other createTimeoutMs:1000 onTimeout:^{}], 0u);
+  XCTAssertEqualObjects([_reports reportForHandle:handle], @"one");
+}
+
+- (void)testTheOwnerIsForgottenWhenTheSlotIsFree {
+  id other = [NSObject new];
+  NSString *handle = [self fulfil:[self reserve] report:@"one" ttl:5000];
+  [_reports takeHandle:handle];
+  const NSUInteger stamp = [_reports reserveForOwner:other createTimeoutMs:1000 onTimeout:^{}];
+  XCTAssertNil([_reports clearOwner:_owner], @"the first engine no longer owns anything");
+  XCTAssertTrue([_reports isReserved:stamp]);
+}
+
+- (void)testTooManyCreatesInAMinuteAreRateLimitedAndTheWindowSlides {
+  for (NSUInteger i = 0; i < BGSFlutterCreatedRateLimit; i++) {
+    const NSUInteger stamp = [self reserve];
+    XCTAssertNotEqual(stamp, 0u);
+    XCTAssertNotEqual(stamp, BGSFlutterCreatedRateLimited);
+    [_reports takeHandle:[self fulfil:stamp report:@"one" ttl:5000]];
+    _now += 1000;
+  }
+  XCTAssertEqual([self reserve], BGSFlutterCreatedRateLimited);
+  _now = BGSFlutterCreatedRateWindowMs - 1;
+  XCTAssertEqual([self reserve], BGSFlutterCreatedRateLimited, @"the oldest is still inside the window");
+  _now = BGSFlutterCreatedRateWindowMs;
+  XCTAssertNotEqual([self reserve], BGSFlutterCreatedRateLimited, @"the oldest left the window");
+}
+
+- (void)testABusyRefusalDoesNotSpendTheRateBudget {
+  const NSUInteger stamp = [self reserve];
+  for (int i = 0; i < 20; i++) {
+    XCTAssertEqual([self reserve], 0u);
+  }
+  [_reports takeHandle:[self fulfil:stamp report:@"one" ttl:5000]];
+  XCTAssertNotEqual([self reserve], BGSFlutterCreatedRateLimited);
 }
 
 @end

@@ -57,6 +57,14 @@ final class ReportOps {
     static final long MAX_SCREENSHOT_PIXELS = 4096L * 4096L;
     /** {@code IssueReport.MAX_ATTACHMENTS} (v7.4.2): the SDK refuses the 1001st. */
     static final int MAX_REPORT_ATTACHMENTS = 1000;
+    /**
+     * The soft limit of ONE attached file: 20 MiB. Neither SDK limits a file on this path, but a copy is
+     * synchronous I/O in front of every other queued operation and the SDK's handler timer does not wait
+     * for it (see {@link Window}); {@code config.max-data-size} (default 50 on iOS, 150 on Android) bounds
+     * all the data a report may hold, so one file of 20 MiB is the most a handler can attach without
+     * crowding the rest out. Repeated in Dart ({@code maxAttachmentFileBytes}) and Objective-C.
+     */
+    static final long MAX_ATTACHMENT_FILE_BYTES = 20L * 1024L * 1024L;
 
     // The failure codes of a file operation's reply (Dart: ReportWire). Repeated in Objective-C.
     static final String NOT_LIVE = "not-live";
@@ -80,6 +88,22 @@ final class ReportOps {
             this.code = code;
         }
     }
+
+    /**
+     * Whether the handler's window is still open, asked while a file operation runs. The SDK's own timer
+     * moves on whether or not an operation of ours is in flight, and Android 7.4.2's
+     * {@code IssueReport.addAttachment} checks that the report still takes attachments only BEFORE it
+     * imports the file (IssueReport.java:292 for a file, :310 for bytes) and registers the attachment
+     * WITHOUT looking again (:361-372, {@code mAttachments.add} at :370): an add that finishes after processing was
+     * scheduled returns an attachment but is an orphan file with no manifest entry. A window that has
+     * closed by the time the add returns means exactly that risk, so the add is undone.
+     */
+    interface Window {
+        boolean closed();
+    }
+
+    /** A window that never closes: a created report's, which only an upload ends. */
+    static final Window OPEN = () -> false;
 
     /** Decodes an image file; the production one is {@code BitmapFactory}. */
     interface ImageDecoder {
@@ -269,6 +293,32 @@ final class ReportOps {
     private static final Pattern MIME = Pattern.compile(
             "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]{0,126}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]{0,126}$");
 
+    /**
+     * The code points that make a name blank: the same explicit set in Dart ({@code _blankRanges}),
+     * Java and Objective-C (a drift guard compares them), not each language's own {@code trim}.
+     */
+    private static final int[][] BLANK_RANGES = {
+        {0x09, 0x0D}, {0x20, 0x20}, {0x85, 0x85}, {0xA0, 0xA0}, {0x1680, 0x1680}, {0x2000, 0x200A},
+        {0x2028, 0x2029}, {0x202F, 0x202F}, {0x205F, 0x205F}, {0x3000, 0x3000},
+    };
+
+    static boolean isBlank(@NonNull final String s) {
+        for (int i = 0; i < s.length(); i++) {
+            final char c = s.charAt(i);
+            boolean blank = false;
+            for (final int[] range : BLANK_RANGES) {
+                if (c >= range[0] && c <= range[1]) {
+                    blank = true;
+                    break;
+                }
+            }
+            if (!blank) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean hasControl(@NonNull final String s) {
         for (int i = 0; i < s.length(); i++) {
             final char c = s.charAt(i);
@@ -297,7 +347,7 @@ final class ReportOps {
 
     @NonNull
     static String checkedName(@Nullable final String name) throws BadArgument {
-        if (name == null || name.trim().isEmpty() || name.length() > MAX_ATTACHMENT_NAME_LENGTH
+        if (name == null || isBlank(name) || name.length() > MAX_ATTACHMENT_NAME_LENGTH
                 || hasControl(name) || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0) {
             throw new BadArgument("an attachment name must be 1.." + MAX_ATTACHMENT_NAME_LENGTH
                     + " characters without control characters or a path separator");
@@ -349,25 +399,59 @@ final class ReportOps {
     }
 
     /**
-     * Copies ({@code move} false) or moves the file into the report. The SDK does the file work and
-     * returns null for everything it declines (the report no longer takes attachments, a failed copy,
-     * the cap); a refusal never consumes the source. The reasons the SDK does not name are checked
-     * first, so the caller can tell a typo from a closed report.
+     * Adds the file to the report: the SDK copies it into storage the report owns.
+     *
+     * <p>A MOVE is done by the wrapper, as a copy followed by deleting the source once the add is known
+     * to have landed, and never by the SDK's rename ({@code move = true}): after an SDK rename the
+     * source is gone and its new place is private to the SDK, so an add that turned out to be an orphan
+     * (see {@link Window}) could not give the user's file back. A copy that is refused or undone leaves
+     * the source exactly where it was. The cost is a copy where a rename would have been free; the
+     * observable result of a successful move (the source is consumed) is the same.
+     *
+     * <p>The SDK answers null for everything it declines (the report no longer takes attachments, a
+     * failed copy, the cap); the reasons it does not name are checked first, so the caller can tell a
+     * typo from a closed report. A refusal never consumes the source.
+     *
+     * @param window whether the handler's window is still open; an add that finishes after it closed is
+     *               undone (the stored file deleted) and refused
      */
     static void addFile(
             @NonNull final Report report,
             @Nullable final String path,
             @Nullable final String name,
             @Nullable final String mimeType,
-            final boolean move
+            final boolean move,
+            @NonNull final Window window
     ) throws BadArgument, Refused {
         final File file = checkedPath(path);
         final String checkedName = checkedName(name);
         final String checkedMime = checkedMimeType(mimeType);
         requireReadableFile(file);
+        requireFileSize(file);
         requireRoomForAttachment(report);
-        if (report.addAttachment(file, checkedName, checkedMime, move) == null) {
+        if (window.closed()) {
             throw new Refused(REJECTED);
+        }
+        final Attachment added = report.addAttachment(file, checkedName, checkedMime, false);
+        if (added == null) {
+            throw new Refused(REJECTED);
+        }
+        if (window.closed()) {
+            undo(added);
+            throw new Refused(REJECTED);
+        }
+        if (move && !file.delete()) {
+            // As the SDK: the attachment is in, the source could not be removed; nothing else to do.
+            android.util.Log.w("BugseeFlutter", "attachment added but its source was not deleted");
+        }
+    }
+
+    /** Deletes the stored file of an add that lost the race with the SDK's processing. */
+    private static void undo(@NonNull final Attachment added) {
+        try {
+            added.deleteFile();
+        } catch (final Throwable ignored) {
+            // Best effort: the report is already being processed without it.
         }
     }
 
@@ -375,7 +459,8 @@ final class ReportOps {
             @NonNull final Report report,
             @Nullable final byte[] data,
             @Nullable final String name,
-            @Nullable final String mimeType
+            @Nullable final String mimeType,
+            @NonNull final Window window
     ) throws BadArgument, Refused {
         final String checkedName = checkedName(name);
         final String checkedMime = checkedMimeType(mimeType);
@@ -386,8 +471,31 @@ final class ReportOps {
             throw new Refused(TOO_LARGE);
         }
         requireRoomForAttachment(report);
-        if (report.addAttachment(data, checkedName, checkedMime) == null) {
+        if (window.closed()) {
             throw new Refused(REJECTED);
+        }
+        final Attachment added = report.addAttachment(data, checkedName, checkedMime);
+        if (added == null) {
+            throw new Refused(REJECTED);
+        }
+        if (window.closed()) {
+            undo(added);
+            throw new Refused(REJECTED);
+        }
+    }
+
+    /** A file that exists and is empty is refused for a created report (see the flow). */
+    static void requireNonEmpty(@Nullable final String path) throws BadArgument {
+        final File file = checkedPath(path);
+        if (file.isFile() && file.length() == 0L) {
+            throw new BadArgument("a created-report attachment must not be empty");
+        }
+    }
+
+    /** One file of at most {@link #MAX_ATTACHMENT_FILE_BYTES}; the size of what a link points at. */
+    private static void requireFileSize(@NonNull final File file) throws Refused {
+        if (file.length() > MAX_ATTACHMENT_FILE_BYTES) {
+            throw new Refused(TOO_LARGE);
         }
     }
 

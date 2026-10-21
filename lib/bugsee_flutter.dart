@@ -29,6 +29,7 @@ export 'src/report/attachments.dart'
         ReportAttachmentFailure,
         ReportScreenshot,
         maxAttachmentBytes,
+        maxAttachmentFileBytes,
         maxScreenshotPixels;
 export 'src/report/created_report.dart'
     show

@@ -10,6 +10,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// The reply codes of `createReport` (PlatformException codes; Dart: `ReportWire`).
 FOUNDATION_EXPORT NSString *const BGSFlutterCreateBusy;
 FOUNDATION_EXPORT NSString *const BGSFlutterCreateTimeout;
+FOUNDATION_EXPORT NSString *const BGSFlutterCreateRateLimited;
+/// The SDK did not say, in time, whether it took the uploaded report; it may still send it.
+FOUNDATION_EXPORT NSString *const BGSFlutterUploadTimeout;
+/// A created report that is not (or no longer) live: uploaded, discarded, expired or released.
+FOUNDATION_EXPORT NSString *const BGSFlutterFlowNotLive;
+FOUNDATION_EXPORT const int64_t BGSFlutterUploadTimeoutMs;
 /// The facade's codes, for an argument or an SDK fault (`BGSFlutterFacadeOps`).
 FOUNDATION_EXPORT NSString *const BGSFlutterFlowInvalidArgument;
 FOUNDATION_EXPORT NSString *const BGSFlutterFlowSdkError;
@@ -55,7 +61,10 @@ typedef void (^BGSFlutterFlowMain)(dispatch_block_t task);
                           worker:(BGSFlutterFlowWorker)worker
                             main:(BGSFlutterFlowMain)main
                              sdk:(id<BGSFlutterCreatedReportSdk>)sdk
-                createTimeoutMs:(int64_t)createTimeoutMs NS_DESIGNATED_INITIALIZER;
+                       scheduler:(BGSFlutterCreatedScheduler)scheduler
+                          cancel:(BGSFlutterCreatedCancel)cancel
+                createTimeoutMs:(int64_t)createTimeoutMs
+                  uploadTimeoutMs:(int64_t)uploadTimeoutMs NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
 // ---- A handler's report. The reply value is nil (done) or the failure code string. ----
@@ -79,9 +88,10 @@ typedef void (^BGSFlutterFlowMain)(dispatch_block_t task);
 - (void)handlerRemoveScreenshot:(NSString *)handle displayId:(int64_t)displayId reply:(BGSFlutterFlowReply)reply;
 
 // ---- createReport ----
-/// Replies with the handle (nil when the SDK made none), or an error code (`create-busy` on the calling
-/// thread, `create-timeout`, `sdk-error`).
-- (void)createWithTtlMs:(int64_t)ttlMs reply:(BGSFlutterFlowReply)reply;
+/// Replies with the handle (nil when the SDK made none), or an error code (`create-busy` and
+/// `create-rate-limited` on the calling thread, `create-timeout`, `sdk-error`). `owner` is the engine
+/// asking; only `-resetOwner:` for the same one releases the report.
+- (void)createForOwner:(id)owner ttlMs:(int64_t)ttlMs reply:(BGSFlutterFlowReply)reply;
 - (nullable BGSFlutterCreatedReportSnapshot *)readCreated:(NSString *)handle;
 /// NO when the handle is not live; the message is set (and nothing applied) for a bad field.
 - (BOOL)applyToCreated:(NSString *)handle patch:(BGSFlutterCreatedReportPatch *)patch message:(NSString *_Nullable *_Nullable)message;
@@ -97,11 +107,12 @@ typedef void (^BGSFlutterFlowMain)(dispatch_block_t task);
                  reply:(BGSFlutterFlowReply)reply;
 - (void)createdClearAttachments:(NSString *)handle reply:(BGSFlutterFlowReply)reply;
 - (void)createdSetScreenshot:(NSString *)handle path:(NSString *)path annotated:(BOOL)annotated reply:(BGSFlutterFlowReply)reply;
-/// Replies with an NSNumber bool: whether the SDK handed the report off. NO for a handle that is not live.
+/// Replies with an NSNumber bool: whether the SDK handed the report off (NO: it declined). A handle that is
+/// not live is the error `not-live`; an SDK that does not answer in time is `upload-timeout`.
 - (void)uploadCreated:(NSString *)handle reply:(BGSFlutterFlowReply)reply;
 - (void)discardCreated:(NSString *)handle;
-/// A new Dart isolate: the old one's created report is released now, not at its deadline.
-- (void)reset;
+/// The engine's Dart isolate is new (a hot restart) or gone: only ITS created report is released now.
+- (void)resetOwner:(id)owner;
 
 @end
 

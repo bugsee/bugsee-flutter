@@ -121,6 +121,19 @@ void main() {
           ),
         ),
       );
+      native.failing['createReport'] = PlatformException(
+        code: 'create-rate-limited',
+      );
+      await expectLater(
+        Bugsee.createReport(),
+        throwsA(
+          isA<CreateReportException>().having(
+            (e) => e.reason,
+            'reason',
+            CreateReportFailure.rateLimited,
+          ),
+        ),
+      );
       native.failing['createReport'] = PlatformException(code: 'sdk-error');
       await expectLater(Bugsee.createReport(), throwsA(isA<BugseeException>()));
     });
@@ -320,6 +333,53 @@ void main() {
       );
       expect(callsOf('createdReportUpload'), ['createdReportUpload(cr-1)']);
       expect(callsOf('createdReportApply'), isEmpty);
+    });
+
+    test(
+      'native saying not-live to an upload is a CreatedReportClosedError, not false',
+      () async {
+        final report = (await Bugsee.createReport())!;
+        native.failing['createdReportUpload'] = PlatformException(
+          code: 'not-live',
+        );
+        await expectLater(
+          report.upload(),
+          throwsA(isA<CreatedReportClosedError>()),
+        );
+        expect(report.isLive, isFalse);
+      },
+    );
+
+    test('an SDK that never answers the upload is a typed timeout', () async {
+      final report = (await Bugsee.createReport())!;
+      native.failing['createdReportUpload'] = PlatformException(
+        code: 'upload-timeout',
+      );
+      await expectLater(
+        report.upload(),
+        throwsA(
+          isA<CreateReportException>()
+              .having(
+                (e) => e.reason,
+                'reason',
+                CreateReportFailure.uploadTimeout,
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                contains('do not upload it again'),
+              ),
+        ),
+      );
+      expect(report.isLive, isFalse);
+    });
+
+    test('an unknown upload failure stays a platform error', () async {
+      final report = (await Bugsee.createReport())!;
+      native.failing['createdReportUpload'] = PlatformException(
+        code: 'sdk-error',
+      );
+      await expectLater(report.upload(), throwsA(isA<PlatformException>()));
     });
 
     test('two overlapping uploads cross once', () async {

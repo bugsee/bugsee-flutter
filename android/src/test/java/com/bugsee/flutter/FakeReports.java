@@ -60,6 +60,17 @@ final class FakeReports {
         boolean refuseAdds;
         /** Where the model SDK stores what it was given; null: it stores nothing. */
         File storage;
+        /**
+         * Runs inside an add, after the file was imported and BEFORE the attachment is registered: the
+         * moment the SDK's own handler timer can fire. The model SDK, like Android 7.4.2
+         * (IssueReport.java:292-299, :361-372), checks that the report takes attachments only before the
+         * import and registers WITHOUT looking again, so whatever this does, the add still lands.
+         */
+        Runnable duringAdd;
+        /** Runs when {@code clearAttachments} is called (on whatever thread called it). */
+        Runnable onClear;
+        /** The names of the attachments whose stored file was deleted ({@code Attachment.deleteFile}). */
+        final List<String> deleted = new ArrayList<>();
         /** displayId -> {Bitmap, Boolean annotated}, ascending like the SDK's. */
         final TreeMap<Integer, Object[]> screenshots = new TreeMap<>();
 
@@ -111,6 +122,10 @@ final class FakeReports {
         final String name = (String) args[1];
         final String mime = (String) args[2];
         final String fileName = file ? ((File) args[0]).getName() : name;
+        final File stored = s.storage == null ? null : new File(s.storage, "stored-" + s.attachments.size() + ".attachment.bgsfile");
+        if (s.duringAdd != null) {
+            s.duringAdd.run();
+        }
         final Attachment attachment = (Attachment) Proxy.newProxyInstance(
                 Attachment.class.getClassLoader(),
                 new Class<?>[] {Attachment.class},
@@ -122,6 +137,9 @@ final class FakeReports {
                             return mime;
                         case "getFileName":
                             return fileName;
+                        case "deleteFile":
+                            s.deleted.add(name);
+                            return stored == null || !stored.exists() || stored.delete();
                         case "hashCode":
                             return System.identityHashCode(p);
                         case "equals":
@@ -217,6 +235,9 @@ final class FakeReports {
                 return addAttachment(s, args);
             case "clearAttachments":
                 s.attachments.clear();
+                if (s.onClear != null) {
+                    s.onClear.run();
+                }
                 return null;
             case "getScreenshotDisplayIds":
                 return new ArrayList<>(s.screenshots.keySet());

@@ -59,21 +59,31 @@ final class ReportFileFlow {
 
     /** One file operation on a report; refuses with a reply code, or rejects its argument. */
     interface FileOp {
-        void apply(@NonNull Report report) throws ReportOps.BadArgument, ReportOps.Refused;
+        void apply(@NonNull Report report, @NonNull ReportOps.Window window)
+                throws ReportOps.BadArgument, ReportOps.Refused;
     }
 
     /** The reply codes of {@code createReport} (PlatformException codes; Dart: ReportWire). */
     static final String CREATE_BUSY = "create-busy";
     static final String CREATE_TIMEOUT = "create-timeout";
+    static final String CREATE_RATE_LIMITED = "create-rate-limited";
+    /** The SDK did not say, in time, whether it took the uploaded report; it may still send it. */
+    static final String UPLOAD_TIMEOUT = "upload-timeout";
+    /** A created report that is not (or no longer) live: uploaded, discarded, expired or released. */
+    static final String NOT_LIVE = "not-live";
 
     /** How long the SDK may take to answer {@code createReport}: it runs the before handler (20 s) first. */
     static final long CREATE_TIMEOUT_MS = 45_000L;
+
+    /** How long the SDK may take to say it took an uploaded report (its callback runs after the after-handler). */
+    static final long UPLOAD_TIMEOUT_MS = 45_000L;
 
     private static final class Holder {
         static final ReportFileFlow INSTANCE = new ReportFileFlow(
                 ReportHandlerPipeline.shared(),
                 CreatedReports.shared(),
                 ReportFileWorker.shared()::execute,
+                ReportFileWorker.created()::execute,
                 BugseeFlutterPlugin::postToMain,
                 new BitmapImages(),
                 new Sdk() {
@@ -87,7 +97,9 @@ final class ReportFileFlow {
                         Bugsee.upload(report, done);
                     }
                 },
-                CREATE_TIMEOUT_MS);
+                new ReportHandlerPipeline.DaemonScheduler(),
+                CREATE_TIMEOUT_MS,
+                UPLOAD_TIMEOUT_MS);
     }
 
     @NonNull
@@ -97,28 +109,39 @@ final class ReportFileFlow {
 
     private final ReportHandlerPipeline pipeline;
     private final CreatedReports created;
+    /** A handler report's file work. A slow copy here must not hold up a created report. */
     private final Worker worker;
+    /** A created report's operations, its upload and every discard. */
+    private final Worker createdWorker;
     private final Main main;
     private final ReportOps.ImageDecoder images;
     private final Sdk sdk;
+    private final ReportHandlerPipeline.Scheduler scheduler;
     private final long createTimeoutMs;
+    private final long uploadTimeoutMs;
 
     ReportFileFlow(
             @NonNull final ReportHandlerPipeline pipeline,
             @NonNull final CreatedReports created,
             @NonNull final Worker worker,
+            @NonNull final Worker createdWorker,
             @NonNull final Main main,
             @NonNull final ReportOps.ImageDecoder images,
             @NonNull final Sdk sdk,
-            final long createTimeoutMs
+            @NonNull final ReportHandlerPipeline.Scheduler scheduler,
+            final long createTimeoutMs,
+            final long uploadTimeoutMs
     ) {
         this.pipeline = pipeline;
         this.created = created;
         this.worker = worker;
+        this.createdWorker = createdWorker;
         this.main = main;
         this.images = images;
         this.sdk = sdk;
+        this.scheduler = scheduler;
         this.createTimeoutMs = createTimeoutMs;
+        this.uploadTimeoutMs = uploadTimeoutMs;
     }
 
     // ---- shared plumbing -----------------------------------------------------------------------
@@ -166,8 +189,14 @@ final class ReportFileFlow {
         }
         final boolean queued = worker.execute(() -> {
             try {
-                op.apply(lease.report());
-                answer(reply, null);
+                if (lease.windowClosed()) {
+                    // Queued behind a slow copy, and the handler's window ran out meanwhile: the SDK has
+                    // moved on (or is about to), so nothing is started. Nothing was touched.
+                    answer(reply, ReportOps.NOT_LIVE);
+                } else {
+                    op.apply(lease.report(), lease::windowClosed);
+                    answer(reply, null);
+                }
             } catch (final Throwable t) {
                 failure(reply, t);
             } finally {
@@ -194,17 +223,25 @@ final class ReportFileFlow {
         }
     };
 
-    /** The discard waits behind any file operation already queued for the report. */
+    /**
+     * Deletes the attachments of a report that will not be sent, behind any operation already queued for
+     * it. Never inline: this runs from timers and from the platform thread, and deleting up to 1000
+     * files (or racing a copy still in flight on the worker) is neither's business. A full queue gets a
+     * short-lived thread of its own, still off the callers' threads.
+     */
     private void discardBehindQueue(@NonNull final Report report) {
-        if (!worker.execute(() -> CreatedReportOps.discard(report))) {
-            CreatedReportOps.discard(report);
+        final Runnable discard = () -> CreatedReportOps.discard(report);
+        if (!createdWorker.execute(discard)) {
+            final Thread thread = new Thread(discard, "bugsee-flutter-discard");
+            thread.setDaemon(true);
+            thread.start();
         }
     }
 
-    void create(final long ttlMs, @NonNull final Reply<String> reply) {
+    void create(@NonNull final Object owner, final long ttlMs, @NonNull final Reply<String> reply) {
         final AtomicBoolean answered = new AtomicBoolean();
         // The slot is taken before the SDK is asked: its listener answers later, on its own thread.
-        final int stamp = created.reserve(createTimeoutMs, new CreatedReports.Expiry() {
+        final int stamp = created.reserve(owner, createTimeoutMs, new CreatedReports.Expiry() {
             @Override
             public void createTimedOut() {
                 if (answered.compareAndSet(false, true)) {
@@ -217,6 +254,10 @@ final class ReportFileFlow {
                 // A reservation holds no report.
             }
         });
+        if (stamp == CreatedReports.RATE_LIMITED) {
+            reply.error(CREATE_RATE_LIMITED, "too many created reports were started; the SDK cannot cancel one");
+            return;
+        }
         if (stamp == 0) {
             // On the caller's thread, already the platform thread.
             reply.error(CREATE_BUSY, "a created report is already outstanding");
@@ -231,7 +272,7 @@ final class ReportFileFlow {
                     // Nothing to register; the report is discarded below.
                 }
                 if (handle == null && report != null) {
-                    // Refused (timed out, or cleared by a reset): nobody will use this report.
+                    // Refused (timed out, or released by its engine's reset): nobody will use it.
                     discardBehindQueue(report);
                 }
                 final String minted = handle;
@@ -283,9 +324,9 @@ final class ReportFileFlow {
             answer(reply, ReportOps.NOT_LIVE);
             return;
         }
-        final boolean queued = worker.execute(() -> {
+        final boolean queued = createdWorker.execute(() -> {
             try {
-                op.apply(report);
+                op.apply(report, ReportOps.OPEN);
                 answer(reply, null);
             } catch (final Throwable t) {
                 failure(reply, t);
@@ -304,7 +345,11 @@ final class ReportFileFlow {
             @Nullable final String mimeType,
             @NonNull final Reply<String> reply
     ) {
-        createdOp(handle, report -> ReportOps.addFile(report, path, name, mimeType, false), reply);
+        createdOp(handle, (report, window) -> {
+            // iOS drops an empty file at upload, so neither platform takes one.
+            ReportOps.requireNonEmpty(path);
+            ReportOps.addFile(report, path, name, mimeType, false, window);
+        }, reply);
     }
 
     /** Non-empty only: iOS would drop an empty one at upload, so neither platform takes it. */
@@ -315,11 +360,11 @@ final class ReportFileFlow {
             @Nullable final String mimeType,
             @NonNull final Reply<String> reply
     ) {
-        createdOp(handle, report -> {
+        createdOp(handle, (report, window) -> {
             if (data.length == 0) {
                 throw new ReportOps.BadArgument("a created-report attachment must not be empty");
             }
-            ReportOps.addBytes(report, data, name, mimeType);
+            ReportOps.addBytes(report, data, name, mimeType, window);
         }, reply);
     }
 
@@ -328,27 +373,52 @@ final class ReportFileFlow {
         // second upload (or any later call) finds nothing.
         final Report report = created.take(handle);
         if (report == null) {
-            answer(reply, false);
+            // Not "the SDK declined" (false): the report is gone (uploaded, discarded, expired).
+            fail(reply, NOT_LIVE, "the created report is not live");
             return;
         }
         final AtomicBoolean answered = new AtomicBoolean();
+        final java.util.concurrent.atomic.AtomicReference<ReportHandlerPipeline.Cancellable> timer =
+                new java.util.concurrent.atomic.AtomicReference<>();
         final Runnable send = () -> {
             try {
                 sdk.upload(report, ok -> {
                     if (answered.compareAndSet(false, true)) {
+                        cancel(timer.getAndSet(null));
                         answer(reply, Boolean.TRUE.equals(ok));
                     }
                 });
             } catch (final Throwable t) {
                 if (answered.compareAndSet(false, true)) {
+                    cancel(timer.getAndSet(null));
                     fail(reply, FacadeOps.SDK_ERROR, "upload: " + t.getClass().getName());
                 }
             }
         };
+        // A deadline on the SDK's answer: its callback runs after the after-handler and the scheduling,
+        // and nothing says it must come. Exactly one answer wins (the flag); a callback that arrives
+        // after the timeout is ignored. The report may still be sent: the error says so.
+        timer.set(scheduler.schedule(() -> {
+            if (answered.compareAndSet(false, true)) {
+                fail(reply, UPLOAD_TIMEOUT, "the SDK did not say in time whether it took the report");
+            }
+        }, uploadTimeoutMs));
         // Behind the file operations already queued for this report, so an attachment the app did or
         // did not await is in the report when the SDK processes it.
-        if (!worker.execute(send)) {
-            send.run();
+        if (!createdWorker.execute(send)) {
+            final Thread thread = new Thread(send, "bugsee-flutter-upload");
+            thread.setDaemon(true);
+            thread.start();
+        }
+    }
+
+    private static void cancel(@Nullable final ReportHandlerPipeline.Cancellable timer) {
+        if (timer != null) {
+            try {
+                timer.cancel();
+            } catch (final Throwable ignored) {
+                // The timer then fires into a decided answer and does nothing.
+            }
         }
     }
 
@@ -359,9 +429,9 @@ final class ReportFileFlow {
         }
     }
 
-    /** A new Dart isolate: the old one's created report is released now, not at its deadline. */
-    void reset() {
-        final Report orphan = created.clear();
+    /** The engine's Dart isolate is new (a hot restart) or gone: only ITS created report is released. */
+    void reset(@NonNull final Object owner) {
+        final Report orphan = created.clearOwner(owner);
         if (orphan != null) {
             discardBehindQueue(orphan);
         }

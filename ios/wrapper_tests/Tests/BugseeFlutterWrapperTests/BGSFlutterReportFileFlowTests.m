@@ -93,6 +93,9 @@
   BGSFlowSdk *_sdk;
   NSMutableArray<BGSFlowTask *> *_createdTimers;
   NSMutableArray<BGSFlowTask *> *_pipelineTimers;
+  NSMutableArray<BGSFlowTask *> *_uploadTimers;
+  int64_t _clockMs;
+  id _engine;
   BGSFlutterReportHandlerPipeline *_pipeline;
   BGSFlutterReportFileFlow *_flow;
   BGSFlutterFakeReport *_handlerReport;
@@ -109,6 +112,9 @@
   _sdk = [[BGSFlowSdk alloc] init];
   _createdTimers = [NSMutableArray array];
   _pipelineTimers = [NSMutableArray array];
+  _uploadTimers = [NSMutableArray array];
+  _clockMs = 0;
+  _engine = [NSObject new];
   _completions = 0;
   _handlerReport = [[BGSFlutterFakeReport alloc] init];
   _dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
@@ -132,6 +138,9 @@
         task();
       }
       log:^(NSString *line) {
+      }
+      clock:^int64_t {
+        return [weak clockForTest];
       }];
   BGSFlutterCreatedReports *created = [[BGSFlutterCreatedReports alloc]
       initWithScheduler:^id(dispatch_block_t task, int64_t delayMs) {
@@ -142,6 +151,9 @@
       }
       cancel:^(id token) {
         ((BGSFlowTask *)token).cancelled = YES;
+      }
+      clock:^int64_t {
+        return 0;
       }];
   _flow = [[BGSFlutterReportFileFlow alloc] initWithPipeline:_pipeline
                                                      created:created
@@ -152,7 +164,19 @@
                                                           [weak mainForTest:task];
                                                         }
                                                          sdk:_sdk
-                                             createTimeoutMs:45000];
+                                                   scheduler:^id(dispatch_block_t task, int64_t delayMs) {
+                                                     BGSFlowTask *t = [[BGSFlowTask alloc] init];
+                                                     t.block = task;
+                                                     [[weak uploadTimersForTest] addObject:t];
+                                                     return t;
+                                                   }
+                                                      cancel:^(id token) {
+                                                        BGSFlowTask *t = token;
+                                                        t.cancelled = YES;
+                                                        [[weak uploadTimersForTest] removeObject:t];
+                                                      }
+                                             createTimeoutMs:45000
+                                             uploadTimeoutMs:45000];
 }
 
 - (void)tearDown {
@@ -161,6 +185,12 @@
 
 - (NSMutableArray<BGSFlowTask *> *)pipelineTimersForTest {
   return _pipelineTimers;
+}
+- (int64_t)clockForTest {
+  return _clockMs;
+}
+- (NSMutableArray<BGSFlowTask *> *)uploadTimersForTest {
+  return _uploadTimers;
 }
 - (NSMutableArray<BGSFlowTask *> *)createdTimersForTest {
   return _createdTimers;
@@ -326,7 +356,7 @@
 }
 
 - (NSString *)createWith:(NSMutableArray *)got report:(id)report {
-  [_flow createWithTtlMs:600000 reply:[self collector:got]];
+  [_flow createForOwner:_engine ttlMs:600000 reply:[self collector:got]];
   XCTAssertNotNil(_sdk.createCompletion, @"the SDK was asked");
   _sdk.createCompletion(report);
   [_main drain];
@@ -346,7 +376,7 @@
 - (void)testASecondCreateWhileOneIsOutstandingIsBusyOnTheCallingThread {
   [self createWith:[NSMutableArray array] report:[self newCreated]];
   NSMutableArray *second = [NSMutableArray array];
-  [_flow createWithTtlMs:1000 reply:^(id value, NSString *code, NSString *message) {
+  [_flow createForOwner:_engine ttlMs:1000 reply:^(id value, NSString *code, NSString *message) {
     [second addObject:code];
   }];
   XCTAssertEqualObjects(second, @[ BGSFlutterCreateBusy ], @"answered inline, no hop");
@@ -354,29 +384,29 @@
 
 - (void)testWhenTheSdkMakesNoReportTheAnswerIsNilAndTheSlotFree {
   NSMutableArray *got = [NSMutableArray array];
-  [_flow createWithTtlMs:1000 reply:[self collector:got]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
   _sdk.createCompletion(nil);
   [_main drain];
   XCTAssertEqualObjects(got, @[ @"ok" ]);
   _sdk.createCompletion = nil;
-  [_flow createWithTtlMs:1000 reply:[self collector:[NSMutableArray array]]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
   XCTAssertNotNil(_sdk.createCompletion, @"not busy");
 }
 
 - (void)testAnSdkThatThrowsFreesTheSlotAndIsAnErrorReply {
   _sdk.throwOnCreate = YES;
   NSMutableArray *got = [NSMutableArray array];
-  [_flow createWithTtlMs:1000 reply:[self collector:got]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
   [_main drain];
   XCTAssertEqualObjects(got, @[ @"error:sdk-error" ]);
   _sdk.throwOnCreate = NO;
-  [_flow createWithTtlMs:1000 reply:[self collector:[NSMutableArray array]]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
   XCTAssertNotNil(_sdk.createCompletion, @"the slot is free");
 }
 
 - (void)testAnSdkThatNeverAnswersTimesOutAndItsLateReportIsNotPublished {
   NSMutableArray *got = [NSMutableArray array];
-  [_flow createWithTtlMs:1000 reply:[self collector:got]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
   void (^late)(id) = _sdk.createCompletion;
   _createdTimers.firstObject.block();
   [_main drain];
@@ -385,7 +415,7 @@
   [_main drain];
   XCTAssertEqual(got.count, 1u, @"no second reply");
   _sdk.createCompletion = nil;
-  [_flow createWithTtlMs:1000 reply:[self collector:[NSMutableArray array]]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
   XCTAssertNotNil(_sdk.createCompletion, @"the slot is not held by it");
 }
 
@@ -437,13 +467,13 @@
   [_flow uploadCreated:handle reply:[self collector:first]];
   [_flow uploadCreated:handle reply:[self collector:second]];
   [_main drain];
-  XCTAssertEqualObjects(second, @[ @NO ]);
+  XCTAssertEqualObjects(second, @[ @"error:not-live" ], @"not 'the SDK declined': the report is gone");
   XCTAssertEqual(_sdk.uploaded.count, 1u);
   _sdk.uploadDone();
   [_main drain];
   XCTAssertEqualObjects(first, @[ @YES ]);
   _sdk.createCompletion = nil;
-  [_flow createWithTtlMs:1000 reply:[self collector:[NSMutableArray array]]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
   XCTAssertNotNil(_sdk.createCompletion, @"not busy");
 }
 
@@ -474,15 +504,15 @@
   ttl.block();
   XCTAssertNil([_flow readCreated:handle]);
   _sdk.createCompletion = nil;
-  [_flow createWithTtlMs:1000 reply:[self collector:[NSMutableArray array]]];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:[NSMutableArray array]]];
   XCTAssertNotNil(_sdk.createCompletion, @"not busy");
 }
 
 - (void)testAResetReleasesTheOrphan {
   NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
-  [_flow reset];
+  [_flow resetOwner:_engine];
   XCTAssertNil([_flow readCreated:handle]);
-  [_flow reset];
+  [_flow resetOwner:_engine];
 }
 
 - (void)testApplyIsNoForADeadHandleAndAppliesToALiveOne {
@@ -499,6 +529,116 @@
   p.severity = @9;
   XCTAssertTrue([_flow applyToCreated:handle patch:p message:&message]);
   XCTAssertNotNil(message, @"a bad field is a message, not an application");
+}
+
+
+#pragma mark - Phase 6 review
+
+- (void)testAnUploadTheSdkNeverAnswersFailsClosedAndALateCompletionIsIgnored {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow uploadCreated:handle reply:[self collector:got]];
+  [_main drain];
+  XCTAssertEqual(_uploadTimers.count, 1u);
+  _uploadTimers.firstObject.block();
+  [_main drain];
+  XCTAssertEqualObjects(got, @[ @"error:upload-timeout" ]);
+  _sdk.uploadDone();  // the SDK answers after all
+  [_main drain];
+  XCTAssertEqual(got.count, 1u, @"exactly one answer");
+}
+
+- (void)testAnAnsweredUploadCancelsItsTimerAndALateTimerDoesNothing {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow uploadCreated:handle reply:[self collector:got]];
+  [_main drain];
+  BGSFlowTask *timer = _uploadTimers.firstObject;
+  _sdk.uploadDone();
+  [_main drain];
+  XCTAssertEqualObjects(got, @[ @YES ]);
+  XCTAssertTrue(timer.cancelled);
+  XCTAssertEqual(_uploadTimers.count, 0u);
+  timer.block();  // already started when the cancel came
+  [_main drain];
+  XCTAssertEqualObjects(got, @[ @YES ]);
+}
+
+- (void)testAnSdkThatThrowsOnUploadCancelsTheTimerToo {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  _sdk.throwOnUpload = YES;
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow uploadCreated:handle reply:[self collector:got]];
+  [self drainAll];
+  XCTAssertEqualObjects(got, @[ @"error:sdk-error" ]);
+  XCTAssertEqual(_uploadTimers.count, 0u);
+}
+
+- (void)testAHandlerOperationQueuedBehindASlowCopyDoesNotStartOnceTheWindowClosed {
+  NSString *handle = [self liveHandle];
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow handlerAddFile:handle path:_file name:@"late" mimeType:nil move:YES reply:[self collector:got]];
+  _clockMs = 25000;  // the slow copy ahead of it took the handler's window (20 s) and more
+  [_worker drain];
+  [_main drain];
+  XCTAssertEqualObjects(got, @[ BGSFlutterFileNotLive ]);
+  XCTAssertEqual(_handlerReport.adds.count, 0u, @"nothing was imported");
+  XCTAssertTrue([NSFileManager.defaultManager fileExistsAtPath:_file], @"and nothing was consumed");
+}
+
+- (void)testAnotherEnginesResetKeepsMyCreatedReport {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  [_flow resetOwner:[NSObject new]];
+  XCTAssertNotNil([_flow readCreated:handle]);
+  NSMutableArray *busy = [NSMutableArray array];
+  [_flow createForOwner:[NSObject new]
+                  ttlMs:1000
+                  reply:^(id value, NSString *code, NSString *message) {
+                    [busy addObject:code];
+                  }];
+  XCTAssertEqualObjects(busy, @[ BGSFlutterCreateBusy ]);
+  [_flow resetOwner:_engine];
+  XCTAssertNil([_flow readCreated:handle]);
+}
+
+- (void)testAnInFlightCreateSurvivesAnotherEnginesReset {
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow createForOwner:_engine ttlMs:600000 reply:[self collector:got]];
+  [_flow resetOwner:[NSObject new]];
+  _sdk.createCompletion([self newCreated]);
+  [_main drain];
+  XCTAssertEqualObjects(got, @[ @"cr-1" ]);
+}
+
+- (void)testAnInFlightCreateIsReleasedByItsOwnEnginesReset {
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow createForOwner:_engine ttlMs:600000 reply:[self collector:got]];
+  [_flow resetOwner:_engine];
+  _sdk.createCompletion([self newCreated]);
+  [_main drain];
+  XCTAssertEqualObjects(got, @[ @"ok" ], @"answered with none: the late report is not published");
+}
+
+- (void)testTooManyCreatesAreRateLimitedWithATypedCode {
+  for (NSUInteger i = 0; i < BGSFlutterCreatedRateLimit; i++) {
+    NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+    [_flow discardCreated:handle];
+    _sdk.createCompletion = nil;
+  }
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow createForOwner:_engine ttlMs:1000 reply:[self collector:got]];
+  XCTAssertEqualObjects(got, @[ @"error:create-rate-limited" ]);
+  XCTAssertNil(_sdk.createCompletion, @"the SDK was not asked");
+}
+
+- (void)testACreatedEmptyFileIsRefusedLikeEmptyBytes {
+  NSString *handle = [self createWith:[NSMutableArray array] report:[self newCreated]];
+  NSString *empty = [_dir stringByAppendingPathComponent:@"empty.txt"];
+  [[NSData data] writeToFile:empty atomically:YES];
+  NSMutableArray *got = [NSMutableArray array];
+  [_flow createdAddFile:handle path:empty name:@"e" mimeType:nil reply:[self collector:got]];
+  [self drainAll];
+  XCTAssertEqualObjects(got, @[ @"error:invalid-argument" ]);
 }
 
 @end

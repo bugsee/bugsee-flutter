@@ -105,6 +105,10 @@ public class ReportFileFlowTest {
     }
 
     private final Queue worker = new Queue();
+    private final Queue createdWorker = new Queue();
+    private final ManualScheduler uploadTimers = new ManualScheduler();
+    private final Object owner = new Object();
+    private final long[] clockMs = {0L};
     private final Queue main = new Queue();
     private final FakeSdk sdk = new FakeSdk();
     private final ManualScheduler createdTimers = new ManualScheduler();
@@ -122,13 +126,13 @@ public class ReportFileFlowTest {
                 pipelineTimers, task -> {
                     task.run();
                     return true;
-                }, () -> null, () -> ReportHandlerDeadlines.LIVE_HANDLER_THREAD, line -> { });
+                }, () -> null, () -> ReportHandlerDeadlines.LIVE_HANDLER_THREAD, line -> { }, () -> clockMs[0]);
         flow = new ReportFileFlow(
-                pipeline, new CreatedReports(createdTimers), worker::execute, main::execute,
+                pipeline, new CreatedReports(createdTimers, () -> 0L), worker::execute, createdWorker::execute, main::execute,
                 (f, max) -> {
                     throw new ReportOps.Refused(ReportOps.IMAGE_UNDECODABLE);
                 },
-                sdk, 45_000L);
+                sdk, uploadTimers, 45_000L, 45_000L);
         handlerState.storage = tmp.newFolder("handler-storage");
         createdState.storage = tmp.newFolder("created-storage");
         file = tmp.newFile("a.txt");
@@ -148,6 +152,7 @@ public class ReportFileFlowTest {
 
     private void drainAll() {
         worker.drain();
+        createdWorker.drain();
         main.drain();
     }
 
@@ -157,7 +162,7 @@ public class ReportFileFlowTest {
     public void aHandlersFileOperationRunsOnTheWorkerAndRepliesOnTheMainThread() throws Exception {
         final String handle = liveHandle();
         final Replies<String> reply = new Replies<>();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, file.getPath(), "a", null, false), reply);
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "a", null, false, w), reply);
         assertTrue("nothing ran on the calling (platform) thread", handlerState.adds.isEmpty());
         assertEquals(1, worker.tasks.size());
         worker.drain();
@@ -170,7 +175,7 @@ public class ReportFileFlowTest {
     @Test
     public void aHandleThatIsNotLiveAnswersNotLiveAndTouchesNothing() {
         final Replies<String> reply = new Replies<>();
-        flow.handlerOp("rh-nope", r -> ReportOps.addFile(r, file.getPath(), "a", null, true), reply);
+        flow.handlerOp("rh-nope", (r, w) -> ReportOps.addFile(r, file.getPath(), "a", null, true, w), reply);
         assertEquals(0, worker.tasks.size());
         main.drain();
         assertEquals(List.of(ReportOps.NOT_LIVE), reply.got);
@@ -181,9 +186,9 @@ public class ReportFileFlowTest {
     public void aRefusalIsACodeAndABadArgumentAnErrorReply() throws Exception {
         final String handle = liveHandle();
         final Replies<String> reply = new Replies<>();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, "/no/such/file", "a", null, false), reply);
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, "relative", "a", null, false), reply);
-        flow.handlerOp(handle, r -> {
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, "/no/such/file", "a", null, false, w), reply);
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, "relative", "a", null, false, w), reply);
+        flow.handlerOp(handle, (r, w) -> {
             throw new IllegalStateException("the SDK threw with /secret/path in it");
         }, reply);
         drainAll();
@@ -195,7 +200,7 @@ public class ReportFileFlowTest {
         final String handle = liveHandle();
         worker.accept = false;
         final Replies<String> reply = new Replies<>();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, file.getPath(), "a", null, true), reply);
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "a", null, true, w), reply);
         main.drain();
         assertEquals(List.of(ReportOps.BUSY), reply.got);
         assertTrue("a refused move did not consume the file", file.exists());
@@ -208,13 +213,13 @@ public class ReportFileFlowTest {
     public void theSdksCompletionWaitsForAFileOperationThatStartedWhileTheHandleWasLive() throws Exception {
         final String handle = liveHandle();
         final Replies<String> reply = new Replies<>();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, file.getPath(), "a", null, false), reply);
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "a", null, false, w), reply);
         // The handler returns (Dart completes the handle) BEFORE the worker got to the copy.
         assertTrue(pipeline.complete(handle));
         assertEquals("the completion waits for the claim", 0, completions.get());
         assertNull("and the handle is no longer live for new edits", pipeline.reportFor(handle));
         final Replies<String> late = new Replies<>();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, file.getPath(), "late", null, false), late);
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "late", null, false, w), late);
         main.drain();
         assertEquals(List.of(ReportOps.NOT_LIVE), late.got);
 
@@ -229,7 +234,7 @@ public class ReportFileFlowTest {
     @Test
     public void theDeadlineAlsoWaitsForTheClaimAndRunsTheCompletionOnce() throws Exception {
         final String handle = liveHandle();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, file.getPath(), "a", null, false), new Replies<>());
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "a", null, false, w), new Replies<>());
         for (final Runnable timer : new ArrayList<>(pipelineTimers.tasks)) {
             timer.run();
         }
@@ -243,8 +248,8 @@ public class ReportFileFlowTest {
     @Test
     public void twoOperationsOnOneHandleCompleteAfterTheLastOne() throws Exception {
         final String handle = liveHandle();
-        flow.handlerOp(handle, r -> ReportOps.addFile(r, file.getPath(), "1", null, false), new Replies<>());
-        flow.handlerOp(handle, r -> ReportOps.addBytes(r, new byte[1], "2", null), new Replies<>());
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "1", null, false, w), new Replies<>());
+        flow.handlerOp(handle, (r, w) -> ReportOps.addBytes(r, new byte[1], "2", null, w), new Replies<>());
         pipeline.complete(handle);
         final Runnable first = worker.tasks.poll();
         first.run();
@@ -257,7 +262,7 @@ public class ReportFileFlowTest {
     // ---- createReport ---------------------------------------------------------------------------------
 
     private String create(final Replies<String> reply) {
-        flow.create(600_000L, reply);
+        flow.create(owner, 600_000L, reply);
         assertNotNull("the SDK was asked", sdk.listener);
         sdk.listener.onCreated(FakeReports.create(createdState));
         main.drain();
@@ -279,19 +284,19 @@ public class ReportFileFlowTest {
         final Replies<String> first = new Replies<>();
         create(first);
         final Replies<String> second = new Replies<>();
-        flow.create(1000L, second);
+        flow.create(owner, 1000L, second);
         assertEquals("answered inline, no hop", List.of("error:create-busy"), second.got);
     }
 
     @Test
     public void whenTheSdkMakesNoReportTheAnswerIsNullAndTheSlotFree() {
         final Replies<String> reply = new Replies<>();
-        flow.create(1000L, reply);
+        flow.create(owner, 1000L, reply);
         sdk.listener.onCreated(null);
         main.drain();
         assertEquals(List.of("ok"), reply.got);
         final Replies<String> again = new Replies<>();
-        flow.create(1000L, again);
+        flow.create(owner, 1000L, again);
         assertNotNull("not busy", sdk.listener);
     }
 
@@ -299,33 +304,33 @@ public class ReportFileFlowTest {
     public void anSdkThatThrowsFreesTheSlotAndIsAnErrorReply() {
         sdk.throwOnCreate = true;
         final Replies<String> reply = new Replies<>();
-        flow.create(1000L, reply);
+        flow.create(owner, 1000L, reply);
         main.drain();
         assertEquals(List.of("error:sdk-error"), reply.got);
         sdk.throwOnCreate = false;
         final Replies<String> again = new Replies<>();
-        flow.create(1000L, again);
+        flow.create(owner, 1000L, again);
         assertTrue("the slot is free", again.got.isEmpty() && sdk.listener != null);
     }
 
     @Test
     public void anSdkThatNeverAnswersTimesOutAndItsLateReportIsDiscardedNotPublished() throws Exception {
         final Replies<String> reply = new Replies<>();
-        flow.create(1000L, reply);
+        flow.create(owner, 1000L, reply);
         final ReportCreationListener late = sdk.listener;
         createdTimers.tasks.get(0).run(); // the create timeout
         main.drain();
         assertEquals(List.of("error:create-timeout"), reply.got);
         // The SDK answers after all.
-        ReportOps.addBytes(FakeReports.create(createdState), new byte[1], "kept", null);
+        ReportOps.addBytes(FakeReports.create(createdState), new byte[1], "kept", null, ReportOps.OPEN);
         late.onCreated(FakeReports.create(createdState));
-        worker.drain();
+        createdWorker.drain();
         main.drain();
         assertEquals("no second reply", 1, reply.got.size());
         assertTrue("its attachments were deleted", createdState.calls.contains("clearAttachments"));
         // And the slot is not held by it.
         final Replies<String> next = new Replies<>();
-        flow.create(1000L, next);
+        flow.create(owner, 1000L, next);
         assertTrue(next.got.isEmpty());
     }
 
@@ -335,7 +340,7 @@ public class ReportFileFlowTest {
         final Replies<String> reply = new Replies<>();
         flow.createdAddFile(handle, file.getPath(), "a", "text/plain", reply);
         flow.createdAddBytes(handle, new byte[] {9}, "b", null, reply);
-        assertEquals(2, worker.tasks.size());
+        assertEquals(2, createdWorker.tasks.size());
         assertTrue(createdState.adds.isEmpty());
         drainAll();
         assertEquals(List.of("ok", "ok"), reply.got);
@@ -361,7 +366,7 @@ public class ReportFileFlowTest {
         flow.createdAddFile("cr-77", file.getPath(), "a", null, reply);
         main.drain();
         assertEquals(List.of(ReportOps.NOT_LIVE), reply.got);
-        assertEquals(0, worker.tasks.size());
+        assertEquals(0, createdWorker.tasks.size());
     }
 
     @Test
@@ -376,7 +381,7 @@ public class ReportFileFlowTest {
         main.drain();
         assertEquals("a call after the upload finds nothing", List.of(ReportOps.NOT_LIVE), after.got);
 
-        worker.drain();
+        createdWorker.drain();
         assertEquals("the add ran first, then the SDK was handed the report", 1, createdState.adds.size());
         assertEquals(1, sdk.uploaded.size());
         assertNotNull(sdk.uploadDone);
@@ -394,22 +399,26 @@ public class ReportFileFlowTest {
         final Replies<Boolean> second = new Replies<>();
         flow.upload(handle, second);
         main.drain();
-        assertEquals(List.of(false), second.got);
-        worker.drain();
+        assertEquals("not 'the SDK declined': the report is gone", List.of("error:not-live"), second.got);
+        createdWorker.drain();
         assertEquals(1, sdk.uploaded.size());
         sdk.uploadDone.run(false);
         main.drain();
         assertEquals("the SDK's own false is passed on", List.of(false), first.got);
         final Replies<String> next = new Replies<>();
-        flow.create(1000L, next);
+        flow.create(owner, 1000L, next);
         assertTrue("not busy", next.got.isEmpty());
     }
 
     @Test
-    public void anUploadWhoseQueueIsFullStillReachesTheSdk() throws Exception {
+    public void anUploadWhoseQueueIsFullStillReachesTheSdkOnAnotherThread() throws Exception {
         final String handle = create(new Replies<>());
-        worker.accept = false;
+        createdWorker.accept = false;
         flow.upload(handle, new Replies<>());
+        final long deadline = System.currentTimeMillis() + 5000;
+        while (sdk.uploaded.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
         assertEquals(1, sdk.uploaded.size());
     }
 
@@ -419,7 +428,7 @@ public class ReportFileFlowTest {
         sdk.throwOnUpload = true;
         final Replies<Boolean> reply = new Replies<>();
         flow.upload(handle, reply);
-        worker.drain();
+        createdWorker.drain();
         main.drain();
         assertEquals(List.of("error:sdk-error"), reply.got);
         assertNull(flow.read(handle));
@@ -432,8 +441,8 @@ public class ReportFileFlowTest {
         flow.discard(handle);
         flow.discard(handle);
         assertNull(flow.read(handle));
-        assertEquals("the add is queued before the discard", 2, worker.tasks.size());
-        worker.drain();
+        assertEquals("the add is queued before the discard", 2, createdWorker.tasks.size());
+        createdWorker.drain();
         assertEquals("the add landed, and the discard behind it deleted it", 1, createdState.adds.size());
         assertEquals(0, createdState.attachments.size());
         assertEquals(1, java.util.Collections.frequency(createdState.calls, "clearAttachments"));
@@ -443,22 +452,22 @@ public class ReportFileFlowTest {
     public void theTimeToLiveDiscardsAndFreesTheSlot() throws Exception {
         final String handle = create(new Replies<>());
         createdTimers.tasks.get(0).run(); // the ttl timer (the create timer was cancelled)
-        worker.drain();
+        createdWorker.drain();
         assertNull(flow.read(handle));
         assertTrue(createdState.calls.contains("clearAttachments"));
         final Replies<String> next = new Replies<>();
-        flow.create(1000L, next);
+        flow.create(owner, 1000L, next);
         assertTrue("not busy", next.got.isEmpty());
     }
 
     @Test
     public void aResetReleasesTheOrphan() throws Exception {
         final String handle = create(new Replies<>());
-        flow.reset();
-        worker.drain();
+        flow.reset(owner);
+        createdWorker.drain();
         assertNull(flow.read(handle));
         assertTrue(createdState.calls.contains("clearAttachments"));
-        flow.reset(); // nothing held: harmless
+        flow.reset(owner); // nothing held: harmless
     }
 
     @Test
@@ -470,5 +479,166 @@ public class ReportFileFlowTest {
         assertTrue(flow.apply(handle, p));
         assertEquals("s", createdState.summary);
         assertFalse(flow.apply("cr-9", p));
+    }
+
+    // ---- Phase 6 review ------------------------------------------------------------------------------
+
+    @Test
+    public void anUploadTheSdkNeverAnswersFailsClosedAndALateCallbackIsIgnored() throws Exception {
+        final String handle = create(new Replies<>());
+        final Replies<Boolean> reply = new Replies<>();
+        flow.upload(handle, reply);
+        createdWorker.drain();
+        assertEquals(1, uploadTimers.tasks.size());
+        uploadTimers.tasks.get(0).run();
+        main.drain();
+        assertEquals(List.of("error:upload-timeout"), reply.got);
+        sdk.uploadDone.run(true); // the SDK answers after all
+        main.drain();
+        assertEquals("exactly one answer", 1, reply.got.size());
+    }
+
+    @Test
+    public void anAnsweredUploadCancelsItsTimerAndALateTimerDoesNothing() throws Exception {
+        final String handle = create(new Replies<>());
+        final Replies<Boolean> reply = new Replies<>();
+        flow.upload(handle, reply);
+        createdWorker.drain();
+        final Runnable timer = uploadTimers.tasks.get(0);
+        sdk.uploadDone.run(true);
+        main.drain();
+        assertEquals(List.of(true), reply.got);
+        assertTrue("the timer was cancelled", uploadTimers.tasks.isEmpty());
+        timer.run(); // already started when the cancel came
+        main.drain();
+        assertEquals(List.of(true), reply.got);
+    }
+
+    @Test
+    public void anSdkThatThrowsOnUploadCancelsTheTimerToo() throws Exception {
+        final String handle = create(new Replies<>());
+        sdk.throwOnUpload = true;
+        final Replies<Boolean> reply = new Replies<>();
+        flow.upload(handle, reply);
+        createdWorker.drain();
+        main.drain();
+        assertEquals(List.of("error:sdk-error"), reply.got);
+        assertTrue(uploadTimers.tasks.isEmpty());
+    }
+
+    @Test
+    public void aHandlerOperationQueuedBehindASlowCopyDoesNotStartOnceTheWindowClosed() throws Exception {
+        final String handle = liveHandle();
+        final Replies<String> reply = new Replies<>();
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "late", null, true, w), reply);
+        clockMs[0] = 25_000L; // the slow copy ahead of it took the handler's window (20 s) and more
+        worker.drain();
+        main.drain();
+        assertEquals(List.of(ReportOps.NOT_LIVE), reply.got);
+        assertEquals("nothing was imported", 0, handlerState.adds.size());
+        assertTrue("and nothing was consumed", file.exists());
+    }
+
+    @Test
+    public void anAddThatFinishesAfterTheWindowClosedIsRefusedAndTheMovedSourceSurvives() throws Exception {
+        final String handle = liveHandle();
+        // The SDK's own handler timer fires during the import (the model SDK still registers the attachment).
+        handlerState.duringAdd = () -> clockMs[0] = 25_000L;
+        final Replies<String> reply = new Replies<>();
+        flow.handlerOp(handle, (r, w) -> ReportOps.addFile(r, file.getPath(), "orphan", null, true, w), reply);
+        drainAll();
+        assertEquals(List.of(ReportOps.REJECTED), reply.got);
+        assertTrue("the user's file was not lost", file.exists());
+        assertEquals(java.util.Collections.singletonList("orphan"), handlerState.deleted);
+    }
+
+    @Test
+    public void aSlowHandlerCopyDoesNotHoldUpACreatedReport() throws Exception {
+        final String handle = create(new Replies<>());
+        final Replies<String> handlerReply = new Replies<>();
+        flow.handlerOp(liveHandle(), (r, w) -> ReportOps.addFile(r, file.getPath(), "slow", null, false, w), handlerReply);
+        // The handler worker has not run (a slow copy is ahead of it); the created report's work is separate.
+        final Replies<String> createdReply = new Replies<>();
+        flow.createdAddBytes(handle, new byte[] {1}, "b", null, createdReply);
+        createdWorker.drain();
+        main.drain();
+        assertEquals(List.of("ok"), createdReply.got);
+        assertEquals(1, createdState.adds.size());
+        assertEquals(1, worker.tasks.size());
+        assertTrue(handlerReply.got.isEmpty());
+    }
+
+    @Test
+    public void anotherEnginesResetKeepsMyCreatedReport() throws Exception {
+        final String handle = create(new Replies<>());
+        flow.reset(new Object());
+        assertNotNull(flow.read(handle));
+        final Replies<String> busy = new Replies<>();
+        flow.create(new Object(), 1000L, busy);
+        assertEquals(List.of("error:create-busy"), busy.got);
+        flow.reset(owner);
+        assertNull(flow.read(handle));
+    }
+
+    @Test
+    public void anInFlightCreateSurvivesAnotherEnginesReset() throws Exception {
+        final Replies<String> reply = new Replies<>();
+        flow.create(owner, 600_000L, reply);
+        flow.reset(new Object());
+        sdk.listener.onCreated(FakeReports.create(createdState));
+        main.drain();
+        assertEquals(List.of("cr-1"), reply.got);
+    }
+
+    @Test
+    public void anInFlightCreateIsReleasedByItsOwnEnginesReset() throws Exception {
+        final Replies<String> reply = new Replies<>();
+        flow.create(owner, 600_000L, reply);
+        flow.reset(owner);
+        sdk.listener.onCreated(FakeReports.create(createdState));
+        createdWorker.drain();
+        main.drain();
+        assertTrue("the late report is discarded, not published", createdState.calls.contains("clearAttachments"));
+        assertEquals(List.of("ok"), reply.got); // answered with none
+    }
+
+    @Test
+    public void tooManyCreatesAreRateLimitedWithATypedCode() throws Exception {
+        for (int i = 0; i < CreatedReports.RATE_LIMIT; i++) {
+            final String handle = create(new Replies<>());
+            flow.discard(handle);
+            sdk.listener = null;
+        }
+        final Replies<String> reply = new Replies<>();
+        flow.create(owner, 1000L, reply);
+        assertEquals(List.of("error:create-rate-limited"), reply.got);
+        assertNull("the SDK was not asked", sdk.listener);
+    }
+
+    @Test
+    public void aDiscardWithAFullQueueNeverRunsOnTheCallingThread() throws Exception {
+        final String handle = create(new Replies<>());
+        createdWorker.accept = false;
+        final Thread caller = Thread.currentThread();
+        final Thread[] ranOn = new Thread[1];
+        createdState.onClear = () -> ranOn[0] = Thread.currentThread();
+        flow.discard(handle);
+        final long deadline = System.currentTimeMillis() + 5000;
+        while (ranOn[0] == null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertNotNull(ranOn[0]);
+        assertTrue("not inline", ranOn[0] != caller);
+    }
+
+    @Test
+    public void createdEmptyFileIsRefusedLikeEmptyBytes() throws Exception {
+        final String handle = create(new Replies<>());
+        final File empty = tmp.newFile("empty.txt");
+        final Replies<String> reply = new Replies<>();
+        flow.createdAddFile(handle, empty.getPath(), "e", null, reply);
+        drainAll();
+        assertEquals(List.of("error:invalid-argument"), reply.got);
+        assertEquals(0, createdState.adds.size());
     }
 }

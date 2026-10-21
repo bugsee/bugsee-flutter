@@ -12,6 +12,14 @@ import '../launch.dart';
 /// (`BGSFlutterReportOps`).
 const int maxAttachmentBytes = 1024 * 1024;
 
+/// The soft limit of ONE attached file: 20 MiB. Neither SDK limits a file on this path, but a copy is
+/// synchronous I/O in front of every other queued operation and the SDK's handler timer does not wait
+/// for it (Android 7.4.2 can register an add that finished after processing was scheduled: the plugin
+/// undoes it, but a copy that long is the cause). `config.max-data-size` (default 50 on iOS, 150 on
+/// Android) bounds everything a report may hold. A bigger file is [ReportAttachmentFailure.tooLarge].
+/// Repeated in Java (`ReportOps.MAX_ATTACHMENT_FILE_BYTES`) and Objective-C.
+const int maxAttachmentFileBytes = 20 * 1024 * 1024;
+
 /// The longest `name`, in UTF-16 units.
 const int maxAttachmentNameLength = 255;
 
@@ -72,7 +80,8 @@ enum ReportAttachmentFailure {
   /// private directory).
   unreadable,
 
-  /// The data is over [maxAttachmentBytes], or an iOS created-report attachment is over 3 MiB.
+  /// The data is over [maxAttachmentBytes], a file is over [maxAttachmentFileBytes], or an iOS
+  /// created-report attachment is over 3 MiB.
   tooLarge,
 
   /// The report holds as many attachments as it may (Android and iOS handler reports: 1000; iOS
@@ -129,9 +138,11 @@ abstract final class ReportWire {
   static const imageUndecodable = 'image-undecodable';
   static const imageTooLarge = 'image-too-large';
 
-  /// PlatformException codes of `createReport`.
+  /// PlatformException codes of `createReport` and of a created report's upload.
   static const createBusy = 'create-busy';
   static const createTimeout = 'create-timeout';
+  static const createRateLimited = 'create-rate-limited';
+  static const uploadTimeout = 'upload-timeout';
 
   /// Every failure code (not [notLive]), with the Dart reason it maps to.
   static const Map<String, ReportAttachmentFailure> failures = {
@@ -158,7 +169,8 @@ ReportAttachmentException attachmentFailure(String what, String code) {
       'the path is not a regular file (a directory, or a URL instead of a file path)',
     ReportAttachmentFailure.unreadable =>
       'the file cannot be read by this app (permissions or storage rules)',
-    ReportAttachmentFailure.tooLarge => 'the data is over the size limit',
+    ReportAttachmentFailure.tooLarge =>
+      'the data or file is over the size limit',
     ReportAttachmentFailure.limitReached =>
       'the report already holds as many attachments as it may',
     ReportAttachmentFailure.rejected =>
@@ -178,6 +190,29 @@ ReportAttachmentException attachmentFailure(String what, String code) {
 
 // ---- Validation (Dart side, before anything crosses) ------------------------------------------
 
+/// The code points that make a name blank: the same explicit set in Dart, Java (`ReportOps.BLANK_RANGES`)
+/// and Objective-C (`BGSFlutterReportFiles.m`), not each language's own `trim` (they differ: Java's
+/// strips only up to U+0020, Dart's also U+FEFF). A drift guard compares the three lists.
+const _blankRanges = <List<int>>[
+  [0x09, 0x0D],
+  [0x20, 0x20],
+  [0x85, 0x85],
+  [0xA0, 0xA0],
+  [0x1680, 0x1680],
+  [0x2000, 0x200A],
+  [0x2028, 0x2029],
+  [0x202F, 0x202F],
+  [0x205F, 0x205F],
+  [0x3000, 0x3000],
+];
+
+bool _isBlank(String s) {
+  for (final unit in s.codeUnits) {
+    if (!_blankRanges.any((r) => unit >= r[0] && unit <= r[1])) return false;
+  }
+  return true;
+}
+
 bool _hasControl(String s) {
   for (final unit in s.codeUnits) {
     if (unit < 0x20 || unit == 0x7f) return true;
@@ -189,7 +224,7 @@ bool _hasControl(String s) {
 /// never chose), no URL (`file:` and `content:` URIs name no file for the SDKs, which take a path),
 /// no NUL or other control character, at most [maxAttachmentPathLength] units.
 ///
-/// Symbolic links are accepted and copied by their content (never moved); see doc/api-surface.md.
+/// Symbolic links are accepted and copied by their content (never moved); see doc/attachments.md.
 String checkAttachmentPath(String path, {String argument = 'path'}) {
   if (path.isEmpty) {
     throw BugseeArgumentException(argument, 'a file path must not be empty');
@@ -225,7 +260,7 @@ String checkAttachmentPath(String path, {String argument = 'path'}) {
 /// control character and no path separator (the name is also the file name of a bytes attachment,
 /// and a consumer that saves a bundle's files must not be handed `../x`).
 String checkAttachmentName(String name, {String argument = 'name'}) {
-  if (name.trim().isEmpty) {
+  if (_isBlank(name)) {
     throw BugseeArgumentException(
       argument,
       'an attachment name must not be empty',

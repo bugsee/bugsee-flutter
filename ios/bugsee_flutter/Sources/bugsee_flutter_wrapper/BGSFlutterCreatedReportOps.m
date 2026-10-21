@@ -114,7 +114,10 @@ const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
                              name:(NSString *)name
                          fileName:(NSString *)fileName
                          onReport:(BugseeExtendedReport *)report {
-  if (data.length == 0 || data.length > BGSFlutterCreatedReportMaxAttachmentBytes) {
+  if (data.length == 0) {
+    return [BGSFlutterFileOutcome badArgument:@"a created-report attachment must not be empty"];
+  }
+  if (data.length > BGSFlutterCreatedReportMaxAttachmentBytes) {
     return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileTooLarge];
   }
   BugseeAttachment *attachment = [BugseeAttachment attachmentWithName:name filename:fileName data:data];
@@ -145,6 +148,10 @@ const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
   NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:resolved error:NULL];
   if (attributes == nil) {
     return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileUnreadable];
+  }
+  // iOS drops an empty attachment at upload, so neither platform takes one (Android's flow refuses too).
+  if ([attributes[NSFileSize] unsignedLongLongValue] == 0) {
+    return [BGSFlutterFileOutcome badArgument:@"a created-report attachment must not be empty"];
   }
   if ([attributes[NSFileSize] unsignedLongLongValue] > BGSFlutterCreatedReportMaxAttachmentBytes) {
     return [BGSFlutterFileOutcome refusedWithCode:BGSFlutterFileTooLarge];

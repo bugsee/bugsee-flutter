@@ -87,6 +87,11 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportEditResult) {
 /// the handle completes, and the SDK's completion waits for `-end`: nothing here blocks a thread for it.
 @interface BGSFlutterReportLease : NSObject
 @property(nonatomic, strong, readonly) id report;
+/// Whether the handler's window (the SDK's budget less our margin, measured from the handler's entry) has
+/// passed. The SDK's own timer moves on regardless of this claim: work that has not started must not
+/// start. (iOS's `BGSReport` re-checks under its lock and hands a refused move back, so unlike Android
+/// nothing needs undoing afterwards.)
+- (BOOL)windowClosed;
 /// Idempotent. Runs the SDK's completion if the handle completed meanwhile and this was the last claim.
 - (void)end;
 @end

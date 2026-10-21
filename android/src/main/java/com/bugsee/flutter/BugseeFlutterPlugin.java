@@ -135,6 +135,8 @@ public class BugseeFlutterPlugin
         }
         // Completes what was handed to this engine's Dart: nothing else knows those handles.
         ReportHandlerPipeline.shared().detach(reportOwner);
+        // Its created report, if any, goes with it; another engine's does not.
+        FILES.reset(reportOwner);
         // The engine's UI is gone; there is nothing left of it to hide.
         SecureRectangleStore.shared().dropOwner(owner);
         final LifecycleHub.Sink stale = sink;
@@ -243,7 +245,7 @@ public class BugseeFlutterPlugin
         ReportHandlerPipeline.shared().reset(reportOwner);
         // A new Dart isolate does not know the old one's created report: release it now, not at its
         // deadline.
-        FILES.reset();
+        FILES.reset(reportOwner);
     }
 
     @Override
@@ -410,7 +412,7 @@ public class BugseeFlutterPlugin
             @NonNull final Boolean move,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.handlerOp(handle, report -> ReportOps.addFile(report, path, name, mimeType, move), reply(result));
+        FILES.handlerOp(handle, (report, window) -> ReportOps.addFile(report, path, name, mimeType, move, window), reply(result));
     }
 
     @Override
@@ -421,7 +423,7 @@ public class BugseeFlutterPlugin
             @Nullable final String mimeType,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.handlerOp(handle, report -> ReportOps.addBytes(report, data, name, mimeType), reply(result));
+        FILES.handlerOp(handle, (report, window) -> ReportOps.addBytes(report, data, name, mimeType, window), reply(result));
     }
 
     @Override
@@ -429,7 +431,7 @@ public class BugseeFlutterPlugin
             @NonNull final String handle,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.handlerOp(handle, ReportOps::clearAttachments, reply(result));
+        FILES.handlerOp(handle, (report, window) -> ReportOps.clearAttachments(report), reply(result));
     }
 
     @Override
@@ -440,7 +442,7 @@ public class BugseeFlutterPlugin
             @NonNull final Boolean annotated,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.handlerOp(handle, report -> FILES.setScreenshot(report, path, displayId, annotated), reply(result));
+        FILES.handlerOp(handle, (report, window) -> FILES.setScreenshot(report, path, displayId, annotated), reply(result));
     }
 
     @Override
@@ -449,7 +451,7 @@ public class BugseeFlutterPlugin
             @NonNull final Long displayId,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.handlerOp(handle, report -> ReportOps.removeScreenshot(report, displayId), reply(result));
+        FILES.handlerOp(handle, (report, window) -> ReportOps.removeScreenshot(report, displayId), reply(result));
     }
 
     @Override
@@ -457,7 +459,7 @@ public class BugseeFlutterPlugin
             @NonNull final Long ttlMs,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.create(ttlMs, reply(result));
+        FILES.create(reportOwner, ttlMs, reply(result));
     }
 
     @Nullable
@@ -534,7 +536,7 @@ public class BugseeFlutterPlugin
             @NonNull final String handle,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.createdOp(handle, ReportOps::clearAttachments, reply(result));
+        FILES.createdOp(handle, (report, window) -> ReportOps.clearAttachments(report), reply(result));
     }
 
     @Override
@@ -544,7 +546,7 @@ public class BugseeFlutterPlugin
             @NonNull final Boolean annotated,
             @NonNull final Messages.NullableResult<String> result
     ) {
-        FILES.createdOp(handle, report -> FILES.setScreenshot(report, path, 0L, annotated), reply(result));
+        FILES.createdOp(handle, (report, window) -> FILES.setScreenshot(report, path, 0L, annotated), reply(result));
     }
 
     @Override

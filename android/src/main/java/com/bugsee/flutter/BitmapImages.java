@@ -13,7 +13,9 @@ final class BitmapImages implements ReportOps.ImageDecoder {
     @NonNull
     @Override
     public Bitmap decode(@NonNull final File file, final long maxPixels) throws ReportOps.Refused {
-        // The bounds first: an image over the cap is refused before a pixel is allocated.
+        // The header first (unit-tested with real image bytes): an image over the cap is refused before
+        // anything is decoded. A format it does not read falls through to the platform's own bounds.
+        ImageHeader.requireWithin(file, maxPixels);
         final BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(file.getPath(), bounds);

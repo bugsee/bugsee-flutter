@@ -1,4 +1,5 @@
-# A stand-in for the Bugsee API, for the attachments integration test only.
+# A stand-in for the Bugsee API, for the attachments integration test only (run it by hand; CI does not).
+# Usage: ISSUE_OK=1 UPLOAD_STATUS=503 python3 mock_api.py <port> <log file>
 #   POST /v2/issues  -> 200 with an upload endpoint pointing back here (ISSUE_OK=1), else 503
 #   PUT  /upload/... -> the bundle is stored under DUMP_DIR and the answer is UPLOAD_STATUS (503: the SDK
 #                       keeps the bundle on disk, where the test reads it)
@@ -8,13 +9,14 @@
 #   anything else    -> 200 {}
 #
 #   ISSUE_OK=1 UPLOAD_STATUS=503 DUMP_DIR=/tmp/bundles python3 mock_api.py 8196 /tmp/mock.log
-import glob, hashlib, json, sys, time, os, zipfile
+import glob, hashlib, json, sys, tempfile, time, os, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOG = sys.argv[2]
 UPLOAD_STATUS = int(os.environ.get('UPLOAD_STATUS', '503'))
 ISSUE_OK = os.environ.get('ISSUE_OK') == '1'
-DUMP = os.environ.get('DUMP_DIR', '/private/tmp/claude-501/p6/srv/dump')
+# Bundles are written here: a fresh temporary directory unless DUMP_DIR says otherwise.
+DUMP = os.environ.get('DUMP_DIR') or tempfile.mkdtemp(prefix='bugsee-mock-bundles-')
 os.makedirs(DUMP, exist_ok=True)
 count = [0]
 
@@ -68,4 +70,6 @@ class H(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = do_PATCH = _do
     def log_message(self, *a): pass
 
-ThreadingHTTPServer(('0.0.0.0', int(sys.argv[1])), H).serve_forever()
+# Loopback only: the server stores whatever is PUT to it. The Android emulator reaches it as 10.0.2.2 and
+# the iOS simulator as localhost, both of which arrive on the loopback interface of the host.
+ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()

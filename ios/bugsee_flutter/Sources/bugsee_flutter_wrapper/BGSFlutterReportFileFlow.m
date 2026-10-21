@@ -6,6 +6,10 @@
 
 NSString *const BGSFlutterCreateBusy = @"create-busy";
 NSString *const BGSFlutterCreateTimeout = @"create-timeout";
+NSString *const BGSFlutterCreateRateLimited = @"create-rate-limited";
+NSString *const BGSFlutterUploadTimeout = @"upload-timeout";
+NSString *const BGSFlutterFlowNotLive = @"not-live";
+const int64_t BGSFlutterUploadTimeoutMs = 45000;
 NSString *const BGSFlutterFlowInvalidArgument = @"invalid-argument";
 NSString *const BGSFlutterFlowSdkError = @"sdk-error";
 const int64_t BGSFlutterCreateTimeoutMs = 45000;
@@ -30,7 +34,10 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   BGSFlutterFlowWorker _worker;
   BGSFlutterFlowMain _main;
   id<BGSFlutterCreatedReportSdk> _sdk;
+  BGSFlutterCreatedScheduler _scheduler;
+  BGSFlutterCreatedCancel _cancel;
   int64_t _createTimeoutMs;
+  int64_t _uploadTimeoutMs;
 }
 
 + (instancetype)shared {
@@ -66,7 +73,22 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
                       dispatch_async(dispatch_get_main_queue(), task);
                     }
                      sdk:[[BGSFlutterRealCreatedReportSdk alloc] init]
-         createTimeoutMs:BGSFlutterCreateTimeoutMs];
+               scheduler:^id(dispatch_block_t task, int64_t delayMs) {
+                 dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+                 dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, delayMs * NSEC_PER_MSEC),
+                                           DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
+                 dispatch_source_set_event_handler(timer, ^{
+                   dispatch_source_cancel(timer);
+                   task();
+                 });
+                 dispatch_resume(timer);
+                 return timer;
+               }
+                  cancel:^(id token) {
+                    dispatch_source_cancel((dispatch_source_t)token);
+                  }
+         createTimeoutMs:BGSFlutterCreateTimeoutMs
+         uploadTimeoutMs:BGSFlutterUploadTimeoutMs];
   });
   return shared;
 }
@@ -76,7 +98,10 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
                           worker:(BGSFlutterFlowWorker)worker
                             main:(BGSFlutterFlowMain)main
                              sdk:(id<BGSFlutterCreatedReportSdk>)sdk
-                 createTimeoutMs:(int64_t)createTimeoutMs {
+                       scheduler:(BGSFlutterCreatedScheduler)scheduler
+                          cancel:(BGSFlutterCreatedCancel)cancel
+                 createTimeoutMs:(int64_t)createTimeoutMs
+                 uploadTimeoutMs:(int64_t)uploadTimeoutMs {
   self = [super init];
   if (self) {
     _pipeline = pipeline;
@@ -84,7 +109,10 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
     _worker = [worker copy];
     _main = [main copy];
     _sdk = sdk;
+    _scheduler = [scheduler copy];
+    _cancel = [cancel copy];
     _createTimeoutMs = createTimeoutMs;
+    _uploadTimeoutMs = uploadTimeoutMs;
   }
   return self;
 }
@@ -136,7 +164,13 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
     return;
   }
   const BOOL queued = _worker(^{
-    [self run:op on:lease.report reply:reply];
+    if ([lease windowClosed]) {
+      // Queued behind a slow copy and the handler's window ran out meanwhile: the SDK has moved on (or is
+      // about to), so nothing is started and nothing was touched.
+      [self answer:reply value:BGSFlutterFileNotLive];
+    } else {
+      [self run:op on:lease.report reply:reply];
+    }
     [lease end];
   });
   if (!queued) {
@@ -200,7 +234,7 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
 
 #pragma mark - createReport
 
-- (void)createWithTtlMs:(int64_t)ttlMs reply:(BGSFlutterFlowReply)reply {
+- (void)createForOwner:(id)owner ttlMs:(int64_t)ttlMs reply:(BGSFlutterFlowReply)reply {
   __block os_unfair_lock answeredLock = OS_UNFAIR_LOCK_INIT;
   __block BOOL answered = NO;
   BOOL (^claim)(void) = ^BOOL {
@@ -211,14 +245,19 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
     return first;
   };
   // The slot is taken before the SDK is asked: its completion answers later, on its own thread.
-  const NSUInteger stamp = [_created reserveWithCreateTimeoutMs:_createTimeoutMs
-                                                      onTimeout:^{
+  const NSUInteger stamp = [_created reserveForOwner:owner
+                                     createTimeoutMs:_createTimeoutMs
+                                           onTimeout:^{
                                                         if (claim()) {
                                                           [self fail:reply
                                                                 code:BGSFlutterCreateTimeout
                                                              message:@"the SDK did not answer createReport in time"];
                                                         }
                                                       }];
+  if (stamp == BGSFlutterCreatedRateLimited) {
+    reply(nil, BGSFlutterCreateRateLimited, @"too many created reports were started; the SDK cannot cancel one");
+    return;
+  }
   if (stamp == 0) {
     // On the caller's thread, already the platform thread.
     reply(nil, BGSFlutterCreateBusy, @"a created report is already outstanding");
@@ -328,20 +367,62 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   // call) finds nothing. Operations called before this are queued on main ahead of it.
   id report = [_created takeHandle:handle];
   if (report == nil) {
-    [self answer:reply value:@NO];
+    // Not "the SDK declined" (NO): the report is gone (uploaded, discarded, expired).
+    [self fail:reply code:BGSFlutterFlowNotLive message:@"the created report is not live"];
     return;
   }
+  __block os_unfair_lock answeredLock = OS_UNFAIR_LOCK_INIT;
+  __block BOOL answered = NO;
+  __block id timer = nil;
+  BOOL (^claim)(void) = ^BOOL {
+    os_unfair_lock_lock(&answeredLock);
+    const BOOL first = !answered;
+    answered = YES;
+    id t = timer;
+    timer = nil;
+    os_unfair_lock_unlock(&answeredLock);
+    if (first && t != nil) {
+      @try {
+        self->_cancel(t);
+      } @catch (NSException *exception) {
+        // A timer that cannot be cancelled fires into a decided answer and does nothing.
+      }
+    }
+    return first;
+  };
+  // A deadline on the SDK's answer: its completion runs after the handlers and the scheduling, and nothing
+  // says it must come. Exactly one answer wins; a completion that arrives after the timeout is ignored.
+  // The report may still be sent: the error says so.
+  id armed = _scheduler(^{
+    os_unfair_lock_lock(&answeredLock);
+    const BOOL first = !answered;
+    answered = YES;
+    timer = nil;
+    os_unfair_lock_unlock(&answeredLock);
+    if (first) {
+      [self fail:reply code:BGSFlutterUploadTimeout message:@"the SDK did not say in time whether it took the report"];
+    }
+  }, _uploadTimeoutMs);
+  os_unfair_lock_lock(&answeredLock);
+  if (!answered) {
+    timer = armed;
+  }
+  os_unfair_lock_unlock(&answeredLock);
   _main(^{
     @try {
       [self->_sdk uploadReport:report
                     completion:^{
                       // The SDK says it has been handed off for processing, not that it was sent.
-                      [self answer:reply value:@YES];
+                      if (claim()) {
+                        [self answer:reply value:@YES];
+                      }
                     }];
     } @catch (NSException *exception) {
-      [self fail:reply
-            code:BGSFlutterFlowSdkError
-         message:[@"upload: " stringByAppendingString:NSStringFromClass(exception.class)]];
+      if (claim()) {
+        [self fail:reply
+              code:BGSFlutterFlowSdkError
+           message:[@"upload: " stringByAppendingString:NSStringFromClass(exception.class)]];
+      }
     }
   });
 }
@@ -351,8 +432,8 @@ typedef BGSFlutterFileOutcome * (^BGSFlutterCreatedOp)(id report);
   (void)[_created takeHandle:handle];
 }
 
-- (void)reset {
-  (void)[_created clear];
+- (void)resetOwner:(id)owner {
+  (void)[_created clearOwner:owner];
 }
 
 @end

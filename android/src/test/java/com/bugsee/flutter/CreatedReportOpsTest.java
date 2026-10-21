@@ -101,7 +101,7 @@ public class CreatedReportOpsTest {
 
     @Test
     public void readNamesTheAttachmentsAndTheScreenshotDisplays() throws Exception {
-        ReportOps.addBytes(report, new byte[1], "x.txt", null);
+        ReportOps.addBytes(report, new byte[1], "x.txt", null, ReportOps.OPEN);
         state.screenshots.put(0, new Object[] {new Object(), Boolean.FALSE});
         final CreatedReportOps.Snapshot s = CreatedReportOps.read(report);
         assertEquals("report-1", s.id);
@@ -112,7 +112,7 @@ public class CreatedReportOpsTest {
 
     @Test
     public void discardDeletesTheAppsAttachmentsAndNeverThrows() throws Exception {
-        ReportOps.addBytes(report, new byte[1], "x.txt", null);
+        ReportOps.addBytes(report, new byte[1], "x.txt", null, ReportOps.OPEN);
         CreatedReportOps.discard(report);
         assertEquals(0, state.attachments.size());
         CreatedReportOps.discard(null);

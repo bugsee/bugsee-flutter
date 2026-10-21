@@ -91,6 +91,33 @@ void main() {
       }
     });
 
+    test(
+      'the created-report codes added by the review: rate limit, upload timeout, not-live',
+      () {
+        expect(ReportWire.createRateLimited, 'create-rate-limited');
+        expect(ReportWire.uploadTimeout, 'upload-timeout');
+        expect(
+          javaFlow,
+          contains('CREATE_RATE_LIMITED = "${ReportWire.createRateLimited}"'),
+        );
+        expect(
+          javaFlow,
+          contains('UPLOAD_TIMEOUT = "${ReportWire.uploadTimeout}"'),
+        );
+        expect(javaFlow, contains('NOT_LIVE = "${ReportWire.notLive}"'));
+        expect(
+          objcFlow,
+          contains(
+            'BGSFlutterCreateRateLimited = @"${ReportWire.createRateLimited}"',
+          ),
+        );
+        expect(
+          objcFlow,
+          contains('BGSFlutterUploadTimeout = @"${ReportWire.uploadTimeout}"'),
+        );
+      },
+    );
+
     test('createReport codes: Dart, Java and Objective-C', () {
       expect(ReportWire.createBusy, 'create-busy');
       expect(ReportWire.createTimeout, 'create-timeout');
@@ -117,6 +144,18 @@ void main() {
       expect(
         objcFiles,
         contains('BGSFlutterMaxAttachmentBytes = 1024 * 1024;'),
+      );
+
+      expect(maxAttachmentFileBytes, 20 * 1024 * 1024);
+      expect(
+        javaOps,
+        contains('MAX_ATTACHMENT_FILE_BYTES = 20L * 1024L * 1024L;'),
+      );
+      expect(
+        objcFiles,
+        contains(
+          'BGSFlutterMaxAttachmentFileBytes = 20ULL * 1024ULL * 1024ULL;',
+        ),
       );
 
       expect(maxAttachmentNameLength, 255);
@@ -155,6 +194,38 @@ void main() {
       expect(maxDisplayId, 0x7fffffff);
       expect(javaOps, contains('displayId > Integer.MAX_VALUE'));
       expect(objcFiles, contains('displayId > INT32_MAX'));
+    });
+
+    test('"blank" is one explicit set of code points in all three', () {
+      List<int> hexes(String text) => [
+        for (final m in RegExp(r'0x([0-9A-Fa-f]+)').allMatches(text))
+          int.parse(m.group(1)!, radix: 16),
+      ];
+      final dart = hexes(
+        RegExp(
+          r'_blankRanges = <List<int>>\[(.*?)\];',
+          dotAll: true,
+        ).firstMatch(read('lib/src/report/attachments.dart'))!.group(1)!,
+      );
+      final javaSet = hexes(
+        RegExp(
+          r'BLANK_RANGES = \{(.*?)\};',
+          dotAll: true,
+        ).firstMatch(javaOps)!.group(1)!,
+      );
+      final objcSet = hexes(
+        RegExp(
+          r'kBlankRanges\[\]\[2\] = \{(.*?)\};',
+          dotAll: true,
+        ).firstMatch(objcFiles)!.group(1)!,
+      );
+      expect(dart, isNotEmpty);
+      expect(javaSet, dart);
+      expect(objcSet, dart);
+      for (final source in [javaOps, objcFiles]) {
+        expect(source, isNot(contains('.trim()')));
+        expect(source, isNot(contains('whitespaceAndNewlineCharacterSet')));
+      }
     });
 
     test('the MIME grammar is one regular expression in all three', () {
@@ -235,12 +306,6 @@ void main() {
       () {
         expect(
           javaOps,
-          contains(
-            'report.addAttachment(file, checkedName, checkedMime, move)',
-          ),
-        );
-        expect(
-          javaOps,
           contains('report.addAttachment(data, checkedName, checkedMime)'),
         );
         expect(
@@ -312,7 +377,9 @@ void main() {
       () {
         expect(
           javaFlow,
-          contains('ReportOps.addFile(report, path, name, mimeType, false)'),
+          contains(
+            'ReportOps.addFile(report, path, name, mimeType, false, window)',
+          ),
         );
         expect(RegExp(r'\bmove\b').hasMatch(objcCreated), isFalse);
       },

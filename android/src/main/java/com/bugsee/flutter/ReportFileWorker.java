@@ -23,19 +23,31 @@ final class ReportFileWorker {
     /** How many operations may wait for the thread. */
     static final int QUEUE_CAPACITY = 64;
 
-    private static final ReportFileWorker SHARED = new ReportFileWorker(QUEUE_CAPACITY);
+    private static final ReportFileWorker SHARED = new ReportFileWorker(QUEUE_CAPACITY, "bugsee-flutter-report-files");
+    private static final ReportFileWorker CREATED = new ReportFileWorker(QUEUE_CAPACITY, "bugsee-flutter-created-report");
+
+    /** A handler report's file work. */
 
     @NonNull
     static ReportFileWorker shared() {
         return SHARED;
     }
 
+    /**
+     * A created report's operations, upload and discards: a second thread, so a slow copy for a handler
+     * report never holds up the report the app is filling in (nor the other way round).
+     */
+    @NonNull
+    static ReportFileWorker created() {
+        return CREATED;
+    }
+
     private final ThreadPoolExecutor executor;
 
-    ReportFileWorker(final int capacity) {
+    ReportFileWorker(final int capacity, @NonNull final String threadName) {
         executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<Runnable>(capacity), runnable -> {
-                    final Thread thread = new Thread(runnable, "bugsee-flutter-report-files");
+                    final Thread thread = new Thread(runnable, threadName);
                     thread.setDaemon(true);
                     return thread;
                 });

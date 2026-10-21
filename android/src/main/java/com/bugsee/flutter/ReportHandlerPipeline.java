@@ -504,6 +504,18 @@ final class ReportHandlerPipeline {
             return handle.report;
         }
 
+        /**
+         * Whether the handler's window (the SDK's budget less our margin, measured from the handler's
+         * entry) has passed. The SDK's own timer moves on regardless of this claim, and Android 7.4.2
+         * does not re-check that it is still taking attachments after the file is imported
+         * ({@code IssueReport.addAttachment}), so an add that returns once this is true may have been
+         * registered on a report whose processing was already scheduled: the caller must undo it.
+         * Work that has not started must not start.
+         */
+        boolean windowClosed() {
+            return clock.nowMs() - handle.enteredAtMs >= handle.deadlineMs;
+        }
+
         /** Idempotent. Runs the SDK's completion if the handle completed meanwhile and this was the last. */
         void release() {
             final boolean runCompletion;

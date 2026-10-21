@@ -56,6 +56,7 @@ void main() {
       'ReportAttachmentFailure',
       'ReportScreenshot',
       'maxAttachmentBytes',
+      'maxAttachmentFileBytes',
       'maxScreenshotPixels',
     ],
     'src/report/created_report.dart': [
@@ -394,7 +395,7 @@ void main() {
       ),
       'CreateReportFailure': (
         'src/report/created_report.dart',
-        {'busy', 'timeout'},
+        {'busy', 'timeout', 'rateLimited', 'uploadTimeout'},
       ),
       'ReportAttachment': (
         'src/report/attachments.dart',

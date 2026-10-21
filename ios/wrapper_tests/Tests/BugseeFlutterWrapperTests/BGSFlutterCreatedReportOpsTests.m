@@ -158,8 +158,9 @@
   NSString *empty = [self fileOfSize:0 named:@"empty"];
   XCTAssertNil([BGSFlutterCreatedReportOps addFileAtPath:max name:@"max" mimeType:nil onReport:_report].code);
   XCTAssertEqualObjects([BGSFlutterCreatedReportOps addFileAtPath:over name:@"over" mimeType:nil onReport:_report].code, BGSFlutterFileTooLarge);
-  XCTAssertEqualObjects([BGSFlutterCreatedReportOps addFileAtPath:empty name:@"empty" mimeType:nil onReport:_report].code, BGSFlutterFileTooLarge,
-                        @"iOS drops empty data at upload, so it is refused here");
+  BGSFlutterFileOutcome *emptyOutcome = [BGSFlutterCreatedReportOps addFileAtPath:empty name:@"empty" mimeType:nil onReport:_report];
+  XCTAssertNil(emptyOutcome.code, @"an empty file is an argument error, not 'too large'");
+  XCTAssertNotNil(emptyOutcome.argumentError, @"iOS drops empty data at upload; Android's flow refuses it too");
   XCTAssertEqual(_report.attachments.count, 1u);
 }
 
@@ -186,7 +187,7 @@
   XCTAssertEqualObjects(_report.attachments.firstObject.filename, @"b.txt");
   XCTAssertEqualObjects([BGSFlutterCreatedReportOps addData:[NSMutableData dataWithLength:BGSFlutterMaxAttachmentBytes + 1] name:@"big" mimeType:nil onReport:_report].code,
                         BGSFlutterFileTooLarge);
-  XCTAssertEqualObjects([BGSFlutterCreatedReportOps addData:[NSData data] name:@"empty" mimeType:nil onReport:_report].code, BGSFlutterFileTooLarge);
+  XCTAssertNotNil([BGSFlutterCreatedReportOps addData:[NSData data] name:@"empty" mimeType:nil onReport:_report].argumentError);
   XCTAssertNotNil([BGSFlutterCreatedReportOps addData:nil name:@"n" mimeType:nil onReport:_report].argumentError);
 }
 

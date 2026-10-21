@@ -86,6 +86,8 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     // Completes what was handed to this engine's Dart: nothing else knows those handles.
     if let owner = reportOwner {
       BGSFlutterReportHandlerPipeline.shared().detachOwner(owner)
+      // Its created report, if any, goes with it; another engine's does not.
+      files.resetOwner(owner)
       reportOwner = nil
     }
     // The engine's UI is gone; there is nothing left of it to hide.
@@ -330,7 +332,7 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
 
   func resetReportHandlers() throws {
     // A new Dart isolate does not know the old one's created report: release it now.
-    files.reset()
+    files.resetOwner(reportOwner ?? self)
     if let owner = reportOwner {
       BGSFlutterReportHandlerPipeline.shared().resetOwner(owner)
     }
@@ -484,7 +486,7 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   }
 
   func createReport(ttlMs: Int64) async throws -> String? {
-    try await fileReply { reply in files.create(withTtlMs: ttlMs, reply: reply) }
+    try await fileReply { reply in files.create(forOwner: reportOwner ?? self, ttlMs: ttlMs, reply: reply) }
   }
 
   func createdReportRead(handle: String) throws -> CreatedReportSnapshotMessage? {

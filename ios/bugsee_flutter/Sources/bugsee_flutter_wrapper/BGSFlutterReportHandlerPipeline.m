@@ -115,6 +115,7 @@ int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
 
 @interface BGSFlutterReportHandlerPipeline ()
 - (void)endLeaseOn:(BGSFlutterReportHandle *)handle;
+- (BOOL)windowClosedOn:(BGSFlutterReportHandle *)handle;
 @end
 
 @implementation BGSFlutterReportLease {
@@ -134,6 +135,9 @@ int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
     _lock = [[NSLock alloc] init];
   }
   return self;
+}
+- (BOOL)windowClosed {
+  return [_pipeline windowClosedOn:_handle];
 }
 - (void)end {
   [_lock lock];
@@ -504,6 +508,10 @@ static NSString *SafeReportId(id report) {
   id report = handle.report;
   [handle.editLock unlock];
   return [[BGSFlutterReportLease alloc] initWithPipeline:self handle:handle report:report];
+}
+
+- (BOOL)windowClosedOn:(BGSFlutterReportHandle *)handle {
+  return _clock() - handle.enteredAtMs >= handle.deadlineMs;
 }
 
 - (void)endLeaseOn:(BGSFlutterReportHandle *)handle {

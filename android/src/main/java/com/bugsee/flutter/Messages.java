@@ -2502,7 +2502,7 @@ public class Messages {
     /**
      * Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
      * (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
-     * does. PlatformException `create-busy` when one is already outstanding, `create-timeout` when the
+     * does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
      * SDK did not answer in time.
      */
     void createReport(@NonNull Long ttlMs, @NonNull NullableResult<String> result);
@@ -2530,7 +2530,8 @@ public class Messages {
     /**
      * Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
      * answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
-     * handed off). False when the handle is not live.
+     * handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+     * live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
      */
     void createdReportUpload(@NonNull String handle, @NonNull Result<Boolean> result);
     /**

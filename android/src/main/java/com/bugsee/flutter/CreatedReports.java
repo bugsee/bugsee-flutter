@@ -31,7 +31,25 @@ final class CreatedReports {
         void expired(@NonNull Report report);
     }
 
-    private static final CreatedReports SHARED = new CreatedReports(new ReportHandlerPipeline.DaemonScheduler());
+    /** What {@link #reserve} answers for a request over the rate limit. */
+    static final int RATE_LIMITED = -1;
+
+    /**
+     * At most this many created reports may be started in {@link #RATE_WINDOW_MS}. The SDKs have no way
+     * to cancel a created report (no public call on either): a report the app discards or forgets leaves
+     * the SDK's opened snapshot on disk until the next launch's recovery drops it, so a create/discard
+     * loop would grow storage without bound. This is the bound.
+     */
+    static final int RATE_LIMIT = 6;
+    static final long RATE_WINDOW_MS = 60_000L;
+
+    /** Milliseconds on a monotonic clock; a seam. */
+    interface Clock {
+        long nowMs();
+    }
+
+    private static final CreatedReports SHARED = new CreatedReports(
+            new ReportHandlerPipeline.DaemonScheduler(), () -> System.nanoTime() / 1_000_000L);
 
     @NonNull
     static CreatedReports shared() {
@@ -39,6 +57,11 @@ final class CreatedReports {
     }
 
     private final ReportHandlerPipeline.Scheduler scheduler;
+    private final Clock clock;
+    /** When each recent reservation was made, oldest first; guarded by this. */
+    private final java.util.ArrayDeque<Long> recent = new java.util.ArrayDeque<>();
+    /** The engine whose Dart isolate asked for the reservation or the held report. */
+    @Nullable private Object owner;
 
     /** True from a successful reserve until that reservation is ended. */
     private boolean creating;
@@ -49,19 +72,31 @@ final class CreatedReports {
     private int next = 1;
     @Nullable private ReportHandlerPipeline.Cancellable timer;
 
-    CreatedReports(@NonNull final ReportHandlerPipeline.Scheduler scheduler) {
+    CreatedReports(@NonNull final ReportHandlerPipeline.Scheduler scheduler, @NonNull final Clock clock) {
         this.scheduler = scheduler;
+        this.clock = clock;
     }
 
     /**
-     * @return the stamp {@link #fulfil} must present, or 0 when a report is reserved or held
+     * @param engine the engine asking; only its reset releases what this reservation becomes
+     * @return the stamp {@link #fulfil} must present, 0 when a report is reserved or held, or
+     *         {@link #RATE_LIMITED}
      */
-    int reserve(final long createTimeoutMs, @NonNull final Expiry expiry) {
+    int reserve(@NonNull final Object engine, final long createTimeoutMs, @NonNull final Expiry expiry) {
         final int stamp;
         synchronized (this) {
             if (creating || report != null) {
                 return 0;
             }
+            final long now = clock.nowMs();
+            while (!recent.isEmpty() && now - recent.peekFirst() >= RATE_WINDOW_MS) {
+                recent.pollFirst();
+            }
+            if (recent.size() >= RATE_LIMIT) {
+                return RATE_LIMITED;
+            }
+            recent.addLast(now);
+            this.owner = engine;
             creating = true;
             stamp = nextStamp;
             nextStamp = nextStamp == Integer.MAX_VALUE ? 1 : nextStamp + 1;
@@ -74,6 +109,7 @@ final class CreatedReports {
                         creating = false;
                         currentStamp = 0;
                         timer = null;
+                        owner = null;
                     }
                 }
                 if (timedOut) {
@@ -104,6 +140,7 @@ final class CreatedReports {
             creating = false;
             currentStamp = 0;
             if (created == null) {
+                owner = null;
                 return null;
             }
             final String minted = "cr-" + next++;
@@ -139,18 +176,29 @@ final class CreatedReports {
         cancelTimer();
         report = null;
         handle = null;
+        owner = null;
         return held;
     }
 
-    /** Drops whatever is held or reserved; every stamp issued so far fails {@link #fulfil}. */
+    /**
+     * Drops what {@code engine} reserved or holds (nothing, when the slot is another engine's): a second
+     * engine's Dart isolate starting must not destroy the first one's report. Every stamp issued for the
+     * dropped reservation fails {@link #fulfil}.
+     *
+     * @return the held report that was dropped, or null
+     */
     @Nullable
-    synchronized Report clear() {
+    synchronized Report clearOwner(@NonNull final Object engine) {
+        if (owner != engine) {
+            return null;
+        }
         cancelTimer();
         final Report held = report;
         creating = false;
         currentStamp = 0;
         report = null;
         handle = null;
+        owner = null;
         return held;
     }
 

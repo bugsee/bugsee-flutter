@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 
 import com.bugsee.library.Bugsee;
 import com.bugsee.library.contracts.exchange.Breadcrumb;
+import com.bugsee.library.contracts.lifecycle.BugseeStatus;
 import com.bugsee.library.contracts.exchange.BugseeExchangeFactory;
 import com.bugsee.library.contracts.options.IssueSeverity;
 import com.bugsee.library.contracts.options.LogLevel;
@@ -95,6 +96,12 @@ final class BugseeFacadeSdk implements FacadeOps.Sdk {
             final boolean urgent
     ) {
         Bugsee.notify(title, body, severity, fields, urgent);
+    }
+
+    @Override
+    public boolean isLaunchedOrLaunching() {
+        final BugseeStatus status = Bugsee.getStatus();
+        return status == BugseeStatus.Launching || status == BugseeStatus.Launched;
     }
 
     @Override

@@ -24,6 +24,9 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   Phases? phases;
 
+  /// Once true, `failing['setReportHandlerPhases']` applies (the attach-time call is exempt).
+  bool phasesArmed = false;
+
   /// How many times the plugin was attached (the lifecycle channel).
   int attachCount = 0;
 
@@ -51,8 +54,9 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   @override
   Future<void> setReportHandlerPhases(bool before, bool after) async {
+    final failure = failing['setReportHandlerPhases'];
+    if (failure != null && phasesArmed) throw failure;
     phases = Phases(before, after);
-    calls.add('phases($before, $after)');
   }
 
   @override

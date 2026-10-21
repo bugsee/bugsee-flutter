@@ -97,6 +97,12 @@ final class FacadeOps {
                 @Nullable LinkedHashMap<String, String> fields,
                 boolean urgent);
 
+        /**
+         * Whether the SDK is {@code Launching} or {@code Launched}: the only states in which
+         * {@code BugseeInternal.addBreadcrumb} (v7.4.2:989, {@code isStartedOrStarting}) records.
+         */
+        boolean isLaunchedOrLaunching();
+
         /** Whether the SDK was handed the crumb (false: capture off, no crumb made). */
         boolean addBreadcrumb(
                 @NonNull String category,
@@ -190,10 +196,13 @@ final class FacadeOps {
             return sent.equals(stored);
         }
         if (sent instanceof Double) {
+            // Stored as a 32-bit float (persisted) or still the double (in memory): the same after
+            // the same narrowing.
             if (stored instanceof Float) {
                 return (float) ((Double) sent).doubleValue() == (Float) stored;
             }
-            return stored instanceof Double && sent.equals(stored);
+            return stored instanceof Double
+                    && (float) ((Double) sent).doubleValue() == (float) ((Double) stored).doubleValue();
         }
         // Integer or Long.
         if (stored instanceof Integer || stored instanceof Long) {
@@ -211,11 +220,15 @@ final class FacadeOps {
     @Nullable
     static Object toDartValue(@Nullable final Object stored) {
         if (stored instanceof String || stored instanceof Boolean
-                || stored instanceof Integer || stored instanceof Long || stored instanceof Double) {
+                || stored instanceof Integer || stored instanceof Long) {
             return stored;
         }
-        if (stored instanceof Float) {
-            final float f = (Float) stored;
+        // A double is narrowed like a float: Android persists a non-integer as a 32-bit float, and
+        // `getAttribute` (in-memory, still the double) and `getAllAttributes` (preferences, the
+        // float) would otherwise answer differently in one session (3.141592653589793 against
+        // 3.1415927). One answer, the persisted one.
+        if (stored instanceof Float || stored instanceof Double) {
+            final float f = stored instanceof Float ? (Float) stored : (float) ((Double) stored).doubleValue();
             if (Float.isNaN(f) || Float.isInfinite(f)) {
                 return null;
             }
@@ -417,6 +430,12 @@ final class FacadeOps {
             }
         }
         try {
+            // The factory's consumer is cached for good, and `Bugsee.addBreadcrumb` drops the crumb
+            // when the SDK is not running; the answer must say so, so the gate is here, not only in
+            // the launch option.
+            if (!sdk.isLaunchedOrLaunching()) {
+                return false;
+            }
             return sdk.addBreadcrumb(category, parsed, message, type, copy);
         } catch (final RuntimeException e) {
             throw sdkError("addBreadcrumb", e);

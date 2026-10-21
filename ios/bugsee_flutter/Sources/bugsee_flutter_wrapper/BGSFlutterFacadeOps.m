@@ -83,6 +83,11 @@ static BugseeSeverityLevel DefaultBugSeverity(void) {
                    fields:fields
                    urgent:urgent];
 }
+- (BOOL)isLaunchedOrLaunching {
+  Bugsee *bugsee = [Bugsee sharedInstance];
+  return bugsee != nil &&
+         (bugsee.status == BugseeStatusLaunched || bugsee.status == BugseeStatusLaunching);
+}
 - (BOOL)addBreadcrumbCategory:(NSString *)category
                         level:(NSInteger)level
                       message:(NSString *)message
@@ -265,10 +270,17 @@ static BOOL IsString(id v) {
   }
   @try {
     // The SDK answers YES even for a value it ignored (over its archive limit), so the read-back is
-    // the signal.
+    // the signal. And on a total-size overflow it REMOVES the key it was overwriting
+    // (BGSBugseeEnvironment.m:319-328), so the previous value is read first and written back on a
+    // rejection: Android keeps it (BugseeAttributes.put checks before it changes anything), and the
+    // API says the previous value stays.
+    id previous = [sdk getAttribute:name];
     [sdk setAttribute:name value:checked];
     id stored = [sdk getAttribute:name];
     if (![self sentValue:checked matchesStored:stored]) {
+      if (previous != nil && ![self sentValue:previous matchesStored:stored]) {
+        [sdk setAttribute:name value:previous];
+      }
       // Never the value: it is user data.
       return Fail(kAttributeRejected,
                   @"the SDK did not keep the attribute (over its size limit, or it could not store it)");
@@ -434,6 +446,9 @@ static BOOL IsString(id v) {
     }
   }
   @try {
+    if (![sdk isLaunchedOrLaunching]) {
+      return Ok(@NO);
+    }
     return Ok(@([sdk addBreadcrumbCategory:category
                                      level:sdkLevel
                                    message:message

@@ -50,6 +50,7 @@ public class FacadeOpsTest {
         LinkedHashMap<String, String> lastNotifyFields;
         boolean lastNotifyUrgent;
         boolean crumbAccepted = true;
+        boolean running = true;
         Breadcrumb.Level lastCrumbLevel;
         Map<String, Object> lastCrumbData;
         boolean blackout;
@@ -147,6 +148,12 @@ public class FacadeOpsTest {
         }
 
         @Override
+        public boolean isLaunchedOrLaunching() {
+            calls.add("isLaunchedOrLaunching");
+            return running;
+        }
+
+        @Override
         public boolean addBreadcrumb(String category, Breadcrumb.Level level, String message,
                 String type, Map<String, Object> data) {
             record("addBreadcrumb");
@@ -224,6 +231,14 @@ public class FacadeOpsTest {
         // Android keeps 0.1 as a float; it is read back as the decimal that names the float, not as
         // 0.10000000149011612.
         assertEquals(0.1, (Double) FacadeOps.getAttribute(sdk, "d"), 0.0);
+        // Both getters narrow the same way, whether the SDK still holds the double (in memory) or
+        // the float (preferences).
+        sdk.attributes.put("pi", Math.PI);
+        assertEquals(3.1415927, (Double) FacadeOps.getAttribute(sdk, "pi"), 0.0);
+        assertEquals(3.1415927, (Double) FacadeOps.getAllAttributes(sdk).get("pi"), 0.0);
+        sdk.attributes.put("pi", (float) Math.PI);
+        assertEquals(3.1415927, (Double) FacadeOps.getAttribute(sdk, "pi"), 0.0);
+        assertEquals(3.1415927, (Double) FacadeOps.getAllAttributes(sdk).get("pi"), 0.0);
     }
 
     @Test
@@ -292,6 +307,7 @@ public class FacadeOpsTest {
         assertNull(FacadeOps.toDartValue(null));
         // A float is the shortest decimal that names it, not the widened binary value.
         assertEquals(0.1, (Double) FacadeOps.toDartValue(0.1f), 0.0);
+        assertEquals(0.1, (Double) FacadeOps.toDartValue(0.1), 0.0);
         assertEquals(3.0, (Double) FacadeOps.toDartValue(3.0f), 0.0);
     }
 
@@ -468,6 +484,18 @@ public class FacadeOpsTest {
         sdk.crumbAccepted = false;
         assertFalse(FacadeOps.addBreadcrumb(sdk, "nav", "info", "m", "t", Collections.singletonMap("k", "v")));
         assertEquals("v", sdk.lastCrumbData.get("k"));
+    }
+
+    @Test
+    public void aBreadcrumbIsNotHandedOverWhenTheSdkIsNotRunning() throws Exception {
+        // After stop (and before launch) BugseeInternal.addBreadcrumb drops it while the factory
+        // still hands out a crumb (its consumer is cached for good).
+        final FakeSdk sdk = new FakeSdk();
+        sdk.running = false;
+        assertFalse(FacadeOps.addBreadcrumb(sdk, "c", "info", "m", "t", null));
+        assertFalse(sdk.calls.contains("addBreadcrumb"));
+        sdk.running = true;
+        assertTrue(FacadeOps.addBreadcrumb(sdk, "c", "info", "m", "t", null));
     }
 
     @Test

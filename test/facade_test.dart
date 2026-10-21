@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
+import 'package:bugsee_flutter/src/bugsee.dart' show debugSetBugseeRuntime;
 import 'package:bugsee_flutter/src/bugsee_runtime.dart';
 import 'package:bugsee_flutter/src/errors.dart';
 import 'package:bugsee_flutter/src/options/option_registry.dart';
@@ -18,6 +19,12 @@ class _MissingPluginFake extends FacadeFake {
   @override
   Future<void> setAttribute(String name, Object value) async =>
       throw MissingPluginException('no implementation');
+}
+
+class _AttachFails extends FacadeFake {
+  @override
+  Future<void> attachLifecycle() async =>
+      throw PlatformException(code: 'channel-error');
 }
 
 /// Fails the test unless [action] throws exactly an [BugseeArgumentException] for [argument], and
@@ -56,7 +63,7 @@ void main() {
       platform: () => platform,
       warn: warnings.add,
     );
-    Bugsee.debugSetRuntime(runtime);
+    debugSetBugseeRuntime(runtime);
   });
 
   group('attributes', () {
@@ -79,11 +86,19 @@ void main() {
       () async {
         await Bugsee.setAttribute('k', 'x' * 1024);
         native.calls.clear();
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.setAttribute('k', 'x' * 1025),
-          argument: 'value',
+        await expectLater(
+          Bugsee.setAttribute('k', 'x' * 1025),
+          throwsA(
+            isA<BugseeAttributeException>()
+                .having(
+                  (e) => e.reason,
+                  'reason',
+                  AttributeFailure.invalidValue,
+                )
+                .having((e) => e.argument, 'argument', 'value'),
+          ),
         );
+        expect(native.calls, isEmpty);
       },
     );
 
@@ -93,10 +108,11 @@ void main() {
         // 512 emoji are 1024 units; one more is over.
         await Bugsee.setAttribute('k', '😀' * 512);
         native.calls.clear();
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.setAttribute('k', '😀' * 513),
+        await expectLater(
+          Bugsee.setAttribute('k', '😀' * 513),
+          throwsA(isA<BugseeAttributeException>()),
         );
+        expect(native.calls, isEmpty);
       },
     );
 
@@ -142,6 +158,47 @@ void main() {
         expect(e.toString(), isNot(contains('secret')));
       }
     });
+
+    test(
+      'the SDK\'s own rejection is not an argument exception (`on BugseeArgumentException` means refused before the SDK)',
+      () async {
+        native.failNext = refusal(FacadeWire.attributeRejected);
+        Object? caught;
+        try {
+          await Bugsee.setAttribute('k', 'v');
+        } on BugseeArgumentException catch (e) {
+          caught = e;
+        } on BugseeAttributeException catch (e) {
+          expect(e.reason, AttributeFailure.rejected);
+        }
+        expect(caught, isNull);
+        // Dart-side findings are attribute exceptions too, not argument exceptions.
+        await expectLater(
+          Bugsee.setAttribute('', 'v'),
+          throwsA(
+            allOf(
+              isA<BugseeAttributeException>(),
+              isNot(isA<BugseeArgumentException>()),
+            ),
+          ),
+        );
+        // Native defending again (invalid-argument) is still an attribute exception.
+        native.failNext = refusal(FacadeWire.invalidArgument);
+        await expectLater(
+          Bugsee.setAttribute('k', 'v'),
+          throwsA(
+            allOf(
+              isA<BugseeAttributeException>().having(
+                (e) => e.reason,
+                'reason',
+                AttributeFailure.invalidValue,
+              ),
+              isNot(isA<BugseeArgumentException>()),
+            ),
+          ),
+        );
+      },
+    );
 
     test(
       'a native rejection (size limit) is BugseeAttributeException(rejected)',
@@ -693,7 +750,7 @@ void main() {
     test(
       'a missing plugin is a BugseeException, not a MissingPluginException',
       () async {
-        Bugsee.debugSetRuntime(
+        debugSetBugseeRuntime(
           BugseeRuntime(
             host: _MissingPluginFake(),
             platform: () => platform,
@@ -716,7 +773,7 @@ void main() {
     test(
       'from a background isolate (no binding) it is a BugseeException',
       () async {
-        Bugsee.debugSetRuntime(
+        debugSetBugseeRuntime(
           BugseeRuntime(
             host: native,
             platform: () => platform,
@@ -736,6 +793,67 @@ void main() {
           ),
         );
         expect(native.calls, isEmpty);
+      },
+    );
+  });
+
+  group('attaching and the report handler', () {
+    test(
+      'the first facade call attaches the plugin, whichever it is',
+      () async {
+        expect(native.attachCount, 0);
+        await Bugsee.isBlackout();
+        expect(native.attachCount, 1);
+        await Bugsee.event('e');
+        expect(native.attachCount, 1, reason: 'once');
+      },
+    );
+
+    test(
+      'a failure to attach is a BugseeException from the call itself',
+      () async {
+        final failing = _AttachFails();
+        debugSetBugseeRuntime(
+          BugseeRuntime(host: failing, platform: () => platform),
+        );
+        await expectLater(Bugsee.event('e'), throwsA(isA<BugseeException>()));
+        expect(failing.calls, isNot(contains('event(e, null)')));
+      },
+    );
+
+    test(
+      'a handler the native call refused is not the handler in effect',
+      () async {
+        final seen = <String>[];
+        final old = BugseeReportHandler(
+          onAfterReportCreated: (r) async => seen.add('old'),
+        );
+        await Bugsee.setReportHandler(old);
+        native.phasesArmed = true;
+        native.failing['setReportHandlerPhases'] = refusal(FacadeWire.sdkError);
+        await expectLater(
+          Bugsee.setReportHandler(
+            BugseeReportHandler(
+              onAfterReportCreated: (r) async => seen.add('new'),
+            ),
+          ),
+          throwsA(isA<BugseeException>()),
+        );
+        expect(Bugsee.reportHandler, same(old));
+        expect(native.phases.toString(), 'Phases(false, true)');
+        // A delivery goes to the handler native still believes in.
+        runtime.bridge.onReportHandlerRequest(
+          ReportHandlerRequestMessage(
+            handle: 'h',
+            deliveryId: 'after:r',
+            after: true,
+            reportId: 'r',
+            type: 'bug',
+            deadlineMs: 5000,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(seen, ['old']);
       },
     );
   });
@@ -856,7 +974,7 @@ void main() {
   group('lifecycle events', () {
     test('every event is public, unknown names preserved as raw', () async {
       final runtime = BugseeRuntime(host: native, platform: () => platform);
-      Bugsee.debugSetRuntime(runtime);
+      debugSetBugseeRuntime(runtime);
       final seen = <LifecycleEvent>[];
       final sub = Bugsee.lifecycleEvents.listen(seen.add);
       runtime.bridge.onLifecycleEvent(LifecycleEventMessage(name: 'Launched'));
@@ -880,7 +998,7 @@ void main() {
     test(
       'the first access attaches the plugin, so earlier events are replayed',
       () async {
-        Bugsee.debugSetRuntime(
+        debugSetBugseeRuntime(
           BugseeRuntime(host: native, platform: () => platform),
         );
         expect(native.attachCount, 0);
@@ -891,7 +1009,7 @@ void main() {
     );
 
     test('the stream is a broadcast stream (many listeners)', () {
-      Bugsee.debugSetRuntime(
+      debugSetBugseeRuntime(
         BugseeRuntime(host: native, platform: () => platform),
       );
       expect(Bugsee.lifecycleEvents.isBroadcast, isTrue);

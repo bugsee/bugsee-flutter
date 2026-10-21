@@ -154,7 +154,7 @@ behaviour table with source line references, value rules, errors and threading: 
   work on both platforms (blackout is HELD on Android 7.4.2 and applied at launch: the RN doc that says Android ignores it is stale);
   event/trace/log/breadcrumb/notify/upload/dialog are dropped by the SDKs (Android logs `You need to call Bugsee.launch() ...` for
   notify/upload/dialog; iOS logs `Bugsee.uploadWithSummary ignored: SDK is not launched`). `addBreadcrumb` answers `false` when capture is off
-  (default off on both) or the SDK is not launched. A platform with no SDK: no-ops, only `launch` throws.
+  (default off on both) or the SDK is not Launching/Launched (before launch AND after stop: gated natively, the SDKs' own gates differ). A platform with no SDK: no-ops, only `launch` throws.
 - **An attribute the SDK dropped is only knowable by reading it back** (Android `setAttribute` is void; iOS's `BOOL` is YES for a value it
   ignored): native sets, reads back and reports `attribute-rejected`. The limits differ and were measured on device: Android keeps a
   1024-char string and 42 x 600 chars in all; iOS rejects the 1024-char string (1124-byte archive) and takes 40 x 600. Dart refuses

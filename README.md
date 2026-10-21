@@ -147,10 +147,11 @@ BugseeSecureView(child: TextField(obscureText: true))
 Things worth knowing (each is documented on the method):
 
 - **Argument errors are `BugseeException`s.** `BugseeArgumentException` (an empty event name, event params
-  the SDKs cannot carry, a blank notification title; it names the parameter) and `BugseeAttributeException`
-  (`invalidName`, `invalidValue`, `rejected`). They are delivered through the `Future`, and nothing reaches
-  the SDK. The SDKs drop an attribute over their size limits without a word; the plugin reads it back
-  and reports `rejected`.
+  the SDKs cannot carry, a blank notification title; it names the parameter; refused before the SDK) and
+  `BugseeAttributeException` (`invalidName`, `invalidValue` before the SDK; `rejected` is the SDK's own
+  refusal, and the attribute's previous value is kept). It is a `BugseeException` but not a
+  `BugseeArgumentException`. Both come through the `Future`. The SDKs drop an attribute over their size
+  limits without a word; the plugin reads it back and reports `rejected`.
 - **Before `launch`**: attributes, the user identifier and blackout work on both platforms; events,
   traces, logs, breadcrumbs, notifications, `upload` and the dialog are dropped by the SDKs, and the plugin does
   not queue them.

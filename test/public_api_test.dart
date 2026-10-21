@@ -145,7 +145,6 @@ void main() {
     test('offers exactly these static members', () {
       expect(members, {
         '_runtime',
-        'debugSetRuntime',
         'launch',
         'waitUntilLaunched',
         'stop',
@@ -185,11 +184,16 @@ void main() {
       }
     });
 
-    test('the one test hook is marked @visibleForTesting', () {
+    test('the test hook is not a member: it is a src-only function', () {
+      expect(members, isNot(contains('debugSetRuntime')));
       expect(
         api,
-        contains('@visibleForTesting\n  static void debugSetRuntime'),
+        contains(
+          '@visibleForTesting\nvoid debugSetBugseeRuntime(BugseeRuntime',
+        ),
       );
+      // ... and the entry point does not export it.
+      expect(exports['src/bugsee.dart'], ['Bugsee']);
     });
 
     test('is not instantiable', () {
@@ -197,9 +201,182 @@ void main() {
     });
   });
 
-  test('the proxy constructor and its bridge-only hook are @internal', () {
+  test('a report proxy is only created through src-only functions', () {
     final proxy = read('lib/src/report/report_proxy.dart');
-    expect(proxy, contains('@internal\n  ReportProxy.internal('));
-    expect(proxy, contains('@internal\n  void markCompleted()'));
+    expect(proxy, contains('  ReportProxy._({'));
+    expect(proxy, contains('ReportProxy createReportProxy({'));
+    expect(proxy, contains('void closeReportProxy(ReportProxy proxy)'));
+    expect(proxy, isNot(contains('ReportProxy.internal')));
+    expect(proxy, isNot(contains('markCompleted')));
+  });
+
+  group('the members of the exported classes', () {
+    /// The body of `name` (brace matched), from the first `{` after its declaration.
+    String body(String source, String name) {
+      final decl = RegExp(
+        '^(?:abstract |final |base |sealed )*(?:class|enum) $name\\b',
+        multiLine: true,
+      ).firstMatch(source)!;
+      var i = source.indexOf('{', decl.end);
+      var depth = 0;
+      final start = i;
+      for (; i < source.length; i++) {
+        if (source[i] == '{') depth++;
+        if (source[i] == '}' && --depth == 0) break;
+      }
+      return source.substring(start + 1, i);
+    }
+
+    /// The public member names declared at the class's own indentation.
+    Set<String> membersOf(String source, String name) {
+      final out = <String>{};
+      for (final line in body(source, name).split('\n')) {
+        if (!line.startsWith('  ') || line.startsWith('   ')) continue;
+        final t = line.trim();
+        if (t.isEmpty ||
+            t.startsWith('//') ||
+            t.startsWith('@') ||
+            t.startsWith('}') ||
+            t.startsWith(')')) {
+          continue;
+        }
+        final constant = RegExp(r'^(\w+)[,;]$').firstMatch(t);
+        final member = RegExp(
+          r'^(?:static |final |const |factory |late )*(?:[\w<>?,\[\] .]+? )?(?:get |set )?(\w+)\s*(?:\(|;|=|\{|=>)',
+        ).firstMatch(t);
+        final n = constant?.group(1) ?? member?.group(1);
+        if (n != null &&
+            !n.startsWith('_') &&
+            !{'toString', 'hashCode', 'operator'}.contains(n) &&
+            !t.contains(' operator ')) {
+          out.add(n);
+        }
+      }
+      return out;
+    }
+
+    const expectedMembers = <String, (String, Set<String>)>{
+      'ReportProxy': (
+        'src/report/report_proxy.dart',
+        {
+          'id',
+          'typeName',
+          'type',
+          'deliveryId',
+          'isLive',
+          'read',
+          'setSummary',
+          'setDescription',
+          'setEmail',
+          'setSeverity',
+          'replaceLabels',
+          'addLabels',
+          'clearLabels',
+          'setAttribute',
+          'removeAttribute',
+          'clearAttributes',
+          'isAllowedAttributeValue',
+        },
+      ),
+      'ReportSnapshot': (
+        'src/report/report_proxy.dart',
+        {
+          'ReportSnapshot',
+          'id',
+          'typeName',
+          'type',
+          'summary',
+          'description',
+          'email',
+          'severity',
+          'labels',
+          'attributes',
+        },
+      ),
+      'ReportClosedError': (
+        'src/report/report_proxy.dart',
+        {'ReportClosedError'},
+      ),
+      'BugseeBreadcrumb': (
+        'src/facade/breadcrumb.dart',
+        {'BugseeBreadcrumb', 'category', 'message', 'level', 'type', 'data'},
+      ),
+      'BreadcrumbLevel': (
+        'src/facade/breadcrumb.dart',
+        {'debug', 'info', 'warning', 'error', 'fatal', 'fromName'},
+      ),
+      'LifecycleEvent': (
+        'src/lifecycle_event.dart',
+        {'LifecycleEvent', 'name', 'reportId', 'data'},
+      ),
+      'BugseeReportHandler': (
+        'src/report/report_handler.dart',
+        {
+          'BugseeReportHandler',
+          'onBeforeReportCreated',
+          'onAfterReportCreated',
+          'isEmpty',
+        },
+      ),
+      'BugseeSecureView': (
+        'src/secure/bugsee_secure_view.dart',
+        {'BugseeSecureView', 'enabled', 'child', 'build'},
+      ),
+      'BugseeException': (
+        'src/launch.dart',
+        {'BugseeException', 'message', 'cause'},
+      ),
+      'BugseeLaunchException': (
+        'src/launch.dart',
+        {'BugseeLaunchException', 'reason'},
+      ),
+      'BugseeArgumentException': (
+        'src/errors.dart',
+        {'BugseeArgumentException', 'argument'},
+      ),
+      'BugseeAttributeException': (
+        'src/errors.dart',
+        {'BugseeAttributeException', 'reason', 'argument'},
+      ),
+      'AttributeFailure': (
+        'src/errors.dart',
+        {'invalidName', 'invalidValue', 'rejected'},
+      ),
+      'BugseeStatus': (
+        'src/status.dart',
+        {'stopped', 'launching', 'launched', 'stopping', 'fromName'},
+      ),
+    };
+
+    for (final e in expectedMembers.entries) {
+      test('${e.key} has exactly these public members', () {
+        expect(membersOf(read('lib/${e.value.$1}'), e.key), e.value.$2);
+      });
+    }
+
+    test('no exported class mentions a bridge or runtime type', () {
+      for (final e in expectedMembers.entries) {
+        // Private members (the proxy's private constructor and its `_host`) may name the bridge:
+        // an app cannot see them.
+        final text = body(read('lib/${e.value.$1}'), e.key)
+            .replaceAll(RegExp(r'ReportProxy\._\([\s\S]*?;\n'), '')
+            .split('\n')
+            .where((l) => !RegExp(r'\b_\w+;').hasMatch(l))
+            .join('\n');
+        for (final internal in [
+          'BugseeBridge',
+          'BugseeRuntime',
+          'HostApi',
+          'FlutterApi',
+          'Message',
+        ]) {
+          expect(
+            text,
+            isNot(contains(internal)),
+            reason: '${e.key}: $internal',
+          );
+        }
+      }
+    });
   });
 }

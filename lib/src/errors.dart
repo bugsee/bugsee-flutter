@@ -29,20 +29,28 @@ enum AttributeFailure {
 
   /// The SDK took the call and did not keep the value: it is over the SDK's size limit (one value
   /// or all of them together; the limits differ between Android and iOS) or the SDK could not
-  /// store it. Nothing changed, and the previous value of that attribute, if any, is kept.
+  /// store it. Nothing changed: the previous value of that attribute, if any, is kept (iOS deletes
+  /// it while refusing, so the plugin writes it back).
   rejected,
 }
 
 /// An attribute call failed. [reason] says why.
-class BugseeAttributeException extends BugseeArgumentException {
+///
+/// Deliberately NOT a [BugseeArgumentException]: `rejected` is the SDK's own refusal after the
+/// call reached it (a size limit), and `on BugseeArgumentException` must keep meaning "found before
+/// anything reached the SDK". `invalidName` and `invalidValue` are the Dart-side findings.
+class BugseeAttributeException extends BugseeException {
   const BugseeAttributeException(
     this.reason,
-    String argument,
-    String message, {
-    Object? cause,
-  }) : super(argument, message, cause: cause);
+    this.argument,
+    super.message, {
+    super.cause,
+  });
 
   final AttributeFailure reason;
+
+  /// The parameter at fault: `name` or `value`.
+  final String argument;
 
   @override
   String toString() =>

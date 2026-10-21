@@ -21,6 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
            severity:(NSInteger)severity
              fields:(nullable NSDictionary<NSString *, NSString *> *)fields
              urgent:(BOOL)urgent;
+/// Whether the SDK is Launching or Launched: `+addBreadcrumb:` has no launch gate of its own
+/// (Bugsee.m:2133), so a crumb handed over after stop or before launch would be "taken" by nobody.
+- (BOOL)isLaunchedOrLaunching;
 /// The SDK's own `BugseeLogLevel` integer for the crumb (the caller maps the name).
 - (BOOL)addBreadcrumbCategory:(NSString *)category
                         level:(NSInteger)level

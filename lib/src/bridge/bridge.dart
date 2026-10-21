@@ -150,11 +150,22 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     ReportHandler? onBefore,
     ReportHandler? onAfter,
   }) async {
+    final previousBefore = _onBefore;
+    final previousAfter = _onAfter;
+    final previousPhasesSent = _phasesSent;
     _onBefore = onBefore;
     _onAfter = onAfter;
     // The receiver first, then the flag: native must not call before Dart can answer.
     BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
-    await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
+    try {
+      await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
+    } catch (_) {
+      // Native still has the old phases, so the old handlers keep running: one truth.
+      _onBefore = previousBefore;
+      _onAfter = previousAfter;
+      _phasesSent = previousPhasesSent;
+      rethrow;
+    }
     _phasesSent = true;
   }
 
@@ -173,7 +184,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       await _complete(request.handle);
       return;
     }
-    final proxy = ReportProxy.internal(
+    final proxy = createReportProxy(
       id: request.reportId,
       typeName: request.type,
       deliveryId: request.deliveryId,
@@ -186,7 +197,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
     var overran = false;
     final deadline = Timer(Duration(milliseconds: request.deadlineMs), () {
       overran = true;
-      proxy.markCompleted();
+      closeReportProxy(proxy);
     });
     try {
       await handler(proxy);
@@ -218,7 +229,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
       }
       // Closed BEFORE the completion crosses, so nothing a stray continuation does
       // afterwards can be sent as if it were still live.
-      proxy.markCompleted();
+      closeReportProxy(proxy);
       await _complete(request.handle);
     }
   }

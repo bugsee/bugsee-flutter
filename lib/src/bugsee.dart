@@ -1,5 +1,5 @@
 // The public entry point. Everything behind it is `BugseeRuntime`, which a test can replace.
-import 'package:meta/meta.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'bugsee_runtime.dart';
 import 'errors.dart';
@@ -23,12 +23,13 @@ import 'status.dart';
 /// Android and iOS are two SDKs behind one set of options (`BugseeOptions`). Launching is
 /// asynchronous in both: [launch] completes once the SDK reports that capture started; follow
 /// the transitions with [statusChanges].
+/// Replaces the native side (and everything else the facade uses). For tests only: not exported
+/// from package:bugsee_flutter, so `BugseeRuntime` is not part of the public signature.
+@visibleForTesting
+void debugSetBugseeRuntime(BugseeRuntime runtime) => Bugsee._runtime = runtime;
+
 abstract final class Bugsee {
   static BugseeRuntime _runtime = BugseeRuntime();
-
-  /// Replaces the native side (and everything else the facade uses). For tests only.
-  @visibleForTesting
-  static void debugSetRuntime(BugseeRuntime runtime) => _runtime = runtime;
 
   /// Launches the SDK with the application [token] from the Bugsee dashboard.
   ///
@@ -137,7 +138,8 @@ abstract final class Bugsee {
   /// limits without saying so (one value, or all attributes together, which differ between Android
   /// and iOS: about 800 ASCII characters on iOS, 25 KB in all on Android); this reads the value
   /// back and reports it as `rejected`, and the previous value stays. Android stores a non-integer
-  /// as a 32-bit float, so `0.1` is read back as `0.1` but a double with more digits loses them.
+  /// as a 32-bit float, so `0.1` is read back as `0.1`, and a double with more digits is narrowed the same way by `getAttribute` and
+  /// `getAllAttributes` (`3.141592653589793` reads `3.1415927`); iOS keeps the double.
   ///
   /// Works before [launch] on both platforms: the SDKs keep attributes outside the session.
   static Future<void> setAttribute(String name, Object value) =>
@@ -208,7 +210,8 @@ abstract final class Bugsee {
 
   /// Adds a [BugseeBreadcrumb] to the report's trail. Completes with whether the SDK was handed
   /// it; `false` means it was not: breadcrumb capture is off (**the default on both SDKs**: enable
-  /// it with `BugseeOptions(captureBreadcrumbs: true)`), or the SDK is not launched. Handing it over
+  /// it with `BugseeOptions(captureBreadcrumbs: true)`), or the SDK is not launching or launched
+  /// (before launch, and after [stop]). Handing it over
   /// is not proof it is recorded (the app's breadcrumb filter, set natively, may drop it).
   static Future<bool> addBreadcrumb(BugseeBreadcrumb breadcrumb) =>
       _runtime.addBreadcrumb(breadcrumb);
@@ -244,8 +247,9 @@ abstract final class Bugsee {
   ///
   /// **May be called before [launch]** on both platforms: capture then starts blacked out
   /// ([isBlackout] reflects it at once). On Android a blackout lasts from launch to [stop] (stopping
-  /// ends it, with a `BlackoutEnded` lifecycle event) and a later launch starts without one; iOS
-  /// keeps the flag until [endBlackout].
+  /// ends it, with a `BlackoutEnded` lifecycle event) and a later launch starts without one, except
+  /// one requested WHILE the SDK is stopping, which the stop hands to the next launch; iOS keeps the
+  /// flag until [endBlackout].
   static Future<void> startBlackout() => _runtime.startBlackout();
 
   /// Resumes what [startBlackout] suppressed. Before [launch] it cancels an earlier

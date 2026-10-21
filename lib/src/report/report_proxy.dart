@@ -1,7 +1,5 @@
 // A proxy of the SDK's report, for the report handlers (workbook Part 7). Public: exported from
 // package:bugsee_flutter (the types a handler receives); only its constructor is internal.
-import 'package:meta/meta.dart';
-
 import '../bridge/messages.g.dart';
 import 'report_enums.dart';
 
@@ -69,9 +67,7 @@ final class ReportSnapshot {
 /// attachments (`addAttachment(path, name, mimeType, move)`): native does the file
 /// work and no bytes or streams cross the bridge (workbook 7.3.3).
 final class ReportProxy {
-  /// Created by the bridge, one per delivery.
-  @internal
-  ReportProxy.internal({
+  ReportProxy._({
     required this.id,
     required this.typeName,
     required this.deliveryId,
@@ -99,10 +95,6 @@ final class ReportProxy {
   /// `false` when the handler completes, when the deadline passes here, and when
   /// native refuses an edit.
   bool get isLive => _live;
-
-  /// For the bridge: the completion is about to run (or has). Idempotent.
-  @internal
-  void markCompleted() => _live = false;
 
   void _ensureLive() {
     if (!_live) throw ReportClosedError(id);
@@ -192,3 +184,22 @@ final class ReportProxy {
     return value is double && value.isFinite;
   }
 }
+
+/// Creates the proxy for one delivery. Internal (the bridge's): not exported from
+/// package:bugsee_flutter, so the proxy's public type carries no bridge types.
+ReportProxy createReportProxy({
+  required String id,
+  required String typeName,
+  required String deliveryId,
+  required String handle,
+  required BugseeBridgeHostApi host,
+}) => ReportProxy._(
+  id: id,
+  typeName: typeName,
+  deliveryId: deliveryId,
+  handle: handle,
+  host: host,
+);
+
+/// The completion is about to run (or has): further edits fail. Idempotent. Internal.
+void closeReportProxy(ReportProxy proxy) => proxy._live = false;

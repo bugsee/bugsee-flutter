@@ -279,7 +279,10 @@ final class BugseeRuntime {
       }
       return neutral;
     }
-    _requireBinding();
+    // Attaches to native on the first call (lifecycle channel, wrapper identity, report phases), so
+    // events the SDK raised earlier are replayed whichever method comes first; a failure to attach
+    // is the BugseeException ensureStarted documents.
+    await ensureStarted();
     try {
       return await send();
     } on MissingPluginException catch (e) {
@@ -329,12 +332,22 @@ final class BugseeRuntime {
   Future<void> setAttribute(String name, Object? value) async {
     checkAttributeName(name);
     final checked = checkAttributeValue(value);
-    await _call<void>(
-      'setAttribute',
-      null,
-      () => host.setAttribute(name, checked),
-      argument: 'value',
-    );
+    try {
+      await _call<void>(
+        'setAttribute',
+        null,
+        () => host.setAttribute(name, checked),
+        argument: 'value',
+      );
+    } on BugseeArgumentException catch (e) {
+      // Native defends again; the attribute calls speak BugseeAttributeException throughout.
+      throw BugseeAttributeException(
+        AttributeFailure.invalidValue,
+        e.argument,
+        e.message,
+        cause: e.cause,
+      );
+    }
   }
 
   Future<Object?> getAttribute(String name) async {

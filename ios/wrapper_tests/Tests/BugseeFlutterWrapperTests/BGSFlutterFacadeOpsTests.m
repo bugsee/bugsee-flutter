@@ -24,6 +24,9 @@
 @property(nonatomic, copy) NSDictionary *notifyFields;
 @property(nonatomic) BOOL notifyUrgent;
 @property(nonatomic) BOOL crumbAccepted;
+@property(nonatomic) BOOL running;
+/// Mimics the SDK's total-size overflow: the key being overwritten is removed, then the value dropped.
+@property(nonatomic) BOOL removeKeyOnReject;
 @property(nonatomic) NSInteger crumbLevel;
 @property(nonatomic, copy) NSDictionary *crumbData;
 @property(nonatomic) BOOL blackout;
@@ -39,6 +42,7 @@
     _attributes = [NSMutableDictionary dictionary];
     _dropStringsLongerThan = NSIntegerMax;
     _crumbAccepted = YES;
+    _running = YES;
   }
   return self;
 }
@@ -48,7 +52,10 @@
 }
 - (void)setAttribute:(NSString *)name value:(id)value {
   [self record:@"setAttribute"];
-  if ([value isKindOfClass:[NSString class]] && (NSInteger)[value length] > _dropStringsLongerThan) return;
+  if ([value isKindOfClass:[NSString class]] && (NSInteger)[value length] > _dropStringsLongerThan) {
+    if (_removeKeyOnReject) [_attributes removeObjectForKey:name];
+    return;
+  }
   _attributes[name] = value;
 }
 - (id)getAttribute:(NSString *)name {
@@ -101,6 +108,10 @@
   _notifySeverity = severity;
   _notifyFields = fields;
   _notifyUrgent = urgent;
+}
+- (BOOL)isLaunchedOrLaunching {
+  [_calls addObject:@"isLaunchedOrLaunching"];
+  return _running;
 }
 - (BOOL)addBreadcrumbCategory:(NSString *)category
                         level:(NSInteger)level
@@ -186,6 +197,21 @@
   XCTAssertEqualObjects(r.errorCode, BGSFlutterFacadeOps.attributeRejected);
   XCTAssertFalse([r.errorMessage containsString:@"abcd"], @"never the value");
   XCTAssertEqualObjects([BGSFlutterFacadeOps getAttributeWithSdk:_sdk name:@"k"].value, @"abc");
+}
+
+- (void)testARejectedOverwriteGivesTheOldValueBackWhenTheSdkRemovedIt {
+  // iOS deletes the key it was overwriting when the new value overflows the total; the previous
+  // value must survive the rejection (as it does on Android).
+  _sdk.dropStringsLongerThan = 3;
+  _sdk.removeKeyOnReject = YES;
+  XCTAssertFalse([BGSFlutterFacadeOps setAttributeWithSdk:_sdk name:@"cart" value:@"abc"].failed);
+  BGSFlutterFacadeResult *r = [BGSFlutterFacadeOps setAttributeWithSdk:_sdk name:@"cart" value:@"abcd"];
+  XCTAssertEqualObjects(r.errorCode, BGSFlutterFacadeOps.attributeRejected);
+  XCTAssertEqualObjects(_sdk.attributes[@"cart"], @"abc", @"the previous value is back");
+  // A first value that is rejected leaves nothing behind.
+  r = [BGSFlutterFacadeOps setAttributeWithSdk:_sdk name:@"new" value:@"abcd"];
+  XCTAssertTrue(r.failed);
+  XCTAssertNil(_sdk.attributes[@"new"]);
 }
 
 - (void)testAStringOverTheLimitNeverReachesTheSdkAndTheLimitItselfIsAccepted {
@@ -379,6 +405,16 @@
   r = [BGSFlutterFacadeOps addBreadcrumbWithSdk:_sdk category:@"nav" level:@"info" message:@"m" type:@"t" data:@{@"k" : @"v"}];
   XCTAssertFalse([r.value boolValue]);
   XCTAssertEqualObjects(_sdk.crumbData[@"k"], @"v");
+}
+
+- (void)testABreadcrumbIsNotHandedOverWhenTheSdkIsNotRunning {
+  // iOS +addBreadcrumb: has no launch gate; after stop (or before launch) nothing would record it.
+  _sdk.running = NO;
+  BGSFlutterFacadeResult *r = [BGSFlutterFacadeOps addBreadcrumbWithSdk:_sdk category:@"c" level:@"info" message:@"m" type:@"t" data:nil];
+  XCTAssertEqualObjects(r.value, @NO);
+  XCTAssertFalse([_sdk.calls containsObject:@"addBreadcrumb"]);
+  _sdk.running = YES;
+  XCTAssertEqualObjects([BGSFlutterFacadeOps addBreadcrumbWithSdk:_sdk category:@"c" level:@"info" message:@"m" type:@"t" data:nil].value, @YES);
 }
 
 - (void)testBadBreadcrumbsNeverReachTheSdk {

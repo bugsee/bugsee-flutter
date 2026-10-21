@@ -53,7 +53,7 @@ void main() {
     await Bugsee.setAttribute('pi', 3.141592653589793);
     final pi = await Bugsee.getAttribute('pi') as double;
     say('pi read back = $pi');
-    expect(pi, android ? closeTo(3.14159, 1e-5) : 3.141592653589793);
+    expect(pi, android ? 3.1415927 : 3.141592653589793);
     await Bugsee.setAttribute('tenth', 0.1);
     expect(await Bugsee.getAttribute('tenth'), 0.1);
 
@@ -114,6 +114,39 @@ void main() {
     expect(rejected, 1, reason: 'the SDK has a total size limit');
     expect((await Bugsee.getAllAttributes()).length, stored);
     expect(await Bugsee.getAttribute('bulk0'), '0${'z' * 600}');
+    // A rejected OVERWRITE keeps the old value on both platforms (iOS deletes the key it was
+    // overwriting when the total overflows, so the plugin writes it back). 'cart' is small, the
+    // attributes are full, and the new value does not fit.
+    await Bugsee.clearAllAttributes();
+    await Bugsee.setAttribute('cart', 'small');
+    for (var i = 0; i < 200; i++) {
+      try {
+        await Bugsee.setAttribute('fill$i', 'z' * 600);
+      } on BugseeAttributeException {
+        break;
+      }
+    }
+    await expectLater(
+      Bugsee.setAttribute('cart', 'y' * 700),
+      throwsA(
+        isA<BugseeAttributeException>().having(
+          (e) => e.reason,
+          'reason',
+          AttributeFailure.rejected,
+        ),
+      ),
+    );
+    expect(await Bugsee.getAttribute('cart'), 'small');
+    say('rejected overwrite kept the previous value');
+    await Bugsee.clearAllAttributes();
+
+    // Both getters answer the same for a double (Android persists a float, so it narrows).
+    await Bugsee.setAttribute('pi2', 3.141592653589793);
+    expect(
+      (await Bugsee.getAllAttributes())['pi2'],
+      await Bugsee.getAttribute('pi2'),
+    );
+    say('pi both getters = ${await Bugsee.getAttribute('pi2')}');
     await Bugsee.clearAllAttributes();
 
     // User identifier.
@@ -304,6 +337,13 @@ void main() {
 
       await Bugsee.stop();
       expect(await Bugsee.getStatus(), BugseeStatus.stopped);
+      // After stop the SDK drops a breadcrumb, so the answer is false though capture is configured on.
+      expect(
+        await Bugsee.addBreadcrumb(
+          const BugseeBreadcrumb(category: 'c', message: 'after stop'),
+        ),
+        isFalse,
+      );
       // They persist across a stop.
       expect(await Bugsee.getAttribute('plan'), 'pro');
       await Bugsee.clearAllAttributes();

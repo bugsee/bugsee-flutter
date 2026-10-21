@@ -60,7 +60,7 @@ own are `URLSession`, `okhttp`, ...). The channel's advantage here is the lifeti
                                          ▼   (a later event-loop turn, slices of 4 ms)
                             Dart filter  (fail closed: throw / hang / junk drops the event)
                                          ▼
-                batches of <= 32 events / 512 KiB, ONE in flight   ──►  host.addNetworkEvents(batch)   (platform thread)
+                batches of <= 32 events / 512 KiB, ONE in flight   ──►  host.addNetworkEvents(batch)   (a serial BACKGROUND thread of the plugin)
                                                                               │
               Android: BugseeExchangeFactory.createNetworkEvent  ──┐          │  gate: Launched && capture.network
               iOS:     BugseeNetworkEvent (built directly)       ──┴──► BugseeWrapperChannel.addNetworkEvent(event, true)
@@ -71,9 +71,11 @@ own are `URLSession`, `okhttp`, ...). The channel's advantage here is the lifeti
 * **The app's HTTP path pays for a queue insert.** Everything else (the filter, the encode, the bridge call) happens in
   a later turn of the event loop. A `request.close()` is not delayed, a response chunk is forwarded in the same turn
   it arrives (`StreamController(sync: true)`), `pause`, `resume` and `cancel` reach the real response.
-* **Order** is the order the events were captured in; one batch is in flight at a time, so the platform thread is
-  never handed a second batch before it answered the first.
-* **A busy platform thread** shows as a full queue: the new events are dropped and counted
+* **Order** is the order the events were captured in; one batch is in flight at a time, so native is never handed a second
+  batch before it answered the first, and the native work (the SDK's sanitizer, the app's native filter) runs on a serial
+  background thread of the plugin (a Pigeon task queue), never on the main thread. The wrapper channel is documented as
+  callable from any thread; the SDK's own interception calls the same entry points from its own threads.
+* **A busy native side** shows as a full queue: the new events are dropped and counted
   (`networkCaptureStats.droppedQueueFull`), a warning is printed once in debug builds.
 * **Timestamps**: every event carries its age (`ageMs`, from Dart's monotonic clock); native subtracts it from the
   SDK's own clock (Android `BugseeExchangeFactory.currentTimestamp()`, which is not `DateTime.now()` once the device
@@ -162,9 +164,9 @@ and a binary body is counted and never copied:
    * if the app set a filter on the **native** SDK (`Bugsee.setNetworkEventFilter` from Kotlin/Swift), it runs on the
      event after the Dart filter. **Double filtering is by design**: the Dart filter is the wrapper's and runs first,
      the native one is the app's and runs second, the way the RN design orders "wrapper filter -> app filter" (§6.3.1). The
-     native filter runs on the platform thread, synchronously, and an exception it throws drops that event (caught
-     natively: it reached the global handler on Android for the SDK's own events, here it must not reach the app's
-     platform thread; recorded as "refused by native");
+     native filter runs on the plugin's background thread, synchronously, and an exception it throws drops that event (caught
+     natively: on Android it reaches the global handler for the SDK's own events, here it must not crash the plugin's thread;
+     recorded as "refused by native");
    * otherwise (and only then, Android and iOS both document "applies only when no network event filter is set") the
      **default sanitizer** runs when `capture.network.default-sanitizer` is on (the default): query parameters, header
      values and JSON body values with sensitive keys are redacted. **A Dart filter does not replace it** (the SDK's
@@ -242,7 +244,7 @@ options are read again. A failure to read leaves nothing accepted.
 * `before.headers` are the request headers as `dart:io` holds them when the request is closed: the app's, plus the ones
   `dart:io` itself sets (`host`, `user-agent`, `accept-encoding`, `content-length`/`transfer-encoding`). Cookies added
   through `request.cookies` are serialised later and are not in it.
-* The queue holds 512 events and 8 MiB; a burst the platform thread cannot absorb drops the newest events and says so
+* The queue holds 512 events and 8 MiB; a burst the native side cannot absorb drops the newest events and says so
   in `networkCaptureStats`.
 
 ## Tests

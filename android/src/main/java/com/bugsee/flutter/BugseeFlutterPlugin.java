@@ -74,7 +74,7 @@ public class BugseeFlutterPlugin
     /** Non-null while attached to an engine, like {@link #sdk}; every facade call needs it. */
     private FacadeOps.Sdk facade;
     /** Network injection (Phase 5b); non-null while attached, like {@link #facade}. */
-    private NetworkOps.Sdk network;
+    private volatile NetworkOps.Sdk network;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */

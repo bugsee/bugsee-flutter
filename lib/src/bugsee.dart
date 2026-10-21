@@ -309,7 +309,9 @@ abstract final class Bugsee {
   ///
   /// Installs `HttpOverrides` **in front of** whatever `HttpOverrides` the app has installed: it
   /// chains to them (clients, certificate callbacks, proxy settings and `findProxy` are theirs and
-  /// untouched). Idempotent: calling it again while it is in effect does nothing. Returns whether
+  /// untouched). So install it **after** the app sets its own `HttpOverrides.global`; one set
+  /// afterwards without chaining replaces this capture, and calling this again puts it back in
+  /// front. Idempotent: calling it again while it is in effect does nothing. Returns whether
   /// the capture is in effect, `false` on a platform with no SDK (desktop, web).
   ///
   /// Nothing is recorded until the SDK is `launched`, and only while `capture.network` is on

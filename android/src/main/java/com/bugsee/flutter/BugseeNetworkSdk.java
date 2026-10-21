@@ -15,7 +15,9 @@ import java.util.Map;
 
 /**
  * The real Android SDK behind {@link NetworkOps.Sdk}. Nothing is decided here (see
- * {@link NetworkOps}): each method is one SDK call, made on the platform (main) thread.
+ * {@link NetworkOps}): each method is one SDK call, made on the plugin's serial background thread (the Pigeon
+ * method has a task queue: the SDK's sanitizer and the app's native filter run on the calling
+ * thread and must not take UI time).
  */
 final class BugseeNetworkSdk implements NetworkOps.Sdk {
 

@@ -42,7 +42,7 @@ final class NetworkCaptureStats {
   /// launched, `capture.network` is off, an app filter threw).
   final int handedToSdk;
 
-  /// Events dropped because the queue was full: the platform thread could not keep up.
+  /// Events dropped because the queue was full: native could not keep up.
   final int droppedQueueFull;
 
   /// Events dropped because the SDK was not accepting them any more by the time they were handed
@@ -168,7 +168,7 @@ final class NetworkPipeline {
         if (!_warnedFull) {
           _warnedFull = true;
           _warn(
-            'network capture queue is full: the platform thread is not keeping up, events are '
+            'network capture queue is full: native is not keeping up, events are '
             'being dropped (Bugsee.networkCaptureStats counts them)',
           );
         }

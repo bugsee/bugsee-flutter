@@ -140,7 +140,7 @@ final class NetworkOps {
     /**
      * Hands every event of the batch to the SDK, in order, and returns how many it took. Nothing
      * throws: an SDK or filter exception for one event is caught (the SDK's network filter runs
-     * on THIS thread, the platform thread, and a throw there must not take the app down; the event
+     * on THIS thread, the plugin's serial background thread, and a throw there must not take the app down; the event
      * is dropped, fail closed) and the rest of the batch goes on.
      */
     static int addAll(@NonNull final Sdk sdk, @Nullable final List<Messages.NetworkEventMessage> events) {

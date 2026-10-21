@@ -224,12 +224,24 @@ Design and data flow: `doc/network.md` (the privacy model, the options, the limi
   controlled stream, not a socket.
 - **Runtime evidence** (`example/integration_test/network_test.dart`, bundles read from the app: Android emulator API 30 arm64
   `run-as`, iOS 26.5 simulator container): the table in `doc/network.md` ("Verified on a device").
+- **Threading**: unlike the rest of the facade, `addNetworkEvents` runs on a serial BACKGROUND thread of the plugin (a Pigeon task
+  queue): the SDK's sanitizer and the app's native filter run on the calling thread, up to one body-size limit of text per
+  event, and must not take UI time; the channel is documented as callable from any thread.
 - **Not verified**: a valid token (the stand-in refuses the upload on purpose), the upload's server side, `capture.network` off on a
-  device, an Android release build with R8 (the wrapper classes are `@Keep`-free but referenced by the SDK interface only through the
-  SDK's own keep rules: `FlutterWrapper implements BugseeWrapper`), tvOS/visionOS, a hot restart on a device (the isolate-local state is
-  covered by design and by the unit tests, not by a restart).
+  device, a release build with R8/obfuscation, tvOS/visionOS, a hot restart on a device (the isolate-local state is covered by
+  design and by the unit tests, not by a restart), the SDKs' timing of an injected event against one they intercepted.
 - **Tests** (every new test mutation-checked: the behaviour broken in a copy of the code, the test seen failing, the code restored):
-  <<MUT>>
+  172 Dart network tests (58 against a real local `HttpServer`
+  incl. a differential test against an unwrapped client and WebSocket handshake, 12 against a controlled response stream
+  for pause/resume/cancel/error, 22 body rules, 29 pipeline/filter, 21 install/uninstall/policy, 19 through the real runtime, 11
+  drift), 10 `public_api_test` pins, 16 JUnit (`NetworkOpsTest`, `NetworkWireParityTest`), 16 XCTest
+  (`BGSFlutterNetworkOpsTests`). Mutations (each applied to a copy, the tests run, the code restored): **110 Dart, 24 Android,
+  21 iOS**. All killed in the end; the survivors of the first pass were real test gaps and were fixed by strengthening tests:
+  an `encoded` body whose bytes were kept (B11), an error through `request.done` (H11b), the recorder-throws swallow beneath the
+  call-site guards (H38), the uninstalled client being unwrapped (S3), a test rig that returned the NEW policy to the OLD read (S5).
+  Three were equivalent and are recorded as such: `BodyTee` limit 0 without the `limit > 0` guard (the first byte overflows
+  anyway), removing the `StateError` for a wrong filter return type (a failing cast is caught and drops the event the same way),
+  `_passedOn` in `redirect()` (dart:io drains that response itself; the line was dead and was removed).
 
 ## 6. Phase 6 — Reports (Part 7, report-contract)
 

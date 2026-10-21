@@ -2218,6 +2218,11 @@ public class Messages {
      * Returns how many the SDK was handed: native drops the rest without error (the SDK is not
      * launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
      * throws for a single bad event.
+     *
+     * Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+     * applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+     * one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+     * documented to be callable from any thread; one queue keeps the order.
      */
     @NonNull 
     Long addNetworkEvents(@NonNull List<NetworkEventMessage> events);
@@ -2232,6 +2237,7 @@ public class Messages {
     }
     static void setUp(@NonNull BinaryMessenger binaryMessenger, @NonNull String messageChannelSuffix, @Nullable BugseeBridgeHostApi api) {
       messageChannelSuffix = messageChannelSuffix.isEmpty() ? "" : "." + messageChannelSuffix;
+      BinaryMessenger.TaskQueue taskQueue = binaryMessenger.makeBackgroundTaskQueue();
       {
         BasicMessageChannel<Object> channel =
             new BasicMessageChannel<>(
@@ -3126,7 +3132,7 @@ public class Messages {
       {
         BasicMessageChannel<Object> channel =
             new BasicMessageChannel<>(
-                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents" + messageChannelSuffix, getCodec());
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents" + messageChannelSuffix, getCodec(), taskQueue);
         if (api != null) {
           channel.setMessageHandler(
               (message, reply) -> {

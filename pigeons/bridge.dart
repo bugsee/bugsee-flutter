@@ -451,12 +451,18 @@ abstract class BugseeBridgeHostApi {
     List<String>? labels,
   );
 
-  // ---- Network capture (Phase 5b). Runs on the platform thread like the rest of the facade.
+  // ---- Network capture (Phase 5b). Unlike the rest of the facade this one runs on a background thread.
 
   /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
   /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
   /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
   /// throws for a single bad event.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+  /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+  /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+  /// documented to be callable from any thread; one queue keeps the order.
+  @TaskQueue(type: TaskQueueType.serialBackgroundThread)
   int addNetworkEvents(List<NetworkEventMessage> events);
 }
 

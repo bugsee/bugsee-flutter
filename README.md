@@ -147,7 +147,8 @@ SDK. It is opt-in: call it once, early, before the app makes a request.
 
 ```dart
 void main() {
-  Bugsee.installNetworkCapture();   // chains to any HttpOverrides your app installs
+  // After your own `HttpOverrides.global = ...` if you set one: this chains to it.
+  Bugsee.installNetworkCapture();
   runApp(const MyApp());
 }
 

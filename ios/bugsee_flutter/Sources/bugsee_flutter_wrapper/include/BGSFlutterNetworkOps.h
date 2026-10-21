@@ -5,7 +5,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// The SDK entry points network injection uses (Phase 5b); the real ones are
 /// `BGSFlutterRealNetworkSdk`. A seam so a unit test can see what reaches the SDK (the Android twin
 /// is `NetworkOps.Sdk`). The event is a `BugseeNetworkEvent`, typed `id` so this header needs no SDK
-/// import. Every method is called on the platform (main) thread.
+/// import. Every method is called on the plugin's serial background queue (the Pigeon method has a task queue: the SDK's sanitizer and the app's native filter run on the calling thread and must not take UI time).
 @protocol BGSFlutterNetworkSDK <NSObject>
 /// The SDK is `Launched` and `capture.network` is on.
 - (BOOL)acceptsNetworkEvents;

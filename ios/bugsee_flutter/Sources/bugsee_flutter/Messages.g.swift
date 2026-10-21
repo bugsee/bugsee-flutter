@@ -996,6 +996,11 @@ protocol BugseeBridgeHostApi {
   /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
   /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
   /// throws for a single bad event.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+  /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+  /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+  /// documented to be callable from any thread; one queue keeps the order.
   func addNetworkEvents(events: [NetworkEventMessage]) throws -> Int64
 }
 
@@ -1005,6 +1010,11 @@ class BugseeBridgeHostApiSetup {
   /// Sets up an instance of `BugseeBridgeHostApi` to handle messages through the `binaryMessenger`.
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: BugseeBridgeHostApi?, messageChannelSuffix: String = "") {
     let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    #if os(iOS)
+      let taskQueue = binaryMessenger.makeBackgroundTaskQueue?()
+    #else
+      let taskQueue: FlutterTaskQueue? = nil
+    #endif
     /// The Dart side is listening: flush what was buffered while it was not (in
     /// order) and deliver from now on.
     let attachLifecycleChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.attachLifecycle\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
@@ -1647,7 +1657,14 @@ class BugseeBridgeHostApiSetup {
     /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
     /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
     /// throws for a single bad event.
-    let addNetworkEventsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    ///
+    /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+    /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+    /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+    /// documented to be callable from any thread; one queue keeps the order.
+    let addNetworkEventsChannel = taskQueue == nil
+      ? FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+      : FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec, taskQueue: taskQueue)
     if let api = api {
       addNetworkEventsChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]

@@ -807,8 +807,12 @@ void main() {
         'the detail lines of a message do not count (only its first line)',
         () {
           expect(
-            sig(FlutterError('summary\ndetail one'), base),
-            sig(FlutterError('summary\ndetail two'), base),
+            sig(StateError('summary\ndetail one'), base),
+            sig(StateError('summary\ndetail two'), base),
+          );
+          expect(
+            sig(StateError('summary\ndetail one'), base),
+            isNot(sig(StateError('other summary\ndetail one'), base)),
           );
         },
       );

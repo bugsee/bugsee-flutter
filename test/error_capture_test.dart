@@ -516,6 +516,23 @@ void main() {
     );
 
     test(
+      'the same object by two routes with different stacks is one, by identity',
+      () {
+        capture.install(isolateErrors: false);
+        final error = StateError('x');
+        FlutterError.onError!(details(error)); // the details' stack
+        PlatformDispatcher.instance.onError!(
+          error,
+          StackTrace.fromString(
+            '#0      elsewhere (package:app/other.dart:9:9)\n',
+          ),
+        );
+        expect(reports, hasLength(1));
+        expect(capture.suppressedCount, 0);
+      },
+    );
+
+    test(
       'the same text by two routes (zone and FlutterError, a thrown String) is one, silently',
       () {
         capture.install(isolateErrors: false);

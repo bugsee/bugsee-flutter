@@ -1222,6 +1222,114 @@ public class Messages {
     }
   }
 
+  /**
+   * What native did with a launch request. Strings, not an enum: Pigeon sends an enum as its
+   * ordinal (workbook 7.4), and the vocabulary is compared across Dart, Java and Objective-C by
+   * `test/launch_drift_test.dart`.
+   *
+   * [outcome] is one of
+   *   `launched`         the SDK launched and reported it (Android: its callback; iOS: `started:`);
+   *   `already-running`  the SDK was already Launching or Launched (an auto-init, an earlier
+   *                      launch, a native launch): the request's options were NOT applied;
+   *   `deferred`         iOS only: the app is in the background, so the SDK starts when it becomes
+   *                      active (the SDK answers `started:` YES at once, with nothing launched yet);
+   *   `refused`          the SDK declined; [reason] says why.
+   * [reason] (only for `refused`) is one of `invalid-token`, `stopping` (a stop is still in
+   * progress: launch again once it has completed), or `failed` (the SDK gave no further reason; its
+   * log has it: a token it rejects, no context, capture that did not start, a stop that overtook it).
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class LaunchOutcomeMessage {
+    private @NonNull String outcome;
+
+    public @NonNull String getOutcome() {
+      return outcome;
+    }
+
+    public void setOutcome(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"outcome\" is null.");
+      }
+      this.outcome = setterArg;
+    }
+
+    private @Nullable String reason;
+
+    public @Nullable String getReason() {
+      return reason;
+    }
+
+    public void setReason(@Nullable String setterArg) {
+      this.reason = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    LaunchOutcomeMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      LaunchOutcomeMessage that = (LaunchOutcomeMessage) o;
+      return pigeonDeepEquals(outcome, that.outcome) && pigeonDeepEquals(reason, that.reason);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), outcome, reason};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "LaunchOutcomeMessage{" + "outcome=" + outcome + ", " + "reason=" + reason + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable String outcome;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setOutcome(@NonNull String setterArg) {
+        this.outcome = setterArg;
+        return this;
+      }
+
+      private @Nullable String reason;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setReason(@Nullable String setterArg) {
+        this.reason = setterArg;
+        return this;
+      }
+
+      public @NonNull LaunchOutcomeMessage build() {
+        LaunchOutcomeMessage pigeonReturn = new LaunchOutcomeMessage();
+        pigeonReturn.setOutcome(outcome);
+        pigeonReturn.setReason(reason);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(2);
+      toListResult.add(outcome);
+      toListResult.add(reason);
+      return toListResult;
+    }
+
+    static @NonNull LaunchOutcomeMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      LaunchOutcomeMessage pigeonResult = new LaunchOutcomeMessage();
+      Object outcome = pigeonVar_list.get(0);
+      pigeonResult.setOutcome((String) outcome);
+      Object reason = pigeonVar_list.get(1);
+      pigeonResult.setReason((String) reason);
+      return pigeonResult;
+    }
+  }
+
   private static class PigeonCodec extends StandardMessageCodec {
     public static final PigeonCodec INSTANCE = new PigeonCodec();
 
@@ -1242,6 +1350,8 @@ public class Messages {
           return ReportHandlerRequestMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 134:
           return ReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 135:
+          return LaunchOutcomeMessage.fromList((ArrayList<Object>) readValue(buffer));
         default:
           return super.readValueOfType(type, buffer);
       }
@@ -1267,6 +1377,9 @@ public class Messages {
       } else if (value instanceof ReportSnapshotMessage) {
         stream.write(134);
         writeValue(stream, ((ReportSnapshotMessage) value).toList());
+      } else if (value instanceof LaunchOutcomeMessage) {
+        stream.write(135);
+        writeValue(stream, ((LaunchOutcomeMessage) value).toList());
       } else {
         super.writeValue(stream, value);
       }
@@ -1381,6 +1494,30 @@ public class Messages {
 
     @NonNull 
     Boolean reportClearAttributes(@NonNull String handle);
+    /**
+     * Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
+     * the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
+     * when the SDK answers: after capture started (`launched`), at once for the other outcomes. An
+     * exception the SDK throws crosses as a PlatformException `launch-failed`.
+     */
+    void launch(@NonNull String token, @NonNull Map<String, Object> options, @NonNull Result<LaunchOutcomeMessage> result);
+    /** Stops the SDK; completes when it has stopped (at once when it already is). */
+    void stop(@NonNull VoidResult result);
+    /**
+     * The SDK's status, by name: `stopped`, `launching`, `launched` or `stopping` (names, never
+     * ordinals). Read from the SDK itself, not derived from the lifecycle channel.
+     */
+    @NonNull 
+    String status();
+    /**
+     * The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
+     * SDK defaults (the same on both SDKs); with true: the SDK's `getHostLaunchOptions`, whose
+     * platforms differ (Android: every recognised option the app passed; iOS: only those that differ
+     * from the iOS default). Keyed by `com.bugsee.option.*`, enums as internal integers, floats as
+     * doubles; hidden (`$$`) options are removed by Dart.
+     */
+    @NonNull 
+    Map<String, Object> launchOptions(@NonNull Boolean hostOnly);
 
     /** The codec used by BugseeBridgeHostApi. */
     static @NonNull MessageCodec<Object> getCodec() {
@@ -1778,6 +1915,107 @@ public class Messages {
                 String handleArg = (String) args.get(0);
                 try {
                   Boolean output = api.reportClearAttributes(handleArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launch" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String tokenArg = (String) args.get(0);
+                Map<String, Object> optionsArg = (Map<String, Object>) args.get(1);
+                Result<LaunchOutcomeMessage> resultCallback =
+                    new Result<LaunchOutcomeMessage>() {
+                      public void success(LaunchOutcomeMessage result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.launch(tokenArg, optionsArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.stop" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                VoidResult resultCallback =
+                    new VoidResult() {
+                      public void success() {
+                        wrapped.add(0, null);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.stop(resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.status" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  String output = api.status();
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launchOptions" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                Boolean hostOnlyArg = (Boolean) args.get(0);
+                try {
+                  Map<String, Object> output = api.launchOptions(hostOnlyArg);
                   wrapped.add(0, output);
                 }
  catch (Throwable exception) {

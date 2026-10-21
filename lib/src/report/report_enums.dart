@@ -1,4 +1,5 @@
-// The report enums, by VALUE (workbook 7.4). Internal until Phase 4.
+// The report enums, by VALUE (workbook 7.4). `ReportSeverity` is public (it types the three
+// default-priority launch options); `ReportType` stays internal until Phase 4b exposes the handlers.
 //
 // Neither enum's `index` ever crosses the bridge: ordinals differ between
 // platforms and shift between releases, and Pigeon would send an enum as its
@@ -10,6 +11,8 @@
 // `IssueType` (v7.4.2) and iOS `BugseeSeverityLevel` (7.0.0-beta7) by
 // `scripts/extract_report_enums.dart`, and `test/report_enum_parity_test.dart`
 // compares this file with BOTH platforms, so a divergence in either is seen.
+
+import 'package:meta/meta.dart';
 
 /// How severe a report is. The SDK's internal integer is [value].
 ///
@@ -35,7 +38,9 @@ enum ReportSeverity {
   /// The smallest and largest value the SDKs accept. Repeated in Java
   /// (`ReportOps.MIN_SEVERITY`/`MAX_SEVERITY`) and Objective-C
   /// (`BGSFlutterReportOps`); the parity test compares all three.
+  @internal
   static const int minValue = 1;
+  @internal
   static const int maxValue = 5;
 
   /// The severity for an SDK value, or `null` for anything else, including the

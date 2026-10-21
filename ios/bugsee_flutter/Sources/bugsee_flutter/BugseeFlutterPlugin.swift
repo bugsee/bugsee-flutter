@@ -8,7 +8,7 @@ import Flutter
 /// `FlutterImplicitEngineDelegate` plugins register only when the engine is
 /// created, after that method. This class only serves Dart once Dart asks.
 ///
-/// Internal: no public API yet (Phase 4).
+/// Internal: the public API is `lib/bugsee_flutter.dart`; this is its native end.
 public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   private let messenger: FlutterBinaryMessenger
   private var sinkToken: Any?
@@ -167,6 +167,49 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     return applied
   }
 
+  // MARK: Launch, stop, status (workbook Part 8; see BGSFlutterLaunchOps)
+
+  func launch(token: String, options: [String: Any]) async throws -> LaunchOutcomeMessage {
+    try await withCheckedThrowingContinuation { continuation in
+      // The SDK is launched on the main thread; a Pigeon handler may arrive on another.
+      DispatchQueue.main.async {
+        BGSFlutterLaunchOps.launch(with: BGSFlutterRealBugsee(), token: token, options: options) {
+          outcome, reason, error in
+          if let outcome = outcome {
+            continuation.resume(returning: LaunchOutcomeMessage(outcome: outcome, reason: reason))
+          } else {
+            continuation.resume(throwing: launchError(error))
+          }
+        }
+      }
+    }
+  }
+
+  func stop() async throws {
+    // Synchronously, before the hop to the main queue: see `beginStop`.
+    BGSFlutterLaunchOps.beginStop()
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      DispatchQueue.main.async {
+        BGSFlutterLaunchOps.stop(with: BGSFlutterRealBugsee()) { error in
+          if let error = error {
+            continuation.resume(throwing: launchError(error))
+          } else {
+            continuation.resume()
+          }
+        }
+      }
+    }
+  }
+
+  func status() throws -> String {
+    BGSFlutterRealBugsee().statusName()
+  }
+
+  func launchOptions(hostOnly: Bool) throws -> [String: Any] {
+    BGSFlutterLaunchOps.reportedOptions(
+      fromSdk: BGSFlutterRealBugsee().launchOptionsHostOnly(hostOnly))
+  }
+
   // MARK: Report handlers
 
   func resetReportHandlers() throws {
@@ -277,6 +320,14 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     @unknown default: return false
     }
   }
+}
+
+/// A launch or stop that threw crosses as a PlatformException `launch-failed` (never the token or
+/// the options: the message is the exception's name and reason).
+private func launchError(_ error: Error?) -> PigeonError {
+  PigeonError(
+    code: BGSFlutterLaunchOps.errorCode,
+    message: error?.localizedDescription ?? "the Bugsee SDK threw", details: nil)
 }
 
 /// The ObjC operations throw (`NSError **`); the pipeline's edit block reports through a pointer.

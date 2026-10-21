@@ -1,0 +1,359 @@
+{
+  "_comment": "Extracted from the native SDK sources by scripts/extract_option_docs.dart; do not edit by hand. The prose of the typed BugseeOptions doc comments (scripts/generate_options.dart).",
+  "sources": {
+    "android": "v7.4.2@3b7af6371",
+    "ios": "origin/nextgen@0581aa02c"
+  },
+  "docs": {
+    "com.bugsee.option.capture.avplayer": {
+      "iosProperty": "Automatically capture AVPlayer driven videos rendered onto AVPlayerLayer"
+    },
+    "com.bugsee.option.capture.bluetooth-status": {
+      "iosProperty": "Monitor current bluetooth status NSBluetoothAlwaysUsageDescription info.plist flag needed in ios 13+ versions"
+    },
+    "com.bugsee.option.capture.breadcrumbs": {
+      "android": "Capture breadcrumbs (user and system events)."
+    },
+    "com.bugsee.option.capture.breadcrumbs.extras": {
+      "iosNote": "attach the raw notification userInfo to auto-collected device-event breadcrumbs"
+    },
+    "com.bugsee.option.capture.camera-preview": {
+      "iosProperty": "Record the live camera image shown in an AVCaptureVideoPreviewLayer.\n\nWarning: PRIVACY. Enabling this records WHAT THE CAMERA SEES into bug reports - faces, surroundings, documents, whatever the lens is pointed at, whether or not the user ever took a photo. Do not enable it without deciding that your users know and agree. Without it (the default) a camera preview records as an empty rectangle, which is why the option exists at all.\n\nWarning: OVERHEAD. Enabling this makes Bugsee take part in your capture session:\n\n- If your session already has an AVCaptureVideoDataOutput, Bugsee wraps its delegate to read frames as they pass. Your delegate still receives every frame first, unchanged.\n\n- If it does not, Bugsee adds its own output. That consumes part of the session's hardware budget (measured ~0.667 of it for one output), so on a session already near the limit Bugsee backs its output out rather than risk the session failing to run.\n\n- A camera screen also stops idling: capture holds the full frame rate while frames arrive, because there is now something to record.\n\nFrames are sampled only at the rate the screen is being recorded, never faster. A frame in a pixel format Bugsee cannot composite is ignored and passed through untouched.\n\nIndependent of captureAVPlayer / captureSampleBufferDisplayLayer: no shared machinery, and grouping would silently opt an app into recording its camera.",
+      "iosNote": "PRIVACY + OVERHEAD - read the docs before enabling."
+    },
+    "com.bugsee.option.capture.crash-handler-type": {
+      "iosProperty": "How the crash reporter intercepts crashes (iOS and visionOS; tvOS always uses BSD signal handlers). See BugseeCrashHandlerType."
+    },
+    "com.bugsee.option.capture.crash-signals": {
+      "iosProperty": "The fatal signals the crash reporter intercepts (iOS, tvOS and visionOS). See BugseeCrashSignals. Default: BugseeCrashSignalsDefault, which is every signal except on the Xamarin and .NET wrappers, where BugseeCrashSignalSEGV and BugseeCrashSignalBUS are left out because the .NET runtime handles them itself."
+    },
+    "com.bugsee.option.capture.device-network-names": {
+      "iosProperty": "Capture Device and wifi names. They are shown on the issue screen."
+    },
+    "com.bugsee.option.capture.disk-space": {
+      "iosProperty": "Bugsee uses Disk Space APIs with declared reason E174.1 This reason does not allow to send collected information off-device, so everything the SDK derives from free disk space stays out of reports unless this option is set: the `disk_free` / `disk_total` device properties, the `disk_mem_free` / `disk_mem_total` system traces, the `low_disk_space` / `no_disk_space` states of the `capture` trace, and the disk-space lines of the internal log (`log.internal.json`). Bugsee still watches free space internally to stop writing on a full disk; that never leaves the device. We recommend to collect such data only in debug/development builds."
+    },
+    "com.bugsee.option.capture.logs": {
+      "android": "Automatically capture logs: Logcat, `System.out`/`System.err`, the WebView console, and the output a cross-platform wrapper captures from its own runtime. Lines the app sends with `Bugsee.log()` are always recorded, whatever this option says, and `capture.logs.level` does not apply to them.",
+      "iosProperty": "Automatically capture logs: the console (stdout, stderr), CocoaLumberjack, the WebView console, and console output that wrappers forward. Lines sent with `+[Bugsee log:]` are recorded regardless."
+    },
+    "com.bugsee.option.capture.logs.allsources": {
+      "android": "This option controls whether only the default logging sources are used (which is sufficient in most scenarios), or whether the all possible logging sources are being queried (system, radio, etc.)."
+    },
+    "com.bugsee.option.capture.logs.level": {
+      "android": "Minimum log level to capture."
+    },
+    "com.bugsee.option.capture.logs.oslog": {
+      "iosProperty": "Automatically capture OSLog entries. DEPRECATED - this option is accepted and ignored, and setting it to YES has no effect.",
+      "iosNote": "PERMANENTLY DISABLED - accepted and ignored."
+    },
+    "com.bugsee.option.capture.network": {
+      "android": "If `true`, Bugsee will monitor network events.",
+      "iosProperty": "Capture network traffic"
+    },
+    "com.bugsee.option.capture.network.body-size-limit": {
+      "android": "The maximal size of network request/response body (in bytes).",
+      "iosProperty": "The maximal size of network request/response body (in bytes)."
+    },
+    "com.bugsee.option.capture.network.body-without-type": {
+      "android": "Attach http request/response body, which has no declared content type, to a report. If disabled, only textual body is attached to a report. Option has no effect if `capture.network` option value is enabled."
+    },
+    "com.bugsee.option.capture.network.default-sanitizer": {
+      "android": "Automatically sanitize sensitive data (PII) from captured network events. Applies only when no network event filter is set, whether through `Bugsee.setNetworkEventFilter` or the manifest. Redacts values for known sensitive keys in URL query parameters, HTTP headers, and JSON request/response bodies.",
+      "iosProperty": "Automatically sanitize sensitive data (PII) from captured network events. Applies only when no custom network filter (block or delegate) is set. Redacts values for known sensitive keys in URL query parameters, HTTP headers, and JSON bodies."
+    },
+    "com.bugsee.option.capture.network.on-launch": {
+      "android": "Subscribe network capture synchronously during `Bugsee.launch()`, so requests issued in the launch window — between `launch()` returning and capture starting on its background thread — are observed. Installing the interception cannot be done retroactively for a request already in flight, so it has to happen up front when this is on. The provider is only subscribed at launch, not started; events captured meanwhile are buffered and flushed when capture starts.\n\nHas no effect unless `capture.network` is also enabled. Enabling this puts the interception install (a few milliseconds) back on the launch critical path, which is why it is off by default.",
+      "iosConstant": "BOOL, default NO. Installs network interception synchronously during `launchWithToken:` instead of when capture starts on its background queue.\n\nCapture is brought up off the main thread, so by default a request issued in the same run-loop turn as the launch - during `-application:didFinishLaunching...`, say - starts before the interception is in place and is not captured at all. Buffering cannot recover it: the request was never observed. Enable this when an app makes requests that early and they matter for diagnosis.\n\nOff by default because it puts the interception install back on the launch critical path (measured ~3.5 ms on an iPhone XS, Debug), which is exactly the cost the asynchronous start exists to avoid."
+    },
+    "com.bugsee.option.capture.on-device-symbolication": {
+      "iosProperty": "Enable on device symbolication for system frames."
+    },
+    "com.bugsee.option.capture.respect-flag-secure": {
+      "android": "When `true`, honor Android `WindowManager.LayoutParams.FLAG_SECURE`: blank secure window layers in screen capture, and treat an activity whose main window has `FLAG_SECURE` as a full display blackout (empty video frames, dropped input). This is independent of `Bugsee.startBlackout()` / `endBlackout()` — clearing the window flag (or setting this option to `false`) is what stops FLAG_SECURE blackout. Set to `false` to opt out."
+    },
+    "com.bugsee.option.capture.sample-buffer-display-layer": {
+      "iosProperty": "Automatically capture video rendered onto an AVSampleBufferDisplayLayer - the layer an app feeds itself, used by WebRTC/video-calling stacks, custom-protocol players (RTSP/RTMP/SRT), and processed camera pipelines.\n\nSeparate from captureAVPlayer because the two share no machinery: AVPlayer frames are pulled from a video output, whereas these are intercepted as the app enqueues them. An app may well want one and not the other.\n\nOnly frames enqueued as CVPixelBuffer-backed samples can be captured. Samples handed over still compressed, for the layer to decode internally, carry no pixel buffer to borrow and are skipped."
+    },
+    "com.bugsee.option.capture.screenshot": {
+      "android": "Capture screenshots for reports.",
+      "iosProperty": "Screenshot which is attached to the report. Independent of videoEnabled"
+    },
+    "com.bugsee.option.capture.screenshot.scale": {
+      "android": "Privacy-style scaling applied to screenshots before they are persisted to disk. The bitmap is downscaled by this factor and then upscaled back to its original dimensions, destroying high-frequency detail (text, icons, fine UI) while preserving overall layout. Mirrors the `capture.video.scale` option for screen recording.\n\nIs clamped to `[0.05, 1.0]`. The default `1.0` disables the transform entirely."
+    },
+    "com.bugsee.option.capture.status-bar-info": {
+      "iosProperty": "Info about pending reports and current recording state. Only has an effect in a DEBUG build of the SDK - the indicator overlay is a QA aid and is compiled out of release builds, where this option is accepted and ignored.",
+      "iosNote": "DEBUG builds only - ignored in release."
+    },
+    "com.bugsee.option.capture.video": {
+      "android": "Enable video capture for reports.",
+      "iosProperty": "Enable video recording"
+    },
+    "com.bugsee.option.capture.video.adaptive": {
+      "android": "Enables adaptive capture: on a truly idle screen the SDK skips the screen readback entirely — not just the frame encoding — saving the most expensive per-frame work (readback + downscale composite) while nothing on screen is changing. A frame is only captured when the tracked window actually drew, plus a ~1 second forced-capture floor so the video never stalls.\n\nTo stay pixel-accurate, adaptive capture automatically falls back to capturing every frame whenever the draw signal is not authoritative for the whole screen — a live frame interceptor is attached (e.g. remoting), or the screen contains content that renders off the normal View-draw path (a dialog / popup / floating window, a `SurfaceView` / `TextureView`, or a `WebView`).\n\nOption has a `boolean` value. (opt-in).",
+      "iosNote": "adaptive/idle-throttled screen capture"
+    },
+    "com.bugsee.option.capture.video.custom-muxer": {
+      "android": "When `true`, uses a custom lightweight MP4 muxer instead of Android's built-in `MediaMuxer` for video capture encoding. The custom muxer produces less verbose log output."
+    },
+    "com.bugsee.option.capture.video.frame-rate": {
+      "android": "Specifies how often frames are captured.",
+      "iosProperty": "Use this option to change frame rate to Low or High"
+    },
+    "com.bugsee.option.capture.video.fullscreen-keep-running": {
+      "android": "Controls how the fullscreen MediaProjection-based screen capture pipeline behaves when the host application moves to background.\n\nThis is a deliberate trade-off the host app must choose:\n\n- `true` (default) — keep the active MediaProjection session running while in background. The system continues to deliver frames into the pipeline; the SDK drains them cheaply (no memcpy, no secure-views sync) but the foreground service and the `MediaProjection`/`VirtualDisplay`/`ImageReader` resources remain allocated. Trade-off: a small but continuous CPU/memory/battery cost, a persistent foreground service notification, and zero user nagging — the user is never re-prompted on subsequent foreground transitions.\n\n- `false` — fully tear down the MediaProjection session as soon as the application enters the background (release the `VirtualDisplay`, the `ImageReader`, and stop the foreground service) and re-acquire it on the next background→foreground transition. Trade-off: zero background cost, but on Android 14+ the system requires a fresh user consent dialog every time, so the user will be re-prompted on each return to foreground. On Android < 14, the previously approved consent intent is reused silently and there is no nagging."
+    },
+    "com.bugsee.option.capture.video.fullscreen-remember-decision": {
+      "android": "Controls whether the user's MediaProjection (screen capture) consent decision is persisted across launches. When `true`, a denied decision is remembered and Bugsee will skip re-prompting the user on subsequent launches; a granted decision is also remembered (and may be silently re-used on Android < 14, where the system still allows it). When `false`, the user is asked again every time the SDK needs to start screen capture.\n\nUse `resetVideoCapturePermission` to clear a remembered decision at runtime — for example after the user changes their mind in your app's settings UI."
+    },
+    "com.bugsee.option.capture.video.max-frame-rate": {
+      "wrapper": "The highest frame rate the video is recorded at, in frames per second, from 0 to 30 (the SDK clamps it to that range). `0`, the default, applies the SDK's own limit. (BugseeOptions.m `-validate`.)"
+    },
+    "com.bugsee.option.capture.video.min-frame-rate": {
+      "wrapper": "The lowest frame rate the video is recorded at, in frames per second, from 0 to 30 (the SDK clamps it to that range and lowers it to the maximum when it is above it). `0`, the default, applies the SDK's own limit. (BugseeOptions.m `-validate`.)"
+    },
+    "com.bugsee.option.capture.video.mode": {
+      "android": "Screen capture mode to use."
+    },
+    "com.bugsee.option.capture.video.privacy-blur": {
+      "iosNote": "blur transition frames instead of skipping them. OFF restores the pre-6.x skip: the video freezes for the transition, never records it unprotected."
+    },
+    "com.bugsee.option.capture.video.quality": {
+      "android": "Quality of the final encoded video."
+    },
+    "com.bugsee.option.capture.video.scale": {
+      "android": "Additional down scaling applied to recorded video, (e.g., `0.5` would reduce both width and height by half).\n\nMust be between `0.1` and `1.0`.",
+      "iosProperty": "Per-frame privacy detail-reduction factor for recorded video, in (0, 1). Default: 1.0 - means not used (0 disables it too, for backwards compatibility)"
+    },
+    "com.bugsee.option.capture.video.secure-scrolling": {
+      "android": "When this option is used and set, in VideoMode.V1 more frames will be skipped when secure views are present on screen."
+    },
+    "com.bugsee.option.capture.view-hierarchy": {
+      "android": "Capture view hierarchy for reports.",
+      "iosProperty": "If set to true, enables capturing of view hierarchy upon bug reporting"
+    },
+    "com.bugsee.option.capture.websocket": {
+      "iosProperty": "Capture web-sockets traffic"
+    },
+    "com.bugsee.option.capture.webview.advanced": {
+      "android": "Whether to inject the advanced `@bugsee/webview` JS SDK into instrumented WebViews for full-fidelity in-page capture (console, network, DOM obscuring, incidents) streamed to native over the bridge. When enabled it SUPERSEDES the legacy in-page script. When disabled, the legacy WebView capture script is used instead."
+    },
+    "com.bugsee.option.capture.webview.domain-allowlist": {
+      "android": "@deprecated NOT CURRENTLY HONOURED — this option has no effect, whatever it is set to.\n\nIt described a scoping that the SDK no longer performs. The advanced WebView bundle is now registered as an ALL-ORIGINS document-start script regardless of this value, for two reasons that an origin filter cannot serve:\n\n- Masking is a privacy guarantee — sensitive content is obscured automatically wherever it can be — so its reach cannot depend on configuration. A subframe outside an allowlist would have rendered its password and payment fields unmasked in the captured video.\n\n- Injection order — the SDK must run before the page's own scripts, or a page script can take over its bridge. That is true of every frame the SDK runs in.\n\nWhat the option was FOR — keeping Bugsee out of third-party content (OAuth, payment, ads) — is now enforced by the bundle instead of by an origin list: an injected sub-frame runs only the obscuring composer, with no handshake, no capture interceptors and no data stream. Third-party frames contribute mask rectangles and nothing else.\n\nKept only so existing configurations keep loading. Setting it neither widens nor narrows anything."
+    },
+    "com.bugsee.option.capture.webview.report-trigger": {
+      "android": "Whether an incident triggered from inside an instrumented WebView (via the advanced JS SDK) may OPEN a native bug report in the hosting SDK. The WebView incident always still streams up as a `crash` timeline entry regardless of this option; this flag only controls the additional native report trigger. (a WebView cannot open native bugs unless the host app opts in)."
+    },
+    "com.bugsee.option.config.build-target": {
+      "iosProperty": "Name of the project target",
+      "iosNote": "(iOS-only)"
+    },
+    "com.bugsee.option.config.build-type": {
+      "iosProperty": "debug, release, etc...",
+      "iosNote": "(iOS-only)"
+    },
+    "com.bugsee.option.config.data-encryption": {
+      "wrapper": "Whether, and how, the data the SDK keeps on the device is encrypted: not at all, with a key kept on the device, or end to end, where only the server can decrypt it. (Bugsee.m `-initializeDataEncryption`.)"
+    },
+    "com.bugsee.option.config.duration": {
+      "android": "Maximum capture duration in seconds.",
+      "iosProperty": "Maximum recording duration"
+    },
+    "com.bugsee.option.config.max-data-size": {
+      "android": "Maximum disk space, in megabytes, that reports waiting to be sent may occupy. When exceeded, whole pending reports are deleted — errors first, then bug reports, then crashes, oldest first within each — until they fit again. The newest crash and any report being exported or uploaded are never deleted. Values below `10` are treated as `10`.",
+      "iosProperty": "Bugsee will avoid using more disk space than specified. Should be specified in Mb. Value should not be smaller than 10."
+    },
+    "com.bugsee.option.config.max-pending-report-age": {
+      "android": "Maximum age, in days, of a report waiting to be sent. Older reports are deleted, whatever their type. `0` or a negative value disables aging: reports are then kept until they are sent or evicted by `config.max-data-size` / `config.max-pending-reports`."
+    },
+    "com.bugsee.option.config.max-pending-reports": {
+      "android": "Maximum number of reports waiting to be sent. When exceeded, pending reports are deleted in the same order as for `config.max-data-size`. Values below `1` are treated as `1`."
+    },
+    "com.bugsee.option.config.notify-flush-delay": {
+      "android": "Coalesce window in milliseconds before a notification-relay FIFO flush. `0` (the default) tries to POST as soon as the item is on disk (still persisted first). A positive value delays the JobScheduler drain so nearby `Bugsee.notify` calls batch together.",
+      "iosProperty": "Coalesce delay for `Bugsee.notify` uploads, in milliseconds. Default: 0 - flush as soon as the item is persisted. A positive value batches nearby `Bugsee.notify` calls into one upload.",
+      "iosConstant": "Coalesce delay for notification-relay uploads, in milliseconds. Default 0 = try to POST as soon as the item is on disk (still persisted first). A positive value delays the flush so nearby items batch together."
+    },
+    "com.bugsee.option.config.report-handler-callback-timeout": {
+      "android": "Timeout in seconds for `ReportHandler` completion callbacks. If the callback is not invoked within this period, it is auto-fired to prevent reports from being lost.\n\nThis timeout is not applied to terminating (crash) sequences."
+    },
+    "com.bugsee.option.config.report-processing-in-process": {
+      "android": "When `true`, report export and upload are executed in-process on background threads instead of via Android's JobScheduler."
+    },
+    "com.bugsee.option.config.wifi-only-upload": {
+      "android": "When `true`, uploads are performed only over Wi-Fi.",
+      "iosProperty": "Bugsee network requests allowed only by wifi"
+    },
+    "com.bugsee.option.crash-ndk.tombstone-logs": {
+      "android": "Include the OS tombstone's log buffers (the raw debuggerd logcat snapshot) in the native crash report. Default: `false`. These buffers are NOT passed through Bugsee's own log-privacy / obfuscation filters and largely duplicate the SDK's (filtered) log capture, so they are omitted unless an app explicitly opts in."
+    },
+    "com.bugsee.option.detect.anomaly": {
+      "android": "Detect and report performance anomalies via the built-in statistical detector (per-bucket EWMA baselines with persistence across sessions).\n\nAn AI-based detector shipped as a separate extension module may be enabled independently via its own option — the two detectors run in parallel and produce independent reports."
+    },
+    "com.bugsee.option.detect.anr.sampling": {
+      "android": "Sample the main thread's stack during an ANR and attribute the report to the derived culprit frames rather than to a single snapshot taken once the OS confirms the ANR.\n\nOnly has effect when `detect.exit.not_responding` is enabled."
+    },
+    "com.bugsee.option.detect.crash": {
+      "android": "Detect and report crashes. When `false`, native (NDK) crashes are not detected either, whatever `com.bugsee.option.detect.crash-ndk` says. A native crash that an earlier run with detection on left on disk is still reported once.",
+      "iosProperty": "Catch and report application crashes IOS allows only one crash detector to be active at a time, if you insist on using an alternative solution for handling crashes, you might want to use this option and disable Bugsee from taking over."
+    },
+    "com.bugsee.option.detect.crash-ndk": {
+      "android": "Detect and report native (NDK) crashes. Default: `true` — merely including the `bugsee-android-ndk` module opts in (the module's presence is the opt-in); set this key to `false` to disable native crash reporting while keeping the module on the classpath. Also off whenever `com.bugsee.option.detect.crash` is `false`. The string key is preserved for wire compatibility with configurations written against earlier SDK versions that declared the key in core."
+    },
+    "com.bugsee.option.detect.crash.fill_empty_exception_stacks": {
+      "iosConstant": "When YES, uncaught NSExceptions with empty `callStackReturnAddresses` are SelfThread-filled in the uncaught handler (may change crash grouping vs empty/\"unknown\" location). Default NO. Independent of Swift async stitching. iOS-only (device crash-manager path)."
+    },
+    "com.bugsee.option.detect.crash.swift_async_stacktraces": {
+      "iosConstant": "Swift async SelfThread stitching via `backtrace_async` for C++ throw stacks. Default YES. Requires iOS 15+; falls back to `backtrace` on older OS. Set to NO to disable. Does not control empty-NSException stack fill - see `BugseeOptionDetectCrashFillEmptyExceptionStacks`. iOS-only (device crash-manager path)."
+    },
+    "com.bugsee.option.detect.early-crash": {
+      "android": "Recover crashes that happen during app startup, before the first Activity becomes visible. When enabled (the default), a crash during the startup window is detected on the next launch and its pending report is flushed synchronously before the app can crash again. This switch also drives the `RelaunchedAfterCrash` lifecycle event and the post-provider re-check that recovers native startup crashes — disabling it turns all of that off.",
+      "iosProperty": "Detect crash happened on application launch. Detected crash will be sent synchronously on application restart (this can freeze Main Thread)."
+    },
+    "com.bugsee.option.detect.exit": {
+      "android": "Detect and report when the app exits.",
+      "iosProperty": "Detect app exit triggered by user (i.e. when app's preview is swiped up to close the app). If TRUE, Bugsee will detect app exit and create a report."
+    },
+    "com.bugsee.option.detect.exit.bg_low_memory_as_error": {
+      "android": "When low-memory kills are detected (see `detect.exit.low_memory`), report a kill of a process that was NOT in the foreground at death as a non-fatal error instead of the default crash. Background low-memory kills are routine on modern Android (cached, frozen or FCM-woken processes are reclaimed all the time), so counting them as crashes can inflate the crash rate; Play Console's user-perceived LMK metric counts foreground kills only. Set this to `true` to report background low-memory kills as non-fatal errors. Foreground low-memory kills are reported as crashes either way.\n\n\"Foreground\" means the process importance at death was `IMPORTANCE_FOREGROUND` or `IMPORTANCE_FOREGROUND_SERVICE`; visible and perceptible processes count as background. The option applies only on devices that report low-memory kills (`ActivityManager.isLowMemoryKillReportSupported()`); elsewhere a background `SIGKILL` is already reported as a non-fatal error whatever this option says."
+    },
+    "com.bugsee.option.detect.exit.dependency_died": {
+      "android": "Detect and report exits caused by a dependency process dying."
+    },
+    "com.bugsee.option.detect.exit.excessive_resource_usage": {
+      "android": "Detect and report exits caused by excessive resource usage."
+    },
+    "com.bugsee.option.detect.exit.low_memory": {
+      "android": "Detect and report exits caused by low memory (OOM killer)."
+    },
+    "com.bugsee.option.detect.exit.not_responding": {
+      "android": "Detect and report exits caused by the app not responding (ANR)."
+    },
+    "com.bugsee.option.detect.exit.not_responding.as_crash": {
+      "android": "When ANRs are detected (see `detect.exit.not_responding`), report them as crashes instead of the default non-fatal errors. Keeping ANRs as non-fatal errors keeps them out of the crash rate, matching Play Vitals and most crash reporters; set this to `true` to have ANRs counted as crashes instead."
+    },
+    "com.bugsee.option.detect.exit.other": {
+      "android": "Detect and report exits with an \"other\" reason."
+    },
+    "com.bugsee.option.detect.exit.package_state_changed": {
+      "android": "Detect and report exits caused by a package state change."
+    },
+    "com.bugsee.option.detect.exit.package_updated": {
+      "android": "Detect and report exits caused by a package update."
+    },
+    "com.bugsee.option.detect.exit.permission_changed": {
+      "android": "Detect and report exits caused by a runtime permission change."
+    },
+    "com.bugsee.option.detect.exit.unknown": {
+      "android": "Detect and report exits with an unknown reason."
+    },
+    "com.bugsee.option.detect.exit.user_requested": {
+      "android": "Detect and report exits triggered by the user (e.g., force stop)."
+    },
+    "com.bugsee.option.detect.exit.user_was_stopped": {
+      "android": "Detect and report exits caused by the system stopping the app."
+    },
+    "com.bugsee.option.detect.frustration": {
+      "android": "Detect and report user-frustration patterns (rage taps, dead taps, stuck loading, frozen UI, etc.). Each detected pattern produces a simulated error report that flows through the standard report pipeline and groups across sessions by screen and element. Opt-in while the feature matures; flipping to `true` is a deliberate decision once the server-side ingest and dashboard rendering are validated."
+    },
+    "com.bugsee.option.detect.hang": {
+      "android": "Detect and report app hangs."
+    },
+    "com.bugsee.option.detect.hang.level.fair": {
+      "android": "Main-thread block duration, in milliseconds, that triggers a \"Fair\" hang report. Must be smaller than `detect.hang.level.medium`.\n\nDetection resolution is approximately 1 second — values smaller than `1000` will trigger at the first tick."
+    },
+    "com.bugsee.option.detect.hang.level.medium": {
+      "android": "Main-thread block duration, in milliseconds, that triggers a \"Medium\" hang report. Must be greater than `detect.hang.level.fair` and smaller than `detect.hang.level.severe`."
+    },
+    "com.bugsee.option.detect.hang.level.severe": {
+      "android": "Main-thread block duration, in milliseconds, that triggers a \"Severe\" hang report. Must be greater than `detect.hang.level.medium`."
+    },
+    "com.bugsee.option.detect.hang.sampling": {
+      "android": "Sample the main thread's stack during a hang and attribute the report to the derived culprit frames rather than to a single snapshot taken at the moment of reporting.\n\nOnly has effect when `detect.hang` is enabled. Acts as a kill switch."
+    },
+    "com.bugsee.option.detect.http-errors": {
+      "android": "If `true`, when HTTP error is received (i.e. 500 - 599) it will be converted into error report and sent to the Bugsee servers."
+    },
+    "com.bugsee.option.detect.main_thread_misuse": {
+      "android": "Detect and report main thread misuse (file I/O, network, database, or SharedPreferences operations performed on the main thread)."
+    },
+    "com.bugsee.option.detect.memory_leaks": {
+      "android": "Master switch for object (memory) leak detection. Default `true`: including the `bugsee-android-leak` module is itself the opt-in, so detection is active out of the box (in the production-safe `Fast` mode). Set to `false` to disable without removing the module."
+    },
+    "com.bugsee.option.detect.memory_leaks.deep_sample_rate": {
+      "android": "Sampling rate for escalating a confirmed memory leak to a deep heap dump (modes `DEEP_DEBUG_ONLY` / `DEEP_EVERYWHERE`). A `float` probability in `[0, 1]` that each confirmed leak is eligible to dump. Default `1.0` (every confirmed leak is eligible) — the once-per-process, cooldown and per-version caps in the dump gate keep actual dumps rare regardless, so lowering this is only needed to further thin dumps in production. Has no effect in `Fast` mode (which never dumps)."
+    },
+    "com.bugsee.option.detect.memory_leaks.mode": {
+      "android": "Object-leak detection depth. Set it to a `MemoryLeakMode` constant (`MemoryLeakMode.FAST` / `DEEP_DEBUG_ONLY` / `DEEP_EVERYWHERE`) — the option is registered enum-typed. If a String is used instead it must be the enum constant name (`\"FAST\"` / `\"DEEP_DEBUG_ONLY\"` / `\"DEEP_EVERYWHERE\"`), not the camel-case wire form, because the typed options container only admits constant-name strings for an enum option. Default `FAST`."
+    },
+    "com.bugsee.option.detect.thread_leaks": {
+      "android": "Master switch for thread leak detection. Default `false` — opt-in."
+    },
+    "com.bugsee.option.performance.adaptive-sampling": {
+      "android": "Enables adaptive sampling on top of the static `performance.sample-rate`. When enabled, transactions that lost the random draw are scored at finish time based on status, duration outlier-ness, and span-tree complexity; sufficiently \"interesting\" ones are promoted into the standalone upload pipeline.",
+      "iosProperty": "When YES, transactions that lost the static sampling draw can still be promoted into the upload pipeline if they look \"interesting\" - non-OK status, large duration outliers, or high span complexity."
+    },
+    "com.bugsee.option.performance.enabled": {
+      "android": "Enable performance monitoring (APM).",
+      "iosProperty": "Master switch for the APM (Application Performance Monitoring) subsystem. Controls the in-process span/trace pipeline, which:\n\n- Auto-instruments NSURLSession HTTP requests (one transaction per request);\n\n- Auto-instruments NSData file reads/writes (file.read / file.write spans);\n\n- Auto-instruments NSFileManager create / delete / copy / move / mkdir operations (file.* spans);\n\n- Exposes the public Bugsee.startTransaction(...) / Bugsee.startSpan(...) API for manual instrumentation.\n\nCaptured transactions are written to every Bugsee report bundle. A standalone upload pipeline (gated by `performanceSampleRate` and `performanceAdaptiveSampling`) is reserved for a future revision and is not currently wired."
+    },
+    "com.bugsee.option.performance.sample-rate": {
+      "android": "Sample rate for performance transactions. A value between 0.0 and 1.0 that controls the probability a transaction will be sampled.",
+      "iosProperty": "Sampling rate for standalone APM upload. Range 0.0 – 1.0. Sampling does NOT affect data attached to bug reports - every transaction is included in the bundle regardless of this rate. The rate only gates a future independent upload pipeline (currently not wired)."
+    },
+    "com.bugsee.option.performance.upload-mode": {
+      "android": "Upload mode for performance data. Either `\"batched\"` or `\"realtime\"`."
+    },
+    "com.bugsee.option.reporting.defaults.bug-priority": {
+      "iosProperty": "Priority for bugs"
+    },
+    "com.bugsee.option.reporting.defaults.crash-priority": {
+      "iosProperty": "Priority for crashes"
+    },
+    "com.bugsee.option.reporting.defaults.error-priority": {
+      "iosProperty": "Priority for errors"
+    },
+    "com.bugsee.option.reporting.triggers.broadcast": {
+      "android": "Allow triggering report by broadcast."
+    },
+    "com.bugsee.option.reporting.triggers.notification-bar": {
+      "android": "Allow triggering report from notification bar."
+    },
+    "com.bugsee.option.reporting.triggers.screenshot": {
+      "android": "Allow triggering report by screenshot.",
+      "iosProperty": "Screenshot key to trigger report"
+    },
+    "com.bugsee.option.reporting.triggers.shake": {
+      "android": "Allow triggering report by device shake.",
+      "iosProperty": "Shake gesture to trigger report"
+    },
+    "com.bugsee.option.reporting.ui.description-required": {
+      "android": "Controls whether the Description field will be mandatory in bug reporting UI.",
+      "iosProperty": "Whether bug description is required. If set to YES, then report form will prevent submission while description field is empty."
+    },
+    "com.bugsee.option.reporting.ui.email-required": {
+      "android": "Controls whether the Email field will be mandatory in bug reporting UI.",
+      "iosProperty": "Whether email is required. If set to YES, then report form will prevent submission while email field is empty."
+    },
+    "com.bugsee.option.reporting.ui.labels-enabled": {
+      "android": "Controls whether reporting UI will show the \"Labels\" input field.",
+      "iosProperty": "Controls whether labels input field is available in bug reporting UI."
+    },
+    "com.bugsee.option.reporting.ui.labels-required": {
+      "android": "Controls whether the Labels field will be mandatory in bug reporting UI.",
+      "iosProperty": "Controls whether Labels input field must be filled to submit data in bug reporting UI."
+    },
+    "com.bugsee.option.reporting.ui.priority-selector-enabled": {
+      "android": "Allow user to modify priority manually when reporting - `true` to allow, `false` to disallow.",
+      "iosProperty": "Allow user to modify priority when reporting manual"
+    },
+    "com.bugsee.option.reporting.ui.style": {
+      "iosProperty": "Use to change bugsee style to Light, Dusk or Based on status bar"
+    },
+    "com.bugsee.option.reporting.ui.summary-required": {
+      "android": "Controls whether the Summary field will be mandatory in bug reporting UI.",
+      "iosProperty": "Whether bug summary is required. If set to YES, then report form will prevent submission while summary field is empty."
+    }
+  }
+}

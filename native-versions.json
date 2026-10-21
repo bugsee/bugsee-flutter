@@ -28,5 +28,10 @@
   "pigeon": {
     "version": "29.0.7",
     "provenance": "pub.dev, published 2026-10-07 (latest at the time was 29.0.11, 2026-10-20); needs Dart ^3.11.0. Not a dependency of the plugin (it requires meta >=1.18, Flutter 3.41.0 ships 1.17.0): it runs from the pure-Dart package in pigeons/, locked by pigeons/pubspec.lock."
+  },
+  "optionsManifest": {
+    "urlTemplate": "https://download.bugsee.com/sdk/options/{sdk}/{version}.json",
+    "fixtureDir": "test/fixtures/option_manifests",
+    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.4.2.json (generatedAt 2026-10-19) and ios/7.0.0-beta7.json (generatedAt 2026-10-18), fetched 2026-10-21 and vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
   }
 }

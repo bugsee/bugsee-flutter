@@ -34,11 +34,13 @@ String stripComments(String source) => source
     .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
     .replaceAll(RegExp(r'//[^\n]*'), '');
 
-/// `Name(1)` members of a Java enum, by the enum's declared name.
+/// `Name(1)` (or `Name((byte)1)`) members of a Java enum, by the enum's declared name.
 Map<String, int> javaIntEnum(String source, String enumName) {
   final body = _javaEnumBody(stripComments(source), enumName);
   return {
-    for (final m in RegExp(r'(\w+)\(\s*(-?\d+)\s*\)\s*[,;]').allMatches(body))
+    for (final m in RegExp(
+      r'(\w+)\(\s*(?:\(byte\)\s*)?(-?\d+)\s*\)\s*[,;]',
+    ).allMatches(body))
       m.group(1)!: int.parse(m.group(2)!),
   };
 }

@@ -1,5 +1,5 @@
 // The Dart end of the native bridge. Internal: not exported from
-// package:bugsee_flutter; Phase 4 builds the public API on it.
+// package:bugsee_flutter; the public `Bugsee` facade (lib/src/bugsee.dart) is built on it.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/services.dart' show BinaryMessenger;
 
 import '../report/report_proxy.dart';
+import '../status.dart';
 import 'lifecycle.dart';
 import 'messages.g.dart';
 import 'runtime_facts.dart';
@@ -38,7 +39,7 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
   bool _attached = false;
   bool _identitySent = false;
   bool _phasesSent = false;
-  SdkStatus? _status;
+  BugseeStatus? _status;
   ReportHandler? _onBefore;
   ReportHandler? _onAfter;
   final Set<String> _delivered = <String>{};
@@ -54,13 +55,13 @@ class BugseeBridge implements BugseeBridgeFlutterApi {
 
   /// A status change, only when a Launching/Launched/Stopping/Stopped event
   /// arrives; every other event produces nothing here.
-  Stream<SdkStatus> get statusChanges =>
+  Stream<BugseeStatus> get statusChanges =>
       _events.stream.map(statusForEvent).where((s) => s != null).cast();
 
   /// The latest status transition seen, or `null` if none has arrived. Kept
   /// whether or not anyone listened, so a late reader is not misled by a missed
   /// broadcast event. `null` means unknown, not stopped.
-  SdkStatus? get status => _status;
+  BugseeStatus? get status => _status;
 
   /// Attaches to native and refines the wrapper identity. Idempotent while it
   /// succeeds: later calls return the first call's future. If either step fails

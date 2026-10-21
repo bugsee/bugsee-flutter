@@ -33,7 +33,7 @@ jobs:
           cache: true
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed lib test example/lib scripts pigeons
+      - run: dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons
 
   # The committed Dart/Java/Swift bridge files must be what pigeons/bridge.dart generates
   # with the pinned pigeon (native-versions.json `pigeon.version`). On the floor, like
@@ -54,6 +54,26 @@ jobs:
       - run: dart scripts/generate_pigeon.dart --check
       # Excluded from the root analysis (its package needs its own pub get, done by the line above).
       - run: cd pigeons && dart analyze --fatal-infos
+
+  # The typed BugseeOptions and the option registry are generated from the manifests the two SDKs
+  # publish (vendored in test/fixtures/option_manifests), so this works offline. On the floor,
+  # like `format` and `bridge-codegen`: the generated Dart is dart-formatted. The refetch of the
+  # manifests (network) and the read of the SDK source (private checkouts) are not here: see
+  # CI.md ("Option registry").
+  options-codegen:
+    name: option registry is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.41.0'
+          cache: true
+      - run: dart scripts/generate_options.dart --check
 
   test:
     name: analyze + test + ios build (${{ matrix.channel }})
@@ -164,7 +184,7 @@ jobs:
     # Must be `always()`, not `!cancelled()`: a skipped required check counts as passing,
     # so on a cancelled run ci-ok has to run and fail (cancelled needed jobs fail it below).
     if: always()
-    needs: [format, bridge-codegen, test, build-android, publish-check]
+    needs: [format, bridge-codegen, options-codegen, test, build-android, publish-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

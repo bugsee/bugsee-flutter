@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * happens at process start in {@link FlutterWrapperInitProvider}, long before an
  * engine exists. This class only serves Dart once Dart asks.
  *
- * <p>Internal: no public API yet (Phase 4).
+ * <p>Internal: the public API is `lib/bugsee_flutter.dart`; this is its native end.
  */
 public class BugseeFlutterPlugin
         implements FlutterPlugin, ActivityAware, Messages.BugseeBridgeHostApi {
@@ -70,6 +70,7 @@ public class BugseeFlutterPlugin
     /** Identifies this engine's Dart isolate in {@link SecureRectangleStore}. */
     private final long owner = NEXT_OWNER.getAndIncrement();
     private BinaryMessenger messenger;
+    private LaunchOps.Sdk sdk;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
@@ -78,6 +79,7 @@ public class BugseeFlutterPlugin
     @Override
     public void onAttachedToEngine(@NonNull final FlutterPluginBinding binding) {
         messenger = binding.getBinaryMessenger();
+        sdk = new BugseeSdk(binding.getApplicationContext());
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
@@ -135,6 +137,7 @@ public class BugseeFlutterPlugin
             sink = null;
         }
         messenger = null;
+        sdk = null;
     }
 
     @Override
@@ -324,6 +327,75 @@ public class BugseeFlutterPlugin
     @Override
     public Boolean reportClearAttributes(@NonNull final String handle) {
         return edit(handle, Report::clearAllAttributes);
+    }
+
+    // ---- Launch, stop, status (workbook Part 8; see LaunchOps) -------------------------------
+
+    @NonNull
+    private LaunchOps.Sdk sdkOrThrow() {
+        final LaunchOps.Sdk current = sdk;
+        if (current == null) {
+            throw new Messages.FlutterError(LaunchOps.ERROR_CODE, "the plugin is not attached to an engine", null);
+        }
+        return current;
+    }
+
+    /** The SDK's callbacks may come on any thread; a channel reply goes on the platform thread. */
+    private static void onMain(@NonNull final Runnable action) {
+        MAIN.post(action);
+    }
+
+    @NonNull
+    private static Messages.FlutterError launchError(@NonNull final Throwable t) {
+        // The class and message only: never the token or the options.
+        return new Messages.FlutterError(LaunchOps.ERROR_CODE,
+                t.getClass().getName() + (t.getMessage() == null ? "" : ": " + t.getMessage()), null);
+    }
+
+    @Override
+    public void launch(
+            @NonNull final String token,
+            @NonNull final Map<String, Object> options,
+            @NonNull final Messages.Result<Messages.LaunchOutcomeMessage> result
+    ) {
+        final LaunchOps.Sdk current;
+        try {
+            current = sdkOrThrow();
+        } catch (final Messages.FlutterError e) {
+            result.error(e);
+            return;
+        }
+        LaunchOps.launch(current, token, options,
+                (outcome, reason) -> onMain(() -> result.success(
+                        new Messages.LaunchOutcomeMessage.Builder()
+                                .setOutcome(outcome)
+                                .setReason(reason)
+                                .build())),
+                t -> onMain(() -> result.error(launchError(t))));
+    }
+
+    @Override
+    public void stop(@NonNull final Messages.VoidResult result) {
+        final LaunchOps.Sdk current;
+        try {
+            current = sdkOrThrow();
+        } catch (final Messages.FlutterError e) {
+            result.error(e);
+            return;
+        }
+        LaunchOps.stop(current, () -> onMain(result::success), t -> onMain(() -> result.error(launchError(t))));
+    }
+
+    @NonNull
+    @Override
+    public String status() {
+        return LaunchOps.status(sdkOrThrow());
+    }
+
+    @NonNull
+    @Override
+    public Map<String, Object> launchOptions(@NonNull final Boolean hostOnly) {
+        return LaunchOps.launchOptions(sdkOrThrow(), hostOnly);
     }
 
     /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */

@@ -5,6 +5,7 @@ import 'package:bugsee_flutter/src/bridge/bridge.dart';
 import 'package:bugsee_flutter/src/bridge/lifecycle.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/bridge/runtime_facts.dart';
+import 'package:bugsee_flutter/src/status.dart';
 import 'package:bugsee_flutter/src/wrapper_identity.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
@@ -169,7 +170,7 @@ void main() {
 
   group('status', () {
     test('only Launching/Launched/Stopping/Stopped are transitions', () async {
-      final statuses = <SdkStatus>[];
+      final statuses = <BugseeStatus>[];
       bridge.statusChanges.listen(statuses.add);
       for (final n in [
         'Launching',
@@ -193,10 +194,10 @@ void main() {
       }
       await Future<void>.delayed(Duration.zero);
       expect(statuses, [
-        SdkStatus.launching,
-        SdkStatus.launched,
-        SdkStatus.stopping,
-        SdkStatus.stopped,
+        BugseeStatus.launching,
+        BugseeStatus.launched,
+        BugseeStatus.stopping,
+        BugseeStatus.stopped,
       ]);
     });
 
@@ -208,7 +209,7 @@ void main() {
       expect(statusForEvent(const LifecycleEvent('Nope')), isNull);
       expect(
         statusForEvent(const LifecycleEvent('Launching')),
-        SdkStatus.launching,
+        BugseeStatus.launching,
       );
     });
 
@@ -217,7 +218,7 @@ void main() {
       bridge.onLifecycleEvent(LifecycleEventMessage(name: 'Launching'));
       bridge.onLifecycleEvent(LifecycleEventMessage(name: 'Launched'));
       bridge.onLifecycleEvent(LifecycleEventMessage(name: 'BlackoutStarted'));
-      expect(bridge.status, SdkStatus.launched);
+      expect(bridge.status, BugseeStatus.launched);
     });
 
     test('an event is never taken as proof that a report exists (4.7)', () async {
@@ -247,7 +248,7 @@ void main() {
       await bridge.start(facts: _facts);
       await Future<void>.delayed(Duration.zero);
       expect(seen, ['Launching', 'Launched']);
-      expect(bridge.status, SdkStatus.launched);
+      expect(bridge.status, BugseeStatus.launched);
     });
 
     test('attaches, then sends the identity, once', () async {

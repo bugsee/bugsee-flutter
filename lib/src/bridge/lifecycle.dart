@@ -1,6 +1,8 @@
 // Lifecycle events and the status derived from them (workbook Part 4).
 // Internal: not exported from package:bugsee_flutter.
 
+import '../status.dart';
+
 /// The events whose payload is the report's id (4.5). Native decides which
 /// events get a `reportId`; this copy exists so the drift guard can compare all
 /// three (Dart, Java, Objective-C) and so a reader can see the vocabulary.
@@ -62,9 +64,6 @@ bool _mapEquals(Map<String, String> a, Map<String, String> b) =>
     a.length == b.length &&
     a.entries.every((e) => b.containsKey(e.key) && b[e.key] == e.value);
 
-/// The SDK's status. Internal for now; Phase 4 decides the public shape.
-enum SdkStatus { stopped, launching, launched, stopping }
-
 /// The status [event] announces, or `null` when it announces none.
 ///
 /// Status is derived from the lifecycle channel only: Android has no status
@@ -73,10 +72,10 @@ enum SdkStatus { stopped, launching, launched, stopping }
 /// default for everything else, including a name this version does not know:
 /// reporting a status for a non-transition would say the SDK moved when it did
 /// not.
-SdkStatus? statusForEvent(LifecycleEvent event) => switch (event.name) {
-  'Launching' => SdkStatus.launching,
-  'Launched' => SdkStatus.launched,
-  'Stopping' => SdkStatus.stopping,
-  'Stopped' => SdkStatus.stopped,
+BugseeStatus? statusForEvent(LifecycleEvent event) => switch (event.name) {
+  'Launching' => BugseeStatus.launching,
+  'Launched' => BugseeStatus.launched,
+  'Stopping' => BugseeStatus.stopping,
+  'Stopped' => BugseeStatus.stopped,
   _ => null,
 };

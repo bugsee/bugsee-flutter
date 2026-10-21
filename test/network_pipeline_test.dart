@@ -505,6 +505,43 @@ void main() {
     });
   });
 
+  group('the message stamps', () {
+    test(
+      'the age is taken when the batch is sent, not when the event was prepared',
+      () async {
+        final rig = Rig();
+        // Three events through a slow async filter share one batch: the first is ready long before
+        // the batch leaves.
+        rig.pipeline.setFilter((e) async {
+          await Future<void>.delayed(const Duration(milliseconds: 70));
+          return e;
+        }, const Duration(seconds: 2));
+        for (var i = 0; i < 3; i++) {
+          rig.pipeline.submit(event('$i'));
+        }
+        await rig.pipeline.flush();
+        expect(rig.batches, hasLength(1));
+        final first = rig.sent.first;
+        expect(first.id, '0');
+        expect(first.ageMs, greaterThanOrEqualTo(190));
+      },
+    );
+
+    test('a URL leaves without userinfo whatever a filter put in it', () async {
+      final rig = Rig();
+      rig.pipeline.setFilter(
+        (e) => e
+          ..url = 'http://user:pw@host/p'
+          ..redirectedFrom = 'http://u2:p2@host/old',
+        const Duration(seconds: 1),
+      );
+      rig.pipeline.submit(event('a'));
+      await rig.pipeline.flush();
+      expect(rig.sent.single.url, 'http://host/p');
+      expect(rig.sent.single.redirectedFromUrl, 'http://host/old');
+    });
+  });
+
   group('the bridge', () {
     test(
       'a failing send drops that batch, counts it, warns once, and the next batch goes',
@@ -523,7 +560,7 @@ void main() {
         rig.sendThrows = false;
         rig.pipeline.submit(event('c'));
         await rig.pipeline.flush();
-        expect(rig.pipeline.stats.handedToSdk, 1);
+        expect(rig.pipeline.stats.submittedToSdk, 1);
       },
     );
 
@@ -536,7 +573,7 @@ void main() {
         rig.pipeline.submit(event('b'));
         rig.pipeline.submit(event('c'));
         await rig.pipeline.flush();
-        expect(rig.pipeline.stats.handedToSdk, 1);
+        expect(rig.pipeline.stats.submittedToSdk, 1);
         expect(rig.pipeline.stats.refusedByNative, 2);
       },
     );

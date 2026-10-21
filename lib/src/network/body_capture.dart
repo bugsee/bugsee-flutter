@@ -36,6 +36,22 @@ final class BodyTee {
     _bytes.add(chunk);
   }
 
+  /// Whether bytes are still being copied.
+  bool get keeping => _keeping;
+
+  /// How many more bytes fit under the limit.
+  int get remaining => limit - size;
+
+  /// Counts [bytes] that are not copied (a text whose encoding was not materialised). Over the
+  /// limit, or never kept, this is all `add` would have done with them.
+  void addCount(int bytes) {
+    size += bytes;
+    if (_keeping && size > limit) {
+      _keeping = false;
+      _bytes.clear();
+    }
+  }
+
   /// More than the limit was seen or announced (a limit of 0 or less keeps nothing, so any byte
   /// is over it, as in the SDKs).
   bool get exceeded => size > limit || _declaredExceeds;
@@ -45,6 +61,47 @@ final class BodyTee {
 
   /// The kept bytes, or null when they were not kept.
   Uint8List? get bytes => _keeping ? _bytes.toBytes() : null;
+}
+
+/// Whether [text] can still be kept in [tee]: only then is it encoded for the copy (a UTF-16 unit
+/// is at least one byte in every encoding this handles, so a longer string cannot fit).
+bool canKeepText(BodyTee tee, String text) =>
+    tee.keeping && text.length <= tee.remaining;
+
+/// The number of bytes [text] encodes to under [encoding], without building them for the common
+/// encodings (UTF-8 by arithmetic, Latin-1 and ASCII are one byte a unit).
+int encodedLength(String text, Encoding encoding) {
+  if (identical(encoding, utf8)) return utf8Length(text);
+  if (identical(encoding, latin1) || identical(encoding, ascii)) {
+    return text.length;
+  }
+  return encoding.encode(text).length;
+}
+
+/// UTF-8 length of [text]; a lone surrogate counts as the three bytes of U+FFFD, as the encoder
+/// writes it.
+int utf8Length(String text) {
+  var n = 0;
+  final units = text.codeUnits;
+  for (var i = 0; i < units.length; i++) {
+    final c = units[i];
+    if (c < 0x80) {
+      n += 1;
+    } else if (c < 0x800) {
+      n += 2;
+    } else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < units.length) {
+      final d = units[i + 1];
+      if (d >= 0xDC00 && d <= 0xDFFF) {
+        n += 4;
+        i++;
+      } else {
+        n += 3;
+      }
+    } else {
+      n += 3;
+    }
+  }
+  return n;
 }
 
 /// A parsed `Content-Type` value: lower-case type, subtype and the charset parameter if any.

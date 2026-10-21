@@ -89,6 +89,12 @@ Future<void> main() async {
               ..write('first chunk;');
             await response.flush();
             await slowGate.future;
+          case '/loc':
+            response
+              ..headers.contentType = ContentType.text
+              ..headers.set('location', '/final?token=LOCSECRET&x=1')
+              ..headers.set('content-location', 'http://u:p@h.example/x?a=1')
+              ..write('loc');
           case '/secret':
             response
               ..headers.contentType = ContentType.text
@@ -200,6 +206,33 @@ Future<void> main() async {
       );
     }
 
+    // URL hygiene (review round): userinfo, URL-valued headers, a redirect the app follows itself.
+    await call(
+      'userinfo',
+      'GET',
+      Uri.parse(
+        'http://user:pw-SECRET@$loopback:${server.port}/json?token=abc123',
+      ),
+    );
+    await call(
+      'location-headers',
+      'GET',
+      url('/loc'),
+      headers: {'referer': 'http://u:p@h.example/p?k=v'},
+    );
+    final manual = HttpClient();
+    try {
+      final request = await manual.getUrl(url('/redirect'));
+      request.followRedirects = false;
+      final first = await request.close();
+      await first.drain<void>();
+      final next = await first.redirect();
+      await next.drain<void>();
+      say('manual-redirect: ${first.statusCode} then ${next.statusCode}');
+    } finally {
+      manual.close(force: true);
+    }
+
     // ---- With a Dart filter: nothing it drops or hides reaches the SDK ---------------------
     Bugsee.setNetworkFilter((event) {
       if (event.url.contains('/secret')) return null;
@@ -230,6 +263,7 @@ Future<void> main() async {
     final stats = Bugsee.networkCaptureStats;
     say('stats: $stats');
     expect(stats.captured, greaterThan(10));
+    // The userinfo never reaches the SDK: the bundle is where that is read.
     expect(stats.droppedQueueFull, 0);
     expect(stats.sendFailures, 0);
     expect(stats.droppedByFilter, greaterThanOrEqualTo(2)); // the /secret pair
@@ -239,7 +273,7 @@ Future<void> main() async {
     final refusedByDesign = android ? 0 : 2;
     expect(stats.refusedByNative, refusedByDesign);
     expect(
-      stats.handedToSdk,
+      stats.submittedToSdk,
       stats.captured - stats.droppedByFilter - refusedByDesign,
     );
 

@@ -20,6 +20,7 @@ import 'dart:math' show Random;
 import 'body_capture.dart';
 import 'network_event.dart';
 import 'network_policy.dart';
+import 'url_redaction.dart';
 
 /// The shared state of the capture: what it may do right now, where events go.
 final class HttpCaptureController {
@@ -126,21 +127,55 @@ String _errorLong(Object error) {
 
 final RegExp _urlQuery = RegExp(r'''(https?://[^\s?#'"]+)[?#][^\s'"]*''');
 
-/// An error text can carry the URL of the request (`HttpException`'s `uri = ...`), query and all.
-/// The SDK's sanitizer redacts a URL field, not the middle of a message, so the query goes here.
-String _scrub(String text) =>
-    text.replaceAllMapped(_urlQuery, (m) => '${m[1]}?<redacted>');
+/// An error text can carry the URL of the request (`HttpException`'s `uri = ...`): userinfo and
+/// query go. The SDK's sanitizer redacts a URL field, not the middle of a message.
+String _scrub(String text) => stripUserInfo(
+  text,
+).replaceAllMapped(_urlQuery, (m) => '${m[1]}?<redacted>');
 
 Map<String, String> _headersOf(HttpHeaders headers) {
   final map = <String, String>{};
-  headers.forEach((name, values) => map[name] = values.join(', '));
+  headers.forEach(
+    (name, values) => map[name] = redactHeaderValue(name, values.join(', ')),
+  );
   return map;
 }
 
 /// One HTTP exchange being captured, from `open` to the end of the response.
 final class _Exchange {
-  _Exchange(this.ctl, this.policy, this.method, this.url, this.startedUs)
-    : id = ctl.nextId();
+  _Exchange(
+    this.ctl,
+    this.policy,
+    this.method,
+    this.url,
+    this.startedUs, {
+    this.parentUrl,
+    this.skipHops = 0,
+  }) : id = ctl.nextId();
+
+  /// The exchange `response.redirect()` continues: a NEW exchange (the 3xx response is complete
+  /// on its own, usually drained by the app first), starting at the hop the app followed. Its
+  /// final response says it came from the 3xx's URL.
+  _Exchange continuedBy(HttpClientResponse previous, HttpClientResponse next) {
+    final hopIndex = previous.redirects.length;
+    final from = _final(previous.redirects).$1;
+    final hops = next.redirects;
+    final hop = hopIndex < hops.length ? hops[hopIndex] : null;
+    return _Exchange(
+      ctl,
+      policy,
+      hop?.method ?? method,
+      hop == null ? from : from.resolveUri(hop.location),
+      monotonicMicros(),
+      parentUrl: from.toString(),
+      skipHops: hopIndex + 1,
+    );
+  }
+
+  final String? parentUrl;
+  final int skipHops;
+  List<RedirectInfo> _hops(List<RedirectInfo> all) =>
+      all.length <= skipHops ? const [] : all.sublist(skipHops);
 
   final HttpCaptureController ctl;
   final NetworkPolicy policy;
@@ -175,7 +210,7 @@ final class _Exchange {
         id: id,
         stage: stage,
         method: method ?? this.method,
-        url: (url ?? this.url).toString(),
+        url: stripUserInfo((url ?? this.url).toString()),
         headers: headers,
         body: body?.body,
         noBodyReason: body?.reason,
@@ -223,7 +258,7 @@ final class _Exchange {
   (Uri, String) _final(List<RedirectInfo> redirects) {
     var current = url;
     var currentMethod = method;
-    for (final hop in redirects) {
+    for (final hop in _hops(redirects)) {
       current = current.resolveUri(hop.location);
       currentMethod = hop.method;
     }
@@ -238,14 +273,13 @@ final class _Exchange {
     _redirectsSent = true;
     var current = url;
     var hopMethod = method;
-    for (final hop in redirects) {
+    for (final hop in _hops(redirects)) {
       final next = current.resolveUri(hop.location);
       _emit(
         NetworkStage.redirect,
         method: hopMethod,
         url: current,
         statusCode: hop.statusCode,
-        headers: {'location': next.toString()},
       );
       current = next;
       hopMethod = hop.method;
@@ -273,9 +307,16 @@ final class _Exchange {
       size: tee.size,
       statusCode: response.statusCode,
       statusText: response.reasonPhrase,
-      redirectedFrom: response.redirects.isEmpty ? null : url.toString(),
+      redirectedFrom: _redirectedFrom(response),
       timings: _timings(nowUs),
     );
+  }
+
+  String? _redirectedFrom(HttpClientResponse response) {
+    final from =
+        parentUrl ??
+        (_hops(response.redirects).isEmpty ? null : url.toString());
+    return from == null ? null : stripUserInfo(from);
   }
 
   /// Complete without reading the body: a response whose socket the app took (a WebSocket upgrade)
@@ -535,31 +576,42 @@ final class CapturedRequest implements HttpClientRequest {
   /// The request this one wraps, for tests.
   HttpClientRequest get inner => _inner;
 
+  BodyTee _ensureTee() {
+    var tee = _tee;
+    if (tee == null) {
+      final length = _inner.contentLength;
+      final type = _inner.headers.value(HttpHeaders.contentTypeHeader);
+      tee = _tee = BodyTee(
+        limit: _exchange.policy.bodySizeLimit,
+        declaredLength: length >= 0 ? length : null,
+        keep: shouldBufferBody(
+          contentType: type,
+          bodyWithoutType: _exchange.policy.bodyWithoutType,
+          encoded: false,
+        ),
+      );
+    }
+    return tee;
+  }
+
   void _teeBytes(List<int> chunk) {
     try {
-      var tee = _tee;
-      if (tee == null) {
-        final length = _inner.contentLength;
-        final type = _inner.headers.value(HttpHeaders.contentTypeHeader);
-        tee = _tee = BodyTee(
-          limit: _exchange.policy.bodySizeLimit,
-          declaredLength: length >= 0 ? length : null,
-          keep: shouldBufferBody(
-            contentType: type,
-            bodyWithoutType: _exchange.policy.bodyWithoutType,
-            encoded: false,
-          ),
-        );
-      }
-      tee.add(chunk);
+      _ensureTee().add(chunk);
     } catch (_) {}
   }
 
   void _teeText(String text) {
     try {
-      // Only what the body can still keep is encoded a second time; a string already past the
-      // limit is counted by its UTF-8 length without keeping it.
-      _teeBytes(_inner.encoding.encode(text));
+      final tee = _ensureTee();
+      final encoding = _inner.encoding;
+      // A string is encoded only when its bytes can still be kept (a UTF-16 unit is at least one
+      // byte, so a longer string cannot fit). Otherwise only its encoded LENGTH is counted: a
+      // 10 MB write past the limit allocates nothing.
+      if (canKeepText(tee, text)) {
+        tee.add(encoding.encode(text));
+      } else {
+        tee.addCount(encodedLength(text, encoding));
+      }
     } catch (_) {}
   }
 
@@ -854,15 +906,21 @@ final class _CapturedResponse extends Stream<List<int>>
     Uri? url,
     bool? followLoops,
   ]) {
-    // The app follows this redirect itself: `dart:io` drains this response's body on its own
-    // (never through this wrapper), and the new response carries the exchange on (its `redirects`
-    // list holds this hop).
+    // The app follows this redirect itself. This 3xx response is an exchange of its own (complete
+    // with the body the app read, or without one if it never did); the response `redirect()`
+    // returns is a NEW exchange that says it came from here.
+    try {
+      if (!_passedOn) _exchange.completeWithoutBody(_inner);
+      _passedOn = true;
+    } catch (_) {}
     return _inner.redirect(method, url, followLoops).then<HttpClientResponse>((
       next,
     ) {
       try {
-        _exchange.responseStarted(next.redirects);
-        return _CapturedResponse(next, _exchange);
+        final child = _exchange.continuedBy(_inner, next);
+        child.before();
+        child.responseStarted(next.redirects);
+        return _CapturedResponse(next, child);
       } catch (_) {
         return next;
       }

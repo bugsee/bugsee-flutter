@@ -419,7 +419,7 @@ void main() {
         {
           'NetworkCaptureStats',
           'captured',
-          'handedToSdk',
+          'submittedToSdk',
           'droppedQueueFull',
           'droppedNotAccepting',
           'droppedByFilter',

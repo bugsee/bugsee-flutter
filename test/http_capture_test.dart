@@ -205,6 +205,14 @@ Future<void> route(HttpRequest request) async {
       response
         ..headers.contentType = ContentType.text
         ..add([0xff, 0xfe, 0xfd]);
+    case '/loc':
+      response
+        ..statusCode = 200
+        ..headers.contentType = ContentType.text
+        ..headers.set('location', '/final?token=abc&x=1')
+        ..headers.set('content-location', 'http://u:p@h.example/x?a=1')
+        ..headers.set('refresh', '0; url=/n?s=1')
+        ..write('ok');
     case '/hang':
       // Never answers.
       await Completer<void>().future;
@@ -782,7 +790,12 @@ void main() {
         final redirects = h.stage(NetworkStage.redirect);
         expect(redirects[0].url, h.url('/r1').toString());
         expect(redirects[0].statusCode, 302);
-        expect(redirects[0].headers['location'], h.url('/r2').toString());
+        expect(
+          redirects[0].headers,
+          isEmpty,
+          reason:
+              'a synthesised location header would carry the next URL, query included',
+        );
         expect(redirects[1].url, h.url('/r2').toString());
         expect(redirects[1].statusCode, 301);
         final complete = h.stage(NetworkStage.complete).single;
@@ -809,20 +822,64 @@ void main() {
       },
     );
 
-    test('a redirect the app follows itself keeps one exchange', () async {
-      final request = await h.captured().getUrl(h.url('/r1'));
-      request.followRedirects = false;
-      final first = await request.close();
-      expect(first.isRedirect, isTrue);
-      final next = await first.redirect();
-      await next.drain<void>();
-      expect(h.stage(NetworkStage.complete), hasLength(1));
-      expect(
-        h.stage(NetworkStage.complete).single.statusCode,
-        anyOf(200, 301, 302),
-      );
-      expect({for (final e in h.events) e.id}, hasLength(1));
-    });
+    test(
+      'a redirect the app follows itself: the 3xx is drained, then the next response is a new exchange that says where it came from',
+      () async {
+        final request = await h.captured().getUrl(h.url('/r1'));
+        request.followRedirects = false;
+        final first = await request.close();
+        expect(first.isRedirect, isTrue);
+        await first.drain<void>();
+        final second = await first.redirect();
+        await second.drain<void>();
+        final third = await second.redirect();
+        final body = await third.fold<int>(0, (n, c) => n + c.length);
+        expect(body, 11);
+        final complete = h.stage(NetworkStage.complete);
+        expect([for (final e in complete) e.statusCode], [302, 301, 200]);
+        expect(
+          [for (final e in complete) e.url],
+          [
+            h.url('/r1').toString(),
+            h.url('/r2').toString(),
+            h.url('/json').toString(),
+          ],
+        );
+        expect(complete[0].redirectedFrom, isNull);
+        expect(complete[1].redirectedFrom, h.url('/r1').toString());
+        expect(complete[2].redirectedFrom, h.url('/r2').toString());
+        expect(complete[2].body, '{"ok":true}');
+        // Three exchanges, each with its own before, in order.
+        expect({for (final e in h.events) e.id}, hasLength(3));
+        expect(
+          [for (final e in h.events) '${e.stage.name}:${e.statusCode}'],
+          [
+            'before:0',
+            'complete:302',
+            'before:0',
+            'complete:301',
+            'before:0',
+            'complete:200',
+          ],
+        );
+        expect(h.stage(NetworkStage.redirect), isEmpty);
+      },
+    );
+
+    test(
+      'a redirect followed without reading the 3xx completes it without a body',
+      () async {
+        final request = await h.captured().getUrl(h.url('/r1'));
+        request.followRedirects = false;
+        final first = await request.close();
+        final next = await first.redirect();
+        await next.drain<void>();
+        final complete = h.stage(NetworkStage.complete);
+        expect([for (final e in complete) e.statusCode], [302, 301]);
+        expect(complete[0].body, isNull);
+        expect(complete[1].redirectedFrom, h.url('/r1').toString());
+      },
+    );
   });
 
   group('failures', () {
@@ -1006,6 +1063,121 @@ void main() {
     );
   });
 
+  group('credentials and secrets in URL-bearing fields', () {
+    Uri withUserInfo(String path) =>
+        Uri.parse('http://user:pw-SECRET@127.0.0.1:${h.server.port}$path');
+
+    String everything() => [
+      for (final e in h.events)
+        [
+          e.url,
+          e.redirectedFrom,
+          e.error,
+          e.errorDescription,
+          ...e.headers.entries.map((x) => '${x.key}: ${x.value}'),
+        ].join(' | '),
+    ].join('\n');
+
+    test(
+      'userinfo is stripped from every URL field of a plain exchange',
+      () async {
+        await observe(h.captured(), 'GET', withUserInfo('/json?a=1'));
+        expect(h.events, hasLength(2));
+        expect(everything(), isNot(contains('pw-SECRET')));
+        expect(everything(), isNot(contains('user:')));
+        expect(h.events[0].url, h.url('/json?a=1').toString());
+      },
+    );
+
+    test(
+      'also through a redirect chain: hops, final URL and redirectedFrom',
+      () async {
+        await observe(h.captured(), 'GET', withUserInfo('/r1'));
+        expect(h.stage(NetworkStage.redirect), hasLength(2));
+        expect(
+          h.stage(NetworkStage.complete).single.redirectedFrom,
+          h.url('/r1').toString(),
+        );
+        expect(everything(), isNot(contains('pw-SECRET')));
+      },
+    );
+
+    test('and through a manual redirect', () async {
+      final request = await h.captured().getUrl(withUserInfo('/r1'));
+      request.followRedirects = false;
+      final first = await request.close();
+      await first.drain<void>();
+      await (await first.redirect()).drain<void>();
+      expect(h.events.length, greaterThanOrEqualTo(4));
+      expect(everything(), isNot(contains('pw-SECRET')));
+    });
+
+    test('and from an error text, short and long', () async {
+      final harness = await Harness.start((request) async {
+        (await request.response.detachSocket()).destroy();
+      });
+      addTearDown(harness.close);
+      try {
+        final request = await harness.captured().getUrl(
+          Uri.parse(
+            'http://user:pw-SECRET@127.0.0.1:${harness.server.port}/p?token=QSECRET',
+          ),
+        );
+        await (await request.close()).drain<void>();
+      } catch (_) {}
+      final failed = harness.stage(NetworkStage.error).single;
+      for (final text in [
+        failed.error!,
+        failed.errorDescription!,
+        failed.url,
+      ]) {
+        expect(text, isNot(contains('pw-SECRET')));
+      }
+      expect(failed.error, isNot(contains('QSECRET')));
+      expect(failed.errorDescription, isNot(contains('QSECRET')));
+    });
+
+    test('a connection failure with userinfo in the URL', () async {
+      final closed = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final port = closed.port;
+      await closed.close(force: true);
+      try {
+        await h.captured().getUrl(
+          Uri.parse('http://user:pw-SECRET@127.0.0.1:$port/x'),
+        );
+      } catch (_) {}
+      expect(everything(), isNot(contains('pw-SECRET')));
+      expect(h.stage(NetworkStage.error), hasLength(1));
+    });
+
+    test(
+      'URL-valued headers lose userinfo and query values, others are as sent',
+      () async {
+        await observe(
+          h.captured(),
+          'GET',
+          h.url('/loc'),
+          headers: {'referer': 'http://u:p@h.example/p?k=v', 'x-note': 'a?b=c'},
+        );
+        final before = h.stage(NetworkStage.before).single;
+        expect(before.headers['referer'], 'http://h.example/p?k=<redacted>');
+        expect(before.headers['x-note'], 'a?b=c');
+        final complete = h.stage(NetworkStage.complete).single;
+        expect(
+          complete.headers['location'],
+          '/final?token=<redacted>&x=<redacted>',
+        );
+        expect(
+          complete.headers['content-location'],
+          'http://h.example/x?a=<redacted>',
+        );
+        expect(complete.headers['refresh'], '0; url=/n?s=<redacted>');
+        expect(everything(), isNot(contains('abc')));
+        expect(everything(), isNot(contains('u:p')));
+      },
+    );
+  });
+
   group('the policy', () {
     test(
       'not accepting: nothing is recorded and the request is not even wrapped',
@@ -1097,6 +1269,32 @@ void main() {
           isFalse,
         );
         expect(policy.isOwnTraffic(Uri.parse('/relative')), isFalse);
+        // A trailing dot is the same host; userinfo does not make a host.
+        expect(policy.isOwnTraffic(Uri.parse('https://bugsee.com./')), isTrue);
+        expect(
+          policy.isOwnTraffic(Uri.parse('https://API.Bugsee.COM../v2')),
+          isTrue,
+        );
+        expect(
+          policy.isOwnTraffic(Uri.parse('https://bugsee.com@evil.example/')),
+          isFalse,
+        );
+        expect(
+          policy.isOwnTraffic(
+            Uri.parse('https://evil.example@api.bugsee.com/'),
+          ),
+          isTrue,
+        );
+        expect(
+          policy.isOwnTraffic(
+            Uri.parse('https://bugsee.com:8443@evil.example/'),
+          ),
+          isFalse,
+        );
+        expect(
+          policy.isOwnTraffic(Uri.parse('https://xn--bugsee-9ua.com/')),
+          isFalse,
+        );
       },
     );
   });

@@ -144,7 +144,7 @@ void main() {
       expect(complete.body, '{"hello":"world"}');
       expect(complete.size, 17);
       expect(Bugsee.networkCaptureStats.captured, 2);
-      expect(Bugsee.networkCaptureStats.handedToSdk, 2);
+      expect(Bugsee.networkCaptureStats.submittedToSdk, 2);
     },
   );
 
@@ -381,7 +381,7 @@ void main() {
       Bugsee.installNetworkCapture();
       await settle();
       await get('/a');
-      expect(Bugsee.networkCaptureStats.handedToSdk, 0);
+      expect(Bugsee.networkCaptureStats.submittedToSdk, 0);
       expect(Bugsee.networkCaptureStats.refusedByNative, 2);
     });
   });

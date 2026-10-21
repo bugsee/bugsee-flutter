@@ -79,7 +79,8 @@ own are `URLSession`, `okhttp`, ...). The channel's advantage here is the lifeti
   (`networkCaptureStats.droppedQueueFull`), a warning is printed once in debug builds.
 * **Timestamps**: every event carries its age (`ageMs`, from Dart's monotonic clock); native subtracts it from the
   SDK's own clock (Android `BugseeExchangeFactory.currentTimestamp()`, which is not `DateTime.now()` once the device
-  clock was corrected, and "stamps from another clock can be dropped"; iOS `CFAbsoluteTime` epoch ms).
+  clock was corrected, and "stamps from another clock can be dropped"; iOS `CFAbsoluteTime` epoch ms). The age is
+  taken just before each batch is sent, so a slow filter does not make an event look older than it is.
 * **Ids** are `<8 hex random per isolate>-<counter>`, so a hot restart cannot reuse one.
 
 ## What is recorded
@@ -89,7 +90,7 @@ One exchange is several entries sharing an id (`reporting/bundle/network.md`):
 | stage | when | carries |
 |---|---|---|
 | `before` | `request.close()` (or `abort`, or a failure first) | method, URL, request headers, request body (+ `no_body_reason`), size |
-| `redirect` | one per hop `dart:io` followed (read from `response.redirects`) | the URL that answered, its status, `location` |
+| `redirect` | one per hop `dart:io` followed (read from `response.redirects`) | the URL that answered and its status (no headers: the next entry's URL says where it went) |
 | `complete` | the response body ended (or the app took the socket) | status, reason phrase, response headers, body, size, `redirectedFrom`, timings |
 | `error` | no connection, certificate refusal, connection timeout, connection closed mid-body | short and long error text |
 | `abort` | the app cancelled the response subscription, or called `request.abort()` | size so far |
@@ -105,6 +106,9 @@ One exchange is several entries sharing an id (`reporting/bundle/network.md`):
 * **Redirects**: Android records each hop (`redirect` stage); iOS has no such stage (its own interception carries the
   original URL on the final event, `redirectedFromURL`), so the hop entries are not handed to the iOS SDK and the
   final `complete` carries `redirectedFrom`.
+* A redirect the app follows itself (`followRedirects = false`, then `response.redirect()`) is **a new exchange per response**: the 3xx
+  completes on its own (with the body the app read, none if it never listened), and the response `redirect()` returns has its
+  own id, `before` and `complete`, with `redirectedFrom` set to the 3xx's URL.
 * iOS spells `abort` `cancel` (`BugseeNetworkEventCancel`); native maps it.
 * iOS has one error text and no `statusText`; Android stores both texts and the reason phrase.
 
@@ -143,7 +147,7 @@ and a binary body is counted and never copied:
 ## Privacy
 
 1. **Raw data stays in the process until it has passed every filter.** Nothing leaves Dart before the Dart filter ran;
-   nothing is handed to the SDK before it.
+   nothing is submitted to the SDK before it.
 2. **The Dart filter** (`Bugsee.setNetworkFilter`) sees the raw event (headers, URL with its query, body) and returns the
    event to keep, a modified one, or `null` to drop it. It runs in Dart, so it cannot be bypassed: there is no path
    to the SDK that does not go through it. `id`, `stage`, `method`, `statusCode` and `size` are the exchange's and are
@@ -181,9 +185,15 @@ and a binary body is counted and never copied:
 7. The default sanitizer's rules are the SDK's and **differ per platform** (measured: the same `x-session: s1` request header
    was redacted on Android and kept on iOS; `authorization`, `set-cookie`, the `token` query parameter and JSON `token` /
    `password` values were redacted on both). Redact in the Dart filter what must be hidden on both.
-8. The error text of an `error` entry never carries a URL's query string (`HttpException` prints `uri = ...`; the SDK's
-   sanitizer redacts the URL field, not the middle of a message).
-9. Request cookies set through `request.cookies` are not captured (serialised by `dart:io` after the headers are read); the
+8. **No URL leaves with userinfo** (`user:password@`, which `dart:io` accepts and turns into Basic auth): it is stripped in Dart
+   from the event's `url`, `redirectedFrom`, URL-valued headers and error texts, and once more on the way out whatever a
+   filter returned. The SDKs strip it from the URL field only; the Android HTTP breadcrumb and error texts would keep it.
+9. **URL-valued headers** (`location`, `content-location`, `referer`, `refresh`, request and response) lose userinfo and
+   every query VALUE (`?token=abc` becomes `?token=<redacted>`): neither SDK sanitizes a header by its value, only by its
+   name. Other headers are the SDK sanitizer's business. Redirect entries carry no headers at all.
+10. The error text of an `error` entry never carries a URL's query string or userinfo (`HttpException` prints `uri = ...`;
+   the SDK's sanitizer redacts the URL field, not the middle of a message).
+11. Request cookies set through `request.cookies` are not captured (serialised by `dart:io` after the headers are read); the
    response's `Set-Cookie` is a response header, so the sanitizer's rules apply to it (redacted on both platforms, measured).
 
 ## The options that apply
@@ -219,7 +229,12 @@ options are read again. A failure to read leaves nothing accepted.
   tells it the SDK is launched), and events of the old isolate that were still queued are gone with it. Native keeps no
   network state.
 * `uninstallNetworkCapture()` restores the previous overrides when the capture is still the one set; when the app chained
-  over it, it stays in the chain and records nothing. It never touches overrides it did not install.
+  over it, it stays in the chain and records nothing. It never touches overrides it did not install. Events captured before
+  it (already through the filter) are still submitted: the app asked to stop recording, not to lose what it recorded; the
+  SDK's own gate drops them if it is no longer launched.
+* Called inside a zone that scopes its own overrides (`HttpOverrides.runZoned`), `installNetworkCapture` throws a
+  `BugseeException` instead of making that scope global; call it from `main`. A repeated call probes whether the capture is
+  still in effect (a real client is created and closed through the app's overrides) once per set of overrides in effect.
 * Call it from the root isolate (a call from another is a `BugseeException`).
 
 ## Limits (known, documented, not bugs)
@@ -246,6 +261,11 @@ options are read again. A failure to read leaves nothing accepted.
   through `request.cookies` are serialised later and are not in it.
 * The queue holds 512 events and 8 MiB; a burst the native side cannot absorb drops the newest events and says so
   in `networkCaptureStats`.
+* **A body-size limit above 2 MiB is capped at 2 MiB** (`NetworkPolicy.maxBodyBytes`): memory is the cap times the requests in
+  flight, and the queue's byte budget must hold a few events. A body over the cap is `size_too_large`, as if it were over the
+  limit; the SDK itself would have kept it (the one place this differs from the option).
+* `networkCaptureStats.submittedToSdk` counts events native SUBMITTED to the SDK's wrapper channel. It is not "recorded": the
+  SDK still drops silently on a channel it retired or while its provider is stopped.
 
 ## Tests
 
@@ -267,7 +287,7 @@ after its first chunk, a refused connection, a request to the SDK's own endpoint
 
 | | Android | iOS |
 |---|---|---|
-| captured / handed to the SDK / dropped by the filter / refused by native | 26 / 24 / 2 / 0 | 26 / 22 / 2 / 2 (the two redirect hops iOS has no stage for) |
+| captured / submitted to the SDK / dropped by the filter / refused by native | 26 / 24 / 2 / 0 | 26 / 22 / 2 / 2 (the two redirect hops iOS has no stage for) |
 | `network.json` entries | 24 | 22 |
 | request made before launch, request to the SDK's endpoint, the filter-dropped `/secret` | absent | absent |
 | redirect chain | `before`, `redirect` 302, `redirect` 301, `complete` (url = `/json`) | `before`, `complete` (url = `/json`, `redirect: true`) |

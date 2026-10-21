@@ -27,6 +27,12 @@ final class NetworkPolicy {
   /// `capture.network.body-size-limit`'s default on both SDKs (20 KiB).
   static const int defaultBodySizeLimit = 20480;
 
+  /// The most of one body this capture ever keeps, whatever `capture.network.body-size-limit`
+  /// says: memory is this times the requests in flight, and the queue's byte budget (8 MiB) must
+  /// hold at least a couple of events. A body over it is `size_too_large`, as if it were over the
+  /// limit (the SDK would have kept it: the only place this differs from the option).
+  static const int maxBodyBytes = 2 * 1024 * 1024;
+
   /// The SDK is `launched` and `capture.network` is on. Only then is anything captured: Android
   /// would accept events while `launching` (into a 32-entry buffer) but iOS drops them, and
   /// "do not send what the SDK would drop" is the one rule both can meet.
@@ -69,7 +75,9 @@ final class NetworkPolicy {
     return NetworkPolicy(
       // The option's own default is on.
       accepting: launched && (capture is! bool || capture),
-      bodySizeLimit: limit is int ? limit : defaultBodySizeLimit,
+      bodySizeLimit: limit is int
+          ? (limit > maxBodyBytes ? maxBodyBytes : limit)
+          : defaultBodySizeLimit,
       bodyWithoutType: withoutType is bool && withoutType,
       ownHosts: Set.unmodifiable(hosts),
     );
@@ -78,7 +86,11 @@ final class NetworkPolicy {
   /// Whether [url] is Bugsee's own: the configured endpoint's host, or `bugsee.com` and below.
   /// Compared by host, never by port or path, and never captured.
   bool isOwnTraffic(Uri url) {
-    final host = url.host.toLowerCase();
+    // `bugsee.com.` (a trailing dot) is the same host.
+    var host = url.host.toLowerCase();
+    while (host.endsWith('.')) {
+      host = host.substring(0, host.length - 1);
+    }
     if (host.isEmpty) return false;
     return host == 'bugsee.com' ||
         host.endsWith('.bugsee.com') ||

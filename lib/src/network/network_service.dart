@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io' show HttpOverrides;
 
 import '../errors.dart';
+import '../launch.dart' show BugseeException;
 import '../status.dart';
 import 'http_capture.dart';
 import 'network_event.dart';
@@ -48,6 +49,7 @@ final class NetworkCaptureService {
 
   NetworkPolicy _policy = NetworkPolicy.off;
   BugseeHttpOverrides? _overrides;
+  HttpOverrides? _probedCurrent;
   StreamSubscription<BugseeStatus>? _statusSubscription;
   int _generation = 0;
   bool _warnedUnsupported = false;
@@ -73,9 +75,25 @@ final class NetworkCaptureService {
       }
       return false;
     }
-    if (installed && isHttpCaptureInEffect()) return true;
+    final current = HttpOverrides.current;
+    // Inside `HttpOverrides.runZoned`/`runWithHttpOverrides` the current overrides are the zone's,
+    // not the global ones: chaining to them and making that chain global would leak a scope into
+    // the whole isolate. Call it from the root zone (main).
+    if (!identical(current, Zone.root.run(() => HttpOverrides.current))) {
+      throw const BugseeException(
+        'installNetworkCapture was called inside a zone that scopes its own HttpOverrides; call it from the root zone (main, before runApp)',
+      );
+    }
+    // Probing creates a real client through the app's overrides, so it is done once per set of
+    // overrides in effect: a repeated call with the same ones answers from the first probe.
+    if (installed &&
+        (identical(current, _probedCurrent) || isHttpCaptureInEffect())) {
+      _probedCurrent = current;
+      return true;
+    }
+    _probedCurrent = null;
     controller.active = true;
-    final overrides = BugseeHttpOverrides(controller, HttpOverrides.current);
+    final overrides = BugseeHttpOverrides(controller, current);
     HttpOverrides.global = overrides;
     _overrides = overrides;
     _statusSubscription ??= _statuses().listen((status) {
@@ -95,7 +113,10 @@ final class NetworkCaptureService {
     final overrides = _overrides;
     controller.active = false;
     _generation++;
-    _policy = _policy.notAccepting();
+    _probedCurrent = null;
+    // Events already captured (and already through the filter) are still handed to the SDK: the
+    // app asked to stop recording, not to lose what it recorded. The SDK's own gate drops them if
+    // it is no longer launched.
     if (overrides != null && identical(HttpOverrides.current, overrides)) {
       HttpOverrides.global = overrides.previous;
     }

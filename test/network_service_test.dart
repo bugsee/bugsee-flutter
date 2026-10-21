@@ -8,6 +8,8 @@ import 'package:bugsee_flutter/src/network/network_policy.dart';
 import 'package:bugsee_flutter/src/network/network_service.dart';
 import 'package:bugsee_flutter/src/status.dart';
 import 'package:bugsee_flutter/src/errors.dart';
+import 'package:bugsee_flutter/src/launch.dart' show BugseeException;
+import 'package:bugsee_flutter/src/network/network_event.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class Rig {
@@ -229,6 +231,77 @@ void main() {
     });
   });
 
+  group('install in unusual places', () {
+    test('inside a zone that scopes its own overrides it refuses, clearly', () {
+      final rig = Rig();
+      expect(
+        () => HttpOverrides.runWithHttpOverrides(
+          rig.service.install,
+          _AppOverrides(),
+        ),
+        throwsA(
+          isA<BugseeException>().having(
+            (e) => e.message,
+            'message',
+            contains('zone'),
+          ),
+        ),
+      );
+      expect(rig.service.installed, isFalse);
+      expect(HttpOverrides.current, isNull, reason: 'nothing was made global');
+    });
+
+    test(
+      'a repeated install does not create a client through the app\'s overrides again',
+      () {
+        final app = _AppOverrides();
+        HttpOverrides.global = app;
+        final rig = Rig();
+        rig.service.install();
+        rig.service.install(); // the first probe
+        final made = app.created;
+        rig.service.install();
+        rig.service.install();
+        expect(
+          app.created,
+          made,
+          reason: 'answered from the probe already made',
+        );
+      },
+    );
+
+    test('after the overrides changed it probes again', () {
+      final app = _AppOverrides();
+      HttpOverrides.global = app;
+      final rig = Rig();
+      rig.service.install();
+      rig.service.install();
+      final other = _AppOverrides();
+      HttpOverrides.global = other;
+      expect(rig.service.install(), isTrue);
+      expect(isHttpCaptureInEffect(), isTrue);
+    });
+  });
+
+  group('uninstall and what was already captured', () {
+    test('events captured before the uninstall are still submitted', () async {
+      final rig = Rig();
+      rig.service.install();
+      await rig.settle();
+      rig.service.pipeline.submit(
+        BugseeNetworkEvent(
+          id: 'a',
+          stage: NetworkStage.before,
+          method: 'GET',
+          url: 'http://x/',
+        ),
+      );
+      rig.service.uninstall();
+      await rig.service.pipeline.flush();
+      expect(rig.sent.map((m) => m.id), ['a']);
+    });
+  });
+
   group('the policy follows the SDK', () {
     test(
       'a status that is not launched stops capture at once, before the options are read again',
@@ -326,6 +399,27 @@ void main() {
         expect(q.ownHosts, {'bugsee.internal.example'});
       },
     );
+
+    test('a body-size limit above the cap is capped, one below is kept', () {
+      expect(
+        NetworkPolicy.from({
+          NetworkOptionKeys.bodySizeLimit: 100 * 1024 * 1024,
+        }, launched: true).bodySizeLimit,
+        NetworkPolicy.maxBodyBytes,
+      );
+      expect(
+        NetworkPolicy.from({
+          NetworkOptionKeys.bodySizeLimit: NetworkPolicy.maxBodyBytes,
+        }, launched: true).bodySizeLimit,
+        NetworkPolicy.maxBodyBytes,
+      );
+      expect(
+        NetworkPolicy.from({
+          NetworkOptionKeys.bodySizeLimit: 1000,
+        }, launched: true).bodySizeLimit,
+        1000,
+      );
+    });
 
     test('not launched is never accepting, whatever the options say', () {
       expect(

@@ -339,7 +339,7 @@ abstract final class Bugsee {
   /// Stops recording. Restores the `HttpOverrides` that were in place before when this capture is
   /// still the one set; if the app chained its own over it, it stays in the chain and forwards
   /// without recording. Clients already created stop recording too. Events already queued are
-  /// still handed to the SDK. [installNetworkCapture] starts it again.
+  /// still submitted to the SDK (unless it is no longer launched). [installNetworkCapture] starts it again.
   static void uninstallNetworkCapture() => _runtime.uninstallNetworkCapture();
 
   /// Whether [installNetworkCapture] was called and not undone.
@@ -379,7 +379,7 @@ abstract final class Bugsee {
   /// The filter set with [setNetworkFilter], or `null`.
   static BugseeNetworkFilter? get networkFilter => _runtime.networkFilter;
 
-  /// What happened to the captured events so far (for diagnosis): captured, handed to the SDK,
+  /// What happened to the captured events so far (for diagnosis): captured, submitted to the SDK's wrapper channel (not the same as recorded: the SDK still drops on a retired channel or a stopped provider, silently),
   /// dropped by a full queue, by the filter, or by a failure to deliver.
   static NetworkCaptureStats get networkCaptureStats =>
       _runtime.networkCaptureStats;

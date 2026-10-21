@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import '../bridge/messages.g.dart';
 import 'network_event.dart';
 import 'network_policy.dart';
+import 'url_redaction.dart';
 
 /// The wire constants shared with native (`NetworkOps.java`, `BGSFlutterNetworkOps`); compared by
 /// `test/network_drift_test.dart`.
@@ -26,7 +27,7 @@ abstract final class NetworkWire {
 final class NetworkCaptureStats {
   const NetworkCaptureStats({
     this.captured = 0,
-    this.handedToSdk = 0,
+    this.submittedToSdk = 0,
     this.droppedQueueFull = 0,
     this.droppedNotAccepting = 0,
     this.droppedByFilter = 0,
@@ -38,9 +39,11 @@ final class NetworkCaptureStats {
   /// Events the capture produced and the queue took.
   final int captured;
 
-  /// Events native handed to the SDK (the rest of what was sent was refused there: the SDK is not
-  /// launched, `capture.network` is off, an app filter threw).
-  final int handedToSdk;
+  /// Events native SUBMITTED to the SDK's wrapper channel (the rest of what was sent was refused
+  /// there: the SDK is not launched, `capture.network` is off, an app filter threw). Submitted is
+  /// not recorded: the SDK still drops an event on a channel it has retired or while its provider
+  /// is stopped, and says nothing.
+  final int submittedToSdk;
 
   /// Events dropped because the queue was full: native could not keep up.
   final int droppedQueueFull;
@@ -64,7 +67,7 @@ final class NetworkCaptureStats {
 
   @override
   String toString() =>
-      'NetworkCaptureStats(captured $captured, handedToSdk $handedToSdk, '
+      'NetworkCaptureStats(captured $captured, submittedToSdk $submittedToSdk, '
       'droppedQueueFull $droppedQueueFull, droppedNotAccepting $droppedNotAccepting, '
       'droppedByFilter $droppedByFilter, filterFailures $filterFailures, '
       'refusedByNative $refusedByNative, sendFailures $sendFailures)';
@@ -124,7 +127,7 @@ final class NetworkPipeline {
   bool _warnedSend = false;
 
   int _captured = 0;
-  int _handed = 0;
+  int _submitted = 0;
   int _droppedFull = 0;
   int _droppedNotAccepting = 0;
   int _droppedByFilter = 0;
@@ -134,7 +137,7 @@ final class NetworkPipeline {
 
   NetworkCaptureStats get stats => NetworkCaptureStats(
     captured: _captured,
-    handedToSdk: _handed,
+    submittedToSdk: _submitted,
     droppedQueueFull: _droppedFull,
     droppedNotAccepting: _droppedNotAccepting,
     droppedByFilter: _droppedByFilter,
@@ -212,6 +215,9 @@ final class NetworkPipeline {
     try {
       while (_queue.isNotEmpty) {
         final batch = <NetworkEventMessage>[];
+        // When each message's event happened, to stamp its age just before the batch is sent: a
+        // slow filter or a long batch must not make the first events look older than they are.
+        final origins = <int>[];
         var batchBytes = 0;
         final slice = Stopwatch()..start();
         while (_queue.isNotEmpty &&
@@ -222,6 +228,7 @@ final class NetworkPipeline {
           final message = await _prepare(queued);
           if (message != null) {
             batch.add(message);
+            origins.add(queued.event.monotonicUs);
             batchBytes += estimateBytes(queued.event);
           }
           // Yield between events once the slice is used up, so a long queue (or a slow filter)
@@ -231,7 +238,7 @@ final class NetworkPipeline {
             slice.reset();
           }
         }
-        if (batch.isNotEmpty) await _send(batch);
+        if (batch.isNotEmpty) await _send(batch, origins);
         // Let the UI have the loop between batches.
         await Future<void>.delayed(Duration.zero);
       }
@@ -304,20 +311,15 @@ final class NetworkPipeline {
       _droppedByFilter++;
       return null;
     }
-    final ageUs = monotonicMicros() - original.monotonicUs;
-    final age = ageUs ~/ 1000;
     final body = filtered.body;
     return NetworkEventMessage(
       id: original.id,
       stage: original.stage.name,
       mechanism: NetworkWire.mechanism,
       method: original.method,
-      url: url,
-      ageMs: age < 0
-          ? 0
-          : age > NetworkWire.maxAgeMs
-          ? NetworkWire.maxAgeMs
-          : age,
+      // Whatever a filter did, a URL never leaves with userinfo.
+      url: stripUserInfo(url),
+      ageMs: 0, // stamped by `_send`
       size: original.size,
       statusCode: original.statusCode,
       headers: <String, String>{...filtered.headers},
@@ -327,17 +329,28 @@ final class NetworkPipeline {
       statusText: filtered.statusText,
       errorShortMessage: filtered.error,
       errorDescription: filtered.errorDescription,
-      redirectedFromUrl: filtered.redirectedFrom,
+      redirectedFromUrl: filtered.redirectedFrom == null
+          ? null
+          : stripUserInfo(filtered.redirectedFrom!),
       timings: filtered.timings == null
           ? null
           : <String, double>{...filtered.timings!},
     );
   }
 
-  Future<void> _send(List<NetworkEventMessage> batch) async {
+  Future<void> _send(List<NetworkEventMessage> batch, List<int> origins) async {
+    final now = monotonicMicros();
+    for (var i = 0; i < batch.length; i++) {
+      final age = (now - origins[i]) ~/ 1000;
+      batch[i].ageMs = age < 0
+          ? 0
+          : age > NetworkWire.maxAgeMs
+          ? NetworkWire.maxAgeMs
+          : age;
+    }
     try {
       final handed = await send(batch);
-      _handed += handed;
+      _submitted += handed;
       if (handed < batch.length) _refused += batch.length - handed;
     } catch (error) {
       _sendFailures += batch.length;

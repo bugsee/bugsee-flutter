@@ -5,6 +5,9 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import com.bugsee.library.contracts.reporting.Report;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -61,6 +64,8 @@ public class BugseeFlutterPlugin
     private BinaryMessenger messenger;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
+    /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
+    private final Object reportOwner = new Object();
 
     @Override
     public void onAttachedToEngine(@NonNull final FlutterPluginBinding binding) {
@@ -74,6 +79,7 @@ public class BugseeFlutterPlugin
         placement = new SecurePlacement(owner, binding.getFlutterEngine(), store, environment);
         PLACEMENTS.add(placement);
         store.setPullHook(PULLS::request);
+        ReportHandlerPipeline.shared().attach(reportOwner, this::sendReportRequest);
         // No activity yet: where the view is is not known, so cover rather than guess.
         store.setPlacement(owner, SecurePlacement.IMPLICIT_VIEW_ID,
                 SecureRectangleStore.Placement.UNKNOWN);
@@ -111,6 +117,8 @@ public class BugseeFlutterPlugin
             placement.dispose();
             placement = null;
         }
+        // Completes what was handed to this engine's Dart: nothing else knows those handles.
+        ReportHandlerPipeline.shared().detach(reportOwner);
         // The engine's UI is gone; there is nothing left of it to hide.
         SecureRectangleStore.shared().dropOwner(owner);
         final LifecycleHub.Sink stale = sink;
@@ -170,6 +178,151 @@ public class BugseeFlutterPlugin
             placement.refresh();
         }
         return applied;
+    }
+
+    // ---- Report handlers (workbook Part 7) --------------------------------------------
+
+    /** Runs on the platform thread (the pipeline posts it there). Never waits for the reply. */
+    private void sendReportRequest(
+            @NonNull final ReportHandlerPipeline.Request request,
+            @NonNull final Runnable unreachable
+    ) {
+        final BinaryMessenger current = messenger;
+        if (current == null) {
+            unreachable.run();
+            return;
+        }
+        final Messages.ReportHandlerRequestMessage message =
+                new Messages.ReportHandlerRequestMessage.Builder()
+                        .setHandle(request.handle)
+                        .setDeliveryId(request.deliveryId)
+                        .setAfter(request.after)
+                        .setReportId(request.reportId)
+                        .setType(request.type)
+                        .setDeadlineMs(request.deadlineMs)
+                        .build();
+        new Messages.BugseeBridgeFlutterApi(current).onReportHandlerRequest(
+                message,
+                new Messages.VoidResult() {
+                    @Override
+                    public void success() {
+                        // Delivered. The SDK's completion runs when Dart completes the handle.
+                    }
+
+                    @Override
+                    public void error(@NonNull final Throwable error) {
+                        // No Dart handler (hot restart, teardown): answer for it, now.
+                        Log.w(TAG, "report handler request not delivered: "
+                                + error.getClass().getName());
+                        unreachable.run();
+                    }
+                });
+    }
+
+    @Override
+    public void setReportHandlerPhases(@NonNull final Boolean before, @NonNull final Boolean after) {
+        ReportHandlerPipeline.shared().setPhases(reportOwner, before, after);
+    }
+
+    @Override
+    public void completeReportHandler(@NonNull final String handle) {
+        ReportHandlerPipeline.shared().complete(handle);
+    }
+
+    @Nullable
+    @Override
+    public Messages.ReportSnapshotMessage reportRead(@NonNull final String handle) {
+        final Report report = ReportHandlerPipeline.shared().reportFor(handle);
+        if (report == null) {
+            return null;
+        }
+        final ReportOps.Snapshot s = ReportOps.read(report);
+        return new Messages.ReportSnapshotMessage.Builder()
+                .setId(s.id)
+                .setType(s.type)
+                .setSummary(s.summary)
+                .setReportDescription(s.description)
+                .setEmail(s.email)
+                .setSeverity(s.severity == null ? null : s.severity.longValue())
+                .setLabels(s.labels)
+                .setAttributes(s.attributes)
+                .build();
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportSetSummary(@NonNull final String handle, @Nullable final String value) {
+        return edit(handle, report -> report.setSummary(value));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportSetDescription(@NonNull final String handle, @Nullable final String value) {
+        return edit(handle, report -> report.setDescription(value));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportSetEmail(@NonNull final String handle, @Nullable final String value) {
+        return edit(handle, report -> report.setEmail(value));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportSetSeverity(@NonNull final String handle, @NonNull final Long severity) {
+        return edit(handle, report -> ReportOps.setSeverity(report, severity));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportReplaceLabels(@NonNull final String handle, @NonNull final List<String> labels) {
+        return edit(handle, report -> ReportOps.replaceLabels(report, labels));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportAddLabels(@NonNull final String handle, @NonNull final List<String> labels) {
+        return edit(handle, report -> ReportOps.addLabels(report, labels));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportClearLabels(@NonNull final String handle) {
+        return edit(handle, Report::clearLabels);
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportSetAttribute(
+            @NonNull final String handle,
+            @NonNull final String name,
+            @NonNull final Object value
+    ) {
+        return edit(handle, report -> ReportOps.setAttribute(report, name, value));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportRemoveAttribute(@NonNull final String handle, @NonNull final String name) {
+        return edit(handle, report -> report.removeAttribute(name));
+    }
+
+    @NonNull
+    @Override
+    public Boolean reportClearAttributes(@NonNull final String handle) {
+        return edit(handle, Report::clearAllAttributes);
+    }
+
+    /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */
+    private static boolean edit(
+            @NonNull final String handle,
+            @NonNull final ReportHandlerPipeline.Edit edit
+    ) {
+        try {
+            return ReportHandlerPipeline.shared().edit(handle, edit);
+        } catch (final ReportOps.BadArgument e) {
+            throw new Messages.FlutterError("invalid-argument", e.getMessage(), null);
+        }
     }
 
     @NonNull

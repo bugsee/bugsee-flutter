@@ -46,7 +46,30 @@ static NSString *const kStopping = @"stopping";
 static NSString *const kFailed = @"failed";
 static NSString *const kErrorCode = @"launch-failed";
 
+static NSLock *StopLock(void) {
+  static NSLock *lock;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    lock = [[NSLock alloc] init];
+  });
+  return lock;
+}
+static NSInteger gStopsInFlight = 0;
+
+static BOOL StopInFlight(void) {
+  [StopLock() lock];
+  BOOL inFlight = gStopsInFlight > 0;
+  [StopLock() unlock];
+  return inFlight;
+}
+
 @implementation BGSFlutterLaunchOps
+
++ (void)beginStop {
+  [StopLock() lock];
+  gStopsInFlight++;
+  [StopLock() unlock];
+}
 
 + (NSString *)launched { return kLaunched; }
 + (NSString *)alreadyRunning { return kAlreadyRunning; }
@@ -94,12 +117,14 @@ static NSString *const kErrorCode = @"launch-failed";
       return;
     }
     NSString *status = [sdk statusName];
-    if ([status isEqualToString:@"launching"] || [status isEqualToString:@"launched"]) {
-      completion(kAlreadyRunning, nil, nil);
+    // A stop that was requested but that the SDK has not started yet outranks what the status
+    // still says (see +beginStop).
+    if (StopInFlight() || [status isEqualToString:@"stopping"]) {
+      completion(kRefused, kStopping, nil);
       return;
     }
-    if ([status isEqualToString:@"stopping"]) {
-      completion(kRefused, kStopping, nil);
+    if ([status isEqualToString:@"launching"] || [status isEqualToString:@"launched"]) {
+      completion(kAlreadyRunning, nil, nil);
       return;
     }
     NSDictionary<NSString *, id> *options = [self sdkOptionsFromFlat:flat];
@@ -120,12 +145,20 @@ static NSString *const kErrorCode = @"launch-failed";
   }
 }
 
++ (void)endStop {
+  [StopLock() lock];
+  if (gStopsInFlight > 0) gStopsInFlight--;
+  [StopLock() unlock];
+}
+
 + (void)stopWithSdk:(id<BGSFlutterBugseeSDK>)sdk done:(void (^)(NSError *))done {
   @try {
     [sdk stop:^{
+      [self endStop];
       done(nil);
     }];
   } @catch (NSException *exception) {
+    [self endStop];
     done([self errorFromException:exception]);
   }
 }

@@ -200,7 +200,7 @@ enum VideoMode {
 /// Each constant carries the SDK's INTERNAL value (what crosses to the SDK), never its
 /// ordinal: ordinals differ between platforms and shift between releases.
 enum VideoQuality {
-  defaultVideoQuality(0, true, true),
+  defaultQuality(0, true, true),
   medium(1, true, true),
   high(2, true, true);
 
@@ -242,7 +242,7 @@ final class BugseeOptions {
   const BugseeOptions({
     this.endpoint,
     this.custom = const {},
-    this.captureAvplayer,
+    this.captureAvPlayer,
     this.captureBluetoothStatus,
     this.captureBreadcrumbs,
     this.captureBreadcrumbsExtras,
@@ -252,9 +252,9 @@ final class BugseeOptions {
     this.captureDeviceNetworkNames,
     this.captureDiskSpace,
     this.captureLogs,
-    this.captureLogsAllsources,
+    this.captureLogsAllSources,
     this.captureLogsLevel,
-    this.captureLogsOslog,
+    this.captureLogsOsLog,
     this.captureNetwork,
     this.captureNetworkBodySizeLimit,
     this.captureNetworkBodyWithoutType,
@@ -280,10 +280,9 @@ final class BugseeOptions {
     this.captureVideoScale,
     this.captureVideoSecureScrolling,
     this.captureViewHierarchy,
-    this.captureWebsocket,
-    this.captureWebviewAdvanced,
-    this.captureWebviewDomainAllowlist,
-    this.captureWebviewReportTrigger,
+    this.captureWebSocket,
+    this.captureWebViewAdvanced,
+    this.captureWebViewReportTrigger,
     this.configBuildTarget,
     this.configBuildType,
     this.configDataEncryption,
@@ -301,7 +300,7 @@ final class BugseeOptions {
     this.detectCrash,
     this.detectCrashNdk,
     this.detectCrashFillEmptyExceptionStacks,
-    this.detectCrashSwiftAsyncStacktraces,
+    this.detectCrashSwiftAsyncStackTraces,
     this.detectEarlyCrash,
     this.detectExit,
     this.detectExitBgLowMemoryAsError,
@@ -367,7 +366,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.capture.avplayer`.
   /// - SDK default: `false`.
   /// - Available on: iOS only. On Android the option is ignored (a debug-mode warning says so).
-  final bool? captureAvplayer;
+  final bool? captureAvPlayer;
 
   /// Monitor current bluetooth status NSBluetoothAlwaysUsageDescription info.plist flag needed in
   /// ios 13+ versions
@@ -479,7 +478,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.capture.logs.allsources`.
   /// - SDK default: `false`.
   /// - Available on: Android only. On iOS the option is ignored (a debug-mode warning says so).
-  final bool? captureLogsAllsources;
+  final bool? captureLogsAllSources;
 
   /// Minimum log level to capture.
   ///
@@ -494,7 +493,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.capture.logs.oslog`.
   /// - SDK default: `false`.
   /// - Available on: iOS only. On Android the option is ignored (a debug-mode warning says so).
-  final bool? captureLogsOslog;
+  final bool? captureLogsOsLog;
 
   /// If `true`, Bugsee will monitor network events.
   ///
@@ -725,7 +724,7 @@ final class BugseeOptions {
   /// Quality of the final encoded video.
   ///
   /// - Option key: `com.bugsee.option.capture.video.quality`.
-  /// - SDK default: `VideoQuality.defaultVideoQuality`.
+  /// - SDK default: `VideoQuality.defaultQuality`.
   /// - Available on: Android and iOS.
   final VideoQuality? captureVideoQuality;
 
@@ -759,7 +758,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.capture.websocket`.
   /// - SDK default: `true`.
   /// - Available on: iOS only. On Android the option is ignored (a debug-mode warning says so).
-  final bool? captureWebsocket;
+  final bool? captureWebSocket;
 
   /// Whether to inject the advanced `@bugsee/webview` JS SDK into instrumented WebViews for
   /// full-fidelity in-page capture (console, network, DOM obscuring, incidents) streamed to
@@ -769,34 +768,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.capture.webview.advanced`.
   /// - SDK default: `true`.
   /// - Available on: Android and iOS.
-  final bool? captureWebviewAdvanced;
-
-  /// @deprecated NOT CURRENTLY HONOURED — this option has no effect, whatever it is set to.
-  ///
-  /// It described a scoping that the SDK no longer performs. The advanced WebView bundle is now
-  /// registered as an ALL-ORIGINS document-start script regardless of this value, for two reasons
-  /// that an origin filter cannot serve:
-  ///
-  /// - Masking is a privacy guarantee — sensitive content is obscured automatically wherever it
-  ///   can be — so its reach cannot depend on configuration. A subframe outside an allowlist
-  ///   would have rendered its password and payment fields unmasked in the captured video.
-  ///
-  /// - Injection order — the SDK must run before the page's own scripts, or a page script can
-  ///   take over its bridge. That is true of every frame the SDK runs in.
-  ///
-  /// What the option was FOR — keeping Bugsee out of third-party content (OAuth, payment, ads) —
-  /// is now enforced by the bundle instead of by an origin list: an injected sub-frame runs only
-  /// the obscuring composer, with no handshake, no capture interceptors and no data stream.
-  /// Third-party frames contribute mask rectangles and nothing else.
-  ///
-  /// Kept only so existing configurations keep loading. Setting it neither widens nor narrows
-  /// anything.
-  ///
-  /// - Option key: `com.bugsee.option.capture.webview.domain-allowlist`.
-  /// - SDK default: `''`.
-  /// - Available on: Android only. On iOS the option is ignored (a debug-mode warning says so).
-  /// - Deprecated since SDK 7.1.2; the SDK still honours it.
-  final String? captureWebviewDomainAllowlist;
+  final bool? captureWebViewAdvanced;
 
   /// Whether an incident triggered from inside an instrumented WebView (via the advanced JS SDK)
   /// may OPEN a native bug report in the hosting SDK. The WebView incident always still streams
@@ -807,7 +779,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.capture.webview.report-trigger`.
   /// - SDK default: `false`.
   /// - Available on: Android and iOS.
-  final bool? captureWebviewReportTrigger;
+  final bool? captureWebViewReportTrigger;
 
   /// Name of the project target
   ///
@@ -972,7 +944,7 @@ final class BugseeOptions {
   /// - Option key: `com.bugsee.option.detect.crash.swift_async_stacktraces`.
   /// - SDK default: `true`.
   /// - Available on: iOS only. On Android the option is ignored (a debug-mode warning says so).
-  final bool? detectCrashSwiftAsyncStacktraces;
+  final bool? detectCrashSwiftAsyncStackTraces;
 
   /// Recover crashes that happen during app startup, before the first Activity becomes visible.
   /// When enabled (the default), a crash during the startup window is detected on the next launch
@@ -1307,8 +1279,8 @@ final class BugseeOptions {
   /// encoder (`encodeLaunchOptions`), which is what reaches the SDKs.
   @internal
   Map<String, Object> typedEntries() => {
-    if (captureAvplayer != null)
-      'com.bugsee.option.capture.avplayer': captureAvplayer!,
+    if (captureAvPlayer != null)
+      'com.bugsee.option.capture.avplayer': captureAvPlayer!,
     if (captureBluetoothStatus != null)
       'com.bugsee.option.capture.bluetooth-status': captureBluetoothStatus!,
     if (captureBreadcrumbs != null)
@@ -1328,12 +1300,12 @@ final class BugseeOptions {
     if (captureDiskSpace != null)
       'com.bugsee.option.capture.disk-space': captureDiskSpace!,
     if (captureLogs != null) 'com.bugsee.option.capture.logs': captureLogs!,
-    if (captureLogsAllsources != null)
-      'com.bugsee.option.capture.logs.allsources': captureLogsAllsources!,
+    if (captureLogsAllSources != null)
+      'com.bugsee.option.capture.logs.allsources': captureLogsAllSources!,
     if (captureLogsLevel != null)
       'com.bugsee.option.capture.logs.level': captureLogsLevel!.value,
-    if (captureLogsOslog != null)
-      'com.bugsee.option.capture.logs.oslog': captureLogsOslog!,
+    if (captureLogsOsLog != null)
+      'com.bugsee.option.capture.logs.oslog': captureLogsOsLog!,
     if (captureNetwork != null)
       'com.bugsee.option.capture.network': captureNetwork!,
     if (captureNetworkBodySizeLimit != null)
@@ -1395,16 +1367,13 @@ final class BugseeOptions {
           captureVideoSecureScrolling!,
     if (captureViewHierarchy != null)
       'com.bugsee.option.capture.view-hierarchy': captureViewHierarchy!,
-    if (captureWebsocket != null)
-      'com.bugsee.option.capture.websocket': captureWebsocket!,
-    if (captureWebviewAdvanced != null)
-      'com.bugsee.option.capture.webview.advanced': captureWebviewAdvanced!,
-    if (captureWebviewDomainAllowlist != null)
-      'com.bugsee.option.capture.webview.domain-allowlist':
-          captureWebviewDomainAllowlist!,
-    if (captureWebviewReportTrigger != null)
+    if (captureWebSocket != null)
+      'com.bugsee.option.capture.websocket': captureWebSocket!,
+    if (captureWebViewAdvanced != null)
+      'com.bugsee.option.capture.webview.advanced': captureWebViewAdvanced!,
+    if (captureWebViewReportTrigger != null)
       'com.bugsee.option.capture.webview.report-trigger':
-          captureWebviewReportTrigger!,
+          captureWebViewReportTrigger!,
     if (configBuildTarget != null)
       'com.bugsee.option.config.build-target': configBuildTarget!,
     if (configBuildType != null)
@@ -1442,9 +1411,9 @@ final class BugseeOptions {
     if (detectCrashFillEmptyExceptionStacks != null)
       'com.bugsee.option.detect.crash.fill_empty_exception_stacks':
           detectCrashFillEmptyExceptionStacks!,
-    if (detectCrashSwiftAsyncStacktraces != null)
+    if (detectCrashSwiftAsyncStackTraces != null)
       'com.bugsee.option.detect.crash.swift_async_stacktraces':
-          detectCrashSwiftAsyncStacktraces!,
+          detectCrashSwiftAsyncStackTraces!,
     if (detectEarlyCrash != null)
       'com.bugsee.option.detect.early-crash': detectEarlyCrash!,
     if (detectExit != null) 'com.bugsee.option.detect.exit': detectExit!,

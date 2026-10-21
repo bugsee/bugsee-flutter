@@ -116,6 +116,29 @@ public class LaunchOptionValuesTest {
     }
 
     @Test
+    public void aValueThatIsNotTheSdksIsLeftOutForEveryEnumOptionNeverBecomingAnotherConstant() throws Exception {
+        // IssueSeverity.fromIntValue answers VeryLow for anything unknown; the others answer null.
+        for (final Map.Entry<String, JSONObject> option : enumOptions().entrySet()) {
+            final Set<Integer> valid = new HashSet<>();
+            final Iterator<String> names = option.getValue().keys();
+            while (names.hasNext()) {
+                valid.add(option.getValue().getInt(names.next()));
+            }
+            for (final int candidate : new int[] {-1, 0, 6, 9, 22, 99, 255, 256, 100000}) {
+                if (valid.contains(candidate)) {
+                    continue;
+                }
+                assertFalse(option.getKey() + " = " + candidate,
+                        LaunchOptionValues.toSdk(map(option.getKey(), candidate)).containsKey(option.getKey()));
+            }
+        }
+        // And a value the severity enum does have still goes through.
+        assertEquals(IssueSeverity.VeryLow,
+                LaunchOptionValues.toSdk(map("com.bugsee.option.reporting.defaults.bug-priority", 1))
+                        .get("com.bugsee.option.reporting.defaults.bug-priority"));
+    }
+
+    @Test
     public void everythingElseIsPassedAsItIs() {
         final Map<String, Object> flat = new HashMap<>();
         flat.put("com.bugsee.option.capture.logs", Boolean.TRUE);

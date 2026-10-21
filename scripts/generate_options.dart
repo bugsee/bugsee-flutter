@@ -82,9 +82,31 @@ String lowerFirst(String s) =>
 String upperFirst(String s) =>
     s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
+/// Field names where the mechanical camelCase of the key reads badly (a compound word the key
+/// writes as one). Keyed by the part of the key after `com.bugsee.option.`. Every entry must name
+/// a real option (the generator fails on a stale one), so the table cannot rot.
+const fieldNameOverrides = {
+  'capture.avplayer': 'captureAvPlayer',
+  'capture.logs.allsources': 'captureLogsAllSources',
+  'capture.logs.oslog': 'captureLogsOsLog',
+  'capture.websocket': 'captureWebSocket',
+  'capture.webview.advanced': 'captureWebViewAdvanced',
+  'capture.webview.report-trigger': 'captureWebViewReportTrigger',
+  'detect.crash.swift_async_stacktraces': 'detectCrashSwiftAsyncStackTraces',
+};
+
+/// Enum constants renamed from the SDK's, by `Family.SdkName`.
+const constantNameOverrides = {
+  // `default` is reserved, and `Default` is the smallest preset, not "the default".
+  'VideoQuality.Default': 'defaultQuality',
+};
+
 /// `capture.video.frame-rate` -> `captureVideoFrameRate`; `detect.exit.bg_low_memory_as_error`
-/// -> `detectExitBgLowMemoryAsError`.
+/// -> `detectExitBgLowMemoryAsError`; see [fieldNameOverrides].
 String fieldName(String key) {
+  final override =
+      fieldNameOverrides[key.substring('com.bugsee.option.'.length)];
+  if (override != null) return override;
   final path = key.substring('com.bugsee.option.'.length);
   final parts = path.split(RegExp(r'[.\-_]')).where((p) => p.isNotEmpty);
   var first = true;
@@ -96,9 +118,11 @@ String fieldName(String key) {
   return out.toString();
 }
 
-/// An enum constant's Dart name: `Fullscreen` -> `fullscreen`, `V1` -> `v1`; a reserved word
-/// (`Default`) gets the enum's name appended (`defaultVideoQuality`).
+/// An enum constant's Dart name: `Fullscreen` -> `fullscreen`, `V1` -> `v1`; a reserved word gets
+/// the enum's name appended; see [constantNameOverrides].
 String constantName(String sdkName, String family) {
+  final override = constantNameOverrides['$family.$sdkName'];
+  if (override != null) return override;
   const acronyms = {'BSD': 'bsd', 'MachAndBSD': 'machAndBsd'};
   var n = acronyms[sdkName] ?? lowerFirst(sdkName);
   if (dartReserved.contains(n)) n = '$n$family';
@@ -140,9 +164,15 @@ class Option {
     return n == null ? null : enumFamilies[n];
   }
 
-  /// Whether the typed class carries this option.
+  /// Whether the SDK marks the option deprecated (on either platform).
+  bool get deprecated =>
+      (android?.deprecatedSince ?? ios?.deprecatedSince) != null;
+
+  /// Whether the typed class carries this option. A deprecated option does not: a typed field
+  /// would be a public API shipped already deprecated (the one at 7.4.2 is a documented no-op),
+  /// and `custom` still reaches it, with a warning.
   bool get typed {
-    if (hidden) return false;
+    if (hidden || deprecated) return false;
     final a = android, i = ios;
     final shipsAndroid =
         a != null && bundledModules['android']!.contains(a.module);
@@ -412,10 +442,6 @@ String fieldDoc(
       );
     }
   }
-  final dep = (a ?? i)!.deprecatedSince;
-  if (dep != null) {
-    lines.add('- Deprecated since SDK $dep; the SDK still honours it.');
-  }
   return lines.map((l) => '  ${dartDocLine(l)}').join('\n');
 }
 
@@ -514,6 +540,20 @@ String emitOptions(
   for (final n in names.keys) {
     if (reserved.contains(n)) {
       throw StateError('generated field $n collides with a member');
+    }
+  }
+
+  final known = {
+    for (final o in options) o.key.substring('com.bugsee.option.'.length),
+  };
+  for (final k in fieldNameOverrides.keys) {
+    if (!known.contains(k)) {
+      throw StateError('fieldNameOverrides names no option: $k');
+    }
+  }
+  for (final k in constantNameOverrides.keys) {
+    if (!enums.containsKey(k.split('.').first)) {
+      throw StateError('constantNameOverrides names no enum: $k');
     }
   }
 

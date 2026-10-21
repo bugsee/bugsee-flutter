@@ -12,6 +12,8 @@
 // `scripts/extract_report_enums.dart`, and `test/report_enum_parity_test.dart`
 // compares this file with BOTH platforms, so a divergence in either is seen.
 
+import 'package:meta/meta.dart';
+
 /// How severe a report is. The SDK's internal integer is [value].
 ///
 /// Value 1 is `VeryLow` on Android and `Low` on iOS; the names diverge only
@@ -36,7 +38,9 @@ enum ReportSeverity {
   /// The smallest and largest value the SDKs accept. Repeated in Java
   /// (`ReportOps.MIN_SEVERITY`/`MAX_SEVERITY`) and Objective-C
   /// (`BGSFlutterReportOps`); the parity test compares all three.
+  @internal
   static const int minValue = 1;
+  @internal
   static const int maxValue = 5;
 
   /// The severity for an SDK value, or `null` for anything else, including the

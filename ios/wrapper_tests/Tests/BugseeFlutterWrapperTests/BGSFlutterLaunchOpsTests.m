@@ -16,6 +16,9 @@
 @property(nonatomic, strong) NSMutableArray<NSString *> *launches;
 @property(nonatomic, copy) NSDictionary *launchedWith;
 @property(nonatomic) NSInteger stops;
+/// When set, `stop:` keeps its completion until `finishStop` is called.
+@property(nonatomic) BOOL deferStop;
+@property(nonatomic, copy) void (^finishStop)(void);
 @property(nonatomic, strong) NSDictionary *options;
 @property(nonatomic, strong) NSNumber *lastHostOnly;
 @end
@@ -48,6 +51,10 @@
 - (void)stop:(void (^)(void))done {
   if (_stopThrows) @throw _stopThrows;
   _stops++;
+  if (_deferStop) {
+    _finishStop = [done copy];
+    return;
+  }
   done();
 }
 - (NSDictionary<NSString *, id> *)launchOptionsHostOnly:(BOOL)hostOnly {
@@ -117,6 +124,34 @@
   XCTAssertEqualObjects(a[0], BGSFlutterLaunchOps.refused);
   XCTAssertEqualObjects(a[1], BGSFlutterLaunchOps.stopping);
   XCTAssertEqual(sdk.launches.count, 0u);
+}
+
+/// iOS only moves to Stopping a main-queue hop AFTER a stop is requested, so a launch that follows
+/// an unawaited stop still reads `launched`. The stop is marked synchronously (beginStop) and a
+/// launch is refused while it is in flight.
+- (void)testALaunchRightAfterAnUnawaitedStopIsRefusedEvenWhileTheStatusStillSaysLaunched {
+  BGSFakeBugsee *sdk = [[BGSFakeBugsee alloc] init];
+  sdk.status = @"launched";  // the SDK has not reacted to the stop yet
+  sdk.deferStop = YES;
+  [BGSFlutterLaunchOps beginStop];
+  [BGSFlutterLaunchOps stopWithSdk:sdk done:^(NSError *e) {}];
+  NSArray *a = [self launch:sdk token:@"tok" options:@{@"com.bugsee.option.capture.logs" : @NO}];
+  XCTAssertEqualObjects(a[0], BGSFlutterLaunchOps.refused);
+  XCTAssertEqualObjects(a[1], BGSFlutterLaunchOps.stopping);
+  XCTAssertEqual(sdk.launches.count, 0u);
+  // The SDK finishes stopping: the flag clears with the completion, and a launch goes through.
+  sdk.status = @"stopped";
+  sdk.finishStop();
+  XCTAssertEqualObjects([self launch:sdk token:@"tok" options:nil][0], BGSFlutterLaunchOps.launched);
+}
+
+- (void)testAStopThatThrowsClearsTheMark {
+  BGSFakeBugsee *sdk = [[BGSFakeBugsee alloc] init];
+  sdk.stopThrows = [NSException exceptionWithName:@"X" reason:@"y" userInfo:nil];
+  [BGSFlutterLaunchOps beginStop];
+  [BGSFlutterLaunchOps stopWithSdk:sdk done:^(NSError *e) {}];
+  XCTAssertEqualObjects([self launch:[[BGSFakeBugsee alloc] init] token:@"tok" options:nil][0],
+                        BGSFlutterLaunchOps.launched);
 }
 
 - (void)testABlankTokenNeverReachesTheSdk {

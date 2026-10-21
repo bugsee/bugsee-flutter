@@ -395,7 +395,7 @@ const List<OptionSpec> optionSpecs = [
     key: 'com.bugsee.option.capture.webview.domain-allowlist',
     type: OptionType.string,
     hidden: false,
-    typed: true,
+    typed: false,
     android: PlatformOption(
       module: 'bugsee-android',
       defaultValue: '',

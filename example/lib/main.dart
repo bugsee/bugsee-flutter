@@ -29,7 +29,7 @@ BugseeOptions exampleOptions() => BugseeOptions(
   detectHang: true,
   reportingDefaultsCrashPriority: ReportSeverity.critical,
   captureVideoMode: VideoMode.v2, // Android only
-  captureAvplayer: true, // iOS only
+  captureAvPlayer: true, // iOS only
 );
 
 void main() => runApp(const ExampleApp());

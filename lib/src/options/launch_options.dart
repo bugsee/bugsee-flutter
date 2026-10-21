@@ -98,6 +98,12 @@ EncodedLaunchOptions encodeLaunchOptions(
         'the SDK ignores it unless the app adds that module',
       );
     }
+    final deprecated = here.deprecatedSince;
+    if (custom && deprecated != null) {
+      warnings.add(
+        '$key is deprecated since SDK $deprecated; the SDK still accepts it',
+      );
+    }
     values[key] = value;
   }
 
@@ -168,13 +174,31 @@ Object _checkValue(OptionSpec spec, String key, Object? value) {
       if (value is String) return value;
       bad('a String');
     case OptionType.enumeration:
-      // The internal value, never an ordinal; a string-valued enum (MemoryLeakMode) takes
-      // the SDK's constant name or wire string.
+      // The internal value, never an ordinal.
       if (value is int) return value;
-      if (value is String) return value;
-      bad(
-        'the SDK\'s internal enum value (an int, or the constant name for a string enum)',
-      );
+      if (value is String) {
+        final names = <String, Object>{
+          ...?spec.ios?.enumValues,
+          ...?spec.android?.enumValues,
+        };
+        // A string-valued enum (the leak module's MemoryLeakMode) takes its constant name or
+        // wire string as the SDK documents it.
+        if (names.values.every((v) => v is String)) {
+          if (names.containsKey(value) || names.containsValue(value)) {
+            return value;
+          }
+          bad('one of ${names.keys.toList()}');
+        }
+        // An int-valued enum is sent as the number: Android resolves a name itself, but iOS
+        // reads a string as 0 (KVC), which is a different, sometimes invalid, constant. So the
+        // NAME is looked up here, in the manifest, and the number is what crosses.
+        final internal = names[value];
+        if (internal != null) return internal;
+        bad(
+          'one of the constant names ${names.keys.toList()}, or the internal int',
+        );
+      }
+      bad('the SDK\'s internal enum value (an int), or a constant name');
     case OptionType.map:
     case OptionType.list:
       throw ArgumentError.value(

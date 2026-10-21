@@ -186,6 +186,8 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   }
 
   func stop() async throws {
+    // Synchronously, before the hop to the main queue: see `beginStop`.
+    BGSFlutterLaunchOps.beginStop()
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       DispatchQueue.main.async {
         BGSFlutterLaunchOps.stop(with: BGSFlutterRealBugsee()) { error in

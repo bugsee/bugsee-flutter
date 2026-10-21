@@ -94,9 +94,12 @@ void main() {
           final bundledIos =
               spec.ios != null &&
               bundledModules[OptionPlatform.ios]!.contains(spec.ios!.module);
+          final deprecated =
+              (spec.android?.deprecatedSince ?? spec.ios?.deprecatedSince) !=
+              null;
           expect(
             spec.typed,
-            !spec.hidden && (bundledAndroid || bundledIos),
+            !spec.hidden && !deprecated && (bundledAndroid || bundledIos),
             reason: spec.key,
           );
         }
@@ -132,9 +135,9 @@ void main() {
     final typed = optionSpecs.where((s) => s.typed).toList();
 
     test(
-      'there are 101 of them (84 + 69 public, 49 shared, less 4 leak-module)',
+      'there are 100 of them (84 + 69 public, 49 shared, less 4 leak-module and 1 deprecated)',
       () {
-        expect(typed.length, 101);
+        expect(typed.length, 100);
       },
     );
 
@@ -284,11 +287,48 @@ void main() {
       );
     });
 
+    test(
+      'the deprecated no-op option has no typed field but is in the registry',
+      () {
+        final spec =
+            registry['com.bugsee.option.capture.webview.domain-allowlist']!;
+        expect(spec.android!.deprecatedSince, '7.1.2');
+        expect(spec.typed, isFalse);
+      },
+    );
+
+    test(
+      'name overrides: compound words are capitalised, and every override names a real option',
+      () {
+        expect(
+          gen.fieldName('com.bugsee.option.capture.avplayer'),
+          'captureAvPlayer',
+        );
+        expect(
+          gen.fieldName('com.bugsee.option.capture.logs.allsources'),
+          'captureLogsAllSources',
+        );
+        expect(
+          gen.fieldName('com.bugsee.option.capture.logs.oslog'),
+          'captureLogsOsLog',
+        );
+        expect(
+          gen.fieldName('com.bugsee.option.capture.websocket'),
+          'captureWebSocket',
+        );
+        expect(gen.constantName('Default', 'VideoQuality'), 'defaultQuality');
+        for (final k in gen.fieldNameOverrides.keys) {
+          expect(
+            registry.containsKey('com.bugsee.option.$k'),
+            isTrue,
+            reason: 'stale override $k',
+          );
+        }
+      },
+    );
+
     test('a reserved word as a constant gets the enum name appended', () {
-      expect(
-        gen.constantName('Default', 'VideoQuality'),
-        'defaultVideoQuality',
-      );
+      expect(gen.constantName('Default', 'VideoQuality'), 'defaultQuality');
       expect(gen.constantName('Fullscreen', 'VideoMode'), 'fullscreen');
       expect(gen.constantName('MachAndBSD', 'CrashHandlerType'), 'machAndBsd');
     });

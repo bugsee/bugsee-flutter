@@ -102,7 +102,7 @@ void main() {
 
     test('an iOS-only option is skipped on Android and kept on iOS', () {
       const options = BugseeOptions(
-        captureAvplayer: true,
+        captureAvPlayer: true,
         reportingUiStyle: BugseeStyle.dusk,
       );
       final onAndroid = encodeLaunchOptions(options, android);
@@ -191,6 +191,79 @@ void main() {
       expect(encode(options, ios), {'com.bugsee.option.detect.crash': false});
     });
 
+    test(
+      'an int-valued enum takes a constant NAME and sends its number (iOS would read a string as 0)',
+      () {
+        expect(
+          encode(
+            const BugseeOptions(
+              custom: {'com.bugsee.option.capture.logs.level': 'Warning'},
+            ),
+            ios,
+          ),
+          {'com.bugsee.option.capture.logs.level': 2},
+        );
+        expect(
+          encode(
+            const BugseeOptions(
+              custom: {'com.bugsee.option.capture.video.frame-rate': 'High'},
+            ),
+            android,
+          ),
+          {'com.bugsee.option.capture.video.frame-rate': 3},
+        );
+        // Android's and iOS's names for severity value 1 both resolve.
+        for (final name in ['VeryLow', 'Low']) {
+          expect(
+            encode(
+              BugseeOptions(
+                custom: {
+                  'com.bugsee.option.reporting.defaults.bug-priority': name,
+                },
+              ),
+              android,
+            ),
+            {'com.bugsee.option.reporting.defaults.bug-priority': 1},
+          );
+        }
+        for (final bad in ['high', 'Huge', '']) {
+          expect(
+            () => encode(
+              BugseeOptions(
+                custom: {'com.bugsee.option.capture.logs.level': bad},
+              ),
+              ios,
+            ),
+            throwsArgumentError,
+            reason: bad,
+          );
+        }
+      },
+    );
+
+    test('a string-valued enum takes only its own names or wire strings', () {
+      for (final ok in ['FAST', 'Fast', 'DEEP_EVERYWHERE']) {
+        expect(
+          encode(
+            BugseeOptions(
+              custom: {'com.bugsee.option.detect.memory_leaks.mode': ok},
+            ),
+            android,
+          ),
+          {'com.bugsee.option.detect.memory_leaks.mode': ok},
+        );
+      }
+      expect(
+        () => encode(
+          const BugseeOptions(
+            custom: {'com.bugsee.option.detect.memory_leaks.mode': 'Turbo'},
+          ),
+          android,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('a float option takes an int and is sent as a double', () {
       const options = BugseeOptions(
         custom: {'com.bugsee.option.capture.video.scale': 1},
@@ -235,6 +308,24 @@ void main() {
               encode(const BugseeOptions(custom: {'capture.video': true}), ios),
           throwsArgumentError,
         );
+      },
+    );
+
+    test(
+      'a deprecated option is still reachable through custom, with a warning',
+      () {
+        final encoded = encodeLaunchOptions(
+          const BugseeOptions(
+            custom: {
+              'com.bugsee.option.capture.webview.domain-allowlist': 'x.example',
+            },
+          ),
+          android,
+        );
+        expect(encoded.values, {
+          'com.bugsee.option.capture.webview.domain-allowlist': 'x.example',
+        });
+        expect(encoded.warnings.single, contains('deprecated since SDK 7.1.2'));
       },
     );
 

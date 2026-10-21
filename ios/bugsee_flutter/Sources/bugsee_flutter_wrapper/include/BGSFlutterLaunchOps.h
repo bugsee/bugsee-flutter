@@ -50,6 +50,14 @@ NS_ASSUME_NONNULL_BEGIN
               options:(nullable NSDictionary *)flat
            completion:(void (^)(NSString *_Nullable outcome, NSString *_Nullable reason, NSError *_Nullable error))completion;
 
+/// Marks a stop as requested. Call it SYNCHRONOUSLY when the request arrives, before dispatching
+/// `stopWithSdk:done:` to the main queue: the SDK itself only moves to Stopping a main-queue hop
+/// later (`+[Bugsee stop:]` dispatches to main before setting the state), so a launch that arrives
+/// in between would still read `launched`, answer already-running and then be stopped. While a stop
+/// is marked, a launch is refused as `stopping` (Android sets STOPPING synchronously, so it has no
+/// such window). Cleared when `stopWithSdk:done:` completes.
++ (void)beginStop;
+
 /// `done(error)` when the SDK has stopped (at once when it already is), or with the SDK's exception.
 + (void)stopWithSdk:(id<BGSFlutterBugseeSDK>)sdk done:(void (^)(NSError *_Nullable error))done;
 

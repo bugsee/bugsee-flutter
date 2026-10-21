@@ -109,7 +109,9 @@ final class LaunchOptionValues {
         @Nullable
         @Override
         public Object fromValue(final int value) {
-            return IssueSeverity.fromIntValue(value);
+            // fromIntValue never answers null: an unknown value becomes VeryLow, which would be
+            // a silently different severity. Only 1..5 are the SDK's values.
+            return value >= 1 && value <= 5 ? IssueSeverity.fromIntValue(value) : null;
         }
 
         @Nullable

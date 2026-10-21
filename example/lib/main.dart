@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/material.dart';
 
+import 'exceptions_screen.dart';
 import 'facade_screen.dart';
 
 /// The application token from the Bugsee dashboard. Pass your own with
@@ -83,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) => Scaffold(
     body: IndexedStack(
       index: _page,
-      children: const [LaunchScreen(), FacadeScreen()],
+      children: const [LaunchScreen(), FacadeScreen(), ExceptionsScreen()],
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _page,
@@ -98,6 +99,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-facade'),
           icon: Icon(Icons.bug_report_outlined),
           label: 'Data',
+        ),
+        NavigationDestination(
+          key: Key('tab-errors'),
+          icon: Icon(Icons.error_outline),
+          label: 'Errors',
         ),
       ],
     ),

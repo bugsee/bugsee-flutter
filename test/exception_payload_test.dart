@@ -32,6 +32,20 @@ class CustomException implements Exception {
   String toString() => 'CustomException: custom';
 }
 
+class _Renamed implements Exception {
+  @override
+  String toString() => 'ProbeError: probe';
+}
+
+class _Silent {
+  const _Silent();
+}
+
+class _RenamedSilent implements Exception {
+  @override
+  String toString() => 'no name here';
+}
+
 /// A stack that cannot be printed.
 class UnprintableStack implements StackTrace {
   @override
@@ -116,6 +130,52 @@ void main() {
           expect(classifyExceptionType(null), 'Error');
         },
       );
+
+      test(
+        'in an obfuscated build an unknown type is named from its message, not its runtimeType',
+        () {
+          // runtimeType is `CustomException` here; an obfuscated build would print `bx`.
+          expect(classifyExceptionType(CustomException()), 'CustomException');
+          expect(
+            classifyExceptionType(_Renamed(), obfuscated: true),
+            'ProbeError',
+            reason: 'the message starts with the name Dart\'s convention gives',
+          );
+          expect(classifyExceptionType(_Renamed()), 'Exception');
+          expect(
+            classifyExceptionType(_RenamedSilent(), obfuscated: true),
+            'Exception',
+            reason: 'no name in the message: the runtime type is all there is',
+          );
+          // Known types never go through the message.
+          expect(
+            classifyExceptionType(
+              StateError('ProbeError: x'),
+              obfuscated: true,
+            ),
+            'StateError',
+          );
+        },
+      );
+
+      test('the document of an obfuscated stack uses it', () {
+        final p = buildExceptionPayload(
+          _Renamed(),
+          StackTrace.fromString(
+            File(
+              'test/fixtures/exceptions/real_obfuscated_android_arm64_trace.txt',
+            ).readAsStringSync(),
+          ),
+        );
+        expect(p.name, 'ProbeError');
+        expect(
+          buildExceptionPayload(
+            _Renamed(),
+            StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
+          ).name,
+          'Exception',
+        );
+      });
 
       test('an error whose runtimeType cannot be read still gets a name', () {
         expect(classifyExceptionType(Hostile()), 'Hostile');
@@ -233,7 +293,11 @@ void main() {
           StateError('x'),
           StackTrace.fromString(vmStack),
         );
-        expect(decode(p)['originalStackTrace'], vmStack);
+        expect(
+          decode(p)['originalStackTrace'],
+          vmStack.replaceFirst('file:///x/y/z.dart', 'file:///z.dart'),
+          reason: 'as printed, but for the directory of a local file',
+        );
       },
     );
 
@@ -268,7 +332,10 @@ void main() {
         reason: 'the throwing frame is first',
       );
       expect((frames.first['data']! as Map)['line'], isA<int>());
-      expect(decode(p)['originalStackTrace'], '$captured');
+      expect(
+        decode(p)['originalStackTrace'],
+        '$captured'.replaceAll(RegExp(r'file://[^\s()]*/'), 'file:///'),
+      );
     });
 
     test('no stack: no frames, no raw text', () {

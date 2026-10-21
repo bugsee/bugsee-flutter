@@ -1,7 +1,6 @@
 // The installed handlers: chained, restored, idempotent, once per error, limited, never throwing.
 // Each test builds its own `ErrorCapture` over the real `FlutterError` / `PlatformDispatcher`
 // statics, which it puts back.
-import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'dart:ui' show ErrorCallback, PlatformDispatcher;

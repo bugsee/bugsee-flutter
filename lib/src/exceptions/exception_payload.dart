@@ -100,7 +100,12 @@ bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
 /// package classes, and the dashboard would show `minified:Ab`. A type this table does not know
 /// falls back to its `runtimeType` (obfuscated if the build is; the app can name its own errors by
 /// catching and re-throwing a known type, which is the documented way).
-String classifyExceptionType(Object? error) {
+///
+/// [obfuscated] says the build renames classes (its stack is non-symbolic): a type this table does
+/// not know is then named from its message when that starts the way Dart's convention does
+/// (`MyError: ...`, what an `Exception`'s `toString` usually prints), since its `runtimeType` is
+/// `bx` or the like.
+String classifyExceptionType(Object? error, {bool obfuscated = false}) {
   if (error == null) return 'Error';
   // Specific before general: IndexError and RangeError ARE ArgumentErrors.
   if (error is IndexError) return 'IndexError';
@@ -136,10 +141,22 @@ String classifyExceptionType(Object? error) {
   if (error is String) return 'String';
   if (error is Exception) {
     final named = _runtimeTypeName(error);
+    final fromMessage = obfuscated ? _namedByMessage(error) : null;
+    if (fromMessage != null) return fromMessage;
     // The VM's plain `Exception('...')` is a private class: name it for what the app wrote.
-    return named == null || named.startsWith('_') ? 'Exception' : named;
+    if (named == null || named.startsWith('_')) return 'Exception';
+    return named;
   }
-  return _runtimeTypeName(error) ?? 'Error';
+  final named = _runtimeTypeName(error);
+  return (obfuscated ? _namedByMessage(error) : null) ?? named ?? 'Error';
+}
+
+String? _namedByMessage(Object error) {
+  try {
+    return _namedLike.firstMatch('$error')?.group(1);
+  } catch (_) {
+    return null;
+  }
 }
 
 String? _runtimeTypeName(Object error) {
@@ -301,8 +318,17 @@ StackDocument describeStack(StackTrace? stack, {bool captured = false}) {
     omitted = true;
     frames = frames.sublist(0, ExceptionWire.maxFrames);
   }
-  return StackDocument(frames, capRawStack(raw), omitted: omitted);
+  // A symbolic stack names files by path: on a developer's machine that is a user and a directory
+  // tree (release builds print `package:` URIs). A non-symbolic stack is the VM's text, which the
+  // backend symbolicates, and is never rewritten.
+  final sent = isNonSymbolicStack(raw) ? raw : _withoutLocalPaths(raw);
+  return StackDocument(frames, capRawStack(sent), omitted: omitted);
 }
+
+final _filePath = RegExp(r'file://[^\s()]*/([^/\s():]+)');
+
+String _withoutLocalPaths(String raw) =>
+    raw.replaceAllMapped(_filePath, (m) => 'file:///${m[1]}');
 
 /// An obfuscated stack has no names to read: one frame per `#NN` line, text as printed (the
 /// worker builds the same frames from `originalStackTrace` and replaces them once the symbols are
@@ -366,8 +392,12 @@ Map<String, Object?> _frame(Frame frame) {
   final uri = frame.uri;
   final package = frame.package;
   var shown = uri.toString();
+  var library = frame.library;
   if (uri.scheme != 'dart' && uri.scheme != 'package') {
+    // A file path on the developer's machine (debug builds) names a user and a directory tree:
+    // only the file's name is kept, in the trace and in the data alike.
     if (uri.pathSegments.isNotEmpty) shown = uri.pathSegments.last;
+    library = shown;
   }
   final member = frame.member;
   final line = frame.line;
@@ -385,14 +415,19 @@ Map<String, Object?> _frame(Frame frame) {
     'module': package ?? (uri.scheme == 'dart' ? 'dart' : 'application'),
     'user': user,
     'data': {
-      'source': capText(uri.toString(), ExceptionWire.maxFieldLength),
+      'source': capText(
+        uri.scheme == 'dart' || uri.scheme == 'package'
+            ? uri.toString()
+            : shown,
+        ExceptionWire.maxFieldLength,
+      ),
       'member': member == null
           ? null
           : capText(member, ExceptionWire.maxFieldLength),
       'line': line,
       'column': frame.column,
       'package': package,
-      'library': capText(frame.library, ExceptionWire.maxFieldLength),
+      'library': capText(library, ExceptionWire.maxFieldLength),
       'isCore': frame.isCore,
     },
   };
@@ -410,16 +445,21 @@ ExceptionPayload buildExceptionPayload(
   String? name,
   String? reason,
 }) {
-  final type = capText(
-    name ?? _safe(() => classifyExceptionType(error), 'Error'),
-    ExceptionWire.maxNameLength,
-  );
   final message = reason == null
       ? describeError(error)
       : capText(reason, ExceptionWire.maxReasonLength);
   final document = _safe(
     () => describeStack(stack, captured: stackCaptured),
     const StackDocument([], null, omitted: false),
+  );
+  final obfuscated = document.raw != null && isNonSymbolicStack(document.raw!);
+  final type = capText(
+    name ??
+        _safe(
+          () => classifyExceptionType(error, obfuscated: obfuscated),
+          'Error',
+        ),
+    ExceptionWire.maxNameLength,
   );
 
   final frames = [...document.frames];

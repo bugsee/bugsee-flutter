@@ -8,11 +8,8 @@ import 'dart:ui' show ErrorCallback, PlatformDispatcher;
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter/src/bugsee.dart' show debugSetBugseeRuntime;
 import 'package:bugsee_flutter/src/bugsee_runtime.dart';
-import 'package:bugsee_flutter/src/bridge/messages.g.dart';
-import 'package:bugsee_flutter/src/launch.dart';
 import 'package:bugsee_flutter/src/options/option_registry.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers/facade_fake.dart';

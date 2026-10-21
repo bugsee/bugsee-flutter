@@ -115,6 +115,103 @@ void main() {
     );
   });
 
+  group('an entry the real Android 7.4.2 SDK wrote', () {
+    // crash.json of a report built on an emulator from an unhandled Dart error (see the fixture).
+    final entry =
+        jsonDecode(
+              File(
+                'test/fixtures/exceptions/android_7_4_2_crash_entry.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, Object?>;
+    final exception = entry['exception']! as Map<String, Object?>;
+
+    test('routes to Flutter and parses with the worker\'s rules', () {
+      expect(
+        routesToFlutter(
+          name: exception['name']! as String,
+          reason: exception['reason']! as String,
+        ),
+        isTrue,
+      );
+      expect(exception['name'], 'com.bugsee.flutter.FlutterManagedException');
+      final doc = parseReason(exception['reason']! as String)!;
+      expect(doc['internalType'], 'FlutterManagedException');
+      expect(doc['name'], 'StateError');
+      expect(
+        doc['reason'],
+        'Bad state: hook: unhandled async error, root zone',
+      );
+      expect((doc['frames']! as List), isNotEmpty);
+      expect(entry['handled'], false);
+    });
+
+    test('is what this version builds, key for key', () {
+      final doc = parseReason(exception['reason']! as String)!;
+      final mine =
+          jsonDecode(
+                buildExceptionPayload(
+                  StateError('x'),
+                  StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
+                ).json,
+              )
+              as Map<String, Object?>;
+      expect(doc.keys.toSet(), mine.keys.toSet());
+      final frame = (doc['frames']! as List).first as Map;
+      final mineFrame = (mine['frames']! as List).first as Map;
+      expect(frame.keys.toSet(), mineFrame.keys.toSet());
+      expect(
+        (frame['data'] as Map).keys.toSet(),
+        (mineFrame['data'] as Map).keys.toSet(),
+      );
+    });
+  });
+
+  group(
+    'an entry from a real obfuscated release build (Android 7.4.2, arm64)',
+    () {
+      final entry =
+          jsonDecode(
+                File(
+                  'test/fixtures/exceptions/android_7_4_2_obfuscated_entry.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      final exception = entry['exception']! as Map<String, Object?>;
+
+      test('the worker finds the build id and the frames it symbolizes', () {
+        final doc = parseReason(exception['reason']! as String)!;
+        final stack = doc['originalStackTrace']! as String;
+        expect(
+          buildIdFromStackTrace(stack),
+          '7a3ef930e9a262963fa36f07686d5bff',
+        );
+        final frames = obfuscatedFrameLines(stack)!;
+        expect(frames.first, startsWith('#00 abs '));
+        expect(frames.length, 14);
+        expect(entry['obfuscated'], true);
+      });
+
+      test('is exactly what this version sends for the same stack', () {
+        final doc = parseReason(exception['reason']! as String)!;
+        final stack = doc['originalStackTrace']! as String;
+        final mine =
+            jsonDecode(
+                  buildExceptionPayload(
+                    StateError('x'),
+                    StackTrace.fromString(stack),
+                  ).json,
+                )
+                as Map<String, Object?>;
+        expect(mine['originalStackTrace'], stack);
+        expect(
+          [for (final f in (mine['frames']! as List)) (f as Map)['trace']],
+          [for (final f in (doc['frames']! as List)) (f as Map)['trace']],
+        );
+      });
+    },
+  );
+
   group('parsing the reason', () {
     test('the document comes back out of the reason, as the SDK stores it', () {
       final p = buildExceptionPayload(

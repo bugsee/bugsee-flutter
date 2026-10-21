@@ -138,22 +138,27 @@ final class BugseeNetworkEvent {
 
   /// A deep copy: what a filter is handed, so that whatever it does to the headers map cannot
   /// reach anything the capture still holds.
-  BugseeNetworkEvent copy() => BugseeNetworkEvent(
-    id: id,
-    stage: stage,
-    method: method,
-    url: url,
-    headers: Map<String, String>.of(headers),
-    body: body,
-    noBodyReason: noBodyReason,
-    size: size,
-    statusCode: statusCode,
-    statusText: statusText,
-    error: error,
-    errorDescription: errorDescription,
-    redirectedFrom: redirectedFrom,
-    timings: timings == null ? null : Map<String, double>.of(timings!),
-  );
+  BugseeNetworkEvent copy() => BugseeNetworkEvent._copy(this);
+
+  /// A copy that keeps WHEN the stage happened (both clock readings): what a filter is handed
+  /// must still say when the exchange happened, not when the copy was made.
+  BugseeNetworkEvent._copy(BugseeNetworkEvent o)
+    : id = o.id,
+      stage = o.stage,
+      method = o.method,
+      url = o.url,
+      headers = Map<String, String>.of(o.headers),
+      body = o.body,
+      noBodyReason = o.noBodyReason,
+      size = o.size,
+      statusCode = o.statusCode,
+      statusText = o.statusText,
+      error = o.error,
+      errorDescription = o.errorDescription,
+      redirectedFrom = o.redirectedFrom,
+      timings = o.timings == null ? null : Map<String, double>.of(o.timings!),
+      time = o.time,
+      monotonicUs = o.monotonicUs;
 
   @override
   String toString() =>

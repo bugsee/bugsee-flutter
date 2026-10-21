@@ -210,7 +210,7 @@ final class _Exchange {
         id: id,
         stage: stage,
         method: method ?? this.method,
-        url: stripUserInfo((url ?? this.url).toString()),
+        url: stripFragment(stripUserInfo((url ?? this.url).toString())),
         headers: headers,
         body: body?.body,
         noBodyReason: body?.reason,
@@ -316,7 +316,7 @@ final class _Exchange {
     final from =
         parentUrl ??
         (_hops(response.redirects).isEmpty ? null : url.toString());
-    return from == null ? null : stripUserInfo(from);
+    return from == null ? null : stripFragment(stripUserInfo(from));
   }
 
   /// Complete without reading the body: a response whose socket the app took (a WebSocket upgrade)
@@ -413,7 +413,29 @@ final class CapturingHttpClient implements HttpClient {
 
   Uri? _uriOf(String host, int port, String path) {
     try {
-      return Uri(scheme: 'http', host: host, port: port, path: path);
+      // `path` may carry a query and a fragment, as `dart:io` takes it: split them, or the `?`
+      // would be percent-encoded into the path and the query would escape the SDK's sanitizer.
+      var rest = path;
+      String? fragment;
+      String? query;
+      final hash = rest.indexOf('#');
+      if (hash >= 0) {
+        fragment = rest.substring(hash + 1);
+        rest = rest.substring(0, hash);
+      }
+      final question = rest.indexOf('?');
+      if (question >= 0) {
+        query = rest.substring(question + 1);
+        rest = rest.substring(0, question);
+      }
+      return Uri(
+        scheme: 'http',
+        host: host,
+        port: port,
+        path: rest,
+        query: query,
+        fragment: fragment,
+      );
     } catch (_) {
       return null;
     }

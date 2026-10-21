@@ -32,6 +32,7 @@ class Rig {
     int maxQueuedBytes = 8 * 1024 * 1024,
     int maxBatchEvents = 32,
     int maxBatchBytes = 512 * 1024,
+    bool dropRedirectStage = false,
   }) {
     pipeline = NetworkPipeline(
       send: (batch) async {
@@ -53,6 +54,7 @@ class Rig {
       maxQueuedBytes: maxQueuedBytes,
       maxBatchEvents: maxBatchEvents,
       maxBatchBytes: maxBatchBytes,
+      dropRedirectStage: dropRedirectStage,
       warn: warnings.add,
     );
   }
@@ -505,6 +507,41 @@ void main() {
     });
   });
 
+  group('what a filter is handed', () {
+    test(
+      'a copy keeps when the stage happened, not when it was copied',
+      () async {
+        final e = event('a');
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        final c = e.copy();
+        expect(c.time, e.time);
+        expect(c.monotonicUs, e.monotonicUs);
+        expect(identical(c.headers, e.headers), isFalse);
+      },
+    );
+  });
+
+  group('the redirect stage on a platform without one', () {
+    test(
+      'is not created there: no queue entry, no count, nothing refused',
+      () async {
+        final rig = Rig(dropRedirectStage: true);
+        rig.pipeline.submit(event('a', stage: NetworkStage.redirect));
+        rig.pipeline.submit(event('a', stage: NetworkStage.complete));
+        await rig.pipeline.flush();
+        expect(rig.sent.map((m) => m.stage), ['complete']);
+        expect(rig.pipeline.stats.captured, 1);
+      },
+    );
+
+    test('is sent where the platform has it', () async {
+      final rig = Rig();
+      rig.pipeline.submit(event('a', stage: NetworkStage.redirect));
+      await rig.pipeline.flush();
+      expect(rig.sent.map((m) => m.stage), ['redirect']);
+    });
+  });
+
   group('the message stamps', () {
     test(
       'the age is taken when the batch is sent, not when the event was prepared',
@@ -533,6 +570,20 @@ void main() {
         (e) => e
           ..url = 'http://user:pw@host/p'
           ..redirectedFrom = 'http://u2:p2@host/old',
+        const Duration(seconds: 1),
+      );
+      rig.pipeline.submit(event('a'));
+      await rig.pipeline.flush();
+      expect(rig.sent.single.url, 'http://host/p');
+      expect(rig.sent.single.redirectedFromUrl, 'http://host/old');
+    });
+
+    test('and without a fragment', () async {
+      final rig = Rig();
+      rig.pipeline.setFilter(
+        (e) => e
+          ..url = 'http://host/p#access_token=X'
+          ..redirectedFrom = 'http://host/old#t=Y',
         const Duration(seconds: 1),
       );
       rig.pipeline.submit(event('a'));

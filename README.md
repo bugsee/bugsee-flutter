@@ -162,7 +162,9 @@ Bugsee.setNetworkFilter((event) {
 
 Nothing is recorded before the SDK is `launched`. Bodies follow the SDK's own options
 (`captureNetworkBodySizeLimit`, 20 KiB by default; `captureNetworkBodyWithoutType`; only text is kept);
-the SDK's default sanitizer still redacts what the filter returns; a filter that throws or hangs
+the SDK's default sanitizer still redacts what the filter returns (except the URL in Android's HTTP
+breadcrumbs when `captureBreadcrumbs` is on, which keeps its query: redact it in the filter, see
+[doc/network.md](doc/network.md)); a body-size limit above 2 MiB is capped at 2 MiB; a filter that throws or hangs
 **drops the event** (fail closed); requests to Bugsee itself are never recorded. Requests made in other
 isolates, WebSocket frames and a client created before the install are not captured. The data flow, the
 privacy model and the limits are in [doc/network.md](doc/network.md).

@@ -532,6 +532,8 @@ final class BugseeRuntime {
     ensureAttached: ensureStartedInBackground,
     statuses: () => bridge.statusChanges,
     supported: () => _platform() != null,
+    // iOS has no redirect stage: the hop entries are not even created there.
+    dropRedirectStage: _platform() == OptionPlatform.ios,
     warn: _warn,
   );
 

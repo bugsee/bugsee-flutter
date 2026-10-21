@@ -17,13 +17,20 @@ const Set<String> urlValuedHeaders = {
   'refresh',
 };
 
-final RegExp _userInfo = RegExp(r'''(://|//)[^\s/?#@'"]*@''');
+// Up to the LAST `@` of the authority (`Uri` takes userinfo that way: `u:p@ss@h` is user `u`,
+// password `p@ss`); `/`, `?` and `#` end the authority, so it cannot run into the path.
+final RegExp _userInfo = RegExp(r'''(://|//)[^\s/?#'"]*@''');
+final RegExp _fragment = RegExp(r'''#[^\s'"]*''');
 final RegExp _query = RegExp(r'''\?([^\s#'"]*)''');
 
 /// [text] without the `user:password@` of any URL in it (an absolute `scheme://...@host` or a
 /// scheme-relative `//...@host`).
 String stripUserInfo(String text) =>
     text.replaceAllMapped(_userInfo, (m) => m[1]!);
+
+/// [text] without any `#fragment`. A fragment never goes on the wire, but a redirect's `Location`
+/// can carry one (OAuth callbacks put tokens there), and no SDK looks at it.
+String stripFragment(String text) => text.replaceAll(_fragment, '');
 
 /// [text] with every query parameter's value replaced by `<redacted>` (names kept).
 String redactQueryValues(String text) => text.replaceAllMapped(_query, (m) {
@@ -37,5 +44,5 @@ String redactQueryValues(String text) => text.replaceAllMapped(_query, (m) {
 /// A header value as it may be recorded: URL-valued headers lose userinfo and query values.
 String redactHeaderValue(String name, String value) =>
     urlValuedHeaders.contains(name)
-    ? redactQueryValues(stripUserInfo(value))
+    ? redactQueryValues(stripFragment(stripUserInfo(value)))
     : value;

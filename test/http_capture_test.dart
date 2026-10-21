@@ -205,6 +205,14 @@ Future<void> route(HttpRequest request) async {
       response
         ..headers.contentType = ContentType.text
         ..add([0xff, 0xfe, 0xfd]);
+    case '/cb2':
+      response
+        ..statusCode = 302
+        ..headers.set('location', '/cb#HOPSECRET');
+    case '/cb':
+      response
+        ..statusCode = 302
+        ..headers.set('location', '/json#access_token=FRAGSECRET');
     case '/loc':
       response
         ..statusCode = 200
@@ -1059,6 +1067,74 @@ void main() {
         h.clients.add(client);
         final result = await observe(client, 'GET', h.url('/json'));
         expect(result.status, 200);
+      },
+    );
+  });
+
+  group('fragments and paths that carry a query', () {
+    test(
+      'a redirect to a URL with a fragment records neither the fragment nor a header with it',
+      () async {
+        await observe(h.captured(), 'GET', h.url('/cb'));
+        final raw = [
+          for (final e in h.events)
+            [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
+        ].join('\n');
+        expect(raw, isNot(contains('FRAGSECRET')));
+        expect(raw, isNot(contains('#')));
+        expect(
+          h.stage(NetworkStage.complete).single.url,
+          h.url('/json').toString(),
+        );
+      },
+    );
+
+    test('a manual redirect with a fragment keeps it out too', () async {
+      final request = await h.captured().getUrl(h.url('/cb'));
+      request.followRedirects = false;
+      final first = await request.close();
+      await first.drain<void>();
+      expect(first.headers.value('location'), contains('FRAGSECRET'));
+      await (await first.redirect()).drain<void>();
+      final raw = [
+        for (final e in h.events)
+          [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
+      ].join('\n');
+      expect(raw, isNot(contains('FRAGSECRET')));
+    });
+
+    test(
+      'a manual redirect chain keeps a fragment of an earlier hop out of redirectedFrom',
+      () async {
+        final request = await h.captured().getUrl(h.url('/cb2'));
+        request.followRedirects = false;
+        final first = await request.close();
+        await first.drain<void>();
+        final second = await first.redirect();
+        await second.drain<void>();
+        await (await second.redirect()).drain<void>();
+        final raw = [
+          for (final e in h.events)
+            [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
+        ].join('\n');
+        expect(raw, isNot(contains('HOPSECRET')));
+        expect(raw, isNot(contains('FRAGSECRET')));
+        expect(h.stage(NetworkStage.complete).last.redirectedFrom, isNotNull);
+      },
+    );
+
+    test(
+      'open(host, port, path) with a query in the path: a failure keeps the query a query',
+      () async {
+        final closed = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final port = closed.port;
+        await closed.close(force: true);
+        try {
+          await h.captured().get('127.0.0.1', port, '/x?token=SECRET#frag');
+        } catch (_) {}
+        final failed = h.stage(NetworkStage.error).single;
+        expect(failed.url, 'http://127.0.0.1:$port/x?token=SECRET');
+        expect(failed.url, isNot(contains('%3F')));
       },
     );
   });

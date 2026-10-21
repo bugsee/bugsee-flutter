@@ -92,10 +92,16 @@ final class NetworkPipeline {
     this.maxBatchEvents = 32,
     this.maxBatchBytes = 512 * 1024,
     this.sliceBudget = const Duration(milliseconds: 4),
+    this.dropRedirectStage = false,
     void Function(String)? warn,
   }) : _warn = warn ?? _debugWarn;
 
   final NetworkSend send;
+
+  /// iOS has no redirect stage (the SDK carries a redirect on the final event), so a hop entry
+  /// would only be built, filtered and sent to be refused, and counted as a refusal: it is not
+  /// created at all.
+  final bool dropRedirectStage;
   final NetworkPolicy Function() policy;
   final int maxQueuedEvents;
   final int maxQueuedBytes;
@@ -160,6 +166,7 @@ final class NetworkPipeline {
   /// Called by the capture for every event. Never throws, never waits.
   void submit(BugseeNetworkEvent event) {
     try {
+      if (dropRedirectStage && event.stage == NetworkStage.redirect) return;
       if (!policy().accepting) {
         _droppedNotAccepting++;
         return;
@@ -318,7 +325,7 @@ final class NetworkPipeline {
       mechanism: NetworkWire.mechanism,
       method: original.method,
       // Whatever a filter did, a URL never leaves with userinfo.
-      url: stripUserInfo(url),
+      url: stripFragment(stripUserInfo(url)),
       ageMs: 0, // stamped by `_send`
       size: original.size,
       statusCode: original.statusCode,
@@ -331,7 +338,7 @@ final class NetworkPipeline {
       errorDescription: filtered.errorDescription,
       redirectedFromUrl: filtered.redirectedFrom == null
           ? null
-          : stripUserInfo(filtered.redirectedFrom!),
+          : stripFragment(stripUserInfo(filtered.redirectedFrom!)),
       timings: filtered.timings == null
           ? null
           : <String, double>{...filtered.timings!},

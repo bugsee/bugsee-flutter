@@ -267,15 +267,10 @@ Future<void> main() async {
     expect(stats.droppedQueueFull, 0);
     expect(stats.sendFailures, 0);
     expect(stats.droppedByFilter, greaterThanOrEqualTo(2)); // the /secret pair
-    // Every captured event native could take was handed to the SDK. iOS has no redirect stage
-    // (the SDK carries a redirect on the final event), so it refuses the two hop entries of the
-    // /redirect chain; Android takes everything.
-    final refusedByDesign = android ? 0 : 2;
-    expect(stats.refusedByNative, refusedByDesign);
-    expect(
-      stats.submittedToSdk,
-      stats.captured - stats.droppedByFilter - refusedByDesign,
-    );
+    // Every captured event was submitted to the SDK, none refused. (iOS has no redirect stage:
+    // the Dart side does not even create those entries there.)
+    expect(stats.refusedByNative, 0);
+    expect(stats.submittedToSdk, stats.captured - stats.droppedByFilter);
 
     // A report: this is what the bundle (network.json) is read from.
     await Bugsee.upload('network capture test', 'requests made from Dart');

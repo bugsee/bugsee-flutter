@@ -41,6 +41,51 @@ void main() {
     );
   });
 
+  group('userinfo up to the last @ of the authority', () {
+    test('a password with a literal @ goes entirely', () {
+      expect(stripUserInfo('http://u:p@ss@h/x'), 'http://h/x');
+      expect(
+        stripUserInfo('https://user:p@ss@w@rd@host:8443/x?y=1'),
+        'https://host:8443/x?y=1',
+      );
+      expect(stripUserInfo('//a@b@h/p'), '//h/p');
+    });
+
+    test('an @ after the authority is not userinfo', () {
+      expect(stripUserInfo('http://h/p@q@r'), 'http://h/p@q@r');
+      expect(stripUserInfo('http://h?x=a@b#c@d'), 'http://h?x=a@b#c@d');
+    });
+  });
+
+  group('stripFragment', () {
+    test('drops a fragment, keeps everything before it', () {
+      expect(
+        stripFragment('myapp://cb#access_token=XYZ&id_token=Q'),
+        'myapp://cb',
+      );
+      expect(stripFragment('/a?b=c#frag'), '/a?b=c');
+      expect(stripFragment('/plain'), '/plain');
+    });
+
+    test(
+      'a URL-valued header loses its fragment, query values and userinfo together',
+      () {
+        expect(
+          redactHeaderValue(
+            'location',
+            'https://u:p@app.example/cb?code=1#access_token=XYZ',
+          ),
+          'https://app.example/cb?code=<redacted>',
+        );
+        expect(
+          redactHeaderValue('location', 'myapp://cb#access_token=XYZ'),
+          'myapp://cb',
+        );
+        expect(redactHeaderValue('x-other', 'a#b'), 'a#b');
+      },
+    );
+  });
+
   group('redactQueryValues', () {
     test('keeps names, drops values, keeps a valueless parameter', () {
       expect(
@@ -49,12 +94,15 @@ void main() {
       );
     });
 
-    test('stops at the fragment and whitespace', () {
-      expect(
-        redactQueryValues('0; url=/n?s=1#frag'),
-        '0; url=/n?s=<redacted>#frag',
-      );
-    });
+    test(
+      'stops at the fragment and whitespace (the fragment itself is stripFragment\'s)',
+      () {
+        expect(
+          redactQueryValues('0; url=/n?s=1#frag'),
+          '0; url=/n?s=<redacted>#frag',
+        );
+      },
+    );
 
     test('text without a query is unchanged', () {
       expect(redactQueryValues('/plain/path'), '/plain/path');

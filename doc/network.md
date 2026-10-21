@@ -104,8 +104,8 @@ One exchange is several entries sharing an id (`reporting/bundle/network.md`):
 * `timings` (Android only; iOS has no field): `ttfb` (close to headers), `download` (headers to end), `total`
   (open to end), in milliseconds.
 * **Redirects**: Android records each hop (`redirect` stage); iOS has no such stage (its own interception carries the
-  original URL on the final event, `redirectedFromURL`), so the hop entries are not handed to the iOS SDK and the
-  final `complete` carries `redirectedFrom`.
+  original URL on the final event, `redirectedFromURL`), so the Dart side does not create the hop entries there (they
+  would be built, filtered, sent and counted as refusals for nothing) and the final `complete` carries `redirectedFrom`.
 * A redirect the app follows itself (`followRedirects = false`, then `response.redirect()`) is **a new exchange per response**: the 3xx
   completes on its own (with the body the app read, none if it never listened), and the response `redirect()` returns has its
   own id, `before` and `complete`, with `redirectedFrom` set to the 3xx's URL.
@@ -186,8 +186,10 @@ and a binary body is counted and never copied:
    was redacted on Android and kept on iOS; `authorization`, `set-cookie`, the `token` query parameter and JSON `token` /
    `password` values were redacted on both). Redact in the Dart filter what must be hidden on both.
 8. **No URL leaves with userinfo** (`user:password@`, which `dart:io` accepts and turns into Basic auth): it is stripped in Dart
-   from the event's `url`, `redirectedFrom`, URL-valued headers and error texts, and once more on the way out whatever a
-   filter returned. The SDKs strip it from the URL field only; the Android HTTP breadcrumb and error texts would keep it.
+   (up to the LAST `@` of the authority, as `Uri` reads it: a password with a literal `@` goes entirely) from the event's
+   `url`, `redirectedFrom`, URL-valued headers and error texts, and once more on the way out whatever a filter returned.
+   **Fragments** are dropped from every recorded URL and URL-valued header too (OAuth callbacks put tokens in a redirect's
+   `Location#...`; no SDK looks at a fragment). The SDKs strip it from the URL field only; the Android HTTP breadcrumb and error texts would keep it.
 9. **URL-valued headers** (`location`, `content-location`, `referer`, `refresh`, request and response) lose userinfo and
    every query VALUE (`?token=abc` becomes `?token=<redacted>`): neither SDK sanitizes a header by its value, only by its
    name. Other headers are the SDK sanitizer's business. Redirect entries carry no headers at all.
@@ -287,7 +289,7 @@ after its first chunk, a refused connection, a request to the SDK's own endpoint
 
 | | Android | iOS |
 |---|---|---|
-| captured / submitted to the SDK / dropped by the filter / refused by native | 26 / 24 / 2 / 0 | 26 / 22 / 2 / 2 (the two redirect hops iOS has no stage for) |
+| captured / submitted to the SDK / dropped by the filter / refused by native | 26 / 24 / 2 / 0 | 26 / 22 / 2 / 2 in the first run (the two redirect hops iOS has no stage for; since the review round they are not created on iOS, so 0 refused) |
 | `network.json` entries | 24 | 22 |
 | request made before launch, request to the SDK's endpoint, the filter-dropped `/secret` | absent | absent |
 | redirect chain | `before`, `redirect` 302, `redirect` 301, `complete` (url = `/json`) | `before`, `complete` (url = `/json`, `redirect: true`) |

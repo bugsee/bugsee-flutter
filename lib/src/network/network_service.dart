@@ -18,6 +18,7 @@ final class NetworkCaptureService {
     required void Function() ensureAttached,
     required Stream<BugseeStatus> Function() statuses,
     required bool Function() supported,
+    bool dropRedirectStage = false,
     void Function(String message)? warn,
     NetworkPipeline Function(NetworkSend send, NetworkPolicy Function() policy)?
     pipelineFactory,
@@ -26,17 +27,18 @@ final class NetworkCaptureService {
        _statuses = statuses,
        _supported = supported,
        _warn = warn ?? ((_) {}) {
-    pipeline = (pipelineFactory ?? _defaultPipeline)(send, () => _policy);
+    pipeline =
+        (pipelineFactory ??
+        (send, policy) => NetworkPipeline(
+          send: send,
+          policy: policy,
+          dropRedirectStage: dropRedirectStage,
+        ))(send, () => _policy);
     controller = HttpCaptureController(
       policy: () => _policy,
       record: pipeline.submit,
     )..active = false;
   }
-
-  static NetworkPipeline _defaultPipeline(
-    NetworkSend send,
-    NetworkPolicy Function() policy,
-  ) => NetworkPipeline(send: send, policy: policy);
 
   final Future<NetworkPolicy> Function() _loadPolicy;
   final void Function() _ensureAttached;

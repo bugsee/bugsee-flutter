@@ -112,6 +112,12 @@ void main() {
     debugSetBugseeRuntime(runtime);
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
+      if (request.uri.path == '/r') {
+        request.response.statusCode = 302;
+        request.response.headers.set('location', '/a');
+        await request.response.close();
+        return;
+      }
       request.response.headers.contentType = ContentType.json;
       request.response.write('{"hello":"world"}');
       await request.response.close();
@@ -277,6 +283,33 @@ void main() {
       binding = false;
       expect(Bugsee.installNetworkCapture, throwsA(isA<BugseeException>()));
       expect(HttpOverrides.current, isNull);
+    },
+  );
+
+  test(
+    'the redirect hop entries exist on Android and are not created on iOS',
+    () async {
+      Bugsee.installNetworkCapture();
+      await settle();
+      await get('/r');
+      expect(host.sent.map((m) => m.stage), ['before', 'redirect', 'complete']);
+      Bugsee.uninstallNetworkCapture();
+      host.batches.clear();
+
+      // A fresh runtime on iOS.
+      platform = OptionPlatform.ios;
+      runtime = BugseeRuntime(
+        host: host,
+        platform: () => platform,
+        warn: warnings.add,
+        ensureBinding: () {},
+      );
+      debugSetBugseeRuntime(runtime);
+      Bugsee.installNetworkCapture();
+      await settle();
+      await get('/r');
+      expect(host.sent.map((m) => m.stage), ['before', 'complete']);
+      expect(Bugsee.networkCaptureStats.refusedByNative, 0);
     },
   );
 

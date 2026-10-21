@@ -59,7 +59,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   the current one. Versions are derived from what is served (so a density
   or position change moves them with no write), per display, never 0; a display that never had a rectangle
   serves `[0, 0]` (unknown). Fail closed: an unplaceable view, a non-finite rectangle or a bad scale serves
-  the whole display; a view known to be off screen serves nothing. Dart (`lib/src/secure`, internal until
+  the whole display; a view known to be off-screen serves nothing. Dart (`lib/src/secure`, internal until
   Phase 4): `BugseeSecureRegion`/`RenderSecureRegion` + `SecureRegionRegistry`, measured every frame in a
   post-frame callback, published only when the set changed, ordered by `(epoch, sequence)`. Regions are
   reported UNCLIPPED through every ancestor transform (bounding box, including paint outside their box); a region is dropped only on positive evidence

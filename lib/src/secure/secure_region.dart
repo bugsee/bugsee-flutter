@@ -20,7 +20,7 @@
 //   pixels are on screen: an ancestor that does not paint it (`paintsChild`:
 //   Offstage, Visibility, zero Opacity), an IndexedStack showing another child,
 //   or a clipping scroll viewport that its region (with what its descendants
-//   paint) lies wholly outside of. Nothing else drops it. TickerMode is NOT
+//   paint) lies wholly outside. Nothing else drops it. TickerMode is NOT
 //   evidence: it only stops animations (reduce-motion, a paused tab), the
 //   content is still painted. In particular a detached layer is
 //   NOT evidence: SnapshotWidget (the Zoom page transition) paints a region into

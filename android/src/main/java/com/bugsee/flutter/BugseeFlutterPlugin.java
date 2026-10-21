@@ -51,8 +51,12 @@ public class BugseeFlutterPlugin
     }
 
     private static void refreshPlacements() {
-        for (final SecurePlacement placement : PLACEMENTS) {
-            placement.refresh();
+        try {
+            for (final SecurePlacement placement : PLACEMENTS) {
+                placement.refresh();
+            }
+        } finally {
+            SecureRectangleStore.shared().refreshCompleted();
         }
     }
 

@@ -76,8 +76,9 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 /// ratio: a mismatch (Flutter has not caught up with a display change) covers the whole display
 /// until Dart republishes.
 ///
-/// Grace window: when the served set changes, the PREVIOUS set is served as well for
-/// `+graceSeconds`, because Dart measures after a frame and the message crosses a channel while
+/// Grace window: every set that stops being current is served as well for `+graceSeconds` from the
+/// moment IT stopped (not from the last change, so a long movement does not widen the cover to its
+/// path), because Dart measures after a frame and the message crosses a channel while
 /// the frame may be captured first. It only ever over-covers; the union shrinking back is itself a
 /// change and moves the version. A region that has just APPEARED has no previous place, so its
 /// first frame can still be recorded before the message lands: the one exposure left.

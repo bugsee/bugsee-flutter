@@ -48,8 +48,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>A display's version is derived from what is served, not from what was
  * written: it moves exactly when the served rectangles differ from the ones
- * served before (so also when only the density, the view's position or the
- * grace window changed, which no write announces), and never otherwise (5.2.1,
+ * served before (so also when only the density, the view's position or a past
+ * set's grace window ending changed, which no write announces), and never otherwise (5.2.1,
  * 5.2.2). It is kept per display (5.2.3) and only ever steps forward, skipping
  * 0. A display that has never had a rectangle serves {@code [0, 0]}: unknown,
  * and empty. Once it has had one it serves real versions, an emptied set
@@ -58,10 +58,12 @@ import java.util.concurrent.atomic.AtomicReference;
  * <h2>Grace window</h2>
  *
  * <p>Dart measures after a frame and the message crosses a channel, while the
- * raster of that frame (or the one before) may be captured first. So when the
- * served set changes, the PREVIOUS set is served as well for
- * {@link #GRACE_MS}: a moving region leaves no uncovered strip as wide as one
- * frame's movement, and a region that has just gone is covered one pull longer.
+ * raster of that frame (or the one before) may be captured first. So every set
+ * that stops being current is served as well for {@link #GRACE_MS} from the
+ * moment IT stopped (not from the last change, so a long movement does not widen
+ * the cover to its whole path): a moving region leaves no uncovered strip as wide
+ * as one frame's movement, and a region that has just gone is covered a little
+ * longer.
  * It only ever over-covers. A region that has just APPEARED has no previous
  * position, so its first frame can still be recorded before the message lands:
  * the one exposure this class cannot close. The union shrinks back on a later

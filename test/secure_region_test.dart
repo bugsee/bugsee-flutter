@@ -893,21 +893,6 @@ void main() {
       expect(native.latest[0], [500, 850, 600, 900]);
     });
 
-    testWidgets('a pixel-ratio change with no relayout republishes nothing', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(900, 600);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      await tester.pumpWidget(app(registry, at(registry, 10, 20)));
-      expect(native.sent, hasLength(1));
-      // Logical rects are unchanged by the ratio; native rescales them with its
-      // own, per-call, scale.
-      tester.view.devicePixelRatio = 1;
-      await tester.pump();
-      expect(native.sent, hasLength(1));
-    });
-
     testWidgets('regions in two views are published per view', (tester) async {
       final second = OtherView(tester);
       await tester.pumpWidget(

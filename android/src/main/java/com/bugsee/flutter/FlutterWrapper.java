@@ -14,11 +14,16 @@ import java.util.Map;
 /**
  * The Flutter wrapper registered with the SDK.
  *
- * <p>Identity is real (workbook Part 3). Everything else is a deliberately
- * inert stub until Phase 3 gives it behaviour: data requests are answered
- * with {@code null}, lifecycle events are dropped, no secure rectangles are
- * contributed, and report handlers complete immediately. Every stub is safe
- * to be called by the SDK at any time, from any thread, and none throws.
+ * <p>Identity is real (workbook Part 3), and lifecycle events are forwarded
+ * (Part 4). The rest is a deliberately inert stub until Phase 3 gives it
+ * behaviour: data requests are answered with {@code null}, no secure rectangles
+ * are contributed, and report handlers complete immediately. Every method is
+ * safe to be called by the SDK at any time, from any thread, and none throws.
+ *
+ * <p>This object is replaced mid-session when Dart refines the identity, so it
+ * holds no state that must survive: lifecycle events go to the process-wide
+ * {@link LifecycleHub} and secure rectangles come from the process-wide
+ * {@link SecureRectangleStore} (5.4.2).
  */
 final class FlutterWrapper implements BugseeWrapper {
 
@@ -31,19 +36,13 @@ final class FlutterWrapper implements BugseeWrapper {
 
     static final String UNKNOWN = "unknown";
 
-    /**
-     * {@link BugseeWrapper#SECURE_RECTANGLES_VERSION_UNKNOWN}: the SDK then
-     * compares the rectangles themselves. A constant real version would let a
-     * later wrapper that also starts at that version, with real rectangles, be
-     * ignored: the SDK caches by version per display (unredacted capture).
-     */
-    private static final int EMPTY_SET_VERSION = SECURE_RECTANGLES_VERSION_UNKNOWN;
-
     private final String type;
     private final String version;
     @Nullable
     private final String build;
     private final Map<String, String> context;
+    private final LifecycleHub lifecycle;
+    private final SecureRectangleStore secureRectangles;
 
     /** The identity knowable before Dart exists: type and version only. */
     @NonNull
@@ -64,6 +63,20 @@ final class FlutterWrapper implements BugseeWrapper {
             @Nullable final Object build,
             @Nullable final Object context
     ) {
+        return create(type, version, build, context,
+                LifecycleHub.shared(), SecureRectangleStore.shared());
+    }
+
+    /** As above with the process-wide collaborators supplied; for tests. */
+    @NonNull
+    static FlutterWrapper create(
+            @Nullable final Object type,
+            @Nullable final Object version,
+            @Nullable final Object build,
+            @Nullable final Object context,
+            @NonNull final LifecycleHub lifecycle,
+            @NonNull final SecureRectangleStore secureRectangles
+    ) {
         final Map<String, String> cleaned = new HashMap<>();
         if (context instanceof Map) {
             for (final Map.Entry<?, ?> e : ((Map<?, ?>) context).entrySet()) {
@@ -76,7 +89,9 @@ final class FlutterWrapper implements BugseeWrapper {
                 stringOr(type, UNKNOWN),
                 stringOr(version, UNKNOWN),
                 build instanceof String ? (String) build : null,
-                cleaned);
+                cleaned,
+                lifecycle,
+                secureRectangles);
     }
 
     private static String stringOr(@Nullable final Object value, @NonNull final String fallback) {
@@ -87,8 +102,12 @@ final class FlutterWrapper implements BugseeWrapper {
             @NonNull final String type,
             @NonNull final String version,
             @Nullable final String build,
-            @NonNull final Map<String, String> context
+            @NonNull final Map<String, String> context,
+            @NonNull final LifecycleHub lifecycle,
+            @NonNull final SecureRectangleStore secureRectangles
     ) {
+        this.lifecycle = lifecycle;
+        this.secureRectangles = secureRectangles;
         this.type = type;
         this.version = version;
         this.build = build;
@@ -134,13 +153,16 @@ final class FlutterWrapper implements BugseeWrapper {
 
     @Override
     public void onLifecycleEvent(@NonNull final String eventType, @Nullable final Object data) {
+        // The SDK's worker thread. The hub strips the prefix, hops to the main
+        // thread and never throws.
+        lifecycle.dispatch(eventType, data);
     }
 
     @Nullable
     @Override
     public int[] getSecureRectangles(final int display) {
-        // [version, count]: no rectangles, version unknown.
-        return new int[] {EMPTY_SET_VERSION, 0};
+        // From the store, not from this object: this wrapper is replaced.
+        return secureRectangles.snapshot(display);
     }
 
     @Override

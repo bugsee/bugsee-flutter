@@ -33,7 +33,27 @@ jobs:
           cache: true
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed lib test example/lib scripts
+      - run: dart format --output=none --set-exit-if-changed lib test example/lib scripts pigeons
+
+  # The committed Dart/Java/Swift bridge files must be what pigeons/bridge.dart generates
+  # with the pinned pigeon (native-versions.json `pigeon.version`). On the floor, like
+  # `format`: the generated Dart is dart-formatted, and formatter output varies by release.
+  bridge-codegen:
+    name: bridge codegen is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.41.0'
+          cache: true
+      - run: dart scripts/generate_pigeon.dart --check
+      # Excluded from the root analysis (its package needs its own pub get, done by the line above).
+      - run: cd pigeons && dart analyze --fatal-infos
 
   test:
     name: analyze + test + ios build (${{ matrix.channel }})
@@ -68,6 +88,20 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: cd example && flutter build ios --debug --no-codesign
+      # XCTest of the Objective-C wrapper target (lifecycle hub, secure-rectangle store)
+      # in the test-only package ios/wrapper_tests; independent of Flutter, so once is enough.
+      - name: iOS wrapper unit tests
+        if: matrix.channel == 'stable'
+        run: |
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("SimRuntime\\.iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid // empty')
+          if [ -z "$UDID" ]; then
+            echo "::error::no available iPhone simulator on this runner"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "simulator: $UDID"
+          cd ios/wrapper_tests
+          xcodebuild test -scheme bugsee_flutter_wrapper_tests -destination "platform=iOS Simulator,id=$UDID"
 
   build-android:
     name: build apk (${{ matrix.channel }})
@@ -130,7 +164,7 @@ jobs:
     # Must be `always()`, not `!cancelled()`: a skipped required check counts as passing,
     # so on a cancelled run ci-ok has to run and fail (cancelled needed jobs fail it below).
     if: always()
-    needs: [format, test, build-android, publish-check]
+    needs: [format, bridge-codegen, test, build-android, publish-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

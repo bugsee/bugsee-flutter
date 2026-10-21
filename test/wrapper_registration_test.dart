@@ -116,7 +116,16 @@ void main() {
             '+load runs before main, so a native launch in '
             'didFinishLaunching still finds a wrapper',
       );
-      expect(m, contains('[Bugsee setWrapper:(id<BugseeWrapper>)gWrapper];'));
+      // Every registration goes through +submit:, which is the only SDK call.
+      expect(m, contains('[self submit:(id<BugseeWrapper>)gWrapper];'));
+      expect(
+        RegExp(
+          r'\+ \(void\)submit:\(id<BugseeWrapper>\)wrapper \{.*?\} else \{\s*\[Bugsee setWrapper:wrapper\];',
+          dotAll: true,
+        ).hasMatch(m),
+        isTrue,
+      );
+      expect('[Bugsee setWrapper:'.allMatches(m), hasLength(1));
       final body = RegExp(
         r'\+ \(void\)ensureRegistered \{(.*?)\n\}',
         dotAll: true,
@@ -127,7 +136,7 @@ void main() {
       expect(guard, isNotNull, reason: 'guard missing inside ensureRegistered');
       expect(
         guard!.start,
-        lessThan(body.indexOf('[Bugsee setWrapper:')),
+        lessThan(body.indexOf('[self submit:')),
         reason:
             'only the first call may register, so a late register(with:) '
             'cannot replace a richer wrapper with the placeholder',
@@ -138,10 +147,21 @@ void main() {
       );
     });
 
-    test('secure rectangles stub is empty with the unknown version (0)', () {
-      final m = code('$base/bugsee_flutter_wrapper/BGSFlutterWrapper.m');
-      expect(m, contains('int32_t ints[2] = {0, 0};'));
-    });
+    test(
+      'secure rectangles come from the process-wide store, empty with version 0',
+      () {
+        final m = code('$base/bugsee_flutter_wrapper/BGSFlutterWrapper.m');
+        expect(
+          m,
+          contains('[_secureRectangles snapshotForDisplay:display]'),
+          reason: 'the set must not live in the replaceable wrapper (5.4.2)',
+        );
+        final store = code(
+          '$base/bugsee_flutter_wrapper/BGSFlutterSecureRectangleStore.m',
+        );
+        expect(store, contains('int32_t ints[2] = {0, 0};'));
+      },
+    );
 
     test('Swift plugin class stays thin and references the wrapper target', () {
       final swift = code('$base/bugsee_flutter/BugseeFlutterPlugin.swift');

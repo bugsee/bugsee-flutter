@@ -1,0 +1,42 @@
+# Used by `pub publish` INSTEAD of .gitignore (pub reads one or the other per directory),
+# so everything in .gitignore is repeated here, then the dev-only trees: the iOS
+# wrapper test package (its Sources is a symlink that would be published as a full
+# duplicate of the plugin's Objective-C sources) and the pigeon code generator.
+# test/native_versions_test.dart asserts the .gitignore rules are all here.
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+# Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
+/pubspec.lock
+**/doc/api/
+.dart_tool/
+.flutter-plugins-dependencies
+/build/
+/coverage/
+
+# Dev-only; not part of the package
+/ios/wrapper_tests/
+/pigeons/

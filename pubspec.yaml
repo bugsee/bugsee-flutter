@@ -14,6 +14,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Imported by the generated bridge (lib/src/bridge/messages.g.dart); the floor
+  # Flutter (3.41.0) ships 1.17.0.
+  meta: ^1.17.0
 
 dev_dependencies:
   flutter_test:

@@ -35,6 +35,8 @@ public class LaunchOpsTest {
         Map<String, Serializable> launchedWith;
         int stops;
         boolean stopCalledBack = true;
+        int stopCallbacks = 1;
+        boolean throwAfterStop;
         Map<String, Serializable> options = new HashMap<>();
         Boolean lastHostOnly;
 
@@ -62,7 +64,12 @@ public class LaunchOpsTest {
         public void stop(Runnable done) {
             stops++;
             if (stopCalledBack) {
-                done.run();
+                for (int i = 0; i < stopCallbacks; i++) {
+                    done.run();
+                }
+            }
+            if (throwAfterStop) {
+                throw new IllegalStateException("after the stop callback");
             }
         }
 
@@ -204,6 +211,21 @@ public class LaunchOpsTest {
         slow.stopCalledBack = false;
         LaunchOps.stop(slow, () -> done[0]++, r);
         assertEquals(1, done[0]);
+    }
+
+    @Test
+    public void aStopIsAnsweredOnce_whateverTheSdkDoesAfterwards() {
+        final FakeSdk twice = new FakeSdk();
+        twice.stopCallbacks = 2;
+        final int[] done = {0};
+        final Recorder r = new Recorder();
+        LaunchOps.stop(twice, () -> done[0]++, r);
+        assertEquals(1, done[0]);
+        final FakeSdk late = new FakeSdk();
+        late.throwAfterStop = true;
+        LaunchOps.stop(late, () -> done[0]++, r);
+        assertEquals(2, done[0]);
+        assertTrue("not also an error", r.errors.isEmpty());
     }
 
     @Test

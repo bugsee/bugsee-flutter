@@ -106,6 +106,15 @@ final class SecureRectangleStore {
     /** Largest magnitude served: keeps the SDK's own int arithmetic away from overflow. */
     private static final double LIMIT = 1 << 28;
 
+    /**
+     * A placement refresh that was asked for by a pull and has not completed for this long means
+     * the main thread is not answering: the placements may be stale by an unknown amount, so every
+     * placed view is covered whole until a refresh completes. A refresh normally completes within
+     * milliseconds of the pull that asked, so this never fires in ordinary running (and is
+     * independent of how often the SDK pulls). Repeated nowhere else.
+     */
+    static final long REFRESH_STALE_MS = 1000;
+
     /** How long each past set is served after it stopped being current. Repeated in ObjC. */
     static final long GRACE_MS = 120;
 
@@ -353,6 +362,10 @@ final class SecureRectangleStore {
     private final Object serveLock = new Object();
     private final Map<Integer, Served> served = new HashMap<>();
     private final AtomicReference<Runnable> pullHook = new AtomicReference<>();
+    private static final long NO_REFRESH_PENDING = Long.MIN_VALUE;
+    /** When the oldest refresh that a pull asked for was asked; none while all completed. */
+    private final java.util.concurrent.atomic.AtomicLong refreshPendingSince =
+            new java.util.concurrent.atomic.AtomicLong(NO_REFRESH_PENDING);
 
     /** No grace window: what is written is what is served at once. For tests. */
     SecureRectangleStore(@NonNull final Environment environment) {
@@ -478,6 +491,8 @@ final class SecureRectangleStore {
     int[] pull(final int display) {
         final Runnable hook = pullHook.get();
         if (hook != null) {
+            // Before the (throttled, possibly suppressed) request: the oldest unanswered one counts.
+            refreshPendingSince.compareAndSet(NO_REFRESH_PENDING, clock.nowMs());
             try {
                 hook.run();
             } catch (Throwable ignored) {
@@ -485,6 +500,14 @@ final class SecureRectangleStore {
             }
         }
         return snapshot(display);
+    }
+
+    /**
+     * The placement refresh the pull asked for has finished (the tracker calls this after it
+     * re-read every view): the placements are fresh again.
+     */
+    void refreshCompleted() {
+        refreshPendingSince.set(NO_REFRESH_PENDING);
     }
 
     /**
@@ -587,6 +610,9 @@ final class SecureRectangleStore {
         int[] out = new int[16];
         int n = 0;
         boolean whole = false;
+        final long pendingSince = refreshPendingSince.get();
+        final boolean refreshStuck = pullHook.get() != null && pendingSince != NO_REFRESH_PENDING
+                && clock.nowMs() - pendingSince > REFRESH_STALE_MS;
 
         for (final Map.Entry<Lane, ViewRects> entry : s.rects.entrySet()) {
             final ViewRects view = entry.getValue();
@@ -601,6 +627,11 @@ final class SecureRectangleStore {
                 continue;
             }
             if (placement.display != display) {
+                continue;
+            }
+            if (refreshStuck) {
+                // The placement may be stale by an unknown amount: cover rather than trust it.
+                whole = true;
                 continue;
             }
             if (!envRead) {

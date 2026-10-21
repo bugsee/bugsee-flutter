@@ -103,6 +103,11 @@ that is private to it. The wrapper therefore (Android):
 * does not start work that was queued behind a slow copy once the window has closed (`not-live`, nothing touched);
 * bounds the copy itself with the 20 MiB per-file soft limit, so a copy that long is not the normal case.
 
+Known limit: only `addAttachment` (file and bytes) can be undone. `setScreenshot` has no lifetime check in the SDK at all (a late
+one only replaces the report's in-memory picture and its own file, which the already-persisted copy does not read), and
+`clearAttachments` deletes files the SDK's export may still need if it runs after processing was scheduled; both are claimed
+and refused once the handler's window has closed, but one that STARTED inside the window is not undone.
+
 Verified with a JUnit model of the SDK that registers without re-checking (`FakeReports.duringAdd`), which proves the moved
 file survives and the orphan is deleted. The SDK should re-check under its lock like iOS does; that is an SDK issue, the
 wrapper does not depend on it being fixed.

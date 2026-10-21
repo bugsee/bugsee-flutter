@@ -169,12 +169,25 @@ static BOOL StopInFlight(void) {
 }
 
 + (void)stopWithSdk:(id<BGSFlutterBugseeSDK>)sdk done:(void (^)(NSError *))done {
+  // Finished once: a second completion (or a throw after the first) must neither answer twice nor
+  // release the in-flight mark of ANOTHER stop.
+  NSLock *finishedLock = [[NSLock alloc] init];
+  __block BOOL finished = NO;
+  BOOL (^claim)(void) = ^BOOL {
+    [finishedLock lock];
+    const BOOL first = !finished;
+    finished = YES;
+    [finishedLock unlock];
+    return first;
+  };
   @try {
     [sdk stop:^{
+      if (!claim()) return;
       [self endStop];
       done(nil);
     }];
   } @catch (NSException *exception) {
+    if (!claim()) return;
     [self endStop];
     done([self errorFromException:exception]);
   }

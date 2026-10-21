@@ -22,6 +22,9 @@
 @property(nonatomic) NSInteger stops;
 /// When set, `stop:` keeps its completion until `finishStop` is called.
 @property(nonatomic) BOOL deferStop;
+/// How many times `stop:` calls its completion; and whether it throws after the first.
+@property(nonatomic) NSInteger stopCalls;
+@property(nonatomic) BOOL throwAfterStop;
 @property(nonatomic, copy) void (^finishStop)(void);
 @property(nonatomic, strong) NSDictionary *options;
 @property(nonatomic, strong) NSNumber *lastHostOnly;
@@ -35,6 +38,7 @@
     _statusAtStarted = @"launched";
     _launches = [NSMutableArray array];
     _startedCalls = 1;
+    _stopCalls = 1;
     _options = @{};
   }
   return self;
@@ -63,7 +67,10 @@
     _finishStop = [done copy];
     return;
   }
-  done();
+  for (NSInteger i = 0; i < _stopCalls; i++) {
+    done();
+  }
+  if (_throwAfterStop) @throw [NSException exceptionWithName:@"StopLate" reason:@"after stop" userInfo:nil];
 }
 - (NSDictionary<NSString *, id> *)launchOptionsHostOnly:(BOOL)hostOnly {
   _lastHostOnly = @(hostOnly);
@@ -151,6 +158,26 @@
   sdk.status = @"stopped";
   sdk.finishStop();
   XCTAssertEqualObjects([self launch:sdk token:@"tok" options:nil][0], BGSFlutterLaunchOps.launched);
+}
+
+/// A second completion, or a throw after the first, answers once and releases only ITS OWN mark:
+/// another stop still in flight keeps refusing launches.
+- (void)testAStopIsAnsweredOnceAndNeverReleasesAnotherStopsMark {
+  BGSFakeBugsee *sdk = [[BGSFakeBugsee alloc] init];
+  sdk.status = @"launched";
+  [BGSFlutterLaunchOps beginStop];  // another stop, still in flight
+  [BGSFlutterLaunchOps beginStop];  // this one
+  sdk.stopCalls = 2;
+  sdk.throwAfterStop = YES;
+  __block NSInteger done = 0;
+  __block NSError *error = nil;
+  [BGSFlutterLaunchOps stopWithSdk:sdk done:^(NSError *e) { done++; error = e; }];
+  XCTAssertEqual(done, 1);
+  XCTAssertNil(error);
+  NSArray *a = [self launch:sdk token:@"tok" options:nil];
+  XCTAssertEqualObjects(a[1], BGSFlutterLaunchOps.stopping, @"the other stop's mark is still there");
+  // The other stop finishes (its own completion releases its mark).
+  [BGSFlutterLaunchOps stopWithSdk:[[BGSFakeBugsee alloc] init] done:^(NSError *e) {}];
 }
 
 - (void)testAStopThatThrowsClearsTheMark {

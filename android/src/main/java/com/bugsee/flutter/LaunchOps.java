@@ -119,10 +119,18 @@ final class LaunchOps {
             @NonNull final Runnable done,
             @NonNull final ErrorSink error
     ) {
+        // Answered once, like launch: a second reply is "Reply already submitted" on the channel.
+        final AtomicBoolean answered = new AtomicBoolean();
         try {
-            sdk.stop(done);
+            sdk.stop(() -> {
+                if (answered.compareAndSet(false, true)) {
+                    done.run();
+                }
+            });
         } catch (final Throwable t) {
-            error.error(t);
+            if (answered.compareAndSet(false, true)) {
+                error.error(t);
+            }
         }
     }
 

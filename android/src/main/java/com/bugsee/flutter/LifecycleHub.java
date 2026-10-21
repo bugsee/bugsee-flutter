@@ -43,9 +43,12 @@ import java.util.Set;
  * <p><b>Limit.</b> The guarantees end at the main-thread hop into the sink. An event
  * sent over the channel while the Dart side has no handler (a Dart hot restart, a
  * torn-down isolate) is held only by Flutter's channel buffer, which by default keeps
- * ONE message per channel; older ones are dropped and only logged. The latest status
- * is recovered by replay on the next attach; report events are not.
- * Consumers must not rely on them surviving a restart.
+ * ONE message per channel; older ones are dropped and only logged. What does
+ * recover: the latest status is replayed to every new receiver, report events still in
+ * this hub's buffer are flushed to the next receiver, and events in flight to a receiver
+ * that detaches go back to the buffer. What does not: an event already SENT over the
+ * channel while Dart has no handler is not retried. Consumers must not rely on delivery
+ * surviving a restart.
  *
  * <p><b>Names.</b> The {@code com.bugsee.lifecycle.} prefix is stripped once,
  * here. A name the wrapper does not know, or one without the prefix, is

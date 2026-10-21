@@ -14,6 +14,7 @@ import com.bugsee.library.contracts.internal.BugseeWrapper;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -575,6 +576,57 @@ public class SecureRectangleStoreTest {
         });
         assertEquals(1, store.pull(0)[1]);
         assertEquals(1, calls[0]);
+    }
+
+    // ---- a refresh the main thread never answers ---------------------------------------------
+
+    private SecureRectangleStore pulledStore() {
+        env.density = 1;
+        final SecureRectangleStore g = new SecureRectangleStore(env, () -> now[0], 0);
+        g.setPlacement(1, 0, Placement.known(0, 0, 0));
+        assertTrue(g.publish(1, 1, 1, viewAt(1, 10, 10, 20, 20)));
+        return g;
+    }
+
+    @Test
+    public void aPlacementRefreshThatIsNeverAnsweredCoversTheWholeDisplayUntilItIs() {
+        final SecureRectangleStore g = pulledStore();
+        g.setPullHook(() -> { /* posts to a main thread that is not answering */ });
+        now[0] = 1000;
+        assertArrayEquals(new int[] {10, 10, 20, 20}, tail(g.pull(0)));
+        now[0] = 1000 + SecureRectangleStore.REFRESH_STALE_MS;
+        assertArrayEquals(new int[] {10, 10, 20, 20}, tail(g.pull(0)));
+        now[0] = 1000 + SecureRectangleStore.REFRESH_STALE_MS + 1;
+        assertArrayEquals("the placement may be stale: cover the display",
+                new int[] {0, 0, 1080, 2400}, tail(g.pull(0)));
+        g.refreshCompleted();
+        assertArrayEquals(new int[] {10, 10, 20, 20}, tail(g.pull(0)));
+    }
+
+    @Test
+    public void aRefreshThatCompletesEachTimeNeverCovers_whateverTheRateOfThePulls() {
+        final SecureRectangleStore g = pulledStore();
+        g.setPullHook(g::refreshCompleted);
+        for (final long interval : new long[] {100, 400, 5000}) {
+            for (int i = 0; i < 10; i++) {
+                now[0] += interval;
+                assertArrayEquals("interval " + interval, new int[] {10, 10, 20, 20},
+                        tail(g.pull(0)));
+            }
+        }
+    }
+
+    @Test
+    public void withoutAPullHookThereIsNoRefreshToWaitFor() {
+        final SecureRectangleStore g = pulledStore();
+        now[0] = 1000;
+        g.snapshot(0);
+        now[0] = 1000 + 10 * SecureRectangleStore.REFRESH_STALE_MS;
+        assertArrayEquals(new int[] {10, 10, 20, 20}, tail(g.snapshot(0)));
+    }
+
+    private static int[] tail(final int[] buffer) {
+        return Arrays.copyOfRange(buffer, 2, buffer.length);
     }
 
 

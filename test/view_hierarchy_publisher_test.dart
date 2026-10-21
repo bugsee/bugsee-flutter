@@ -274,6 +274,26 @@ void main() {
     });
   });
 
+  group('trailing build', () {
+    rigTest(
+      'a throttled change is built by a timer when no further frame comes',
+      (tester, r) async {
+        r.publisher.activate();
+        await r.frame();
+        expect(r.builds, 1);
+        r.result = fake('late');
+        await r.frame(
+          const Duration(milliseconds: 100),
+        ); // throttled: arms the timer
+        expect(r.builds, 1);
+        // No frame from here on, only time.
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(r.builds, 2);
+        expect(r.tags.last, 'late');
+      },
+    );
+  });
+
   group('cost', () {
     rigTest('a slow build spaces the next ones out by 20 times its cost', (
       tester,

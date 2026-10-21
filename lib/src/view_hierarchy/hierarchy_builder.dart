@@ -197,6 +197,7 @@ HierarchySnapshot? buildViewHierarchy({
   int viewId = 0,
   HierarchyLimits limits = const HierarchyLimits(),
   Duration Function()? clock,
+  @visibleForTesting bool? obfuscated,
 }) {
   try {
     final Element? top = root ?? WidgetsBinding.instance.rootElement;
@@ -204,7 +205,7 @@ HierarchySnapshot? buildViewHierarchy({
     final Element? viewElement = _findView(top, viewId);
     if (viewElement == null) return null;
     final Duration Function() now = clock ?? _stopwatchClock();
-    final walker = _Walker(limits, now);
+    final walker = _Walker(limits, now, obfuscated ?? typeNamesAreObfuscated);
     return walker.run(viewElement as RenderObjectElement);
   } catch (_) {
     return null;
@@ -235,7 +236,9 @@ Element? _findView(Element start, int viewId) {
 }
 
 class _Walker {
-  _Walker(this.limits, this.now) : _start = now();
+  _Walker(this.limits, this.now, this.obfuscated) : _start = now();
+
+  final bool obfuscated;
 
   final HierarchyLimits limits;
   final Duration Function() now;
@@ -263,7 +266,7 @@ class _Walker {
       rootNode,
       1,
     );
-    final writer = _Writer(obfuscated: typeNamesAreObfuscated);
+    final writer = _Writer(obfuscated: obfuscated);
     writer.writeRoot(
       rootNode,
       view.flutterView.devicePixelRatio,

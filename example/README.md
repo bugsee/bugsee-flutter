@@ -21,3 +21,10 @@ back, launching twice, stop, launch again) against the real SDK:
 ```
 flutter test integration_test/launch_test.dart -d <emulator or simulator id>
 ```
+
+`integration_test/view_hierarchy_test.dart` shows the Flutter widget tree the SDK stores in a report (no text, the
+secure view redacted, boxes in the platform's unit) on the same screen as `lib/view_hierarchy_screen.dart`:
+
+```
+flutter test integration_test/view_hierarchy_test.dart -d <emulator or simulator id>
+```

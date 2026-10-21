@@ -208,6 +208,59 @@ void main() {
     });
   });
 
+  group('stale reads and the real binding', () {
+    testWidgets(
+      'an option read of an earlier launch cannot win over a later one',
+      (tester) async {
+        await tester.pumpWidget(const SizedBox());
+        final gates = <Completer<bool>>[];
+        final publisher = ViewHierarchyPublisher(
+          send: (m) async => true,
+          epoch: 1,
+          builder: (limits, now) => fake('A'),
+        );
+        final controller = ViewHierarchyController(
+          publisher: publisher,
+          readOption: () {
+            final c = Completer<bool>();
+            gates.add(c);
+            return c.future;
+          },
+        );
+        controller.onStatus(BugseeStatus.launched); // read 0 pending
+        controller.onStatus(BugseeStatus.stopped);
+        controller.onStatus(BugseeStatus.launched); // read 1 pending
+        gates[1].complete(false); // this launch has it off
+        await tester.pump();
+        gates[0].complete(true); // the first launch's late answer
+        await tester.pump();
+        expect(publisher.active, isFalse);
+        await publisher.deactivate();
+        publisher.dispose();
+      },
+    );
+
+    testWidgets('the app lifecycle reaches an attached controller', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const SizedBox());
+      final rig = Rig();
+      final changes = StreamController<BugseeStatus>.broadcast();
+      addTearDown(changes.close);
+      rig.controller.attach(BugseeStatus.launched, changes.stream);
+      await rig.settle(tester);
+      expect(rig.publisher.active, isTrue);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await rig.settle(tester);
+      expect(rig.publisher.active, isFalse);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await rig.settle(tester);
+      expect(rig.publisher.active, isTrue);
+      await rig.publisher.deactivate();
+      rig.publisher.dispose();
+    });
+  });
+
   group('foreground', () {
     testWidgets('the background switches it off and clears native', (
       tester,
@@ -390,14 +443,62 @@ void main() {
         host: FakeHost(),
         viewHierarchy: rig.controller,
       );
-      await runtime.ensureStarted();
-      await runtime.ensureStarted();
-      await runtime.ensureStarted();
       runtime.bridge.onLifecycleEvent(LifecycleEventMessage(name: 'Launched'));
+      await runtime.ensureStarted();
+      await runtime.ensureStarted();
+      await runtime.ensureStarted();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 10));
       expect(rig.reads, 1, reason: 'one subscription, one option read');
       await rig.publisher.deactivate();
+      rig.publisher.dispose();
+    });
+
+    testWidgets(
+      'captureViewHierarchy brings native up to date BEFORE asking the SDK',
+      (tester) async {
+        await tester.pumpWidget(const SizedBox());
+        final host = FakeHost();
+        final sent = <String>[];
+        final publisher = ViewHierarchyPublisher(
+          send: (m) async {
+            host.order.add('publish');
+            sent.add(m.segments.join());
+            return true;
+          },
+          epoch: 1,
+          minInterval: const Duration(hours: 1),
+          builder: (limits, now) => fake('fresh${sent.length}'),
+        );
+        final controller = ViewHierarchyController(
+          publisher: publisher,
+          readOption: () async => true,
+        );
+        final runtime = BugseeRuntime(host: host, viewHierarchy: controller);
+        await runtime.ensureStarted();
+        controller.onStatus(BugseeStatus.launched);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 10));
+        expect(host.order, ['publish']);
+        // Inside the throttle (an hour): only the explicit capture brings it up to date.
+        await runtime.captureViewHierarchy();
+        expect(host.order, ['publish', 'publish', 'capture']);
+        expect(sent, ['fresh0', 'fresh1']);
+        await publisher.deactivate();
+        publisher.dispose();
+      },
+    );
+
+    testWidgets('captureViewHierarchy with publishing off just asks the SDK', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const SizedBox());
+      final host = FakeHost();
+      final rig = Rig();
+      final runtime = BugseeRuntime(host: host, viewHierarchy: rig.controller);
+      await runtime.captureViewHierarchy();
+      expect(host.order, ['capture']);
+      expect(rig.sent, isEmpty);
       rig.publisher.dispose();
     });
 

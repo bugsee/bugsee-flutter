@@ -423,6 +423,109 @@ void main() {
     });
   });
 
+  group('more of what is on stage', () {
+    testWidgets('a list in a small viewport shows only what the viewport shows', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          at(
+            0,
+            0,
+            SizedBox(
+              width: 200,
+              height: 100,
+              child: ListView(
+                children: [
+                  for (var i = 0; i < 20; i++) Marker(width: 200, height: 50),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      // The cache extent keeps more in the tree, all inside the 800 x 600 screen, none visible.
+      expect(
+        find.byType(Marker, skipOffstage: false).evaluate().length,
+        greaterThan(2),
+      );
+      expect(named(payload(snapshot()), 'Marker'), hasLength(2));
+    });
+
+    testWidgets('what an ancestor clips away is absent even on screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          at(
+            0,
+            0,
+            SizedBox(
+              width: 100,
+              height: 100,
+              child: ClipRect(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: const [
+                    Positioned(
+                      left: 10,
+                      top: 10,
+                      child: Marker(width: 21, height: 10),
+                    ),
+                    Positioned(
+                      left: 10,
+                      top: 300,
+                      child: Marker(width: 22, height: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(named(payload(snapshot()), 'Marker').map((n) => boxOf(n)[2]), [
+        21,
+      ]);
+    });
+
+    testWidgets('a node with no area is absent', (tester) async {
+      await tester.pumpWidget(
+        host(
+          Column(
+            children: const [
+              Marker(width: 0, height: 10),
+              Marker(width: 10, height: 0),
+              Marker(width: 7, height: 7),
+            ],
+          ),
+        ),
+      );
+      expect(named(payload(snapshot()), 'Marker').map((n) => boxOf(n)[2]), [7]);
+    });
+
+    testWidgets('a provider of data is not a node, its subtree still is', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(const Marker(width: 9, height: 9)));
+      final names = [
+        for (final n in walk(payload(snapshot()))) n['class_name'],
+      ];
+      expect(names, isNot(contains('Directionality')));
+      expect(names, contains('Marker'));
+    });
+
+    testWidgets('an obfuscated build says so', (tester) async {
+      await tester.pumpWidget(host(const Marker()));
+      final s = buildViewHierarchy(obfuscated: true)!;
+      expect(optionsOf(payload(s))!['obfuscated'], isTrue);
+      expect(
+        optionsOf(payload(snapshot()))!.containsKey('obfuscated'),
+        isFalse,
+      );
+    });
+  });
+
   group('order, flags and kinds', () {
     testWidgets('subitems are in paint order, back to front', (tester) async {
       await tester.pumpWidget(

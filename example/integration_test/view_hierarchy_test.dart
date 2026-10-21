@@ -19,9 +19,9 @@
 // unit of the native tree (physical pixels on Android, points on iOS) at the device's density.
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
+import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/publisher.dart';
 import 'package:bugsee_flutter_example/main.dart';
 import 'package:bugsee_flutter_example/view_hierarchy_screen.dart';
@@ -164,6 +164,18 @@ void main() {
       );
       expect(publisher.active, isTrue);
       expect(publisher.sendCount, greaterThan(0));
+
+      // The cost of one walk on this device (a debug build: JIT, no optimisation, so a ceiling).
+      final watch = Stopwatch()..start();
+      final probe = buildViewHierarchy();
+      watch.stop();
+      say(
+        'one walk: ${watch.elapsedMicroseconds} us for ${probe?.nodeCount} nodes',
+      );
+      expect(
+        watch.elapsedMilliseconds,
+        lessThan(const HierarchyLimits().budget.inMilliseconds * 4),
+      );
 
       final secureRect = tester.getRect(find.byKey(const Key('vh-secure')));
       final started = DateTime.now().millisecondsSinceEpoch;
@@ -373,8 +385,9 @@ void main() {
         inInclusiveRange(widget.bottom - 1, widget.bottom + slack),
       );
 
-      if (entryTimestamp != null)
+      if (entryTimestamp != null) {
         say('entry timestamp $entryTimestamp (asked at $started)');
+      }
     },
   );
 
@@ -436,7 +449,7 @@ void main() {
         isA<String>(),
         reason: 'the answer is in the report it was asked for',
       );
-      final root = jsonDecode(managed! as String) as Json;
+      final root = jsonDecode(managed!) as Json;
       expect(root['class_name'], 'FlutterView');
       expect(walk(root).length, greaterThan(50));
     },

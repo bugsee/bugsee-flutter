@@ -188,6 +188,9 @@ void main() {
     test(
       'both gate on the SDK being launching or launched BEFORE they hand anything over',
       () {
+        // The gate must exist (an absent one is index -1, which is "before" everything).
+        expect(javaCode, contains('if (!sdk.isLaunchedOrLaunching())'));
+        expect(objcCode, contains('if (![sdk isLaunchedOrLaunching])'));
         expect(
           javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
           lessThan(javaCode.indexOf('sdk.logException(')),

@@ -697,6 +697,37 @@ void main() {
       ]);
     });
 
+    testWidgets(
+      'a hidden region with a huge subtree is dropped, not covered as '
+      'the whole view',
+      (tester) async {
+        Widget tree(bool hidden) => Offstage(
+          offstage: hidden,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: BugseeSecureRegion(
+              registry: registry,
+              child: SizedBox(
+                width: 10,
+                height: 10,
+                child: OverflowBox(
+                  maxWidth: 10,
+                  maxHeight: 100000,
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < 2100; i++) const SizedBox(height: 1),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpWidget(app(registry, tree(true)));
+        expect(native.sent, isEmpty);
+      },
+    );
+
     testWidgets('paint outside the region box is covered too', (tester) async {
       await tester.pumpWidget(
         app(

@@ -131,9 +131,10 @@ const int _maxDescendants = 2000;
 
 /// Whether [box] is PROVABLY not on screen. Only positive evidence counts; see
 /// the library comment. [painted] is the box together with what its
-/// descendants paint, in the view's logical pixels. Never throws (an exception
+/// descendants paint, in the view's logical pixels; without it only the
+/// evidence that needs no geometry (ancestors that do not paint it) is used. Never throws (an exception
 /// means "not provable").
-bool provablyHidden(RenderSecureRegion box, Rect painted) {
+bool provablyHidden(RenderSecureRegion box, Rect? painted) {
   try {
     RenderObject child = box;
     RenderObject? parent = box.parent;
@@ -148,7 +149,9 @@ bool provablyHidden(RenderSecureRegion box, Rect painted) {
         }
         if (!identical(shown, child)) return true;
       }
-      if (parent is RenderViewportBase && parent.clipBehavior != Clip.none) {
+      if (painted != null &&
+          parent is RenderViewportBase &&
+          parent.clipBehavior != Clip.none) {
         // A viewport clips what lies outside it: a region wholly outside (with
         // everything it paints) is invisible (a child kept in the cache extent,
         // scrolled out of view).
@@ -209,6 +212,9 @@ MeasuredRegion? measureRegion(RenderSecureRegion box) {
   RenderView? view;
   try {
     if (!box.attached || !box.hasSize) return null;
+    // Evidence that needs no geometry first: a hidden region is never measured, however
+    // big its subtree or odd its transform.
+    if (provablyHidden(box, null)) return null;
     // The root of this box's tree is its view.
     RenderObject root = box;
     while (root.parent != null) {

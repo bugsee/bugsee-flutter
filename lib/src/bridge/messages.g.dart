@@ -541,6 +541,66 @@ class ReportSnapshotMessage {
   }
 }
 
+/// What native did with a launch request. Strings, not an enum: Pigeon sends an enum as its
+/// ordinal (workbook 7.4), and the vocabulary is compared across Dart, Java and Objective-C by
+/// `test/launch_drift_test.dart`.
+///
+/// [outcome] is one of
+///   `launched`         the SDK launched and reported it (Android: its callback; iOS: `started:`);
+///   `already-running`  the SDK was already Launching or Launched (an auto-init, an earlier
+///                      launch, a native launch): the request's options were NOT applied;
+///   `deferred`         iOS only: the app is in the background, so the SDK starts when it becomes
+///                      active (the SDK answers `started:` YES at once, with nothing launched yet);
+///   `refused`          the SDK declined; [reason] says why.
+/// [reason] (only for `refused`) is one of `invalid-token`, `stopping` (a stop is still in
+/// progress: launch again once it has completed), or `failed` (the SDK gave no further reason; its
+/// log has it: a token it rejects, no context, capture that did not start, a stop that overtook it).
+class LaunchOutcomeMessage {
+  LaunchOutcomeMessage({required this.outcome, this.reason});
+
+  String outcome;
+
+  String? reason;
+
+  List<Object?> _toList() {
+    return <Object?>[outcome, reason];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static LaunchOutcomeMessage decode(Object result) {
+    result as List<Object?>;
+    return LaunchOutcomeMessage(
+      outcome: result[0]! as String,
+      reason: result[1] as String?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! LaunchOutcomeMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(outcome, other.outcome) &&
+        _deepEquals(reason, other.reason);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'LaunchOutcomeMessage(outcome: $outcome, reason: $reason)';
+  }
+}
+
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -566,6 +626,9 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is ReportSnapshotMessage) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
+    } else if (value is LaunchOutcomeMessage) {
+      buffer.putUint8(135);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -586,6 +649,8 @@ class _PigeonCodec extends StandardMessageCodec {
         return ReportHandlerRequestMessage.decode(readValue(buffer)!);
       case 134:
         return ReportSnapshotMessage.decode(readValue(buffer)!);
+      case 135:
+        return LaunchOutcomeMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -986,6 +1051,100 @@ class BugseeBridgeHostApi {
       isNullValid: false,
     );
     return pigeonVar_replyValue! as bool;
+  }
+
+  /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
+  /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
+  /// when the SDK answers: after capture started (`launched`), at once for the other outcomes. An
+  /// exception the SDK throws crosses as a PlatformException `launch-failed`.
+  Future<LaunchOutcomeMessage> launch(
+    String token,
+    Map<String, Object> options,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launch$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[token, options],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as LaunchOutcomeMessage;
+  }
+
+  /// Stops the SDK; completes when it has stopped (at once when it already is).
+  Future<void> stop() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.stop$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// The SDK's status, by name: `stopped`, `launching`, `launched` or `stopping` (names, never
+  /// ordinals). Read from the SDK itself, not derived from the lifecycle channel.
+  Future<String> status() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.status$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as String;
+  }
+
+  /// The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
+  /// SDK defaults (both SDKs, at the pinned versions, document it so); with true: only what the host
+  /// supplied. Keyed by `com.bugsee.option.*`, enums as internal integers, floats as doubles; hidden
+  /// (`$$`) options are removed by Dart.
+  Future<Map<String, Object>> launchOptions(bool hostOnly) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launchOptions$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[hostOnly],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as Map<Object?, Object?>)
+        .cast<String, Object>();
   }
 }
 

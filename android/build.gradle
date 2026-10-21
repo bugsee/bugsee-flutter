@@ -75,6 +75,9 @@ android {
         api "com.bugsee:bugsee-android-ndk:${nativeVersions.android.sdk}"
 
         testImplementation("junit:junit:4.13.2")
+        // The Android SDK's own org.json is the platform stub in a unit test (it parses nothing);
+        // the option tests read the vendored manifests (test/fixtures/option_manifests).
+        testImplementation("org.json:json:20240303")
     }
 
     testOptions {

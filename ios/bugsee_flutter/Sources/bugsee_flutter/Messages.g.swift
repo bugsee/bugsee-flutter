@@ -563,6 +563,61 @@ struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// What native did with a launch request. Strings, not an enum: Pigeon sends an enum as its
+/// ordinal (workbook 7.4), and the vocabulary is compared across Dart, Java and Objective-C by
+/// `test/launch_drift_test.dart`.
+///
+/// [outcome] is one of
+///   `launched`         the SDK launched and reported it (Android: its callback; iOS: `started:`);
+///   `already-running`  the SDK was already Launching or Launched (an auto-init, an earlier
+///                      launch, a native launch): the request's options were NOT applied;
+///   `deferred`         iOS only: the app is in the background, so the SDK starts when it becomes
+///                      active (the SDK answers `started:` YES at once, with nothing launched yet);
+///   `refused`          the SDK declined; [reason] says why.
+/// [reason] (only for `refused`) is one of `invalid-token`, `stopping` (a stop is still in
+/// progress: launch again once it has completed), or `failed` (the SDK gave no further reason; its
+/// log has it: a token it rejects, no context, capture that did not start, a stop that overtook it).
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct LaunchOutcomeMessage: Hashable, CustomStringConvertible {
+  var outcome: String
+  var reason: String? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> LaunchOutcomeMessage? {
+    let outcome = pigeonVar_list[0] as! String
+    let reason: String? = nilOrValue(pigeonVar_list[1])
+
+    return LaunchOutcomeMessage(
+      outcome: outcome,
+      reason: reason
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      outcome,
+      reason,
+    ]
+  }
+  static func == (lhs: LaunchOutcomeMessage, rhs: LaunchOutcomeMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.outcome, rhs.outcome) && MessagesPigeonInternal.deepEquals(lhs.reason, rhs.reason)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("LaunchOutcomeMessage")
+    MessagesPigeonInternal.deepHash(value: outcome, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: reason, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "LaunchOutcomeMessage(outcome: \(String(describing: outcome)), reason: \(String(describing: reason)))"
+  }
+}
+
 private class MessagesPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -578,6 +633,8 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
       return ReportHandlerRequestMessage.fromList(self.readValue() as! [Any?])
     case 134:
       return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
+    case 135:
+      return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -604,6 +661,9 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? ReportSnapshotMessage {
       super.writeByte(134)
       super.writeValue(value.toList())
+    } else if let value = value as? LaunchOutcomeMessage {
+      super.writeByte(135)
+      super.writeValue(value.toList())
     } else {
       super.writeValue(value)
     }
@@ -623,6 +683,7 @@ private class MessagesPigeonCodecReaderWriter: FlutterStandardReaderWriter {
 class MessagesPigeonCodec: FlutterStandardMessageCodec, @unchecked Sendable {
   static let shared = MessagesPigeonCodec(readerWriter: MessagesPigeonCodecReaderWriter())
 }
+
 
 /// Dart calls native.
 ///
@@ -671,6 +732,21 @@ protocol BugseeBridgeHostApi {
   func reportSetAttribute(handle: String, name: String, value: Any) throws -> Bool
   func reportRemoveAttribute(handle: String, name: String) throws -> Bool
   func reportClearAttributes(handle: String) throws -> Bool
+  /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
+  /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
+  /// when the SDK answers: after capture started (`launched`), at once for the other outcomes. An
+  /// exception the SDK throws crosses as a PlatformException `launch-failed`.
+  func launch(token: String, options: [String: Any]) async throws -> LaunchOutcomeMessage
+  /// Stops the SDK; completes when it has stopped (at once when it already is).
+  func stop() async throws
+  /// The SDK's status, by name: `stopped`, `launching`, `launched` or `stopping` (names, never
+  /// ordinals). Read from the SDK itself, not derived from the lifecycle channel.
+  func status() throws -> String
+  /// The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
+  /// SDK defaults (both SDKs, at the pinned versions, document it so); with true: only what the host
+  /// supplied. Keyed by `com.bugsee.option.*`, enums as internal integers, floats as doubles; hidden
+  /// (`$$`) options are removed by Dart.
+  func launchOptions(hostOnly: Bool) throws -> [String: Any]
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -965,6 +1041,78 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       reportClearAttributesChannel.setMessageHandler(nil)
+    }
+    /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
+    /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
+    /// when the SDK answers: after capture started (`launched`), at once for the other outcomes. An
+    /// exception the SDK throws crosses as a PlatformException `launch-failed`.
+    let launchChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launch\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      launchChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let tokenArg = args[0] as! String
+        let optionsArg = args[1] as! [String: Any]
+        Task { @MainActor in
+          do {
+            let result = try await api.launch(token: tokenArg, options: optionsArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      launchChannel.setMessageHandler(nil)
+    }
+    /// Stops the SDK; completes when it has stopped (at once when it already is).
+    let stopChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.stop\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      stopChannel.setMessageHandler { _, reply in
+        Task { @MainActor in
+          do {
+            try await api.stop()
+            reply(wrapResult(nil))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      stopChannel.setMessageHandler(nil)
+    }
+    /// The SDK's status, by name: `stopped`, `launching`, `launched` or `stopping` (names, never
+    /// ordinals). Read from the SDK itself, not derived from the lifecycle channel.
+    let statusChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.status\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      statusChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.status()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      statusChannel.setMessageHandler(nil)
+    }
+    /// The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
+    /// SDK defaults (both SDKs, at the pinned versions, document it so); with true: only what the host
+    /// supplied. Keyed by `com.bugsee.option.*`, enums as internal integers, floats as doubles; hidden
+    /// (`$$`) options are removed by Dart.
+    let launchOptionsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launchOptions\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      launchOptionsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let hostOnlyArg = args[0] as! Bool
+        do {
+          let result = try api.launchOptions(hostOnly: hostOnlyArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      launchOptionsChannel.setMessageHandler(nil)
     }
   }
 }

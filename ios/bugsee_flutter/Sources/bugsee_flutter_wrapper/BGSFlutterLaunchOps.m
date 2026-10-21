@@ -109,6 +109,10 @@ static BOOL StopInFlight(void) {
                 token:(NSString *)token
               options:(NSDictionary *)flat
            completion:(void (^)(NSString *, NSString *, NSError *))completion {
+  // The SDK's callback is answered to Dart ONCE: a second call (a deferred launch that later
+  // starts) would resume the Swift side's checked continuation twice, which traps.
+  NSLock *answeredLock = [[NSLock alloc] init];
+  __block BOOL answered = NO;
   @try {
     if (![token isKindOfClass:[NSString class]] ||
         [[token stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
@@ -131,6 +135,13 @@ static BOOL StopInFlight(void) {
     [sdk launchWithToken:token
                  options:options
                  started:^(BOOL success) {
+                   [answeredLock lock];
+                   const BOOL already = answered;
+                   answered = YES;
+                   [answeredLock unlock];
+                   if (already) {
+                     return;
+                   }
                    if (!success) {
                      completion(kRefused, kFailed, nil);
                      return;
@@ -141,7 +152,13 @@ static BOOL StopInFlight(void) {
                               nil, nil);
                  }];
   } @catch (NSException *exception) {
-    completion(nil, nil, [self errorFromException:exception]);
+    [answeredLock lock];
+    const BOOL already = answered;
+    [answeredLock unlock];
+    // An SDK that called back and then threw has already been answered.
+    if (!already) {
+      completion(nil, nil, [self errorFromException:exception]);
+    }
   }
 }
 

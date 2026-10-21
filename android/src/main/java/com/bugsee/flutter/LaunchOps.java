@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 import java.io.Serializable;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Launch, stop and status (workbook Part 8, 4.6): what is decided here, with the SDK behind a
@@ -77,6 +78,9 @@ final class LaunchOps {
             @NonNull final Reply reply,
             @NonNull final ErrorSink error
     ) {
+        // The SDK's callback is answered to Dart ONCE: a second call (a deferred launch that later
+        // starts, say) would be "Reply already submitted" on the platform channel.
+        final AtomicBoolean answered = new AtomicBoolean();
         try {
             if (token == null || token.trim().isEmpty()) {
                 reply.outcome(REFUSED, INVALID_TOKEN);
@@ -93,6 +97,9 @@ final class LaunchOps {
             }
             final Map<String, Serializable> options = LaunchOptionValues.toSdk(flatOptions);
             sdk.launch(token, options, running -> {
+                if (!answered.compareAndSet(false, true)) {
+                    return;
+                }
                 if (running) {
                     reply.outcome(LAUNCHED, null);
                 } else {
@@ -100,7 +107,10 @@ final class LaunchOps {
                 }
             });
         } catch (final Throwable t) {
-            error.error(t);
+            // An SDK that called back and then threw has already been answered.
+            if (!answered.get()) {
+                error.error(t);
+            }
         }
     }
 

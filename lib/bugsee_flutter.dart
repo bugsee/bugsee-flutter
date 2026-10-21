@@ -7,6 +7,7 @@ library;
 export 'src/bugsee.dart' show Bugsee;
 export 'src/errors.dart'
     show AttributeFailure, BugseeArgumentException, BugseeAttributeException;
+export 'src/exceptions/error_capture.dart' show IsolateErrorListener;
 export 'src/facade/breadcrumb.dart' show BreadcrumbLevel, BugseeBreadcrumb;
 export 'src/launch.dart'
     show BugseeException, BugseeLaunchException, LaunchFailure, LaunchResult;

@@ -11,6 +11,8 @@ import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 import 'bridge/bridge.dart';
 import 'bridge/messages.g.dart';
 import 'errors.dart';
+import 'exceptions/error_capture.dart';
+import 'exceptions/exception_payload.dart';
 import 'facade/breadcrumb.dart';
 import 'facade/validation.dart';
 import 'launch.dart';
@@ -145,6 +147,8 @@ final class BugseeRuntime {
     unawaited(network.refreshPolicy());
     switch (outcome.outcome) {
       case LaunchWire.launched:
+        _detectCrash = _detectCrashOf(encoded.values);
+        errorCapture.warnIfReplaced();
         return LaunchResult.launched;
       case LaunchWire.alreadyRunning:
         if (encoded.values.isNotEmpty) {
@@ -157,6 +161,7 @@ final class BugseeRuntime {
         }
         return LaunchResult.alreadyRunning;
       case LaunchWire.deferred:
+        _detectCrash = _detectCrashOf(encoded.values);
         return LaunchResult.deferred;
       case LaunchWire.refused:
         throw switch (outcome.reason) {
@@ -586,4 +591,62 @@ final class BugseeRuntime {
   }
 
   Stream<LifecycleEvent> get lifecycleEvents => bridge.lifecycleEvents;
+
+  // ---- Dart errors (Phase 5a) -------------------------------------------------------------------
+
+  /// `detect.crash` of the launch this app made through Dart (default true, the SDKs' default). The
+  /// installed handlers report nothing while it is false, like the SDKs' own crash detection; an
+  /// explicit `logException` is not affected. A launch the app made natively is not seen here.
+  bool _detectCrash = true;
+
+  static bool _detectCrashOf(Map<String, Object> values) =>
+      values['com.bugsee.option.detect.crash'] != false;
+
+  /// The installed handlers (FlutterError, PlatformDispatcher, isolate listeners, zone errors).
+  late final ErrorCapture errorCapture = ErrorCapture(
+    report: (payload, {required handled}) async {
+      await _sendException(payload, handled: handled, domain: null);
+    },
+    enabled: () => _detectCrash,
+    warn: _warn,
+  );
+
+  /// Reports [error] to the SDK. Completes with whether the SDK was handed it (`false` before
+  /// launch and after stop: both SDKs drop it there; nothing is queued).
+  Future<bool> logException(
+    Object error,
+    StackTrace? stack, {
+    required bool handled,
+    String? domain,
+    bool stackCaptured = false,
+  }) {
+    if (domain != null &&
+        (domain.isEmpty || domain.length > ExceptionWire.maxDomainLength)) {
+      return Future<bool>.error(
+        const BugseeArgumentException(
+          'domain',
+          'the domain must be 1 to ${ExceptionWire.maxDomainLength} UTF-16 units',
+        ),
+      );
+    }
+    final payload = buildExceptionPayload(
+      error,
+      stack,
+      stackCaptured: stackCaptured,
+    );
+    return _sendException(payload, handled: handled, domain: domain);
+  }
+
+  Future<bool> _sendException(
+    ExceptionPayload payload, {
+    required bool handled,
+    required String? domain,
+  }) => _call<bool>(
+    'logException',
+    false,
+    () => host.logException(payload.json, handled, domain),
+    // Dart checked the domain and built a document under the limit, so a refusal is about the
+    // document: the native message says what (never the domain, which was valid).
+    argument: 'error',
+  );
 }

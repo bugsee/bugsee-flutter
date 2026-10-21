@@ -191,9 +191,22 @@ behaviour table with source line references, value rules, errors and threading: 
   wrapper, filters chained ahead of app filters). The spec still says **Proposed**, but **both pinned SDKs ship the channel**
   (Android 7.4.2 `BugseeWrapperChannel`, iOS 7.0.0-beta7 `BGSWrapperChannel`; checked in the pinned artifacts' sources and headers):
   network events use it (5b); logs and breadcrumbs are still to do.
-- Dart exceptions: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
-  obfuscation symbolication (debug-info) — port the useful parts of the 9.x `exceptions*`
-  and `symbols.py` approach, as new code.
+- **5a — Dart exceptions (done, see below)**: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
+  obfuscation symbolication (debug-info).
+
+### 5a — Dart exceptions (done)
+
+Contract, SDK behaviour per platform with source refs, handler design, symbols and limits: **`doc/exceptions.md`**.
+
+- **Added**: `Bugsee.logException(error, [stack])`, `logUnhandledException`, `reportException(error, {stackTrace, handled, domain})`, `installErrorHandlers`/`uninstallErrorHandlers`/`errorHandlersInstalled`/`errorHandlersActive`,
+  `runGuarded`, `listenToIsolateErrors` (+ `IsolateErrorListener`); one `@async` bridge call `logException(payload, handled, domain)`; `ExceptionOps.java`
+  + `ExceptionDispatcher` (single thread, bounded queue) + `FlutterManagedException` + `consumer-rules.pro`, `BGSFlutterExceptionOps`; Dart `lib/src/exceptions` (document builder, classifier, `ErrorCapture`, `ReportLimiter`).
+- **Backend contract** (worker `crash/managed/dart.py`): routed on the literal `FlutterManagedException`, document `{internalType, name, reason, signature, frames, originalStackTrace}` (the SDKs hash `signature`: without it every Dart error would share one signature and the server would drop them); build id from `originalStackTrace`; symbols by build id via `dart_symbolize`.
+- **Decisions**: the hooks file ERROR reports by default (`reportAsCrash: false`; crash on request: Dart errors never end the app, RN files only fatal errors as crashes, crash reports count against crash-free sessions and replace iOS's single stored one), chained and restored, install after tools that assign the handlers, once per error (a second route within 1 s is silent), 30 s per equal error / 10 per 60 s on a monotonic clock; both natives gate on Launching/Launched (iOS's unhandled path is not gated by the SDK); no severity and no `skipFrames` (neither SDK takes them for exceptions); symbols are uploaded with the 9.x `symbols.py` protocol (bugsee-cli has no Flutter support), documented and verified offline, not reimplemented.
+- **Runtime evidence**: Android emulator API 29 arm64 against a local mock of the API: the real bundles' crash.json for handled/unhandled/FlutterError/root-zone/guarded-zone/isolate, the flood limited to one; a release `--obfuscate --split-debug-info` stack read from a bundle and symbolized with the worker's `dart_symbolize` (build id in the symbols file); R8 kept the carrier's name. iOS 26.5 simulator: calls reach the SDK, which files nothing there. The worker's real `dart.py` run offline on the captured entries.
+- **Tests** (every one mutation-checked, the behaviour broken, the test seen failing, the code restored): 630 Dart tests in all (payload, signature, classifier, stack formats VM / `stack_trace` / non-symbolic / async gaps, limits, `ErrorCapture`, limiter, facade, drift, worker contract on real captured entries), JUnit (`ExceptionOpsTest`, `ExceptionDispatcherTest`, `ExceptionSignatureTest` against the SDK's own signature code), XCTest (`BGSFlutterExceptionOpsTests`, `BGSFlutterExceptionSignatureTests`). Mutants: first round 63 Dart/drift, 8 Java, 7 Objective-C; review round 24 Dart, 8 dispatcher, 4 drift. Survivors found and fixed each time (path reduction, the line-boundary cut, limiter order, throwing `enabled()`, fingerprint depth, a launch gate that was only "before", a multi-line reason that was never multi-line, identity dedupe hidden by the fingerprint); equivalent mutants left: isolate `removeErrorListener` and the idempotent `cancel` (the closed port makes both unobservable).
+- **Not verified**: an iOS device (next-launch delivery, one slot: source-read), the main-thread cost on a real Android device, the production backend end to end.
+
 - Network: **built in 5b** (`HttpOverrides`; dio's default adapter and `package:http` ride `dart:io`, so no package interceptors).
   Record below.
 - View hierarchy (`vh`): Flutter semantic/render tree → JSON, **no text content or free-text

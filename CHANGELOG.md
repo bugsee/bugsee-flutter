@@ -15,6 +15,12 @@
   `HttpOverrides` and hand it to the SDK through the SDKs' wrapper channel, with the SDK's body options and
   privacy rules; `Bugsee.setNetworkFilter` is a Dart-side, fail-closed filter that runs before anything
   reaches the SDK; `Bugsee.networkCaptureStats` counts what was dropped and why. See `doc/network.md`.
+* Dart errors: `Bugsee.logException(error, [stackTrace])` (an error report), `logUnhandledException(error,
+  [stackTrace])` (a crash report) and `reportException(error, {stackTrace, handled, domain})`; the opt-in
+  `installErrorHandlers` / `uninstallErrorHandlers` (chained to existing handlers, restored, once per error, rate
+  limited, error reports by default), `errorHandlersActive`, `runGuarded` and `listenToIsolateErrors`. The document
+  sent to the SDKs is the backend's `FlutterManagedException` one (with the `signature` both SDKs hash), and a
+  non-symbolic (obfuscated / `--split-debug-info`) stack is sent untouched. See `doc/exceptions.md`.
 
 ## 0.0.1
 

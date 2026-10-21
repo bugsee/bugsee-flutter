@@ -17,6 +17,9 @@ dependencies:
   # Imported by the generated bridge (lib/src/bridge/messages.g.dart); the floor
   # Flutter (3.41.0) ships 1.17.0.
   meta: ^1.17.0
+  # Parses the stack of a Dart error into frames (VM, `package:stack_trace` and async-gap formats);
+  # Flutter 3.41.0 pins 1.12.1 for flutter_test.
+  stack_trace: ^1.11.0
 
 dev_dependencies:
   flutter_test:

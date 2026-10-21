@@ -75,6 +75,7 @@ public class BugseeFlutterPlugin
     private FacadeOps.Sdk facade;
     /** Network injection (Phase 5b); non-null while attached, like {@link #facade}. */
     private volatile NetworkOps.Sdk network;
+    private volatile ExceptionOps.Sdk exceptions;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
@@ -86,6 +87,7 @@ public class BugseeFlutterPlugin
         sdk = new BugseeSdk(binding.getApplicationContext());
         facade = new BugseeFacadeSdk();
         network = new BugseeNetworkSdk(NetworkChannelHolder.shared());
+        exceptions = new BugseeExceptionSdk();
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
@@ -146,6 +148,7 @@ public class BugseeFlutterPlugin
         sdk = null;
         facade = null;
         network = null;
+        exceptions = null;
     }
 
     @Override
@@ -582,6 +585,38 @@ public class BugseeFlutterPlugin
                     "the plugin is not attached to an engine", null);
         }
         return (long) NetworkOps.addAll(current, events);
+    }
+
+    // ---- Exceptions (Phase 5a; see ExceptionOps) ----------------------------------------------
+
+    @Override
+    public void logException(
+            @NonNull final String payload,
+            @NonNull final Boolean handled,
+            @Nullable final String domain,
+            @NonNull final Messages.Result<Boolean> result
+    ) {
+        final ExceptionOps.Sdk current = exceptions;
+        if (current == null) {
+            result.error(new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null));
+            return;
+        }
+        // Off the platform thread: the SDK writes an unhandled report on the calling one. The
+        // launch gate is inside ExceptionOps.log, so it runs where and when the SDK call does.
+        ExceptionDispatcher.shared().submit(
+                () -> ExceptionOps.log(current, payload, handled, domain),
+                new ExceptionDispatcher.Done() {
+                    @Override
+                    public void success(final boolean handedToSdk) {
+                        onMain(() -> result.success(handedToSdk));
+                    }
+
+                    @Override
+                    public void failure(@NonNull final String code, @NonNull final String message) {
+                        onMain(() -> result.error(new Messages.FlutterError(code, message, null)));
+                    }
+                });
     }
 
     /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */

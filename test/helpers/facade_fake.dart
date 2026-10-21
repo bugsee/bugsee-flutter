@@ -23,6 +23,7 @@ class FacadeFake extends BugseeBridgeHostApi {
   String? userIdentifier;
   bool breadcrumbAccepted = true;
   bool blackout = false;
+  bool exceptionAccepted = true;
 
   Phases? phases;
 
@@ -55,6 +56,12 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   @override
   Future<void> resetReportHandlers() async {}
+
+  @override
+  Future<LaunchOutcomeMessage> launch(
+    String token,
+    Map<String, Object> options,
+  ) async => LaunchOutcomeMessage(outcome: 'launched');
 
   @override
   Future<void> setWrapperIdentity(WrapperIdentityMessage identity) async {}
@@ -150,6 +157,14 @@ class FacadeFake extends BugseeBridgeHostApi {
 
   @override
   Future<bool> isBlackout() async => _record('isBlackout', [], blackout);
+
+  @override
+  Future<bool> logException(
+    String payload,
+    bool handled,
+    String? domain,
+  ) async =>
+      _record('logException', [payload, handled, domain], exceptionAccepted);
 
   @override
   Future<void> showReportDialog(

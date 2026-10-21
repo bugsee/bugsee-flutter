@@ -31,6 +31,7 @@ void main() {
       'BugseeArgumentException',
       'BugseeAttributeException',
     ],
+    'src/exceptions/error_capture.dart': ['IsolateErrorListener'],
     'src/facade/breadcrumb.dart': ['BreadcrumbLevel', 'BugseeBreadcrumb'],
     'src/launch.dart': [
       'BugseeException',
@@ -132,6 +133,16 @@ void main() {
       'checkLabels',
       'mapFacadeError',
       'optionRegistry',
+      'ErrorCapture',
+      'ReportLimiter',
+      'ExceptionWire',
+      'ExceptionPayload',
+      'StackDocument',
+      'buildExceptionPayload',
+      'classifyExceptionType',
+      'classifyErrorText',
+      'describeError',
+      'describeStack',
     ];
     final exported = exports.values.expand((n) => n).toSet();
     for (final name in internal) {
@@ -143,7 +154,7 @@ void main() {
     final api = read('lib/src/bugsee.dart');
     final members = {
       for (final m in RegExp(
-        r'^  static (?:[\w<>?, ]+? )?(?:get |set )?(\w+)\s*(?:\(|=>|\{|=|;)',
+        r'^  static (?:[\w<>?, ]+? )?(?:get |set )?(\w+)(?:<[^>]*>)?\s*(?:\(|=>|\{|=|;)',
         multiLine: true,
       ).allMatches(api))
         m.group(1)!,
@@ -188,6 +199,15 @@ void main() {
         'setNetworkFilter',
         'networkFilter',
         'networkCaptureStats',
+        'logException',
+        'logUnhandledException',
+        'reportException',
+        'installErrorHandlers',
+        'uninstallErrorHandlers',
+        'errorHandlersInstalled',
+        'errorHandlersActive',
+        'runGuarded',
+        'listenToIsolateErrors',
       });
     });
 
@@ -408,6 +428,7 @@ void main() {
           'sendFailures',
         },
       ),
+      'IsolateErrorListener': ('src/exceptions/error_capture.dart', {'cancel'}),
       'BugseeStatus': (
         'src/status.dart',
         {'stopped', 'launching', 'launched', 'stopping', 'fromName'},

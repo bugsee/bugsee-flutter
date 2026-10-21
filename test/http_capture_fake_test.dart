@@ -185,6 +185,36 @@ void main() {
     },
   );
 
+  test(
+    'uninstalling while an exchange is in flight stops it recording',
+    () async {
+      final (rig, response) = await open();
+      final done = Completer<void>();
+      response.listen((_) {}, onDone: done.complete);
+      rig.response.data.add([104, 105]);
+      controller.active = false;
+      rig.response.data.add([33]);
+      await rig.response.data.close();
+      await done.future;
+      expect(stages(), [
+        NetworkStage.before,
+      ], reason: 'no complete after the uninstall');
+    },
+  );
+
+  test('a cancel after the uninstall records no abort either', () async {
+    final (rig, response) = await open();
+    final sub = response.listen((_) {});
+    controller.active = false;
+    await sub.cancel();
+    expect(stages(), [NetworkStage.before]);
+    expect(
+      rig.response.cancels,
+      1,
+      reason: 'the app\'s cancel still reaches the response',
+    );
+  });
+
   test('closing twice answers the same future and sends one before', () async {
     final rig = await FakeRig.create(controller);
     final request = await rig.client.getUrl(Uri.parse('http://example.test/x'));

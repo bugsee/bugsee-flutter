@@ -231,7 +231,8 @@ options are read again. A failure to read leaves nothing accepted.
   tells it the SDK is launched), and events of the old isolate that were still queued are gone with it. Native keeps no
   network state.
 * `uninstallNetworkCapture()` restores the previous overrides when the capture is still the one set; when the app chained
-  over it, it stays in the chain and records nothing. It never touches overrides it did not install. Events captured before
+  over it, it stays in the chain and records nothing. It never touches overrides it did not install. An exchange in flight at the uninstall
+  stops recording at once (no `complete`/`abort`/`error` for it). Events captured before
   it (already through the filter) are still submitted: the app asked to stop recording, not to lose what it recorded; the
   SDK's own gate drops them if it is no longer launched.
 * Called inside a zone that scopes its own overrides (`HttpOverrides.runZoned`), `installNetworkCapture` throws a

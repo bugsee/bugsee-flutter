@@ -47,6 +47,9 @@ final class HttpCaptureController {
   String nextId() => '$_prefix-${++_counter}';
 
   void emit(BugseeNetworkEvent event) {
+    // Uninstalled: an exchange already in flight stops recording too (its response is not read
+    // for the report any more). What was already queued is the pipeline's and is still submitted.
+    if (!active) return;
     try {
       record(event);
     } catch (_) {

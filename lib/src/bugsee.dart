@@ -338,7 +338,7 @@ abstract final class Bugsee {
 
   /// Stops recording. Restores the `HttpOverrides` that were in place before when this capture is
   /// still the one set; if the app chained its own over it, it stays in the chain and forwards
-  /// without recording. Clients already created stop recording too. Events already queued are
+  /// without recording. Clients already created stop recording too, and so does an exchange in flight (its response is no longer recorded). Events already queued are
   /// still submitted to the SDK (unless it is no longer launched). [installNetworkCapture] starts it again.
   static void uninstallNetworkCapture() => _runtime.uninstallNetworkCapture();
 

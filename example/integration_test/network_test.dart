@@ -260,6 +260,17 @@ Future<void> main() async {
     Bugsee.setNetworkFilter(null);
 
     await Future<void>.delayed(const Duration(seconds: 2));
+    // Native delivery may still be in flight: wait (bounded) until every captured event is
+    // either dropped by the filter or submitted.
+    final drainBy = DateTime.now().add(const Duration(seconds: 30));
+    while (DateTime.now().isBefore(drainBy)) {
+      final s = Bugsee.networkCaptureStats;
+      if (s.submittedToSdk + s.droppedByFilter + s.refusedByNative >=
+          s.captured) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
     final stats = Bugsee.networkCaptureStats;
     say('stats: $stats');
     expect(stats.captured, greaterThan(10));

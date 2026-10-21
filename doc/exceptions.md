@@ -91,7 +91,9 @@ IsolateErrorListener Bugsee.listenToIsolateErrors(Isolate isolate)   // .cancel(
   SDKs apply it to the Java/Objective-C stack of the carrier, which is not the app's; the Dart frames are in the document.
 * `domain` (1 to 256 characters) is the SDK's grouping domain. iOS has no domain on its unhandled path: dropped there.
 * Any object can be thrown in Dart: `error` is `Object`. A missing stack is `StackTrace.current` at the call, minus the
-  plugin's own leading frames.
+  plugin's own frame: by package name in a symbolic stack, and by position (exactly one, the three methods are
+  `@pragma('vm:never-inline')`) in a non-symbolic one, where no name exists to match. Measured on a release
+  `--obfuscate` arm64 build: `#0 Bugsee.logException`, `#1` the caller, for stack-less calls at two sites.
 * The answer is whether the SDK was handed the error (section 3). A bad `domain` is a `BugseeArgumentException('domain')`;
   a refusal of the document by native names the document (`argument: 'error'`), never the domain; failures to reach
   native are `BugseeException`s; never because of `error` itself.

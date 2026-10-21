@@ -339,6 +339,9 @@ abstract final class Bugsee {
   /// Completes with whether the SDK was handed the error; `false` before [launch] and after [stop],
   /// where both SDKs drop it (nothing is queued). Throws a [BugseeException] when native cannot be
   /// reached; never because of [error].
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
   static Future<bool> logException(Object error, [StackTrace? stackTrace]) =>
       _runtime.logException(
         error,
@@ -353,6 +356,9 @@ abstract final class Bugsee {
   /// unless told to (`reportAsCrash: true`). Like the SDKs' `logUnhandledException`; the same answer and failures as
   /// [logException]. Android's SDK writes the report on the calling thread (the plugin calls it from its own thread) and iOS delivers it at
   /// the next launch, one at a time (doc/exceptions.md).
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
   static Future<bool> logUnhandledException(
     Object error, [
     StackTrace? stackTrace,
@@ -368,6 +374,9 @@ abstract final class Bugsee {
   /// error report; `false` a crash report) and the grouping [domain] (1 to 256 characters; the issues
   /// of one domain group together on the dashboard; on iOS dropped when [handled] is false, where the
   /// SDK has none). A bad [domain] is a [BugseeArgumentException].
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
   static Future<bool> reportException(
     Object error, {
     StackTrace? stackTrace,

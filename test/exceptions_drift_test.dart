@@ -147,6 +147,34 @@ void main() {
     });
   });
 
+  group('the stack taken at the facade', () {
+    test(
+      'each method that takes StackTrace.current is never inlined (the plugin\'s frame is exactly one, and dropped by position)',
+      () {
+        final api = read('lib/src/bugsee.dart');
+        for (final name in [
+          'logException',
+          'logUnhandledException',
+          'reportException',
+        ]) {
+          final match = RegExp(
+            r"@pragma\('vm:never-inline'\)\s+static Future<bool> " +
+                name +
+                r'\(',
+          );
+          expect(match.hasMatch(api), isTrue, reason: name);
+        }
+        // Exactly those three take the stack, so exactly those three need the pragma.
+        expect(
+          RegExp(r'StackTrace\.current').allMatches(stripComments(api)).length,
+          3,
+          reason:
+              'a fourth method that takes the stack needs the pragma, and a test',
+        );
+      },
+    );
+  });
+
   group('which SDK call each path makes', () {
     test(
       'Android: handled is logException, unhandled is logUnhandledException (never onUncaughtException)',

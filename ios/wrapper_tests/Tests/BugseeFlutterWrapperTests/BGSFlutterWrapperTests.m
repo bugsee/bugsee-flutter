@@ -6,15 +6,34 @@
 
 @import Bugsee;
 
+/// A 3x phone: a Flutter logical pixel is a point, so the factor is 1.
+@interface BGSWrapperTestScreen : NSObject <BGSFlutterSecureEnvironment>
+@end
+@implementation BGSWrapperTestScreen
+- (double)pointsPerLogicalPixelForDisplay:(NSInteger)display {
+  return 1.0;
+}
+- (CGSize)displayBoundsInPointsForDisplay:(NSInteger)display {
+  return CGSizeMake(402, 874);
+}
+@end
+
+static void PublishOnDisplay(BGSFlutterSecureRectangleStore *store, NSInteger display) {
+  [store setEnvironment:[[BGSWrapperTestScreen alloc] init]];
+  [store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:display x:0 y:0] forOwner:1 viewId:0];
+  double rect[] = {10, 20, 30, 40};
+  [store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [NSData dataWithBytes:rect length:sizeof(rect)]}];
+}
+
+static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t b) {
+  int32_t ints[6] = {version, 1, l, t, r, b};
+  return [NSData dataWithBytes:ints length:sizeof(ints)];
+}
+
 @interface BGSFlutterWrapperTests : XCTestCase
 @end
 
 @implementation BGSFlutterWrapperTests
-
-static NSData *Ints(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32_t f) {
-  int32_t ints[6] = {a, b, c, d, e, f};
-  return [NSData dataWithBytes:ints length:sizeof(ints)];
-}
 
 - (void)tearDown {
   [[BGSFlutterSecureRectangleStore shared] clearForTests];
@@ -83,8 +102,8 @@ static NSData *Ints(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32
 /// Workbook 5.4.2: the wrapper is replaced when Dart refines the identity; what
 /// it serves must not live in it.
 - (void)testReplacingTheWrapperKeepsTheSecureRectangleSet {
-  NSData *set = Ints(7, 1, 10, 20, 30, 40);
-  [[BGSFlutterSecureRectangleStore shared] publish:set forDisplay:0];
+  PublishOnDisplay([BGSFlutterSecureRectangleStore shared], 0);
+  NSData *set = Buffer(1, 10, 20, 30, 40);
   id<BugseeWrapper> placeholder = (id<BugseeWrapper>)[BGSFlutterWrapper wrapperAtProcessStart];
   XCTAssertEqualObjects([placeholder secureRectanglesForDisplay:0], set);
 
@@ -106,21 +125,13 @@ static NSData *Ints(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32
   // Other displays are unaffected: the empty set, version unknown (0).
   XCTAssertEqualObjects([(id<BugseeWrapper>)refined secureRectanglesForDisplay:1],
                         ([NSData dataWithBytes:(int32_t[]){0, 0} length:8]));
-}
-
-- (void)testSecureRectangleSnapshotsAreImmutableCopiesPerDisplay {
-  BGSFlutterSecureRectangleStore *store = [BGSFlutterSecureRectangleStore new];
-  NSMutableData *mine = [Ints(3, 0, 0, 0, 0, 0) mutableCopy];
-  [store publish:mine forDisplay:0];
-  [store publish:Ints(5, 1, 1, 1, 2, 2) forDisplay:1];
-  int32_t changed = 99;
-  [mine replaceBytesInRange:NSMakeRange(0, 4) withBytes:&changed];
-  int32_t first = 0;
-  [[store snapshotForDisplay:0] getBytes:&first length:4];
-  XCTAssertEqual(first, 3, @"a later write by the caller must not reach the SDK's snapshot");
-  int32_t other = 0;
-  [[store snapshotForDisplay:1] getBytes:&other length:4];
-  XCTAssertEqual(other, 5);
+  // A change after the replacement reaches the SDK through the new wrapper, with a new version.
+  double moved[] = {10, 20, 31, 40};
+  [[BGSFlutterSecureRectangleStore shared] publishForOwner:1
+                                                     epoch:1
+                                                  sequence:2
+                                                     views:@{@0 : [NSData dataWithBytes:moved length:sizeof(moved)]}];
+  XCTAssertEqualObjects([(id<BugseeWrapper>)refined secureRectanglesForDisplay:0], Buffer(2, 10, 20, 31, 40));
 }
 
 @end

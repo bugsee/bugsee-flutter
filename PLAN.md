@@ -83,15 +83,51 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
 ## 4. Phase 4 — Public API and options (Part 8)
 
 - Dart facade mirroring the converged 7.x API (launch, attributes, identity, events/traces,
-  breadcrumbs, notify, APM, logging/network, status, blackout, exceptions).
+  breadcrumbs, notify, APM, logging/network, status, blackout, exceptions). Clean break from 9.x;
+  compatibility with the 9.x Flutter API stays deferred (D3): the facade is isolated in
+  `lib/src/bugsee.dart` / `bugsee_runtime.dart` so a compat layer could sit beside it.
 - Options: use `com.bugsee.option.*` from the generated registry, not literals; one place
-  normalises the endpoint asymmetry (iOS flat key *with* version, Android `$$ENDPOINT`
-  without); hidden options not exposed; `getLaunchOptions` semantics differ per platform.
-- Vendored option manifests + CI diff (strict on keys/types/enums). Note: SDKs do not publish
-  manifests yet (spec "Proposed") — until they do, generate from `OptionsRegistry` /
-  `BGSOptionsRegistry` or track as a blocker.
+  normalises the endpoint; hidden options not exposed; `getLaunchOptions` semantics per platform.
+- Vendored option manifests + CI diff (strict on keys/types/enums).
 - Bridge: Pigeon (typed) for method channels + typed event channels; enums by internal value,
   generated from SDK source, compared across **both** platforms (7.4).
+
+### 4a — options, launch, stop, status (done)
+
+The first public API: `Bugsee.launch(token, {options})`, `stop()`, `status`, `statusChanges`,
+`getStatus()`, `isLaunched()`, `getLaunchOptions()`, `getHostLaunchOptions()`, `BugseeOptions` (101
+typed fields), `LaunchResult`, `LaunchFailure`, `BugseeException`/`BugseeLaunchException`,
+`BugseeStatus`, the option enums and `ReportSeverity`. The report-handler registration API and the
+secure-region widget stay internal (4b).
+
+- **The SDKs publish manifests now** (the options spec still says "Proposed"): Android
+  `download.bugsee.com/sdk/options/android/7.4.2.json` (generated 2026-10-19; also the golden file in the
+  Android repo at v7.4.2) and iOS `.../ios/7.0.0-beta7.json` (2026-10-18), vendored verbatim. Source cross-check
+  (`scripts/verify_option_manifests.dart`, 2026-10-21, Android `v7.4.2`, iOS `origin/nextgen@0581aa02c`): keys, hidden
+  keys and enum values in the manifests equal what the source declares.
+- **Inventory** (Android 87 options = 84 public + 3 hidden; iOS 70 = 69 public + 1 hidden): 49 shared (incl. the hidden
+  `$$ENDPOINT`), 38 Android-only (incl. hidden `$$DEBUG`, `$$WRAPPER`), 21 iOS-only. Modules: Android `bugsee-android` 81,
+  `bugsee-android-ndk` 2 (`detect.crash-ndk` default `true`, `crash-ndk.tombstone-logs`), `bugsee-android-leak` 4 (not bundled, no
+  typed field); iOS `Bugsee` 70. Types: Android 61 boolean, 10 int, 8 enum, 4 float, 3 string, 1 map. Enums (by internal value):
+  `LogLevel`, `FrameRate` (Android has `Raw=4`, iOS stops at `High=3`), `VideoQuality`, severity (value 1 is `VeryLow` on Android,
+  `Low` on iOS) are shared; `VideoMode` is Android's; `BugseeStyle`, `CrashHandlerType`, `DataEncryptionMode` are iOS's;
+  `MemoryLeakMode` (leak module) is string-valued. Defaults differ on exactly two shared keys: `capture.video.adaptive`
+  (Android false, iOS true) and `config.max-data-size` (150 vs 50) (listed in the parity test).
+- **Endpoint (8.2 is stale at the pins):** both SDKs take the hidden `com.bugsee.option.$$ENDPOINT` and strip a trailing `/v2`
+  themselves (iOS commit d33dcc987, 2026-09-17, before beta7), so one version-less value under one key goes to both; runtime
+  verified on both (the SDK reports `http://10.0.2.2:8099` / `http://localhost:8099` for `https://.../v2/`).
+- **8.3 half stale:** `getLaunchOptions` is merged defaults + overrides on both at the pins; `getHostLaunchOptions` still
+  differs (Android everything the app passed, iOS only what differs from the iOS default); documented on the API.
+- **Auto-init** (Android, `BugseeInitProvider`): launches before `Application.onCreate` when the manifest has
+  `com.bugsee.app-token` (unless `com.bugsee.auto-init` is `false`); a later `Bugsee.launch` is `already-running` and its options
+  are dropped (the SDK logs only). Verified on an emulator: auto-init, then `Bugsee.launch` -> `alreadyRunning`, duration 60 not
+  20, attach replays `launching, launched`; with `auto-init=false` the same call launches with duration 20. iOS has no auto-init;
+  a background launch is deferred by the SDK and reported `deferred`.
+- **Runtime evidence** (emulator-5562, Android 7.4.2; iPhone 17 simulator, iOS 7.0.0-beta7): `example/integration_test/launch_test.dart`
+  passes on both: `launching, launched, [already running], stopping, stopped, launching, launched, stopping`; the SDK reports our
+  option values back (enums as internal integers); a blank token is a typed `invalidToken`.
+- Not verified at runtime: launch refused while stopping (a race, covered by JUnit/XCTest/Dart with fakes), iOS background deferral,
+  token rejection by the SDK itself (a placeholder token launches), the leak module, tvOS/visionOS.
 
 ## 5. Phase 5 — Dart-side capture and data channels
 

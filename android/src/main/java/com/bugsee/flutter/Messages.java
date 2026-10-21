@@ -1511,9 +1511,10 @@ public class Messages {
     String status();
     /**
      * The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
-     * SDK defaults (both SDKs, at the pinned versions, document it so); with true: only what the host
-     * supplied. Keyed by `com.bugsee.option.*`, enums as internal integers, floats as doubles; hidden
-     * (`$$`) options are removed by Dart.
+     * SDK defaults (the same on both SDKs); with true: the SDK's `getHostLaunchOptions`, whose
+     * platforms differ (Android: every recognised option the app passed; iOS: only those that differ
+     * from the iOS default). Keyed by `com.bugsee.option.*`, enums as internal integers, floats as
+     * doubles; hidden (`$$`) options are removed by Dart.
      */
     @NonNull 
     Map<String, Object> launchOptions(@NonNull Boolean hostOnly);

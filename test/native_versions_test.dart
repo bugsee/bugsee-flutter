@@ -324,12 +324,17 @@ void main() {
       // Two matrices plus the format job pinned to the floor.
       expect(
         floor.allMatches(live).length,
-        5,
+        6,
         reason:
-            'floor must be in both matrices, the format job, bridge-codegen and '
-            'publish-check',
+            'floor must be in both matrices, the format job, bridge-codegen, '
+            'options-codegen and publish-check',
       );
-      for (final job in ['format', 'bridge-codegen', 'publish-check']) {
+      for (final job in [
+        'format',
+        'bridge-codegen',
+        'options-codegen',
+        'publish-check',
+      ]) {
         expect(
           jobsOf(live)[job],
           matches(floor),
@@ -342,6 +347,17 @@ void main() {
       expect(live, contains('runs-on: macos-latest'));
       expect(live, contains('flutter build ios --debug --no-codesign'));
       expect(live, contains('flutter build apk --debug'));
+    });
+
+    test('checks the generated option registry, offline, on the floor', () {
+      final job = jobsOf(live)['options-codegen']!;
+      expect(job, contains('dart scripts/generate_options.dart --check'));
+      for (final network in ['sync_option_manifests', 'check_native_pins']) {
+        expect(live, isNot(contains(network)), reason: 'no network in PR CI');
+      }
+      // The SDK checkouts the source cross-check reads are private: never a CI step.
+      expect(live, isNot(contains('verify_option_manifests')));
+      expect(live, isNot(contains('extract_option_docs')));
     });
 
     test('checks the bridge codegen and runs the iOS wrapper tests', () {
@@ -514,7 +530,7 @@ void main() {
         expect(
           liveOf(read('.github/workflows/ci.yml')),
           contains(
-            'dart format --output=none --set-exit-if-changed lib test example/lib scripts pigeons',
+            'dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons',
           ),
         );
       },
@@ -525,6 +541,11 @@ void main() {
       expect(pins, contains('schedule:'));
       expect(pins, contains('workflow_dispatch:'));
       expect(pins, contains('dart scripts/check_native_pins.dart'));
+      expect(
+        pins,
+        contains('dart scripts/sync_option_manifests.dart --check'),
+        reason: 'the vendored option manifests are refetched here, weekly',
+      );
       expect(
         pins,
         matches(

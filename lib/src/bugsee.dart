@@ -86,17 +86,21 @@ abstract final class Bugsee {
 
   /// The launch options in effect: what the app supplied, merged over the SDK's defaults.
   ///
-  /// Keyed by `com.bugsee.option.*`; enums as the SDK's internal integer, floats as `double`.
-  /// Before the first launch these are the SDK's defaults, which differ between Android and iOS
-  /// for a few options. Internal (`$$`) options are never included. Both SDKs, at the versions
-  /// this plugin pins, return the same thing here (the 6.x iOS SDK returned only what differed
-  /// from its defaults).
+  /// Keyed by `com.bugsee.option.*`; enums as the SDK's internal integer, floats as `double` (with
+  /// the precision of a 32-bit float). Before the first launch these are the SDK's defaults, which
+  /// differ between Android and iOS for a few options. Internal (`$$`) options are never included.
+  /// Both SDKs, at the versions this plugin pins, return the merged set here (the 6.x iOS SDK
+  /// returned only what differed from its defaults).
   static Future<Map<String, Object>> getLaunchOptions() =>
       _runtime.launchOptions(hostOnly: false);
 
-  /// Only the options the app supplied to the last launch (empty before the first), without the
-  /// defaults [getLaunchOptions] merges them over. Use it to tell "the app asked for this" from
-  /// "this is the default".
+  /// The options the app supplied to the last launch (empty before the first), without the
+  /// defaults [getLaunchOptions] merges them over. Replaced, not merged, by the next launch.
+  ///
+  /// The two platforms do NOT agree on what counts as supplied: Android reports every recognised
+  /// option the app passed, iOS reports only those whose value differs from the iOS default (an
+  /// option set to its default is absent there). So on iOS "absent" does not mean "the app did not
+  /// set it"; use [getLaunchOptions] for what is in effect.
   static Future<Map<String, Object>> getHostLaunchOptions() =>
       _runtime.launchOptions(hostOnly: true);
 }

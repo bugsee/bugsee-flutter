@@ -1,16 +1,23 @@
 # bugsee_flutter_example
 
-Demonstrates how to use the bugsee_flutter plugin.
+A small launch screen for the `bugsee_flutter` public API: launch with a real-looking option set,
+watch the status transitions, stop, and read the launch options back from the SDK.
 
-## Getting Started
+```
+flutter run --dart-define=BUGSEE_TOKEN=<your app token>
+```
 
-This project is a starting point for a Flutter application.
+Without a token the placeholder `EXAMPLE-APP-TOKEN` is used: the SDK launches, but nothing it
+captures is delivered anywhere. `--dart-define=BUGSEE_ENDPOINT=https://...` points it at an
+on-premises or test server.
 
-A few resources to get you started if this is your first Flutter project:
+The Android manifest deliberately has no `com.bugsee.app-token` meta-data: with it the SDK launches
+itself before Dart runs and `Bugsee.launch` would be `LaunchResult.alreadyRunning` (see the plugin
+README).
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+`integration_test/launch_test.dart` runs the whole sequence (launch, status transitions, options read
+back, launching twice, stop, launch again) against the real SDK:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```
+flutter test integration_test/launch_test.dart -d <emulator or simulator id>
+```

@@ -743,9 +743,10 @@ protocol BugseeBridgeHostApi {
   /// ordinals). Read from the SDK itself, not derived from the lifecycle channel.
   func status() throws -> String
   /// The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
-  /// SDK defaults (both SDKs, at the pinned versions, document it so); with true: only what the host
-  /// supplied. Keyed by `com.bugsee.option.*`, enums as internal integers, floats as doubles; hidden
-  /// (`$$`) options are removed by Dart.
+  /// SDK defaults (the same on both SDKs); with true: the SDK's `getHostLaunchOptions`, whose
+  /// platforms differ (Android: every recognised option the app passed; iOS: only those that differ
+  /// from the iOS default). Keyed by `com.bugsee.option.*`, enums as internal integers, floats as
+  /// doubles; hidden (`$$`) options are removed by Dart.
   func launchOptions(hostOnly: Bool) throws -> [String: Any]
 }
 
@@ -1096,9 +1097,10 @@ class BugseeBridgeHostApiSetup {
       statusChannel.setMessageHandler(nil)
     }
     /// The launch options in effect. With [hostOnly] false: the host-supplied options merged over the
-    /// SDK defaults (both SDKs, at the pinned versions, document it so); with true: only what the host
-    /// supplied. Keyed by `com.bugsee.option.*`, enums as internal integers, floats as doubles; hidden
-    /// (`$$`) options are removed by Dart.
+    /// SDK defaults (the same on both SDKs); with true: the SDK's `getHostLaunchOptions`, whose
+    /// platforms differ (Android: every recognised option the app passed; iOS: only those that differ
+    /// from the iOS default). Keyed by `com.bugsee.option.*`, enums as internal integers, floats as
+    /// doubles; hidden (`$$`) options are removed by Dart.
     let launchOptionsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.launchOptions\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       launchOptionsChannel.setMessageHandler { message, reply in

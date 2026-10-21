@@ -37,10 +37,6 @@ class _Renamed implements Exception {
   String toString() => 'ProbeError: probe';
 }
 
-class _Silent {
-  const _Silent();
-}
-
 class _RenamedSilent implements Exception {
   @override
   String toString() => 'no name here';

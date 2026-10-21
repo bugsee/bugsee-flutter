@@ -85,8 +85,8 @@ void main() {
     }
 
     Future<void> waitFor(bool Function() done, String what) async {
-      if (!android)
-        return; // iOS files nothing on a simulator: no report to wait for
+      // iOS files nothing on a simulator: no report to wait for.
+      if (!android) return;
       final deadline = DateTime.now().add(const Duration(seconds: 30));
       while (DateTime.now().isBefore(deadline) && !done()) {
         await Future<void>.delayed(const Duration(milliseconds: 100));

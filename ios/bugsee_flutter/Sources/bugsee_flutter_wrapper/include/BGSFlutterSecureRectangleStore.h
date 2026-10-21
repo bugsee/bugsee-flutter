@@ -101,13 +101,13 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 - (instancetype)init;
 /// No grace window: what is written is what is served at once. For tests.
 - (instancetype)initWithEnvironment:(id<BGSFlutterSecureEnvironment>)environment;
-/// `clock` returns seconds from a monotonic source; `grace` is how long the previous set is served
-/// along with a changed one (0 for none).
+/// `clock` returns seconds from a monotonic source; `grace` is how long each past set is served after
+/// it stopped being current (0 for none).
 - (instancetype)initWithEnvironment:(id<BGSFlutterSecureEnvironment>)environment
                               clock:(NSTimeInterval (^)(void))clock
                               grace:(NSTimeInterval)grace NS_DESIGNATED_INITIALIZER;
 
-/// How long the previous set is served along with a changed one. Repeated in Java (`GRACE_MS`).
+/// How long each past set is served after it stopped being current. Repeated in Java (`GRACE_MS`).
 + (NSTimeInterval)graceSeconds;
 
 - (void)setEnvironment:(id<BGSFlutterSecureEnvironment>)environment;

@@ -144,6 +144,12 @@ Hide a part of the UI from the recording and the report screenshot:
 BugseeSecureView(child: TextField(obscureText: true))
 ```
 
+It fails closed for what it cannot place, but it is not instant: a region that has just appeared is
+recorded in the clear for its first frame or so (Dart can only measure it once layout has placed
+it), so for something that must never be captured keep the `BugseeSecureView` mounted and swap its
+content, rather than inserting the whole widget at the moment the content appears. The other known
+limits are listed on the widget.
+
 Things worth knowing (each is documented on the method):
 
 - **Argument errors are `BugseeException`s.** `BugseeArgumentException` (an empty event name, event params

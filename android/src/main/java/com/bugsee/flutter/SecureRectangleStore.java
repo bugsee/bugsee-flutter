@@ -491,8 +491,6 @@ final class SecureRectangleStore {
     int[] pull(final int display) {
         final Runnable hook = pullHook.get();
         if (hook != null) {
-            // Before the (throttled, possibly suppressed) request: the oldest unanswered one counts.
-            refreshPendingSince.compareAndSet(NO_REFRESH_PENDING, clock.nowMs());
             try {
                 hook.run();
             } catch (Throwable ignored) {
@@ -500,6 +498,15 @@ final class SecureRectangleStore {
             }
         }
         return snapshot(display);
+    }
+
+    /**
+     * A placement refresh was actually handed to the main thread (call it only for a request that
+     * was posted, never for one the throttle dropped: with nothing in flight there is nothing to
+     * wait for). The OLDEST unanswered request counts.
+     */
+    void refreshRequested() {
+        refreshPendingSince.compareAndSet(NO_REFRESH_PENDING, clock.nowMs());
     }
 
     /**

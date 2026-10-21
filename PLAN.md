@@ -46,7 +46,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
 - Lifecycle: forward by name, strip the `com.bugsee.lifecycle.` prefix once natively, pass
   unknown names through unchanged, handle off-main-thread delivery, status only from
   Launching/Launched/Stopping/Stopped, never treat an event as proof of a report (4.7).
-- Lifecycle delivery limit (3a): guarantees end at the hop into the channel sink. A message sent while the Dart side has no handler is held only by Flutter's channel buffer, which by default keeps ONE message per channel (a restarted isolate may see that one after it sets a handler; any older ones are dropped, and the engine reports an error that native only logs). The hub replays the latest status to each new receiver, flushes report events still in its own buffer and puts events in flight to a detaching receiver back in front of it; only an event already SENT over the channel while Dart has no handler is not retried. Phase 4/6 consumers must not rely on delivery surviving a restart.
+- Lifecycle delivery limit (3a): guarantees end at the hop into the channel sink. A message sent while the Dart side has no handler is held only by Flutter's channel buffer, which by default keeps ONE message per channel (a restarted isolate may see that one after it sets a handler; any older ones are dropped, and the engine reports an error that native only logs). The hub replays the latest status to each new receiver, flushes report events still in its own buffer and and, when the final receiver detaches, puts its in-flight events back in front of it; only an event already SENT over the channel while Dart has no handler is not retried. Phase 4/6 consumers must not rely on delivery surviving a restart.
 - `requestData`: always answer; unknown type → `null`; never throw.
 - Secure rectangles (3b, done): pull model, `[version,count,l,t,r,b…]` int32 LE; outward rounding;
   version moves on any change and never on a no-op, per display; immutable snapshots.
@@ -61,9 +61,9 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   serves `[0, 0]` (unknown). Fail closed: an unplaceable view, a non-finite rectangle or a bad scale serves
   the whole display; a view known to be off-screen serves nothing. Dart (`lib/src/secure`, internal until
   Phase 4): `BugseeSecureRegion`/`RenderSecureRegion` + `SecureRegionRegistry`, measured every frame in a
-  post-frame callback, published only when the set changed, ordered by `(epoch, sequence)`. Regions are
+  post-frame callback, published when the set changed (and again, with a capped backoff that never gives up, after a failed publish), ordered by `(epoch, sequence)`. Regions are
   reported UNCLIPPED through every ancestor transform (bounding box, including paint outside their box); a region is dropped only on positive evidence
-  (paintsChild, IndexedStack, a clipping viewport); neither a disabled TickerMode nor a detached layer counts as such evidence. An unmeasurable region covers the whole view.
+  (an ancestor that does not paint it, an IndexedStack showing another child, or the region and all its paint lying wholly outside a clipping viewport); neither a disabled TickerMode nor a detached layer counts as such evidence. An unmeasurable region covers the whole view.
   First-frame exposure of a newly appearing region remains.
   Known limits: see "Secure rectangle limits" in `.claude/CLAUDE.md`.
 - Report handlers (3c, done): native pipeline (`ReportHandlerPipeline` / `BGSFlutterReportHandlerPipeline`) + a Dart

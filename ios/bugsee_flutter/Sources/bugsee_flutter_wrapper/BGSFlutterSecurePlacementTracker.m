@@ -42,9 +42,17 @@ static const CFTimeInterval kMinPullRefreshInterval = 0.1;
 #pragma clang diagnostic pop
 }
 
-- (double)pointsPerLogicalPixelForDisplay:(NSInteger)display {
-  // A Flutter logical pixel is a UIKit point (see the header). Not `UIScreen.scale`.
-  return 1.0;
+- (double)nativePixelRatioForDisplay:(NSInteger)display {
+  // Read per call: the screen's scale can change (display zoom, an external display).
+  return [self currentScreen].scale;
+}
+
+- (double)unitsPerPhysicalPixelForDisplay:(NSInteger)display {
+  // The SDK takes points. A Flutter logical pixel is physical / ratio, a point is
+  // physical / scale: with ratio == scale (the store checks) a logical pixel is one point, and
+  // the screen's scale is divided out, never multiplied in.
+  double scale = [self currentScreen].scale;
+  return scale > 0 ? 1.0 / scale : NAN;
 }
 
 - (CGSize)displayBoundsInPointsForDisplay:(NSInteger)display {
@@ -54,6 +62,25 @@ static const CFTimeInterval kMinPullRefreshInterval = 0.1;
 @end
 
 #pragma mark - Tracker
+
+/// Whether the view's corners map to the screen by a positive scale and a translation only (no
+/// rotation, skew or flip): `o` is its origin on screen, `px` its top-right and `py` its
+/// bottom-left, `size` its bounds. On success the scale is returned in `sx`/`sy`: a Flutter view
+/// shrunk by a transform of its own or an ancestor's (a page-sheet presentation) must scale its
+/// rectangles too, or they land on the wrong pixels.
+static BOOL BGSPureScale(CGPoint o, CGPoint px, CGPoint py, CGSize size, double *sx, double *sy) {
+  if (!(size.width > 0) || !(size.height > 0)) return NO;
+  double ax = (px.x - o.x) / size.width, ay = (px.y - o.y) / size.width;
+  double bx = (py.x - o.x) / size.height, by = (py.y - o.y) / size.height;
+  const double tolerance = 1e-4;
+  if (!isfinite(ax) || !isfinite(ay) || !isfinite(bx) || !isfinite(by)) return NO;
+  if (fabs(ay) > tolerance || fabs(bx) > tolerance) return NO;
+  if (!(ax > 0) || !(by > 0)) return NO;
+  *sx = ax;
+  *sy = by;
+  return YES;
+}
+
 
 static NSHashTable<BGSFlutterSecurePlacementTracker *> *BGSTrackers(void) {
   static NSHashTable *trackers;
@@ -106,9 +133,23 @@ static NSHashTable<BGSFlutterSecurePlacementTracker *> *BGSTrackers(void) {
       return;
     }
     UIScreen *screen = window.screen;
-    CGPoint origin = [view convertPoint:CGPointZero toCoordinateSpace:screen.coordinateSpace];
+    id<UICoordinateSpace> space = screen.coordinateSpace;
+    CGRect bounds = view.bounds;
+    CGPoint o = [view convertPoint:CGPointZero toCoordinateSpace:space];
+    CGPoint px = [view convertPoint:CGPointMake(CGRectGetMaxX(bounds), 0) toCoordinateSpace:space];
+    CGPoint py = [view convertPoint:CGPointMake(0, CGRectGetMaxY(bounds)) toCoordinateSpace:space];
     [_environment updateWithScreen:screen];
-    [self place:[BGSFlutterSecurePlacement knownOnDisplay:kDefaultDisplay x:origin.x y:origin.y]];
+    double sx = 0, sy = 0;
+    if (!BGSPureScale(o, px, py, bounds.size, &sx, &sy)) {
+      // Rotated, skewed, flipped or degenerate: not a scale and a translation.
+      [self place:[BGSFlutterSecurePlacement unknown]];
+      return;
+    }
+    [self place:[BGSFlutterSecurePlacement knownOnDisplay:kDefaultDisplay
+                                                         x:o.x
+                                                         y:o.y
+                                                    scaleX:sx
+                                                    scaleY:sy]];
   } @catch (id exception) {
     [self place:[BGSFlutterSecurePlacement unknown]];
   }

@@ -48,7 +48,7 @@ static NSArray<NSNumber *> *Ints(NSData *buffer) {
 
 - (void)publishRect {
   double v[] = {10, 10, 20, 20};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [NSData dataWithBytes:v length:sizeof(v)]}];
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [[BGSFlutterSecureViewRects alloc] initWithRatio:[UIScreen mainScreen].scale rects:[NSData dataWithBytes:v length:sizeof(v)]]}];
 }
 
 - (void)testTheViewsOffsetFromTheScreenOriginIsAdded {
@@ -76,6 +76,37 @@ static NSArray<NSNumber *> *Ints(NSData *buffer) {
   NSArray *s = Ints([_store pullForDisplay:0]);
   XCTAssertEqualObjects([s subarrayWithRange:NSMakeRange(1, s.count - 1)], (@[ @1, @10, @176, @20, @186 ]));
   XCTAssertNotEqual(before, [s.firstObject intValue]);
+}
+
+/// A Flutter view shrunk by a transform of its own or an ancestor's (a page-sheet presentation, a
+/// picker's automatic style) must scale its rectangles, or they land on the wrong pixels.
+- (void)testAScaledViewScalesTheRectanglesAndARotatedOneCoversTheWholeScreen {
+  _flutterView.transform = CGAffineTransformMakeScale(0.9, 0.9);
+  [self publishRect];
+  [_tracker refresh];
+  CGPoint origin = [_flutterView convertPoint:CGPointZero toCoordinateSpace:[UIScreen mainScreen].coordinateSpace];
+  NSArray *s = Ints([_store snapshotForDisplay:0]);
+  XCTAssertEqual(s.count, 6u);
+  // x: 10 * 0.9 = 9 -> floor(origin + 9), 20 * 0.9 = 18 -> ceil(origin + 18)
+  XCTAssertEqual([s[2] intValue], (int)floor(origin.x + 9));
+  XCTAssertEqual([s[4] intValue], (int)ceil(origin.x + 18));
+  XCTAssertEqual([s[3] intValue], (int)floor(origin.y + 9));
+  XCTAssertEqual([s[5] intValue], (int)ceil(origin.y + 18));
+  // The same through an ANCESTOR's transform.
+  _flutterView.transform = CGAffineTransformIdentity;
+  _window.transform = CGAffineTransformMakeScale(0.5, 0.5);
+  [_tracker refresh];
+  CGPoint o2 = [_flutterView convertPoint:CGPointZero toCoordinateSpace:[UIScreen mainScreen].coordinateSpace];
+  NSArray *t = Ints([_store snapshotForDisplay:0]);
+  XCTAssertEqual([t[4] intValue], (int)ceil(o2.x + 10), @"20 * 0.5");
+  // Rotated: not a scale and a translation.
+  _window.transform = CGAffineTransformIdentity;
+  _flutterView.transform = CGAffineTransformMakeRotation(0.3);
+  [_tracker refresh];
+  CGSize bounds = [UIScreen mainScreen].bounds.size;
+  NSArray *r = Ints([_store snapshotForDisplay:0]);
+  XCTAssertEqualObjects([r subarrayWithRange:NSMakeRange(1, r.count - 1)],
+                        (@[ @1, @0, @0, @(ceil(bounds.width)), @(ceil(bounds.height)) ]));
 }
 
 - (void)testNoViewControllerYetCoversTheWholeScreen {

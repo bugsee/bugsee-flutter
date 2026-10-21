@@ -124,9 +124,11 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
   }
 
   func setSecureRectangles(state: SecureRectanglesMessage) throws -> Bool {
-    var views: [NSNumber: Data] = [:]
+    var views: [NSNumber: BGSFlutterSecureViewRects] = [:]
     for view in state.views {
-      views[NSNumber(value: view.viewId)] = view.rectangles.withUnsafeBufferPointer { Data(buffer: $0) }
+      views[NSNumber(value: view.viewId)] = BGSFlutterSecureViewRects(
+        ratio: view.devicePixelRatio,
+        rects: view.rectangles.withUnsafeBufferPointer { Data(buffer: $0) })
     }
     let applied = BGSFlutterSecureRectangleStore.shared().publish(
       forOwner: owner, epoch: state.epoch, sequence: state.sequence, views: views)

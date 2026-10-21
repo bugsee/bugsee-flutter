@@ -38,7 +38,12 @@ final class SecureEnvironment implements SecureRectangleStore.Environment {
     }
 
     @Override
-    public double pixelsPerLogicalPixel(final int display) {
+    public double unitsPerPhysicalPixel(final int display) {
+        return 1; // the SDK takes physical pixels
+    }
+
+    @Override
+    public double nativePixelRatio(final int display) {
         try {
             final WeakReference<Resources> ref = resources.get(display);
             final Resources r = ref == null ? null : ref.get();

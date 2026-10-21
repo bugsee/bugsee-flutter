@@ -104,8 +104,13 @@ public class FlutterWrapperTest {
 
     private static final class FixedEnvironment implements SecureRectangleStore.Environment {
         @Override
-        public double pixelsPerLogicalPixel(final int display) {
+        public double nativePixelRatio(final int display) {
             return 3;
+        }
+
+        @Override
+        public double unitsPerPhysicalPixel(final int display) {
+            return 1;
         }
 
         @Override
@@ -117,7 +122,8 @@ public class FlutterWrapperTest {
     private static void publishOnDisplay(final SecureRectangleStore store, final int display) {
         store.setEnvironment(new FixedEnvironment());
         store.setPlacement(1, 0, SecureRectangleStore.Placement.known(display, 0, 0));
-        store.publish(1, 1, 1, Collections.singletonMap(0, new double[] {10, 20, 30, 40}));
+        store.publish(1, 1, 1, Collections.singletonMap(0,
+                new SecureRectangleStore.ViewRects(3, new double[] {10, 20, 30, 40})));
     }
 
     /**
@@ -170,7 +176,8 @@ public class FlutterWrapperTest {
             assertArrayEquals(set, second.getSecureRectangles(2));
             // A change after the replacement reaches the SDK through the new wrapper, and
             // moves the version it sees.
-            store.publish(1, 1, 2, Collections.singletonMap(0, new double[] {10, 20, 31, 40}));
+            store.publish(1, 1, 2, Collections.singletonMap(0,
+                    new SecureRectangleStore.ViewRects(3, new double[] {10, 20, 31, 40})));
             final int[] changed = second.getSecureRectangles(2);
             assertEquals(2, changed[0]);
             assertEquals(93, changed[4]);

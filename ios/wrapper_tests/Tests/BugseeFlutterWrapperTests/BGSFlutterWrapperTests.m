@@ -10,8 +10,11 @@
 @interface BGSWrapperTestScreen : NSObject <BGSFlutterSecureEnvironment>
 @end
 @implementation BGSWrapperTestScreen
-- (double)pointsPerLogicalPixelForDisplay:(NSInteger)display {
-  return 1.0;
+- (double)nativePixelRatioForDisplay:(NSInteger)display {
+  return 3.0;
+}
+- (double)unitsPerPhysicalPixelForDisplay:(NSInteger)display {
+  return 1.0 / 3.0;
 }
 - (CGSize)displayBoundsInPointsForDisplay:(NSInteger)display {
   return CGSizeMake(402, 874);
@@ -22,7 +25,7 @@ static void PublishOnDisplay(BGSFlutterSecureRectangleStore *store, NSInteger di
   [store setEnvironment:[[BGSWrapperTestScreen alloc] init]];
   [store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:display x:0 y:0] forOwner:1 viewId:0];
   double rect[] = {10, 20, 30, 40};
-  [store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [NSData dataWithBytes:rect length:sizeof(rect)]}];
+  [store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [[BGSFlutterSecureViewRects alloc] initWithRatio:3 rects:[NSData dataWithBytes:rect length:sizeof(rect)]]}];
 }
 
 static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t b) {
@@ -130,8 +133,12 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
   [[BGSFlutterSecureRectangleStore shared] publishForOwner:1
                                                      epoch:1
                                                   sequence:2
-                                                     views:@{@0 : [NSData dataWithBytes:moved length:sizeof(moved)]}];
-  XCTAssertEqualObjects([(id<BugseeWrapper>)refined secureRectanglesForDisplay:0], Buffer(2, 10, 20, 31, 40));
+                                                     views:@{@0 : [[BGSFlutterSecureViewRects alloc] initWithRatio:3 rects:[NSData dataWithBytes:moved length:sizeof(moved)]]}];
+  // (The shared store has the grace window, so the old place is served after the new one.)
+  NSData *changed = [(id<BugseeWrapper>)refined secureRectanglesForDisplay:0];
+  int32_t head[6] = {2, 2, 10, 20, 31, 40};
+  XCTAssertEqualObjects([changed subdataWithRange:NSMakeRange(0, sizeof(head))],
+                        [NSData dataWithBytes:head length:sizeof(head)]);
 }
 
 @end

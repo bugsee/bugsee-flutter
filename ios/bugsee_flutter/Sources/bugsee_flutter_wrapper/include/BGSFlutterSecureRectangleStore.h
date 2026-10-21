@@ -5,10 +5,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// What the store reads off the device, at every pull.
 @protocol BGSFlutterSecureEnvironment <NSObject>
-/// UIKit points per Flutter logical pixel on `display`. 1 on iOS (a Flutter logical pixel IS a
-/// point); the store applies whatever it is told, at every pull, never cached. Not finite or not
-/// positive means "unknown" and fails closed.
-- (double)pointsPerLogicalPixelForDisplay:(NSInteger)display;
+/// The display's physical pixels per Flutter logical pixel right now (iOS: `UIScreen.scale`,
+/// which is Flutter's device pixel ratio). Read at every pull, never cached. The ratio a message
+/// was measured at must equal it, or the whole display is covered until Dart republishes. Not
+/// finite or not positive means "unknown" and fails closed.
+- (double)nativePixelRatioForDisplay:(NSInteger)display;
+/// SDK units per physical pixel: `1 / UIScreen.scale` on iOS (the SDK takes points). With a
+/// matching ratio a Flutter logical pixel is therefore exactly one point, and the screen's scale
+/// is never multiplied in.
+- (double)unitsPerPhysicalPixelForDisplay:(NSInteger)display;
 /// The display's size in points in the current orientation; `CGSizeZero` when unknown.
 - (CGSize)displayBoundsInPointsForDisplay:(NSInteger)display;
 @end
@@ -22,13 +27,29 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
   BGSFlutterPlacementAbsent,
 };
 
+/// What one view published: the ratio it was measured at and its flat logical ltrb (packed
+/// native-endian doubles).
+@interface BGSFlutterSecureViewRects : NSObject
+@property(nonatomic, readonly) double ratio;
+@property(nonatomic, readonly, copy) NSData *rects;
+- (instancetype)initWithRatio:(double)ratio rects:(NSData *)rects;
+@end
+
 /// Where one Flutter view sits on the screen, in points.
 @interface BGSFlutterSecurePlacement : NSObject
 @property(nonatomic, readonly) BGSFlutterPlacementKind kind;
 @property(nonatomic, readonly) NSInteger display;
 @property(nonatomic, readonly) double x;
 @property(nonatomic, readonly) double y;
+/// The view's own scale on screen (it, or an ancestor, is scaled); 1 normally.
+@property(nonatomic, readonly) double scaleX;
+@property(nonatomic, readonly) double scaleY;
 + (instancetype)knownOnDisplay:(NSInteger)display x:(double)x y:(double)y;
++ (instancetype)knownOnDisplay:(NSInteger)display
+                             x:(double)x
+                             y:(double)y
+                        scaleX:(double)scaleX
+                        scaleY:(double)scaleY;
 + (instancetype)unknown;
 + (instancetype)absent;
 @end
@@ -48,9 +69,18 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 /// thread). A non-zero version equal to the last one seen makes the SDK skip the
 /// rectangles; 0 makes it compare them; a count of 0 clears the set.
 ///
-/// Dart publishes Flutter LOGICAL pixels relative to its view. This class multiplies
-/// by `pointsPerLogicalPixel` (asked at every pull), adds the view's position on the
-/// screen, then rounds outward (scale BEFORE rounding, 5.3.1).
+/// Dart publishes Flutter LOGICAL pixels relative to its view, with the pixel ratio it measured
+/// them at. This class multiplies by that ratio and by `unitsPerPhysicalPixel` (so by 1 on iOS),
+/// by the view's own on-screen scale, adds the view's position on the screen, then rounds outward
+/// (scale BEFORE rounding, 5.3.1). The screen's scale is read at every pull and must equal the
+/// ratio: a mismatch (Flutter has not caught up with a display change) covers the whole display
+/// until Dart republishes.
+///
+/// Grace window: when the served set changes, the PREVIOUS set is served as well for
+/// `+graceSeconds`, because Dart measures after a frame and the message crosses a channel while
+/// the frame may be captured first. It only ever over-covers; the union shrinking back is itself a
+/// change and moves the version. A region that has just APPEARED has no previous place, so its
+/// first frame can still be recorded before the message lands: the one exposure left.
 ///
 /// Versions are derived from what is served, per display: they move exactly when the
 /// served rectangles differ from the ones served before, never otherwise, and skip 0.
@@ -68,8 +98,16 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 /// Knows nothing about the device until an environment is installed: every view covers
 /// the whole display.
 - (instancetype)init;
+/// No grace window: what is written is what is served at once. For tests.
+- (instancetype)initWithEnvironment:(id<BGSFlutterSecureEnvironment>)environment;
+/// `clock` returns seconds from a monotonic source; `grace` is how long the previous set is served
+/// along with a changed one (0 for none).
 - (instancetype)initWithEnvironment:(id<BGSFlutterSecureEnvironment>)environment
-    NS_DESIGNATED_INITIALIZER;
+                              clock:(NSTimeInterval (^)(void))clock
+                              grace:(NSTimeInterval)grace NS_DESIGNATED_INITIALIZER;
+
+/// How long the previous set is served along with a changed one. Repeated in Java (`GRACE_MS`).
++ (NSTimeInterval)graceSeconds;
 
 - (void)setEnvironment:(id<BGSFlutterSecureEnvironment>)environment;
 
@@ -77,15 +115,15 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 /// It must not block.
 - (void)setPullHook:(nullable void (^)(void))hook;
 
-/// Applies Dart's whole state for `owner`: `views` maps a view id to its flat logical
-/// `[l, t, r, b, ...]` as packed native-endian doubles; a view not in it has no
-/// rectangles any more. Ignored (returns NO) unless `(epoch, sequence)` is newer than the
-/// newest applied for `owner`, so a delayed older message never overwrites a newer one,
-/// while a new isolate (larger epoch, counter back at 0) still wins.
+/// Applies Dart's whole state for `owner`: `views` maps a view id to what it published; a view
+/// not in it has no rectangles any more. Ignored (returns NO) when `epoch` is the current one and
+/// `sequence` is not newer, or when `epoch` was retired (a straggler of a dead isolate). An epoch
+/// not seen before is a new isolate (a hot restart): it replaces the old one's state and retires
+/// its epoch. Epochs are random ids, never clocks.
 - (BOOL)publishForOwner:(int64_t)owner
                   epoch:(int64_t)epoch
                sequence:(int64_t)sequence
-                  views:(NSDictionary<NSNumber *, NSData *> *)views;
+                  views:(NSDictionary<NSNumber *, BGSFlutterSecureViewRects *> *)views;
 
 /// Where `owner`'s view `viewId` sits now. Not a change when it is the same.
 - (void)setPlacement:(BGSFlutterSecurePlacement *)placement

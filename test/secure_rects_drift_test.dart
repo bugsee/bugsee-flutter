@@ -78,24 +78,43 @@ void main() {
     expect(mStore, contains('next == kUnknownVersion ? next + 1 : next'));
   });
 
-  test('both stores order messages by (epoch, sequence) the same way', () {
+  test('both stores order messages by epoch and sequence the same way', () {
+    // Same epoch: sequence must grow. A retired epoch (a dead isolate) is
+    // ignored; an unseen one is a new isolate and wins, whatever its number.
+    expect(store, contains('last.retired.contains(epoch)'));
+    expect(store, contains('if (sequence <= last.sequence)'));
+    expect(mStore, contains('[lastRetired containsObject:@(epoch)]'));
+    expect(mStore, contains('if (sequence <= lastSequence) return NO;'));
     expect(
-      store,
-      contains('epoch < last[0] || (epoch == last[0] && sequence <= last[1])'),
-    );
-    expect(
-      mStore,
-      contains(
-        'epoch < lastEpoch || (epoch == lastEpoch && sequence <= lastSequence)',
-      ),
+      number(store, RegExp(r'RETIRED_EPOCHS\s*=\s*(\d+);')),
+      number(mStore, RegExp(r'kRetiredEpochs\s*=\s*(\d+);')),
     );
   });
 
-  test('iOS converts logical pixels to points with a factor of 1, not the '
-      'screen scale (Android multiplies: physical pixels)', () {
-    expect(mTracker, contains('return 1.0;'));
-    expect(mTracker, isNot(contains('.scale')));
+  test('the grace window and its limits are the same on both platforms', () {
+    expect(number(store, RegExp(r'GRACE_MS\s*=\s*(\d+);')), 120);
+    expect(number(mStore, RegExp(r'kGraceSeconds\s*=\s*([\d.]+);')), 0.12);
+    expect(
+      number(store, RegExp(r'MAX_RECTANGLES\s*=\s*(\d+);')),
+      number(mStore, RegExp(r'kMaxRectangles\s*=\s*(\d+);')),
+    );
+  });
+
+  test('the ratio a message must match the display at is the same', () {
+    expect(
+      number(store, RegExp(r'RATIO_TOLERANCE\s*=\s*([\d.e-]+);')),
+      number(mStore, RegExp(r'kRatioTolerance\s*=\s*([\d.e-]+);')),
+    );
+  });
+
+  test('units: Android takes physical pixels (1), iOS points (1 / screen '
+      'scale, never multiplied in)', () {
     final env = code('$java/SecureEnvironment.java');
     expect(env, contains('getDisplayMetrics().density'));
+    expect(env, contains('return 1;'));
+    expect(mTracker, contains('return scale > 0 ? 1.0 / scale : NAN;'));
+    // The screen's scale is read for the ratio and divided out; it is never
+    // returned as the unit factor.
+    expect(mTracker, isNot(contains('return scale;')));
   });
 }

@@ -63,9 +63,9 @@ public class BugseeFlutterPlugin
         placement = new SecurePlacement(owner, binding.getFlutterEngine(), store, environment);
         PLACEMENTS.add(placement);
         store.setPullHook(PULLS::request);
-        // No activity yet: nothing of this engine is on screen.
+        // No activity yet: where the view is is not known, so cover rather than guess.
         store.setPlacement(owner, SecurePlacement.IMPLICIT_VIEW_ID,
-                SecureRectangleStore.Placement.ABSENT);
+                SecureRectangleStore.Placement.UNKNOWN);
     }
 
     @Override
@@ -141,14 +141,15 @@ public class BugseeFlutterPlugin
     @NonNull
     @Override
     public Boolean setSecureRectangles(@NonNull final Messages.SecureRectanglesMessage state) {
-        final Map<Integer, double[]> views = new HashMap<>();
+        final Map<Integer, SecureRectangleStore.ViewRects> views = new HashMap<>();
         for (final Messages.SecureViewRectanglesMessage view : state.getViews()) {
             final List<Double> flat = view.getRectangles();
             final double[] rects = new double[flat.size()];
             for (int i = 0; i < rects.length; i++) {
                 rects[i] = flat.get(i);
             }
-            views.put(view.getViewId().intValue(), rects);
+            views.put(view.getViewId().intValue(),
+                    new SecureRectangleStore.ViewRects(view.getDevicePixelRatio(), rects));
         }
         final boolean applied = SecureRectangleStore.shared().publish(
                 owner, state.getEpoch(), state.getSequence(), views);

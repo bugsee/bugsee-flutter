@@ -11,6 +11,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import io.flutter.embedding.android.FlutterView;
 import io.flutter.embedding.engine.FlutterEngine;
 
@@ -26,11 +29,8 @@ import io.flutter.embedding.engine.FlutterEngine;
  *
  * <p>The state it reports, and why:
  * <ul>
- *   <li>no activity attached: {@link SecureRectangleStore.Placement#ABSENT}, no
- *       Flutter pixels can be on screen (also across a configuration change,
- *       where the new activity re-attaches within the same frame of the main
- *       thread);</li>
- *   <li>an activity but no (or an ambiguous, or detached) Flutter view:
+ *   <li>no activity attached, or an activity but no (or an ambiguous, or detached)
+ *       Flutter view, or a view that is rotated or skewed:
  *       {@link SecureRectangleStore.Placement#UNKNOWN}, which the store serves
  *       as the whole display, because the regions might be anywhere;</li>
  *   <li>otherwise the view's display id and on-screen position.</li>
@@ -95,8 +95,10 @@ final class SecurePlacement implements ViewTreeObserver.OnGlobalLayoutListener {
     void refresh() {
         try {
             if (activity == null) {
+                // Not attached to an activity does not mean off screen: an add-to-app
+                // FlutterView may be hosted without one. Rectangles are present, so cover.
                 unobserve();
-                store.setPlacement(owner, IMPLICIT_VIEW_ID, SecureRectangleStore.Placement.ABSENT);
+                store.setPlacement(owner, IMPLICIT_VIEW_ID, SecureRectangleStore.Placement.UNKNOWN);
                 return;
             }
             final FlutterView view = find(activity.getWindow().getDecorView(), engine);
@@ -110,8 +112,11 @@ final class SecurePlacement implements ViewTreeObserver.OnGlobalLayoutListener {
             final int displayId = display == null ? 0 : display.getDisplayId();
             view.getLocationOnScreen(location);
             environment.setResources(displayId, view.getResources());
-            store.setPlacement(owner, IMPLICIT_VIEW_ID,
-                    SecureRectangleStore.Placement.known(displayId, location[0], location[1]));
+            final double[] scale = screenScale(view);
+            store.setPlacement(owner, IMPLICIT_VIEW_ID, scale == null
+                    ? SecureRectangleStore.Placement.UNKNOWN
+                    : SecureRectangleStore.Placement.known(
+                            displayId, location[0], location[1], scale[0], scale[1]));
         } catch (Throwable t) {
             Log.w(TAG, "secure rectangles: could not read the Flutter view's position: "
                     + t.getClass().getName());
@@ -121,6 +126,27 @@ final class SecurePlacement implements ViewTreeObserver.OnGlobalLayoutListener {
                 // nothing more to do
             }
         }
+    }
+
+    /**
+     * The scale the view appears at on screen: the product of its own and its
+     * ancestors' view matrices, which {@code getLocationOnScreen} accounts for in
+     * the position but not in the size. {@code null} when any of them rotates or
+     * skews (not a pure scale and translation): the caller then covers the
+     * whole display.
+     */
+    @Nullable
+    private static double[] screenScale(@NonNull final View view) {
+        final List<float[]> matrices = new ArrayList<>();
+        View v = view;
+        while (v != null) {
+            final float[] values = new float[9];
+            v.getMatrix().getValues(values);
+            matrices.add(values);
+            final Object parent = v.getParent();
+            v = parent instanceof View ? (View) parent : null;
+        }
+        return ViewScale.accumulate(matrices);
     }
 
     private void observe(@NonNull final FlutterView view) {

@@ -31,14 +31,19 @@ public class SecureRectangleStoreTest {
 
     /** A device whose density and display size a test can change between pulls. */
     static final class FakeEnvironment implements SecureRectangleStore.Environment {
-        volatile double scale = 3;
+        volatile double density = 3;
         volatile int[] bounds = {1080, 2400};
         volatile int scaleReads;
 
         @Override
-        public double pixelsPerLogicalPixel(final int display) {
+        public double nativePixelRatio(final int display) {
             scaleReads++;
-            return scale;
+            return density;
+        }
+
+        @Override
+        public double unitsPerPhysicalPixel(final int display) {
+            return 1;
         }
 
         @Nullable
@@ -60,8 +65,14 @@ public class SecureRectangleStoreTest {
         sequence = 0;
     }
 
-    private static Map<Integer, double[]> view(final double... ltrb) {
-        return Collections.singletonMap(0, ltrb);
+    /** What Dart publishes for the implicit view, measured at the display's current density. */
+    private Map<Integer, SecureRectangleStore.ViewRects> view(final double... ltrb) {
+        return viewAt(env.density, ltrb);
+    }
+
+    private static Map<Integer, SecureRectangleStore.ViewRects> viewAt(
+            final double ratio, final double... ltrb) {
+        return Collections.singletonMap(0, new SecureRectangleStore.ViewRects(ratio, ltrb));
     }
 
     /** Publishes {@code ltrb} for owner 1's implicit view, placed at the display origin. */
@@ -135,19 +146,62 @@ public class SecureRectangleStoreTest {
         assertArrayEquals(new int[] {1, 3, 3, 6, 6}, withoutVersion(store.snapshot(0)));
     }
 
-    /** The scale is read at every pull (5.3.2): a density change is seen by the next one. */
+    /**
+     * The density is read at every pull (5.3.2). A density change is applied natively before
+     * Dart lays out again, so what was measured at the old ratio is not scaled by the new one:
+     * the whole display is covered until Dart republishes at the new ratio.
+     */
     @Test
-    public void theScaleIsReadPerCall() {
+    public void theDensityIsReadPerCallAndAMismatchCoversTheWholeDisplayUntilRepublished() {
         publish(10, 10, 20, 20);
         final int[] at3 = store.snapshot(0);
         assertArrayEquals(new int[] {1, 30, 30, 60, 60}, withoutVersion(at3));
-        env.scale = 2;
+        env.density = 2; // the display changed; Dart has not laid out again
+        final int[] mismatch = store.snapshot(0);
+        assertArrayEquals("old logical rects x new density cover neither old nor new content",
+                new int[] {1, 0, 0, 1080, 2400}, withoutVersion(mismatch));
+        assertNotEquals(at3[0], mismatch[0]);
+        // Dart republishes at the new ratio: placed by that ratio.
+        assertTrue(store.publish(1, 1, ++sequence, viewAt(2, 10, 10, 20, 20)));
         final int[] at2 = store.snapshot(0);
         assertArrayEquals(new int[] {1, 20, 20, 40, 40}, withoutVersion(at2));
-        assertNotEquals("a density change moves the version", at3[0], at2[0]);
-        env.scale = 2.625;
+        assertNotEquals(mismatch[0], at2[0]);
+        env.density = 2.625;
+        assertArrayEquals(new int[] {1, 0, 0, 1080, 2400}, withoutVersion(store.snapshot(0)));
+        assertTrue(store.publish(1, 1, ++sequence, viewAt(2.625, 10, 10, 20, 20)));
         assertArrayEquals(new int[] {1, 26, 26, 53, 53}, withoutVersion(store.snapshot(0)));
-        assertTrue(env.scaleReads >= 3);
+        assertTrue(env.scaleReads >= 4);
+    }
+
+    @Test
+    public void theMessagesOwnRatioScalesItNotTheDensityAtPullTime() {
+        env.density = 2;
+        assertTrue(store.publish(1, 1, 1, viewAt(2, 10, 10, 20, 20)));
+        store.setPlacement(1, 0, Placement.known(0, 0, 0));
+        assertArrayEquals(new int[] {1, 20, 20, 40, 40}, withoutVersion(store.snapshot(0)));
+    }
+
+    @Test
+    public void aViewScaledOnScreenScalesTheRectanglesToo() {
+        store.setPlacement(1, 0, Placement.known(0, 100, 200, 0.9, 0.9));
+        store.publish(1, 1, 1, view(10, 10, 20, 20));
+        // 30*0.9 = 27 -> 27+100 = 127, 60*0.9 = 54 -> 154; y: 27+200, 54+200
+        assertArrayEquals(new int[] {1, 127, 227, 154, 254}, withoutVersion(store.snapshot(0)));
+        store.setPlacement(1, 0, Placement.known(0, 100, 200, 1, 1));
+        assertArrayEquals(new int[] {1, 130, 230, 160, 260}, withoutVersion(store.snapshot(0)));
+    }
+
+    @Test
+    public void aViewScaleThatIsNotUsableCoversTheWholeDisplay() {
+        store.publish(1, 1, 1, view(10, 10, 20, 20));
+        for (final double bad : new double[] {0, -1, Double.NaN}) {
+            store.setPlacement(1, 0, Placement.known(0, 0, 0, bad, 1));
+            assertArrayEquals("scaleX " + bad, new int[] {1, 0, 0, 1080, 2400},
+                    withoutVersion(store.snapshot(0)));
+            store.setPlacement(1, 0, Placement.known(0, 0, 0, 1, bad));
+            assertArrayEquals("scaleY " + bad, new int[] {1, 0, 0, 1080, 2400},
+                    withoutVersion(store.snapshot(0)));
+        }
     }
 
     @Test
@@ -209,6 +263,16 @@ public class SecureRectangleStoreTest {
     }
 
     @Test
+    public void aDisplaySizeThatReadsAsZeroCoversWithTheFallbackSizeToo() {
+        env.bounds = new int[] {0, 0};
+        store.publish(1, 1, 1, view(10, 10, 20, 20)); // no placement
+        assertArrayEquals(
+                new int[] {1, 0, 0, SecureRectangleStore.FALLBACK_DISPLAY_SIZE,
+                        SecureRectangleStore.FALLBACK_DISPLAY_SIZE},
+                withoutVersion(store.snapshot(0)));
+    }
+
+    @Test
     public void aViewKnownToBeOffScreenServesNothing() {
         store.setPlacement(1, 0, Placement.ABSENT);
         store.publish(1, 1, 1, view(10, 10, 20, 20));
@@ -230,7 +294,7 @@ public class SecureRectangleStoreTest {
     public void aScaleThatIsNotUsableCoversTheWholeDisplay() {
         publish(1, 1, 2, 2);
         for (final double bad : new double[] {Double.NaN, 0, -1, Double.POSITIVE_INFINITY}) {
-            env.scale = bad;
+            env.density = bad;
             assertArrayEquals("scale " + bad, new int[] {1, 0, 0, 1080, 2400},
                     withoutVersion(store.snapshot(0)));
         }
@@ -246,7 +310,8 @@ public class SecureRectangleStoreTest {
     @Test
     public void aViewOtherThanTheImplicitOneIsNotPlacedSoItCoversTheDisplay() {
         store.setPlacement(1, 0, Placement.known(0, 0, 0));
-        store.publish(1, 1, 1, Collections.singletonMap(7, new double[] {1, 1, 2, 2}));
+        store.publish(1, 1, 1, Collections.singletonMap(7,
+                new SecureRectangleStore.ViewRects(3, new double[] {1, 1, 2, 2})));
         assertArrayEquals(new int[] {1, 0, 0, 1080, 2400}, withoutVersion(store.snapshot(0)));
     }
 
@@ -295,7 +360,7 @@ public class SecureRectangleStoreTest {
         assertNotEquals("view moved", last, v);
         last = v;
 
-        env.scale = 2; // the density changed
+        env.density = 2; // the density changed (mismatch: the whole display)
         v = store.snapshot(0)[0];
         assertNotEquals("scale", last, v);
         last = v;
@@ -358,19 +423,30 @@ public class SecureRectangleStoreTest {
         assertTrue(store.publish(1, 5, 10, view(1, 1, 2, 2)));
         assertFalse("older sequence", store.publish(1, 5, 9, view(7, 7, 8, 8)));
         assertFalse("same sequence", store.publish(1, 5, 10, view(7, 7, 8, 8)));
-        assertFalse("older epoch", store.publish(1, 4, 99, view(7, 7, 8, 8)));
         assertArrayEquals(new int[] {1, 3, 3, 6, 6}, withoutVersion(store.snapshot(0)));
         assertTrue("newer sequence", store.publish(1, 5, 11, view(2, 2, 3, 3)));
         assertArrayEquals(new int[] {1, 6, 6, 9, 9}, withoutVersion(store.snapshot(0)));
     }
 
+    /**
+     * Epochs are random ids, not clocks: a new isolate's id may be numerically LOWER than the
+     * old one's (a wall clock that went backwards before a hot restart) and must still win,
+     * while a late message of the dead isolate must not.
+     */
     @Test
-    public void aNewIsolateWinsEvenThoughItsCounterRestarted() {
+    public void aNewIsolateWinsWhateverItsEpochIsAndTheOldOnesStragglersAreIgnored() {
         store.setPlacement(1, 0, Placement.known(0, 0, 0));
-        assertTrue(store.publish(1, 5, 500, view(1, 1, 2, 2)));
-        assertTrue("a hot restart: larger epoch, sequence back at 1",
-                store.publish(1, 6, 1, view(2, 2, 3, 3)));
+        assertTrue(store.publish(1, 900, 500, view(1, 1, 2, 2)));
+        assertTrue("a hot restart: a LOWER epoch id, counter back at 1",
+                store.publish(1, 100, 1, view(2, 2, 3, 3)));
         assertArrayEquals(new int[] {1, 6, 6, 9, 9}, withoutVersion(store.snapshot(0)));
+        assertFalse("a straggler of the dead isolate", store.publish(1, 900, 501, view(7, 7, 8, 8)));
+        assertArrayEquals(new int[] {1, 6, 6, 9, 9}, withoutVersion(store.snapshot(0)));
+        assertTrue(store.publish(1, 100, 2, view(3, 3, 4, 4)));
+        // and a third isolate retires the second
+        assertTrue(store.publish(1, 5, 1, view(1, 1, 2, 2)));
+        assertFalse(store.publish(1, 100, 3, view(7, 7, 8, 8)));
+        assertFalse(store.publish(1, 900, 502, view(7, 7, 8, 8)));
     }
 
     @Test
@@ -410,7 +486,7 @@ public class SecureRectangleStoreTest {
     public void snapshotsAreCopiesNobodyCanWriteThrough() {
         final double[] mine = {1, 1, 2, 2};
         store.setPlacement(1, 0, Placement.known(0, 0, 0));
-        store.publish(1, 1, 1, Collections.singletonMap(0, mine));
+        store.publish(1, 1, 1, Collections.singletonMap(0, new SecureRectangleStore.ViewRects(3, mine)));
         mine[0] = 50; // a later write by the caller must not reach what is served
         final int[] first = store.snapshot(0);
         assertEquals(3, first[2]);
@@ -426,7 +502,7 @@ public class SecureRectangleStoreTest {
      */
     @Test
     public void readersOnAnotherThreadSeeOnlyWholeSetsAndConsistentVersions() throws Exception {
-        env.scale = 1;
+        env.density = 1;
         store.setPlacement(1, 0, Placement.known(0, 0, 0));
         final AtomicBoolean stop = new AtomicBoolean();
         final AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -477,7 +553,7 @@ public class SecureRectangleStoreTest {
                 set[4 * r + 2] = r + 100;
                 set[4 * r + 3] = r + 100;
             }
-            store.publish(1, 1, i, Collections.singletonMap(0, set));
+            store.publish(1, 1, i, viewAt(1, set));
         }
         stop.set(true);
         a.join();
@@ -499,6 +575,112 @@ public class SecureRectangleStoreTest {
         });
         assertEquals(1, store.pull(0)[1]);
         assertEquals(1, calls[0]);
+    }
+
+
+    // ---- grace window ---------------------------------------------------------------------------
+
+    private final long[] now = {1000};
+
+    private SecureRectangleStore graced() {
+        env.density = 1;
+        final SecureRectangleStore g = new SecureRectangleStore(env, () -> now[0],
+                SecureRectangleStore.GRACE_MS);
+        g.setPlacement(1, 0, Placement.known(0, 0, 0));
+        return g;
+    }
+
+    private long seq;
+
+    private boolean put(final SecureRectangleStore g, final double... ltrb) {
+        return g.publish(1, 1, ++seq, viewAt(1, ltrb));
+    }
+
+    @Test
+    public void aMovedRegionIsCoveredWhereItWasToo_thenTheUnionShrinksAndMovesTheVersion() {
+        final SecureRectangleStore g = graced();
+        put(g, 0, 0, 10, 10);
+        final int[] first = g.snapshot(0);
+        assertArrayEquals("a new region has no previous place: only itself",
+                new int[] {1, 0, 0, 10, 10}, withoutVersion(first));
+        now[0] += 10;
+        put(g, 5, 0, 15, 10);
+        final int[] moved = g.snapshot(0);
+        assertArrayEquals("the new place AND the old one",
+                new int[] {2, 5, 0, 15, 10, 0, 0, 10, 10}, withoutVersion(moved));
+        assertNotEquals(first[0], moved[0]);
+        now[0] += SecureRectangleStore.GRACE_MS - 1;
+        assertEquals("inside the window: same union, same version", moved[0], g.snapshot(0)[0]);
+        now[0] += 1;
+        final int[] shrunk = g.snapshot(0);
+        assertArrayEquals(new int[] {1, 5, 0, 15, 10}, withoutVersion(shrunk));
+        assertNotEquals("shrinking is a change the SDK must re-read", moved[0], shrunk[0]);
+        assertEquals("and then it is stable", shrunk[0], g.snapshot(0)[0]);
+    }
+
+    @Test
+    public void aRegionThatWentIsStillCoveredForTheWindow() {
+        final SecureRectangleStore g = graced();
+        put(g, 0, 0, 10, 10);
+        g.snapshot(0);
+        now[0] += 10;
+        assertTrue(g.publish(1, 1, ++seq, Collections.emptyMap()));
+        final int[] gone = g.snapshot(0);
+        assertArrayEquals(new int[] {1, 0, 0, 10, 10}, withoutVersion(gone));
+        now[0] += SecureRectangleStore.GRACE_MS;
+        final int[] empty = g.snapshot(0);
+        assertEquals(0, empty[1]);
+        assertNotEquals(gone[0], empty[0]);
+    }
+
+    @Test
+    public void continuousMovementCoversEveryRecentPlace() {
+        final SecureRectangleStore g = graced();
+        put(g, 0, 0, 10, 10);
+        g.snapshot(0);
+        now[0] += 10;
+        put(g, 5, 0, 15, 10);
+        g.snapshot(0);
+        now[0] += 40;
+        put(g, 10, 0, 20, 10);
+        final int[] s = g.snapshot(0);
+        assertEquals("current + both earlier places", 3, s[1]);
+        now[0] += SecureRectangleStore.GRACE_MS - 1;
+        assertEquals("all recent places stay until a window after the LAST change", 3,
+                g.snapshot(0)[1]);
+        now[0] += 1;
+        assertEquals(1, g.snapshot(0)[1]);
+    }
+
+    @Test
+    public void tooManyPreviousRectanglesCollapseToTheirBoundingBox() {
+        final SecureRectangleStore g = graced();
+        final double[] many = new double[4 * 70];
+        for (int i = 0; i < 70; i++) {
+            many[4 * i] = i;
+            many[4 * i + 1] = 0;
+            many[4 * i + 2] = i + 1;
+            many[4 * i + 3] = 5;
+        }
+        put(g, many);
+        g.snapshot(0);
+        now[0] += 10;
+        put(g, 500, 500, 510, 510);
+        final int[] s = g.snapshot(0);
+        assertArrayEquals("the new one, then ONE box over the 70 old ones",
+                new int[] {2, 500, 500, 510, 510, 0, 0, 70, 5}, withoutVersion(s));
+    }
+
+    @Test
+    public void aStaticSetNeverGrowsAWindow() {
+        final SecureRectangleStore g = graced();
+        put(g, 0, 0, 10, 10);
+        final int v = g.snapshot(0)[0];
+        for (int i = 0; i < 5; i++) {
+            now[0] += 500;
+            put(g, 0, 0, 10, 10);
+            assertEquals(v, g.snapshot(0)[0]);
+        }
     }
 
     private static int[] withoutVersion(final int[] buffer) {

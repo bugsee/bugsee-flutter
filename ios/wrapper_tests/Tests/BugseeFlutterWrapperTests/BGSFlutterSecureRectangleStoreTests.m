@@ -8,6 +8,10 @@
 
 /// A device a test can change between pulls.
 @interface BGSMockScreen : NSObject <BGSFlutterSecureEnvironment>
+/// The screen's scale (Flutter's pixel ratio, what messages are measured at).
+@property(nonatomic) double nativeRatio;
+@property(nonatomic) double units;
+/// ratio * units: logical pixels to points. 1 on a real phone.
 @property(nonatomic) double factor;
 @property(nonatomic) CGSize bounds;
 @property(nonatomic) NSInteger scaleReads;
@@ -16,14 +20,24 @@
 @implementation BGSMockScreen
 - (instancetype)init {
   if ((self = [super init])) {
-    _factor = 1;  // a logical pixel is a point
+    _nativeRatio = 3;  // a 3x phone
+    _units = 1.0 / 3;  // points per physical pixel
     _bounds = CGSizeMake(402, 874);  // iPhone 17 Pro, points
   }
   return self;
 }
-- (double)pointsPerLogicalPixelForDisplay:(NSInteger)display {
+- (double)factor {
+  return _nativeRatio * _units;
+}
+- (void)setFactor:(double)factor {
+  _units = factor / _nativeRatio;
+}
+- (double)nativePixelRatioForDisplay:(NSInteger)display {
   _scaleReads++;
-  return _factor;
+  return _nativeRatio;
+}
+- (double)unitsPerPhysicalPixelForDisplay:(NSInteger)display {
+  return _units;
 }
 - (CGSize)displayBoundsInPointsForDisplay:(NSInteger)display {
   return _bounds;
@@ -51,8 +65,16 @@ static NSData *Doubles(const double *values, NSUInteger count) {
 #define VIEW(...)                                          \
   ({                                                       \
     double v_[] = {__VA_ARGS__};                           \
-    @{@0 : Doubles(v_, sizeof(v_) / sizeof(double))};      \
+    @{@0 : [self viewOf:Doubles(v_, sizeof(v_) / sizeof(double))]};      \
   })
+
+/// What Dart publishes: rectangles measured at the screen's current ratio.
+- (BGSFlutterSecureViewRects *)viewOf:(NSData *)rects {
+  return [self viewOf:rects ratio:_screen.nativeRatio];
+}
+- (BGSFlutterSecureViewRects *)viewOf:(NSData *)rects ratio:(double)ratio {
+  return [[BGSFlutterSecureViewRects alloc] initWithRatio:ratio rects:rects];
+}
 
 static NSArray<NSNumber *> *Ints(NSData *buffer) {
   NSMutableArray *out = [NSMutableArray array];
@@ -71,7 +93,7 @@ static int32_t VersionOf(NSData *buffer) {
   return ((const int32_t *)buffer.bytes)[0];
 }
 
-- (BOOL)publishViews:(NSDictionary<NSNumber *, NSData *> *)views {
+- (BOOL)publishViews:(NSDictionary<NSNumber *, BGSFlutterSecureViewRects *> *)views {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   return [_store publishForOwner:1 epoch:1 sequence:++_sequence views:views];
 }
@@ -98,13 +120,15 @@ static int32_t VersionOf(NSData *buffer) {
 #pragma mark - unit (5.3) and rounding (5.1.2)
 
 /// Workbook 5.3.3: the check must not pass vacuously, so this runs against the real UIScreen and
-/// refuses to run where its scale is 1. On a 3x screen the factor is 1, NOT the screen's scale.
+/// refuses to run where its scale is 1. On a 3x screen ratio * units is 1 (a logical pixel is a
+/// point), NOT the screen's scale.
 - (void)testTheUIKitFactorIsOneNotTheScreensScale {
   BGSFlutterUIKitEnvironment *env = [[BGSFlutterUIKitEnvironment alloc] init];
   UIScreen *screen = [UIScreen mainScreen];
   [env updateWithScreen:screen];
   XCTAssertNotEqual(screen.scale, 1.0, @"run on a 2x/3x simulator: at scale 1 this test proves nothing");
-  XCTAssertEqual([env pointsPerLogicalPixelForDisplay:0], 1.0);
+  XCTAssertEqual([env nativePixelRatioForDisplay:0], screen.scale);
+  XCTAssertEqualWithAccuracy([env nativePixelRatioForDisplay:0] * [env unitsPerPhysicalPixelForDisplay:0], 1.0, 1e-12);
   XCTAssertTrue(CGSizeEqualToSize([env displayBoundsInPointsForDisplay:0], screen.bounds.size));
 }
 
@@ -175,7 +199,7 @@ static int32_t VersionOf(NSData *buffer) {
 - (void)testTheViewsPositionOnTheScreenIsAdded {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:20.5] forOwner:1 viewId:0];
   double v[] = {10, 10, 20, 20};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : Doubles(v, 4)}];
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(v, 4)]}];
   // y: floor(30.5) = 30, ceil(40.5) = 41
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @10, @30, @20, @41 ]));
 }
@@ -199,7 +223,7 @@ static int32_t VersionOf(NSData *buffer) {
 
 - (void)testAViewWhosePlacementIsUnknownCoversTheWholeScreen {
   double v[] = {10, 10, 20, 20};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : Doubles(v, 4)}];  // no placement
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(v, 4)]}];  // no placement
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @0, @0, @402, @874 ]));
   [_store setPlacement:[BGSFlutterSecurePlacement unknown] forOwner:1 viewId:0];
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @0, @0, @402, @874 ]));
@@ -208,14 +232,14 @@ static int32_t VersionOf(NSData *buffer) {
 - (void)testAWholeScreenCoverUsesTheFallbackSizeWhenTheScreenIsUnknown {
   _screen.bounds = CGSizeZero;
   double v[] = {10, 10, 20, 20};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : Doubles(v, 4)}];
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(v, 4)]}];
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @0, @0, @16384, @16384 ]));
 }
 
 - (void)testAViewKnownToBeOffScreenServesNothing {
   [_store setPlacement:[BGSFlutterSecurePlacement absent] forOwner:1 viewId:0];
   double v[] = {10, 10, 20, 20};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : Doubles(v, 4)}];
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(v, 4)]}];
   XCTAssertEqual(((const int32_t *)[_store snapshotForDisplay:0].bytes)[1], 0);
   [_store setPlacement:[BGSFlutterSecurePlacement unknown] forOwner:1 viewId:0];
   XCTAssertEqual(((const int32_t *)[_store snapshotForDisplay:0].bytes)[1], 1);
@@ -245,7 +269,7 @@ static int32_t VersionOf(NSData *buffer) {
 - (void)testAViewOtherThanTheImplicitOneIsNotPlacedSoItCoversTheScreen {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   double v[] = {1, 1, 2, 2};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@7 : Doubles(v, 4)}];
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@7 : [self viewOf:Doubles(v, 4)]}];
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @0, @0, @402, @874 ]));
 }
 
@@ -309,14 +333,14 @@ static int32_t VersionOf(NSData *buffer) {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:1 x:0 y:0] forOwner:2 viewId:0];
   double a[] = {1, 1, 2, 2}, b[] = {4, 4, 5, 5};
-  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : Doubles(a, 4)}];
-  [_store publishForOwner:2 epoch:1 sequence:1 views:@{@0 : Doubles(b, 4)}];
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(a, 4)]}];
+  [_store publishForOwner:2 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(b, 4)]}];
   int32_t d0 = VersionOf([_store snapshotForDisplay:0]);
   int32_t d1 = VersionOf([_store snapshotForDisplay:1]);
   XCTAssertEqual(d0, VersionOf([_store snapshotForDisplay:0]));
   XCTAssertEqual(d1, VersionOf([_store snapshotForDisplay:1]));
   double b2[] = {1, 1, 9, 9};
-  [_store publishForOwner:2 epoch:1 sequence:2 views:@{@0 : Doubles(b2, 4)}];
+  [_store publishForOwner:2 epoch:1 sequence:2 views:@{@0 : [self viewOf:Doubles(b2, 4)]}];
   XCTAssertEqual(d0, VersionOf([_store snapshotForDisplay:0]));
   XCTAssertNotEqual(d1, VersionOf([_store snapshotForDisplay:1]));
   XCTAssertEqual(((const int32_t *)[_store snapshotForDisplay:2].bytes)[1], 0);
@@ -327,29 +351,173 @@ static int32_t VersionOf(NSData *buffer) {
 - (void)testADelayedOlderMessageNeverOverwritesANewerOne {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   double a[] = {1, 1, 2, 2}, old[] = {7, 7, 8, 8}, b[] = {2, 2, 3, 3};
-  XCTAssertTrue([_store publishForOwner:1 epoch:5 sequence:10 views:@{@0 : Doubles(a, 4)}]);
-  XCTAssertFalse([_store publishForOwner:1 epoch:5 sequence:9 views:@{@0 : Doubles(old, 4)}], @"older sequence");
-  XCTAssertFalse([_store publishForOwner:1 epoch:5 sequence:10 views:@{@0 : Doubles(old, 4)}], @"same sequence");
-  XCTAssertFalse([_store publishForOwner:1 epoch:4 sequence:99 views:@{@0 : Doubles(old, 4)}], @"older epoch");
+  XCTAssertTrue([_store publishForOwner:1 epoch:5 sequence:10 views:@{@0 : [self viewOf:Doubles(a, 4)]}]);
+  XCTAssertFalse([_store publishForOwner:1 epoch:5 sequence:9 views:@{@0 : [self viewOf:Doubles(old, 4)]}], @"older sequence");
+  XCTAssertFalse([_store publishForOwner:1 epoch:5 sequence:10 views:@{@0 : [self viewOf:Doubles(old, 4)]}], @"same sequence");
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @1, @1, @2, @2 ]));
-  XCTAssertTrue([_store publishForOwner:1 epoch:5 sequence:11 views:@{@0 : Doubles(b, 4)}]);
+  XCTAssertTrue([_store publishForOwner:1 epoch:5 sequence:11 views:@{@0 : [self viewOf:Doubles(b, 4)]}]);
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @2, @2, @3, @3 ]));
 }
 
-- (void)testANewIsolateWinsEvenThoughItsCounterRestarted {
+/// Epochs are random ids, not clocks: a new isolate's id may be numerically LOWER than the old
+/// one's (a wall clock that went backwards before a hot restart) and must still win, while a late
+/// message of the dead isolate must not.
+- (void)testANewIsolateWinsWhateverItsEpochIsAndTheOldOnesStragglersAreIgnored {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
-  double a[] = {1, 1, 2, 2}, b[] = {2, 2, 3, 3};
-  XCTAssertTrue([_store publishForOwner:1 epoch:5 sequence:500 views:@{@0 : Doubles(a, 4)}]);
-  XCTAssertTrue([_store publishForOwner:1 epoch:6 sequence:1 views:@{@0 : Doubles(b, 4)}]);
+  double a[] = {1, 1, 2, 2}, b[] = {2, 2, 3, 3}, late[] = {7, 7, 8, 8}, c[] = {3, 3, 4, 4}, d[] = {1, 1, 2, 2};
+  XCTAssertTrue([_store publishForOwner:1 epoch:900 sequence:500 views:@{@0 : [self viewOf:Doubles(a, 4)]}]);
+  XCTAssertTrue([_store publishForOwner:1 epoch:100 sequence:1 views:@{@0 : [self viewOf:Doubles(b, 4)]}],
+                @"a hot restart: a LOWER epoch id, counter back at 1");
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @2, @2, @3, @3 ]));
+  XCTAssertFalse([_store publishForOwner:1 epoch:900 sequence:501 views:@{@0 : [self viewOf:Doubles(late, 4)]}],
+                 @"a straggler of the dead isolate");
+  XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @2, @2, @3, @3 ]));
+  XCTAssertTrue([_store publishForOwner:1 epoch:100 sequence:2 views:@{@0 : [self viewOf:Doubles(c, 4)]}]);
+  XCTAssertTrue([_store publishForOwner:1 epoch:5 sequence:1 views:@{@0 : [self viewOf:Doubles(d, 4)]}]);
+  XCTAssertFalse([_store publishForOwner:1 epoch:100 sequence:3 views:@{@0 : [self viewOf:Doubles(late, 4)]}]);
+  XCTAssertFalse([_store publishForOwner:1 epoch:900 sequence:502 views:@{@0 : [self viewOf:Doubles(late, 4)]}]);
+}
+
+#pragma mark - ratio, view scale
+
+/// A density change reaches native before Dart lays out again: what was measured at the old ratio is
+/// not scaled by the new one, the whole screen is covered until Dart republishes.
+- (void)testARatioThatNoLongerMatchesTheScreenCoversTheWholeScreenUntilRepublished {
+  PUBLISH(10, 10, 20, 20);
+  NSData *before = [_store snapshotForDisplay:0];
+  XCTAssertEqualObjects(WithoutVersion(before), (@[ @1, @10, @10, @20, @20 ]));
+  _screen.nativeRatio = 2;  // the screen changed scale; Flutter has not caught up
+  _screen.units = 1.0 / 2;
+  NSData *mismatch = [_store snapshotForDisplay:0];
+  XCTAssertEqualObjects(WithoutVersion(mismatch), (@[ @1, @0, @0, @402, @874 ]));
+  XCTAssertNotEqual(VersionOf(before), VersionOf(mismatch));
+  double v[] = {10, 10, 20, 20};
+  XCTAssertTrue([_store publishForOwner:1 epoch:1 sequence:++_sequence views:@{@0 : [self viewOf:Doubles(v, 4) ratio:2]}]);
+  XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @10, @10, @20, @20 ]));
+}
+
+- (void)testAViewScaledOnScreenScalesTheRectanglesToo {
+  [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:100 y:200 scaleX:0.9 scaleY:0.9] forOwner:1 viewId:0];
+  double v[] = {100, 100, 180, 140};
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(v, 4)]}];
+  // 100*0.9 = 90 -> 190, 180*0.9 = 162 -> 262; y: 90 -> 290, 126 -> 326
+  XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @190, @290, @262, @326 ]));
+  [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:100 y:200] forOwner:1 viewId:0];
+  XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @200, @300, @280, @340 ]));
+}
+
+- (void)testAViewScaleThatIsNotUsableCoversTheWholeScreen {
+  double v[] = {10, 10, 20, 20};
+  [_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(v, 4)]}];
+  for (NSNumber *bad in @[ @0, @-1, @(NAN) ]) {
+    [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0 scaleX:bad.doubleValue scaleY:1]
+                forOwner:1
+                  viewId:0];
+    XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @0, @0, @402, @874 ]));
+    [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0 scaleX:1 scaleY:bad.doubleValue]
+                forOwner:1
+                  viewId:0];
+    XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @0, @0, @402, @874 ]));
+  }
+}
+
+#pragma mark - grace window
+
+- (void)testAMovedRegionIsCoveredWhereItWasTooThenTheUnionShrinksAndMovesTheVersion {
+  __block NSTimeInterval now = 100;
+  BGSFlutterSecureRectangleStore *g = [[BGSFlutterSecureRectangleStore alloc]
+      initWithEnvironment:_screen
+                    clock:^NSTimeInterval {
+                      return now;
+                    }
+                    grace:[BGSFlutterSecureRectangleStore graceSeconds]];
+  [g setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
+  double a[] = {0, 0, 10, 10}, b[] = {5, 0, 15, 10};
+  [g publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(a, 4)]}];
+  NSData *first = [g snapshotForDisplay:0];
+  XCTAssertEqualObjects(WithoutVersion(first), (@[ @1, @0, @0, @10, @10 ]), @"a new region has no previous place");
+  now += 0.01;
+  [g publishForOwner:1 epoch:1 sequence:2 views:@{@0 : [self viewOf:Doubles(b, 4)]}];
+  NSData *moved = [g snapshotForDisplay:0];
+  XCTAssertEqualObjects(WithoutVersion(moved), (@[ @2, @5, @0, @15, @10, @0, @0, @10, @10 ]));
+  XCTAssertNotEqual(VersionOf(first), VersionOf(moved));
+  now += [BGSFlutterSecureRectangleStore graceSeconds] - 0.001;
+  XCTAssertEqual(VersionOf([g snapshotForDisplay:0]), VersionOf(moved), @"inside the window");
+  now += 0.001;
+  NSData *shrunk = [g snapshotForDisplay:0];
+  XCTAssertEqualObjects(WithoutVersion(shrunk), (@[ @1, @5, @0, @15, @10 ]));
+  XCTAssertNotEqual(VersionOf(moved), VersionOf(shrunk), @"shrinking is a change the SDK must re-read");
+  XCTAssertEqual(VersionOf([g snapshotForDisplay:0]), VersionOf(shrunk));
+}
+
+- (void)testARegionThatWentIsStillCoveredForTheWindow {
+  __block NSTimeInterval now = 100;
+  BGSFlutterSecureRectangleStore *g = [[BGSFlutterSecureRectangleStore alloc]
+      initWithEnvironment:_screen
+                    clock:^NSTimeInterval {
+                      return now;
+                    }
+                    grace:[BGSFlutterSecureRectangleStore graceSeconds]];
+  [g setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
+  double a[] = {0, 0, 10, 10};
+  [g publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(a, 4)]}];
+  [g snapshotForDisplay:0];
+  now += 0.01;
+  [g publishForOwner:1 epoch:1 sequence:2 views:@{}];
+  NSData *gone = [g snapshotForDisplay:0];
+  XCTAssertEqualObjects(WithoutVersion(gone), (@[ @1, @0, @0, @10, @10 ]));
+  now += [BGSFlutterSecureRectangleStore graceSeconds];
+  NSData *empty = [g snapshotForDisplay:0];
+  XCTAssertEqual(((const int32_t *)empty.bytes)[1], 0);
+  XCTAssertNotEqual(VersionOf(gone), VersionOf(empty));
+}
+
+- (void)testContinuousMovementCoversEveryRecentPlaceAndTooManyCollapse {
+  __block NSTimeInterval now = 100;
+  BGSFlutterSecureRectangleStore *g = [[BGSFlutterSecureRectangleStore alloc]
+      initWithEnvironment:_screen
+                    clock:^NSTimeInterval {
+                      return now;
+                    }
+                    grace:[BGSFlutterSecureRectangleStore graceSeconds]];
+  [g setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
+  double a[] = {0, 0, 10, 10}, b[] = {5, 0, 15, 10}, c[] = {10, 0, 20, 10};
+  [g publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(a, 4)]}];
+  [g snapshotForDisplay:0];
+  now += 0.01;
+  [g publishForOwner:1 epoch:1 sequence:2 views:@{@0 : [self viewOf:Doubles(b, 4)]}];
+  [g snapshotForDisplay:0];
+  now += 0.04;
+  [g publishForOwner:1 epoch:1 sequence:3 views:@{@0 : [self viewOf:Doubles(c, 4)]}];
+  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 3, @"current + both earlier places");
+  now += [BGSFlutterSecureRectangleStore graceSeconds] - 0.001;
+  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 3);
+  now += 0.001;
+  XCTAssertEqual(((const int32_t *)[g snapshotForDisplay:0].bytes)[1], 1);
+
+  double many[4 * 70];
+  for (int i = 0; i < 70; i++) {
+    many[4 * i] = i;
+    many[4 * i + 1] = 0;
+    many[4 * i + 2] = i + 1;
+    many[4 * i + 3] = 5;
+  }
+  now += 1;
+  [g publishForOwner:1 epoch:1 sequence:4 views:@{@0 : [self viewOf:Doubles(many, 280)]}];
+  [g snapshotForDisplay:0];
+  now += 0.01;
+  double far[] = {300, 300, 310, 310};
+  [g publishForOwner:1 epoch:1 sequence:5 views:@{@0 : [self viewOf:Doubles(far, 4)]}];
+  XCTAssertEqualObjects(WithoutVersion([g snapshotForDisplay:0]),
+                        (@[ @2, @300, @300, @310, @310, @0, @0, @70, @10 ]), @"one box over the 70 old ones");
 }
 
 - (void)testTheOrderingIsPerOwnerAndAPublishReplacesOnlyItsOwnersViews {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:2 viewId:0];
   double a[] = {1, 1, 2, 2}, b[] = {4, 4, 5, 5};
-  XCTAssertTrue([_store publishForOwner:1 epoch:1 sequence:50 views:@{@0 : Doubles(a, 4)}]);
-  XCTAssertTrue([_store publishForOwner:2 epoch:1 sequence:1 views:@{@0 : Doubles(b, 4)}]);
+  XCTAssertTrue([_store publishForOwner:1 epoch:1 sequence:50 views:@{@0 : [self viewOf:Doubles(a, 4)]}]);
+  XCTAssertTrue([_store publishForOwner:2 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(b, 4)]}]);
   XCTAssertEqual(((const int32_t *)[_store snapshotForDisplay:0].bytes)[1], 2);
   XCTAssertTrue([_store publishForOwner:1 epoch:1 sequence:51 views:@{}]);
   XCTAssertEqualObjects(WithoutVersion([_store snapshotForDisplay:0]), (@[ @1, @4, @4, @5, @5 ]));
@@ -358,11 +526,11 @@ static int32_t VersionOf(NSData *buffer) {
 - (void)testDroppingAnOwnerClearsItsRectanglesAndOrdering {
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
   double a[] = {1, 1, 2, 2};
-  [_store publishForOwner:1 epoch:9 sequence:9 views:@{@0 : Doubles(a, 4)}];
+  [_store publishForOwner:1 epoch:9 sequence:9 views:@{@0 : [self viewOf:Doubles(a, 4)]}];
   [_store dropOwner:1];
   XCTAssertEqual(((const int32_t *)[_store snapshotForDisplay:0].bytes)[1], 0);
   [_store setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
-  XCTAssertTrue([_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : Doubles(a, 4)}]);
+  XCTAssertTrue([_store publishForOwner:1 epoch:1 sequence:1 views:@{@0 : [self viewOf:Doubles(a, 4)]}]);
   XCTAssertEqual(((const int32_t *)[_store snapshotForDisplay:0].bytes)[1], 1);
 }
 
@@ -421,7 +589,7 @@ static int32_t VersionOf(NSData *buffer) {
       set[4 * r + 2] = r + 100;
       set[4 * r + 3] = r + 100;
     }
-    [_store publishForOwner:1 epoch:1 sequence:i views:@{@0 : Doubles(set, 4 * k)}];
+    [_store publishForOwner:1 epoch:1 sequence:i views:@{@0 : [self viewOf:Doubles(set, 4 * k)]}];
   }
   stop = YES;
   dispatch_group_wait(group, DISPATCH_TIME_FOREVER);

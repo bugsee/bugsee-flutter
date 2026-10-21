@@ -5,8 +5,10 @@ import androidx.annotation.Nullable;
 
 import com.bugsee.library.contracts.internal.BugseeWrapper;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,30 +33,48 @@ import java.util.concurrent.atomic.AtomicReference;
  * ({@link BugseeWrapper#SECURE_RECTANGLES_VERSION_UNKNOWN}) makes it compare
  * them; a count of 0 clears the display's set whatever the version.
  *
- * <p>Dart publishes Flutter LOGICAL pixels (Android dp) relative to its view.
- * This class turns them into the SDK's buffer: multiply by the display's
- * pixels-per-logical-pixel (read at every pull, never cached), add the view's
- * position on the screen, then round OUTWARD (floor {@code l}/{@code t}, ceil
+ * <p>Dart publishes Flutter LOGICAL pixels (Android dp) relative to its view,
+ * with the device pixel ratio it measured them at. This class multiplies by
+ * that ratio, scales by the view's own on-screen scale, adds the view's
+ * position on the screen, then rounds OUTWARD (floor {@code l}/{@code t}, ceil
  * {@code r}/{@code b}), scaling BEFORE rounding so no sub-pixel strip is left
- * uncovered (5.1.2, 5.3.1).
+ * uncovered (5.1.2, 5.3.1). The display's density is read at every pull and
+ * must equal the ratio the rectangles were measured at: a density change is
+ * applied natively before Dart lays out again, and old logical rectangles times
+ * a new density cover neither the old nor the new content, so until Dart
+ * republishes at the new ratio the whole display is covered.
  *
  * <h2>Versions</h2>
  *
  * <p>A display's version is derived from what is served, not from what was
  * written: it moves exactly when the served rectangles differ from the ones
- * served before (so also when only the scale or the view's position changed,
- * which no write announces), and never otherwise (5.2.1, 5.2.2). It is kept
- * per display (5.2.3) and only ever steps forward, skipping 0. A display that
- * has never had a rectangle serves {@code [0, 0]}: unknown, and empty. Once it
- * has had one it serves real versions, an emptied set included ({@code [v, 0]}).
+ * served before (so also when only the density, the view's position or the
+ * grace window changed, which no write announces), and never otherwise (5.2.1,
+ * 5.2.2). It is kept per display (5.2.3) and only ever steps forward, skipping
+ * 0. A display that has never had a rectangle serves {@code [0, 0]}: unknown,
+ * and empty. Once it has had one it serves real versions, an emptied set
+ * included ({@code [v, 0]}).
+ *
+ * <h2>Grace window</h2>
+ *
+ * <p>Dart measures after a frame and the message crosses a channel, while the
+ * raster of that frame (or the one before) may be captured first. So when the
+ * served set changes, the PREVIOUS set is served as well for
+ * {@link #GRACE_MS}: a moving region leaves no uncovered strip as wide as one
+ * frame's movement, and a region that has just gone is covered one pull longer.
+ * It only ever over-covers. A region that has just APPEARED has no previous
+ * position, so its first frame can still be recorded before the message lands:
+ * the one exposure this class cannot close. The union shrinks back on a later
+ * pull, which is a change of the served set and so moves the version.
  *
  * <h2>Fail closed</h2>
  *
  * <p>A view whose placement is not known (the Flutter view has not been found,
- * or is ambiguous) is served as one rectangle covering the whole display. A
- * rectangle that is not finite does the same, and so does a scale that is not
- * a positive finite number. A view that is known to be not on screen at all
- * (its activity is detached) serves nothing.
+ * or is ambiguous, or is transformed by more than a scale) is served as one
+ * rectangle covering the whole display. A rectangle that is not finite does the
+ * same, and so does a scale or ratio that is not a positive finite number or
+ * does not match the display's density. A view known to be off screen serves
+ * nothing.
  *
  * <h2>Threading</h2>
  *
@@ -76,23 +96,41 @@ final class SecureRectangleStore {
 
     /**
      * The size a whole-display rectangle gets when the display's real size is
-     * not known: more than any panel, small enough not to overflow an int when
-     * the SDK scales it.
+     * not known (or reads as zero): more than any panel, small enough not to
+     * overflow an int when the SDK scales it.
      */
     static final int FALLBACK_DISPLAY_SIZE = 16384;
 
     /** Largest magnitude served: keeps the SDK's own int arithmetic away from overflow. */
     private static final double LIMIT = 1 << 28;
 
+    /** How long the previous set is served along with a changed one. Repeated in ObjC. */
+    static final long GRACE_MS = 120;
+
+    /** More rectangles than this and the previous set is collapsed to its bounding box. */
+    private static final int MAX_RECTANGLES = 64;
+
+    /** The densities a message may differ from the display's by (floating-point noise). */
+    private static final double RATIO_TOLERANCE = 1e-3;
+
+    /** Epochs remembered as retired, so a straggler of a dead isolate is ignored. */
+    private static final int RETIRED_EPOCHS = 32;
+
     /** What the store needs to know about the device, read at every pull. */
     interface Environment {
         /**
-         * Physical pixels per Flutter logical pixel on {@code display}: the
-         * density Flutter itself uses (Android: {@code DisplayMetrics.density}
-         * of the Flutter view). Read per call, never cached. Not finite or not
-         * positive means "unknown" and fails closed.
+         * The display's physical pixels per Flutter logical pixel right now
+         * (Android: {@code DisplayMetrics.density} of the Flutter view). Read
+         * per call, never cached. Not finite or not positive means "unknown"
+         * and fails closed.
          */
-        double pixelsPerLogicalPixel(int display);
+        double nativePixelRatio(int display);
+
+        /**
+         * SDK units per physical pixel: 1 on Android (the SDK takes physical
+         * pixels).
+         */
+        double unitsPerPhysicalPixel(int display);
 
         /** The display's current size in pixels, {@code {width, height}}, or {@code null}. */
         @Nullable
@@ -102,8 +140,13 @@ final class SecureRectangleStore {
     /** Knows nothing: every view covers the whole display. Until a plugin installs the real one. */
     static final Environment UNKNOWN_ENVIRONMENT = new Environment() {
         @Override
-        public double pixelsPerLogicalPixel(final int display) {
+        public double nativePixelRatio(final int display) {
             return Double.NaN;
+        }
+
+        @Override
+        public double unitsPerPhysicalPixel(final int display) {
+            return 1;
         }
 
         @Nullable
@@ -113,6 +156,22 @@ final class SecureRectangleStore {
         }
     };
 
+    /** Milliseconds from a monotonic source. */
+    interface Clock {
+        long nowMs();
+    }
+
+    /** What one view published: the ratio it was measured at and its flat logical ltrb. */
+    static final class ViewRects {
+        final double ratio;
+        final double[] rects;
+
+        ViewRects(final double ratio, @NonNull final double[] rects) {
+            this.ratio = ratio;
+            this.rects = rects;
+        }
+    }
+
     /** Where one Flutter view sits, in the unit and space the SDK wants. */
     static final class Placement {
         static final int KNOWN_KIND = 0;
@@ -120,25 +179,47 @@ final class SecureRectangleStore {
         static final int ABSENT_KIND = 2;
 
         /** The view's position is not known: serve the whole display. */
-        static final Placement UNKNOWN = new Placement(UNKNOWN_KIND, 0, 0, 0);
+        static final Placement UNKNOWN = new Placement(UNKNOWN_KIND, 0, 0, 0, 1, 1);
         /** The view is known not to be on screen: serve nothing. */
-        static final Placement ABSENT = new Placement(ABSENT_KIND, 0, 0, 0);
+        static final Placement ABSENT = new Placement(ABSENT_KIND, 0, 0, 0, 1, 1);
 
         final int kind;
         final int display;
         /** The view's top-left on the display, in physical pixels. */
         final double x;
         final double y;
+        /** The view's own scale on the screen (it, or an ancestor, is scaled); 1 normally. */
+        final double scaleX;
+        final double scaleY;
 
-        private Placement(final int kind, final int display, final double x, final double y) {
+        private Placement(
+                final int kind,
+                final int display,
+                final double x,
+                final double y,
+                final double scaleX,
+                final double scaleY
+        ) {
             this.kind = kind;
             this.display = display;
             this.x = x;
             this.y = y;
+            this.scaleX = scaleX;
+            this.scaleY = scaleY;
         }
 
         static Placement known(final int display, final double x, final double y) {
-            return new Placement(KNOWN_KIND, display, x, y);
+            return known(display, x, y, 1, 1);
+        }
+
+        static Placement known(
+                final int display,
+                final double x,
+                final double y,
+                final double scaleX,
+                final double scaleY
+        ) {
+            return new Placement(KNOWN_KIND, display, x, y, scaleX, scaleY);
         }
 
         @Override
@@ -147,12 +228,13 @@ final class SecureRectangleStore {
                 return false;
             }
             final Placement p = (Placement) o;
-            return kind == p.kind && display == p.display && x == p.x && y == p.y;
+            return kind == p.kind && display == p.display && x == p.x && y == p.y
+                    && scaleX == p.scaleX && scaleY == p.scaleY;
         }
 
         @Override
         public int hashCode() {
-            return Arrays.hashCode(new double[] {kind, display, x, y});
+            return Arrays.hashCode(new double[] {kind, display, x, y, scaleX, scaleY});
         }
     }
 
@@ -183,18 +265,29 @@ final class SecureRectangleStore {
         }
     }
 
+    /** The ordering state of one owner. Immutable. */
+    private static final class Order {
+        final long epoch;
+        final long sequence;
+        final List<Long> retired;
+
+        Order(final long epoch, final long sequence, @NonNull final List<Long> retired) {
+            this.epoch = epoch;
+            this.sequence = sequence;
+            this.retired = retired;
+        }
+    }
+
     /** Immutable. Replaced wholesale on every write. */
     private static final class State {
-        /** Logical-pixel rectangles as Dart sent them, flat ltrb. */
-        final TreeMap<Lane, double[]> rects;
+        final TreeMap<Lane, ViewRects> rects;
         final Map<Lane, Placement> placements;
-        /** owner to {epoch, sequence} of the newest applied publish. */
-        final Map<Long, long[]> order;
+        final Map<Long, Order> order;
 
         State(
-                final TreeMap<Lane, double[]> rects,
+                final TreeMap<Lane, ViewRects> rects,
                 final Map<Lane, Placement> placements,
-                final Map<Long, long[]> order
+                final Map<Long, Order> order
         ) {
             this.rects = rects;
             this.placements = placements;
@@ -205,13 +298,25 @@ final class SecureRectangleStore {
     /** What a display last served. Immutable. */
     private static final class Served {
         final int version;
-        /** The rectangles only (no header), physical pixels. */
+        /** What is served: the current set plus, within the grace window, the previous one. */
         final int[] quads;
+        final int[] current;
+        final int[] previous;
+        final long changedAtMs;
         final int[] buffer;
 
-        Served(final int version, @NonNull final int[] quads) {
+        Served(
+                final int version,
+                @NonNull final int[] quads,
+                @NonNull final int[] current,
+                @NonNull final int[] previous,
+                final long changedAtMs
+        ) {
             this.version = version;
             this.quads = quads;
+            this.current = current;
+            this.previous = previous;
+            this.changedAtMs = changedAtMs;
             this.buffer = new int[HEADER_INTS + quads.length];
             buffer[0] = version;
             buffer[1] = quads.length / 4;
@@ -219,7 +324,10 @@ final class SecureRectangleStore {
         }
     }
 
-    private static final SecureRectangleStore SHARED = new SecureRectangleStore(UNKNOWN_ENVIRONMENT);
+    private static final int[] NONE = new int[0];
+
+    private static final SecureRectangleStore SHARED = new SecureRectangleStore(
+            UNKNOWN_ENVIRONMENT, () -> System.nanoTime() / 1_000_000L, GRACE_MS);
 
     @NonNull
     static SecureRectangleStore shared() {
@@ -227,14 +335,27 @@ final class SecureRectangleStore {
     }
 
     private volatile Environment environment;
+    private final Clock clock;
+    private final long graceMs;
     private volatile State state = new State(new TreeMap<>(), new HashMap<>(), new HashMap<>());
     private final Object writeLock = new Object();
     private final Object serveLock = new Object();
     private final Map<Integer, Served> served = new HashMap<>();
     private final AtomicReference<Runnable> pullHook = new AtomicReference<>();
 
+    /** No grace window: what is written is what is served at once. For tests. */
     SecureRectangleStore(@NonNull final Environment environment) {
+        this(environment, () -> System.nanoTime() / 1_000_000L, 0);
+    }
+
+    SecureRectangleStore(
+            @NonNull final Environment environment,
+            @NonNull final Clock clock,
+            final long graceMs
+    ) {
         this.environment = environment;
+        this.clock = clock;
+        this.graceMs = graceMs;
     }
 
     /** For a plugin to install what it can read off the device. */
@@ -252,38 +373,54 @@ final class SecureRectangleStore {
 
     /**
      * Applies Dart's whole state for {@code owner}: {@code views} maps a view
-     * id to its flat logical {@code [l, t, r, b, ...]}; a view not in the map
-     * has no rectangles any more. Ignored, and {@code false}, unless
-     * {@code (epoch, sequence)} is newer than the newest applied for
-     * {@code owner}: a delayed older message must never overwrite a newer one,
-     * while a new isolate (a larger epoch, its counter back at 0) still wins.
+     * id to what it published; a view not in the map has no rectangles any
+     * more. Ignored, and {@code false}, when {@code epoch} is the current one
+     * and {@code sequence} is not newer, or when {@code epoch} was retired (a
+     * straggler of a dead isolate). An epoch not seen before is a new isolate
+     * (a hot restart): it replaces the old one's state and retires its epoch.
+     * Epochs are random ids, never clocks.
      */
     boolean publish(
             final long owner,
             final long epoch,
             final long sequence,
-            @NonNull final Map<Integer, double[]> views
+            @NonNull final Map<Integer, ViewRects> views
     ) {
         synchronized (writeLock) {
             final State previous = state;
-            final long[] last = previous.order.get(owner);
-            if (last != null && (epoch < last[0] || (epoch == last[0] && sequence <= last[1]))) {
-                return false;
+            final Order last = previous.order.get(owner);
+            List<Long> retired = new ArrayList<>();
+            if (last != null) {
+                if (last.retired.contains(epoch)) {
+                    return false;
+                }
+                if (epoch == last.epoch) {
+                    if (sequence <= last.sequence) {
+                        return false;
+                    }
+                    retired = last.retired;
+                } else {
+                    retired = new ArrayList<>(last.retired);
+                    retired.add(last.epoch);
+                    while (retired.size() > RETIRED_EPOCHS) {
+                        retired.remove(0);
+                    }
+                }
             }
-            final TreeMap<Lane, double[]> rects = new TreeMap<>();
-            for (final Map.Entry<Lane, double[]> e : previous.rects.entrySet()) {
+            final TreeMap<Lane, ViewRects> rects = new TreeMap<>();
+            for (final Map.Entry<Lane, ViewRects> e : previous.rects.entrySet()) {
                 if (e.getKey().owner != owner) {
                     rects.put(e.getKey(), e.getValue());
                 }
             }
-            for (final Map.Entry<Integer, double[]> e : views.entrySet()) {
-                final double[] copy = e.getValue().clone();
-                if (copy.length > 0) {
-                    rects.put(new Lane(owner, e.getKey()), copy);
+            for (final Map.Entry<Integer, ViewRects> e : views.entrySet()) {
+                if (e.getValue().rects.length > 0) {
+                    rects.put(new Lane(owner, e.getKey()),
+                            new ViewRects(e.getValue().ratio, e.getValue().rects.clone()));
                 }
             }
-            final Map<Long, long[]> order = new HashMap<>(previous.order);
-            order.put(owner, new long[] {epoch, sequence});
+            final Map<Long, Order> order = new HashMap<>(previous.order);
+            order.put(owner, new Order(epoch, sequence, retired));
             state = new State(rects, previous.placements, order);
             return true;
         }
@@ -307,8 +444,8 @@ final class SecureRectangleStore {
     void dropOwner(final long owner) {
         synchronized (writeLock) {
             final State previous = state;
-            final TreeMap<Lane, double[]> rects = new TreeMap<>();
-            for (final Map.Entry<Lane, double[]> e : previous.rects.entrySet()) {
+            final TreeMap<Lane, ViewRects> rects = new TreeMap<>();
+            for (final Map.Entry<Lane, ViewRects> e : previous.rects.entrySet()) {
                 if (e.getKey().owner != owner) {
                     rects.put(e.getKey(), e.getValue());
                 }
@@ -319,7 +456,7 @@ final class SecureRectangleStore {
                     placements.put(e.getKey(), e.getValue());
                 }
             }
-            final Map<Long, long[]> order = new HashMap<>(previous.order);
+            final Map<Long, Order> order = new HashMap<>(previous.order);
             order.remove(owner);
             state = new State(rects, placements, order);
         }
@@ -341,28 +478,86 @@ final class SecureRectangleStore {
 
     /**
      * The buffer for {@code display}: {@code [version, count, l, t, r, b, ...]}.
-     * Computed from the current state, scale and size at this call; a fresh
+     * Computed from the current state, density and size at this call; a fresh
      * array every time.
      */
     @NonNull
     int[] snapshot(final int display) {
         synchronized (serveLock) {
-            final int[] quads = serve(state, display);
-            final Served previous = served.get(display);
-            if (previous == null && quads.length == 0) {
-                return new int[] {UNKNOWN_VERSION, 0};
+            final long now = clock.nowMs();
+            final int[] target = serve(state, display);
+            final Served last = served.get(display);
+            if (last == null) {
+                if (target.length == 0) {
+                    return new int[] {UNKNOWN_VERSION, 0};
+                }
+                final Served first = new Served(1, target, target, NONE, now);
+                served.put(display, first);
+                return first.buffer.clone();
             }
-            if (previous != null && Arrays.equals(previous.quads, quads)) {
-                return previous.buffer.clone();
+            final int[] previous;
+            long changedAt = last.changedAtMs;
+            if (!Arrays.equals(target, last.current)) {
+                // Something moved: keep covering where it was, and where it was before that if
+                // that is still recent.
+                previous = graceMs <= 0 ? NONE
+                        : union(last.current, inGrace(last, now) ? last.previous : NONE);
+                changedAt = now;
+            } else {
+                previous = last.previous.length > 0 && !inGrace(last, now) ? NONE : last.previous;
             }
-            final Served next = new Served(nextVersion(previous), quads);
+            final int[] out = previous.length == 0 ? target : union(target, previous);
+            final int version = Arrays.equals(out, last.quads)
+                    ? last.version : advance(last.version);
+            final Served next = out == last.quads && previous == last.previous
+                    && Arrays.equals(target, last.current) && changedAt == last.changedAtMs
+                    ? last : new Served(version, out, target, previous, changedAt);
             served.put(display, next);
             return next.buffer.clone();
         }
     }
 
-    private static int nextVersion(@Nullable final Served previous) {
-        return previous == null ? 1 : advance(previous.version);
+    private boolean inGrace(@NonNull final Served s, final long now) {
+        return now - s.changedAtMs < graceMs;
+    }
+
+    /** The rectangles of {@code a} then those of {@code b} that are not in {@code a}. */
+    @NonNull
+    private static int[] union(@NonNull final int[] a, @NonNull final int[] b) {
+        if (b.length == 0) {
+            return a;
+        }
+        int[] extra = new int[b.length];
+        int n = 0;
+        for (int i = 0; i < b.length; i += 4) {
+            boolean present = false;
+            for (int j = 0; j < a.length && !present; j += 4) {
+                present = a[j] == b[i] && a[j + 1] == b[i + 1]
+                        && a[j + 2] == b[i + 2] && a[j + 3] == b[i + 3];
+            }
+            if (!present) {
+                System.arraycopy(b, i, extra, n, 4);
+                n += 4;
+            }
+        }
+        if (n == 0) {
+            return a;
+        }
+        if ((a.length + n) / 4 > MAX_RECTANGLES) {
+            // Too many to carry: cover the previous ones by their bounding box (more, never less).
+            int l = Integer.MAX_VALUE, t = Integer.MAX_VALUE, r = Integer.MIN_VALUE, bt = Integer.MIN_VALUE;
+            for (int i = 0; i < n; i += 4) {
+                l = Math.min(l, extra[i]);
+                t = Math.min(t, extra[i + 1]);
+                r = Math.max(r, extra[i + 2]);
+                bt = Math.max(bt, extra[i + 3]);
+            }
+            extra = new int[] {l, t, r, bt};
+            n = 4;
+        }
+        final int[] out = Arrays.copyOf(a, a.length + n);
+        System.arraycopy(extra, 0, out, a.length, n);
+        return out;
     }
 
     /** The version after {@code version}: wraps, and never lands on 0 ("unknown"). */
@@ -371,21 +566,22 @@ final class SecureRectangleStore {
         return next == UNKNOWN_VERSION ? next + 1 : next;
     }
 
-    /** The physical-pixel rectangles {@code display} serves for {@code s}, flat ltrb. */
+    /** The physical-pixel rectangles {@code display} should serve for {@code s}, flat ltrb. */
     @NonNull
     private int[] serve(@NonNull final State s, final int display) {
         final Environment env = environment;
-        double scale = Double.NaN;
-        boolean scaleRead = false;
+        double nativeRatio = Double.NaN;
+        double unit = 1;
+        boolean envRead = false;
         int[] bounds = null;
-        boolean boundsRead = false;
 
         int[] out = new int[16];
         int n = 0;
         boolean whole = false;
 
-        for (final Map.Entry<Lane, double[]> entry : s.rects.entrySet()) {
-            final double[] logical = entry.getValue();
+        for (final Map.Entry<Lane, ViewRects> entry : s.rects.entrySet()) {
+            final ViewRects view = entry.getValue();
+            final double[] logical = view.rects;
             final Placement placement = s.placements.get(entry.getKey());
             final int kind = placement == null ? Placement.UNKNOWN_KIND : placement.kind;
             if (kind == Placement.ABSENT_KIND) {
@@ -398,15 +594,21 @@ final class SecureRectangleStore {
             if (placement.display != display) {
                 continue;
             }
-            if (!scaleRead) {
-                scale = env.pixelsPerLogicalPixel(display);
-                scaleRead = true;
-            }
-            if (!boundsRead) {
+            if (!envRead) {
+                nativeRatio = env.nativePixelRatio(display);
+                unit = env.unitsPerPhysicalPixel(display);
                 bounds = env.displayBounds(display);
-                boundsRead = true;
+                envRead = true;
             }
-            if (!(scale > 0) || Double.isInfinite(scale) || logical.length % 4 != 0) {
+            final double ratio = view.ratio;
+            final double factor = ratio * unit;
+            final double sx = placement.scaleX;
+            final double sy = placement.scaleY;
+            if (!isUsable(ratio) || !isUsable(nativeRatio) || !isUsable(unit)
+                    || !isUsable(sx) || !isUsable(sy)
+                    || Math.abs(nativeRatio - ratio) > RATIO_TOLERANCE * Math.max(1, ratio)
+                    || logical.length % 4 != 0) {
+                // Measured at another density than the display has now, or not measurable.
                 whole = true;
                 continue;
             }
@@ -423,11 +625,11 @@ final class SecureRectangleStore {
                     continue; // degenerate: nothing to hide
                 }
                 // Scale and place first, round outward last (5.3.1).
-                int il = toInt(Math.floor(l * scale + placement.x));
-                int it = toInt(Math.floor(t * scale + placement.y));
-                int ir = toInt(Math.ceil(r * scale + placement.x));
-                int ib = toInt(Math.ceil(b * scale + placement.y));
-                if (bounds != null) {
+                int il = toInt(Math.floor(l * factor * sx + placement.x));
+                int it = toInt(Math.floor(t * factor * sy + placement.y));
+                int ir = toInt(Math.ceil(r * factor * sx + placement.x));
+                int ib = toInt(Math.ceil(b * factor * sy + placement.y));
+                if (bounds != null && bounds[0] > 0 && bounds[1] > 0) {
                     il = clamp(il, bounds[0]);
                     ir = clamp(ir, bounds[0]);
                     it = clamp(it, bounds[1]);
@@ -449,14 +651,19 @@ final class SecureRectangleStore {
         if (whole) {
             // Something could not be placed or measured: cover everything. The
             // other rectangles are inside it, so they add nothing.
-            if (!boundsRead) {
+            if (!envRead) {
                 bounds = env.displayBounds(display);
             }
-            final int w = bounds == null ? FALLBACK_DISPLAY_SIZE : bounds[0];
-            final int h = bounds == null ? FALLBACK_DISPLAY_SIZE : bounds[1];
-            return w > 0 && h > 0 ? new int[] {0, 0, w, h} : new int[0];
+            final boolean known = bounds != null && bounds[0] > 0 && bounds[1] > 0;
+            final int w = known ? bounds[0] : FALLBACK_DISPLAY_SIZE;
+            final int h = known ? bounds[1] : FALLBACK_DISPLAY_SIZE;
+            return new int[] {0, 0, w, h};
         }
         return n == out.length ? out : Arrays.copyOf(out, n);
+    }
+
+    private static boolean isUsable(final double v) {
+        return v > 0 && !Double.isInfinite(v);
     }
 
     private static boolean isFinite(final double v) {

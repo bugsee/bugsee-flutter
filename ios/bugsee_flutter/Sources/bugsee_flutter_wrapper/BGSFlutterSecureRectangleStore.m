@@ -1,5 +1,7 @@
 #import "BGSFlutterSecureRectangleStore.h"
 
+#import <QuartzCore/QuartzCore.h>
+
 #include <math.h>
 
 /// Version meaning "unknown" (`BGSSecureRectanglesVersionUnknown` in the SDK's BGSContracts.h,
@@ -10,35 +12,70 @@ static const NSInteger kHeaderInts = 2;
 static const int32_t kFallbackDisplaySize = 16384;
 /// Largest magnitude served: keeps the SDK's own arithmetic away from overflow.
 static const double kLimit = 268435456.0;  // 2^28
+/// How long the previous set is served along with a changed one. Repeated in Java (GRACE_MS).
+static const NSTimeInterval kGraceSeconds = 0.12;
+/// More rectangles than this and the previous set is collapsed to its bounding box.
+static const NSUInteger kMaxRectangles = 64;
+/// How far a message's ratio may differ from the screen's (floating-point noise).
+static const double kRatioTolerance = 1e-3;
+/// Epochs remembered as retired, so a straggler of a dead isolate is ignored.
+static const NSUInteger kRetiredEpochs = 32;
 
 #pragma mark - Placement
+
+@implementation BGSFlutterSecureViewRects
+- (instancetype)initWithRatio:(double)ratio rects:(NSData *)rects {
+  if ((self = [super init])) {
+    _ratio = ratio;
+    _rects = [rects copy];
+  }
+  return self;
+}
+@end
 
 @implementation BGSFlutterSecurePlacement
 - (instancetype)initWithKind:(BGSFlutterPlacementKind)kind
                      display:(NSInteger)display
                            x:(double)x
-                           y:(double)y {
+                           y:(double)y
+                      scaleX:(double)scaleX
+                      scaleY:(double)scaleY {
   if ((self = [super init])) {
     _kind = kind;
     _display = display;
     _x = x;
     _y = y;
+    _scaleX = scaleX;
+    _scaleY = scaleY;
   }
   return self;
 }
 + (instancetype)knownOnDisplay:(NSInteger)display x:(double)x y:(double)y {
-  return [[self alloc] initWithKind:BGSFlutterPlacementKnown display:display x:x y:y];
+  return [self knownOnDisplay:display x:x y:y scaleX:1 scaleY:1];
+}
++ (instancetype)knownOnDisplay:(NSInteger)display
+                             x:(double)x
+                             y:(double)y
+                        scaleX:(double)scaleX
+                        scaleY:(double)scaleY {
+  return [[self alloc] initWithKind:BGSFlutterPlacementKnown
+                            display:display
+                                  x:x
+                                  y:y
+                             scaleX:scaleX
+                             scaleY:scaleY];
 }
 + (instancetype)unknown {
-  return [[self alloc] initWithKind:BGSFlutterPlacementUnknown display:0 x:0 y:0];
+  return [[self alloc] initWithKind:BGSFlutterPlacementUnknown display:0 x:0 y:0 scaleX:1 scaleY:1];
 }
 + (instancetype)absent {
-  return [[self alloc] initWithKind:BGSFlutterPlacementAbsent display:0 x:0 y:0];
+  return [[self alloc] initWithKind:BGSFlutterPlacementAbsent display:0 x:0 y:0 scaleX:1 scaleY:1];
 }
 - (BOOL)isEqual:(id)object {
   if (![object isKindOfClass:[BGSFlutterSecurePlacement class]]) return NO;
   BGSFlutterSecurePlacement *other = object;
-  return _kind == other.kind && _display == other.display && _x == other.x && _y == other.y;
+  return _kind == other.kind && _display == other.display && _x == other.x && _y == other.y &&
+         _scaleX == other.scaleX && _scaleY == other.scaleY;
 }
 - (NSUInteger)hash {
   return (NSUInteger)_kind ^ (NSUInteger)_display ^ (NSUInteger) @(_x).hash ^ (NSUInteger) @(_y).hash;
@@ -50,8 +87,11 @@ static const double kLimit = 268435456.0;  // 2^28
 @interface BGSFlutterUnknownEnvironment : NSObject <BGSFlutterSecureEnvironment>
 @end
 @implementation BGSFlutterUnknownEnvironment
-- (double)pointsPerLogicalPixelForDisplay:(NSInteger)display {
+- (double)nativePixelRatioForDisplay:(NSInteger)display {
   return NAN;
+}
+- (double)unitsPerPhysicalPixelForDisplay:(NSInteger)display {
+  return 1;
 }
 - (CGSize)displayBoundsInPointsForDisplay:(NSInteger)display {
   return CGSizeZero;
@@ -64,14 +104,17 @@ static const double kLimit = 268435456.0;  // 2^28
 @interface BGSFlutterLane : NSObject
 @property(nonatomic, readonly) int64_t owner;
 @property(nonatomic, readonly) int64_t viewId;
+/// The ratio Dart measured the rectangles at.
+@property(nonatomic, readonly) double ratio;
 /// Packed native-endian doubles, flat ltrb, logical pixels, as Dart sent them.
 @property(nonatomic, readonly, copy) NSData *rects;
 @end
 @implementation BGSFlutterLane
-- (instancetype)initWithOwner:(int64_t)owner viewId:(int64_t)viewId rects:(NSData *)rects {
+- (instancetype)initWithOwner:(int64_t)owner viewId:(int64_t)viewId ratio:(double)ratio rects:(NSData *)rects {
   if ((self = [super init])) {
     _owner = owner;
     _viewId = viewId;
+    _ratio = ratio;
     _rects = [rects copy];
   }
   return self;
@@ -88,8 +131,8 @@ static const double kLimit = 268435456.0;  // 2^28
 /// Sorted by (owner, viewId).
 @property(nonatomic, readonly) NSArray<BGSFlutterLane *> *lanes;
 @property(nonatomic, readonly) NSDictionary<NSString *, BGSFlutterSecurePlacement *> *placements;
-/// owner -> @[epoch, sequence] of the newest applied publish.
-@property(nonatomic, readonly) NSDictionary<NSNumber *, NSArray<NSNumber *> *> *order;
+/// owner -> @[epoch, sequence, retired epochs] of the newest applied publish.
+@property(nonatomic, readonly) NSDictionary<NSNumber *, NSArray *> *order;
 @end
 @implementation BGSFlutterSecureState
 - (instancetype)initWithLanes:(NSArray *)lanes placements:(NSDictionary *)placements order:(NSDictionary *)order {
@@ -105,14 +148,25 @@ static const double kLimit = 268435456.0;  // 2^28
 /// What a display last served.
 @interface BGSFlutterServed : NSObject
 @property(nonatomic, readonly) int32_t version;
+/// What is served: the current set plus, within the grace window, the previous one.
 @property(nonatomic, readonly, copy) NSData *quads;
+@property(nonatomic, readonly, copy) NSData *current;
+@property(nonatomic, readonly, copy) NSData *previous;
+@property(nonatomic, readonly) NSTimeInterval changedAt;
 @property(nonatomic, readonly, copy) NSData *buffer;
 @end
 @implementation BGSFlutterServed
-- (instancetype)initWithVersion:(int32_t)version quads:(NSData *)quads {
+- (instancetype)initWithVersion:(int32_t)version
+                          quads:(NSData *)quads
+                        current:(NSData *)current
+                       previous:(NSData *)previous
+                      changedAt:(NSTimeInterval)changedAt {
   if ((self = [super init])) {
     _version = version;
     _quads = [quads copy];
+    _current = [current copy];
+    _previous = [previous copy];
+    _changedAt = changedAt;
     NSMutableData *buffer = [NSMutableData dataWithCapacity:(kHeaderInts * 4) + quads.length];
     int32_t header[2] = {version, (int32_t)(quads.length / (4 * sizeof(int32_t)))};
     [buffer appendBytes:header length:sizeof(header)];
@@ -127,6 +181,8 @@ static const double kLimit = 268435456.0;  // 2^28
 
 @implementation BGSFlutterSecureRectangleStore {
   id<BGSFlutterSecureEnvironment> _environment;
+  NSTimeInterval (^_clock)(void);
+  NSTimeInterval _grace;
   BGSFlutterSecureState *_state;
   NSMutableDictionary<NSNumber *, BGSFlutterServed *> *_served;
   void (^_pullHook)(void);
@@ -134,11 +190,20 @@ static const double kLimit = 268435456.0;  // 2^28
   NSObject *_serveLock;
 }
 
++ (NSTimeInterval)graceSeconds {
+  return kGraceSeconds;
+}
+
 + (instancetype)shared {
   static BGSFlutterSecureRectangleStore *store;
   static dispatch_once_t once;
   dispatch_once(&once, ^{
-    store = [[BGSFlutterSecureRectangleStore alloc] init];
+    store = [[BGSFlutterSecureRectangleStore alloc]
+        initWithEnvironment:[[BGSFlutterUnknownEnvironment alloc] init]
+                      clock:^NSTimeInterval {
+                        return CACurrentMediaTime();
+                      }
+                      grace:kGraceSeconds];
   });
   return store;
 }
@@ -148,8 +213,20 @@ static const double kLimit = 268435456.0;  // 2^28
 }
 
 - (instancetype)initWithEnvironment:(id<BGSFlutterSecureEnvironment>)environment {
+  return [self initWithEnvironment:environment
+                             clock:^NSTimeInterval {
+                               return CACurrentMediaTime();
+                             }
+                             grace:0];
+}
+
+- (instancetype)initWithEnvironment:(id<BGSFlutterSecureEnvironment>)environment
+                              clock:(NSTimeInterval (^)(void))clock
+                              grace:(NSTimeInterval)grace {
   if ((self = [super init])) {
     _environment = environment;
+    _clock = [clock copy];
+    _grace = grace;
     _state = [[BGSFlutterSecureState alloc] initWithLanes:@[] placements:@{} order:@{}];
     _served = [NSMutableDictionary dictionary];
     _writeLock = [[NSObject alloc] init];
@@ -179,26 +256,39 @@ static const double kLimit = 268435456.0;  // 2^28
 - (BOOL)publishForOwner:(int64_t)owner
                   epoch:(int64_t)epoch
                sequence:(int64_t)sequence
-                  views:(NSDictionary<NSNumber *, NSData *> *)views {
+                  views:(NSDictionary<NSNumber *, BGSFlutterSecureViewRects *> *)views {
   @synchronized(_writeLock) {
     BGSFlutterSecureState *previous = _state;
-    NSArray<NSNumber *> *last = previous.order[@(owner)];
+    NSArray *last = previous.order[@(owner)];
+    NSArray<NSNumber *> *retired = @[];
     if (last != nil) {
-      int64_t lastEpoch = last[0].longLongValue;
-      int64_t lastSequence = last[1].longLongValue;
-      if (epoch < lastEpoch || (epoch == lastEpoch && sequence <= lastSequence)) {
-        return NO;
+      int64_t lastEpoch = [last[0] longLongValue];
+      int64_t lastSequence = [last[1] longLongValue];
+      NSArray<NSNumber *> *lastRetired = last[2];
+      if ([lastRetired containsObject:@(epoch)]) {
+        return NO;  // a straggler of a dead isolate
+      }
+      if (epoch == lastEpoch) {
+        if (sequence <= lastSequence) return NO;
+        retired = lastRetired;
+      } else {
+        // A new isolate (a hot restart): its epoch is any id not seen before, never a clock.
+        NSMutableArray *grown = [lastRetired mutableCopy];
+        [grown addObject:@(lastEpoch)];
+        while (grown.count > kRetiredEpochs) [grown removeObjectAtIndex:0];
+        retired = grown;
       }
     }
     NSMutableArray<BGSFlutterLane *> *lanes = [NSMutableArray array];
     for (BGSFlutterLane *lane in previous.lanes) {
       if (lane.owner != owner) [lanes addObject:lane];
     }
-    [views enumerateKeysAndObjectsUsingBlock:^(NSNumber *viewId, NSData *rects, BOOL *stop) {
-      if (rects.length > 0) {
+    [views enumerateKeysAndObjectsUsingBlock:^(NSNumber *viewId, BGSFlutterSecureViewRects *view, BOOL *stop) {
+      if (view.rects.length > 0) {
         [lanes addObject:[[BGSFlutterLane alloc] initWithOwner:owner
                                                         viewId:viewId.longLongValue
-                                                         rects:rects]];
+                                                         ratio:view.ratio
+                                                         rects:view.rects]];
       }
     }];
     [lanes sortUsingComparator:^NSComparisonResult(BGSFlutterLane *a, BGSFlutterLane *b) {
@@ -207,7 +297,7 @@ static const double kLimit = 268435456.0;  // 2^28
       return NSOrderedSame;
     }];
     NSMutableDictionary *order = [previous.order mutableCopy];
-    order[@(owner)] = @[ @(epoch), @(sequence) ];
+    order[@(owner)] = @[ @(epoch), @(sequence), retired ];
     _state = [[BGSFlutterSecureState alloc] initWithLanes:lanes
                                                placements:previous.placements
                                                     order:order];
@@ -276,13 +366,17 @@ static int32_t BGSToInt(double v) {
   return (int32_t)fmax(-kLimit, fmin(kLimit, v));
 }
 
-/// The point rectangles `display` serves for `state`, as packed int32 quads.
+static BOOL BGSUsable(double v) {
+  return v > 0 && !isinf(v);
+}
+
+/// The point rectangles `display` should serve for `state`, as packed int32 quads.
 static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
                         id<BGSFlutterSecureEnvironment> env) {
-  double scale = NAN;
-  BOOL scaleRead = NO;
+  double nativeRatio = NAN;
+  double unit = 1;
   CGSize bounds = CGSizeZero;
-  BOOL boundsRead = NO;
+  BOOL envRead = NO;
   NSMutableData *out = [NSMutableData data];
   BOOL whole = NO;
 
@@ -295,16 +389,20 @@ static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
       continue;
     }
     if (placement.display != display) continue;
-    if (!scaleRead) {
-      scale = [env pointsPerLogicalPixelForDisplay:display];
-      scaleRead = YES;
-    }
-    if (!boundsRead) {
+    if (!envRead) {
+      nativeRatio = [env nativePixelRatioForDisplay:display];
+      unit = [env unitsPerPhysicalPixelForDisplay:display];
       bounds = [env displayBoundsInPointsForDisplay:display];
-      boundsRead = YES;
+      envRead = YES;
     }
+    double ratio = lane.ratio;
+    double factor = ratio * unit;
+    double sx = placement.scaleX, sy = placement.scaleY;
     NSUInteger count = lane.rects.length / sizeof(double);
-    if (!(scale > 0) || isinf(scale) || lane.rects.length % (4 * sizeof(double)) != 0) {
+    if (!BGSUsable(ratio) || !BGSUsable(nativeRatio) || !BGSUsable(unit) || !BGSUsable(sx) ||
+        !BGSUsable(sy) || fabs(nativeRatio - ratio) > kRatioTolerance * fmax(1, ratio) ||
+        lane.rects.length % (4 * sizeof(double)) != 0) {
+      // Measured at another ratio than the screen has now, or not measurable.
       whole = YES;
       continue;
     }
@@ -317,10 +415,10 @@ static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
       }
       if (rt <= l || b <= t) continue;  // degenerate: nothing to hide
       // Scale and place first, round outward last (5.3.1).
-      int32_t il = BGSToInt(floor(l * scale + placement.x));
-      int32_t it = BGSToInt(floor(t * scale + placement.y));
-      int32_t ir = BGSToInt(ceil(rt * scale + placement.x));
-      int32_t ib = BGSToInt(ceil(b * scale + placement.y));
+      int32_t il = BGSToInt(floor(l * factor * sx + placement.x));
+      int32_t it = BGSToInt(floor(t * factor * sy + placement.y));
+      int32_t ir = BGSToInt(ceil(rt * factor * sx + placement.x));
+      int32_t ib = BGSToInt(ceil(b * factor * sy + placement.y));
       if (bounds.width > 0 && bounds.height > 0) {
         int32_t w = (int32_t)ceil(bounds.width), h = (int32_t)ceil(bounds.height);
         il = BGSClampInt(il, w);
@@ -336,7 +434,7 @@ static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
 
   if (whole) {
     // Something could not be placed or measured: cover everything.
-    if (!boundsRead) bounds = [env displayBoundsInPointsForDisplay:display];
+    if (!envRead) bounds = [env displayBoundsInPointsForDisplay:display];
     int32_t w = bounds.width > 0 ? (int32_t)ceil(bounds.width) : kFallbackDisplaySize;
     int32_t h = bounds.height > 0 ? (int32_t)ceil(bounds.height) : kFallbackDisplaySize;
     int32_t quad[4] = {0, 0, w, h};
@@ -345,19 +443,80 @@ static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
   return out;
 }
 
+/// The rectangles of `a` then those of `b` that are not in `a`; `b` collapsed to its bounding box
+/// when together they would be too many.
+static NSData *BGSUnion(NSData *a, NSData *b) {
+  if (b.length == 0) return a;
+  const int32_t *pa = a.bytes, *pb = b.bytes;
+  NSUInteger na = a.length / (4 * sizeof(int32_t)), nb = b.length / (4 * sizeof(int32_t));
+  NSMutableData *extra = [NSMutableData data];
+  for (NSUInteger i = 0; i < nb; i++) {
+    BOOL present = NO;
+    for (NSUInteger j = 0; j < na && !present; j++) {
+      present = memcmp(pa + 4 * j, pb + 4 * i, 4 * sizeof(int32_t)) == 0;
+    }
+    if (!present) [extra appendBytes:pb + 4 * i length:4 * sizeof(int32_t)];
+  }
+  if (extra.length == 0) return a;
+  NSUInteger ne = extra.length / (4 * sizeof(int32_t));
+  if (na + ne > kMaxRectangles) {
+    const int32_t *pe = extra.bytes;
+    int32_t l = INT32_MAX, t = INT32_MAX, r = INT32_MIN, bt = INT32_MIN;
+    for (NSUInteger i = 0; i < ne; i++) {
+      l = MIN(l, pe[4 * i]);
+      t = MIN(t, pe[4 * i + 1]);
+      r = MAX(r, pe[4 * i + 2]);
+      bt = MAX(bt, pe[4 * i + 3]);
+    }
+    int32_t box[4] = {l, t, r, bt};
+    extra = [NSMutableData dataWithBytes:box length:sizeof(box)];
+  }
+  NSMutableData *out = [a mutableCopy];
+  [out appendData:extra];
+  return out;
+}
+
+- (BOOL)inGrace:(BGSFlutterServed *)served at:(NSTimeInterval)now {
+  return now - served.changedAt < _grace;
+}
+
 - (NSData *)snapshotForDisplay:(NSInteger)display {
   @synchronized(_serveLock) {
-    NSData *quads = BGSServe([self currentState], display, _environment);
-    BGSFlutterServed *previous = _served[@(display)];
-    if (previous == nil && quads.length == 0) {
-      int32_t empty[2] = {kUnknownVersion, 0};
-      return [NSData dataWithBytes:empty length:sizeof(empty)];
+    NSTimeInterval now = _clock();
+    NSData *target = BGSServe([self currentState], display, _environment);
+    BGSFlutterServed *last = _served[@(display)];
+    if (last == nil) {
+      if (target.length == 0) {
+        int32_t empty[2] = {kUnknownVersion, 0};
+        return [NSData dataWithBytes:empty length:sizeof(empty)];
+      }
+      BGSFlutterServed *first = [[BGSFlutterServed alloc] initWithVersion:1
+                                                                    quads:target
+                                                                  current:target
+                                                                 previous:[NSData data]
+                                                                changedAt:now];
+      _served[@(display)] = first;
+      return first.buffer;
     }
-    if (previous != nil && [previous.quads isEqualToData:quads]) {
-      return previous.buffer;
+    NSData *previous;
+    NSTimeInterval changedAt = last.changedAt;
+    if (![target isEqualToData:last.current]) {
+      // Something moved: keep covering where it was, and where it was before that if that is recent.
+      previous = _grace <= 0 ? [NSData data]
+                             : BGSUnion(last.current, [self inGrace:last at:now] ? last.previous : [NSData data]);
+      changedAt = now;
+    } else {
+      previous = last.previous.length > 0 && ![self inGrace:last at:now] ? [NSData data] : last.previous;
     }
-    int32_t version = previous == nil ? 1 : [BGSFlutterSecureRectangleStore versionAfter:previous.version];
-    BGSFlutterServed *next = [[BGSFlutterServed alloc] initWithVersion:version quads:quads];
+    NSData *out = previous.length == 0 ? target : BGSUnion(target, previous);
+    int32_t version = [out isEqualToData:last.quads]
+                          ? last.version
+                          : [BGSFlutterSecureRectangleStore versionAfter:last.version];
+    BGSFlutterServed *next = [[BGSFlutterServed alloc] initWithVersion:version
+                                                                 quads:out
+                                                               current:target
+                                                              previous:previous
+                                                             changedAt:changedAt];
     _served[@(display)] = next;
     return next.buffer;
   }

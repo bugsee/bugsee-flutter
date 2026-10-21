@@ -35,6 +35,12 @@ typedef void (^BGSFlutterLifecycleSink)(BGSFlutterLifecycleEvent *event);
 /// status event is also remembered and replayed to every new receiver, so a restarted
 /// engine knows the status.
 ///
+/// Limit: the guarantees end at the hop into the sink. Report events still in this buffer are
+/// flushed to the next receiver and events in flight to a detaching receiver go back to the
+/// buffer; an event already SENT over the channel while Dart has no handler is held only by
+/// Flutter's channel buffer (one message by default) and is not retried. Consumers must not
+/// rely on delivery surviving a restart.
+///
 /// Names: prefix stripped once; unknown names and names without the prefix are
 /// forwarded unchanged (4.3).
 @interface BGSFlutterLifecycleHub : NSObject

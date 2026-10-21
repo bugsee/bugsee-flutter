@@ -915,6 +915,51 @@ void main() {
       );
 
       test(
+        'a stack taken here keeps the plugin\'s own frame out of the signature, obfuscated or not',
+        () {
+          String stackAt(String caller) =>
+              "build_id: 'abc'\n"
+              '    #00 abs 01 virt 00000000000b9bbb _kDartIsolateSnapshotInstructions+0x317b\n'
+              '    #01 abs 02 virt $caller _kDartIsolateSnapshotInstructions+0x1\n';
+          buildExceptionPayload(
+            StateError('x'),
+            StackTrace.fromString(stackAt('00000000000aaaaa')),
+            stackCaptured: true,
+          );
+          final siteA = buildExceptionPayload(
+            StateError('x'),
+            StackTrace.fromString(stackAt('00000000000aaaaa')),
+            stackCaptured: true,
+          );
+          final siteB = buildExceptionPayload(
+            StateError('x'),
+            StackTrace.fromString(stackAt('00000000000bbbbb')),
+            stackCaptured: true,
+          );
+          expect(
+            siteA.signature,
+            isNot(siteB.signature),
+            reason: 'two call sites, same type and message: two signatures',
+          );
+          expect(framesOf(siteA), hasLength(1));
+          expect(framesOf(siteA).single['trace'], contains('00000000000aaaaa'));
+          // The raw text is never rewritten: the backend symbolizes from all of it.
+          expect(
+            decode(siteA)['originalStackTrace'],
+            stackAt('00000000000aaaaa'),
+          );
+          // A stack that was not taken here has no plugin frame to drop.
+          expect(
+            buildExceptionPayload(
+              StateError('x'),
+              StackTrace.fromString(stackAt('00000000000aaaaa')),
+            ).frameCount,
+            2,
+          );
+        },
+      );
+
+      test(
         'is the same for the same error built twice (no clock, no counter in it)',
         () {
           expect(sig(StateError('x'), base), sig(StateError('x'), base));

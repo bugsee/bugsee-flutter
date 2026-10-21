@@ -3,8 +3,9 @@
 // The backend routes a Flutter exception on the literal text `FlutterManagedException` (in the
 // exception's name, in its reason, or `type == 'flutter'`: worker `crash/managed/__init__.py`) and
 // reads a JSON document out of the reason (worker `crash/managed/dart.py`). The document built here
-// is the one the 9.x plugin sent, with the keys the worker reads and nothing it ignores; the
-// contract and its sources are in doc/exceptions.md. This file is pure: no channel, no clock, no
+// is the one the 9.x plugin sent: the keys the worker reads, plus `signature`. The worker never reads
+// `signature`, but BOTH SDKs hash it into the report's signature, so it is sent on purpose and must
+// not be dropped (see `exceptionSignature`). The contract and its sources are in doc/exceptions.md. This file is pure: no channel, no clock, no
 // state, so every rule in it is unit-tested without a device.
 //
 // It never throws: a hostile `toString`, a stack that cannot be printed or parsed, a type whose
@@ -313,7 +314,7 @@ StackDocument describeStack(StackTrace? stack, {bool captured = false}) {
     // Bounded work: a stack overflow prints tens of thousands of frames.
     final bounded = _cutRawStack(raw);
     frames = isNonSymbolicStack(raw)
-        ? _framesFromNonSymbolic(bounded)
+        ? _framesFromNonSymbolic(bounded, dropFirst: captured ? 1 : 0)
         : _framesFromChain(bounded, captured: captured);
   } catch (_) {
     frames = const [];
@@ -338,11 +339,22 @@ String _withoutLocalPaths(String raw) =>
 /// An obfuscated stack has no names to read: one frame per `#NN` line, text as printed (the
 /// worker builds the same frames from `originalStackTrace` and replaces them once the symbols are
 /// found).
-List<Map<String, Object?>> _framesFromNonSymbolic(String raw) {
+///
+/// [dropFirst] frames are skipped: for a stack taken HERE the plugin's own frame (`Bugsee.logException`
+/// and its siblings take `StackTrace.current` in their own body, so exactly one) cannot be told by
+/// name, and left in it would be the top "user" frame of every such error, with the same address at
+/// every call site: the signature would not tell two call sites apart.
+List<Map<String, Object?>> _framesFromNonSymbolic(
+  String raw, {
+  int dropFirst = 0,
+}) {
   final frames = <Map<String, Object?>>[];
+  var toDrop = dropFirst;
   for (final line in raw.split('\n')) {
     final text = line.trim();
-    if (text == _suspension) {
+    if (toDrop > 0 && _frameLine.hasMatch(line)) {
+      toDrop--;
+    } else if (text == _suspension) {
       if (frames.isNotEmpty) frames.add(_gap());
     } else if (_frameLine.hasMatch(line)) {
       final trace = capText(text, ExceptionWire.maxFieldLength);
@@ -440,8 +452,9 @@ Map<String, Object?> _frame(Frame frame) {
 /// Builds the document for [error] and [stack]. Never throws.
 ///
 /// [name] and [reason] override what would be derived (an isolate error arrives as text). The
-/// document is `{internalType, name, reason, frames, originalStackTrace?}`: exactly the keys the
-/// worker reads (9.x also sent a `signature` it ignores).
+/// document is `{internalType, name, reason, signature, frames, originalStackTrace?}`: the keys the
+/// worker reads, and `signature`, which the worker ignores but both SDKs hash (a document without it
+/// gives every Dart error the same SDK signature: see [exceptionSignature]).
 ExceptionPayload buildExceptionPayload(
   Object? error,
   StackTrace? stack, {

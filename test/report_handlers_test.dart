@@ -894,15 +894,16 @@ void main() {
                 await entry.value(r);
                 outcome[entry.key] = 'accepted';
               } catch (e) {
-                outcome[entry.key] = e.runtimeType;
+                outcome[entry.key] = '${e.runtimeType}, live: ${r.isLive}';
               }
-              expect(r.isLive, isFalse, reason: entry.key);
             },
           );
           await native.deliver(handle: handle, reportId: 'r$n');
           await settle();
         }
-        expect(outcome, {for (final k in ops.keys) k: ReportClosedError});
+        expect(outcome, {
+          for (final k in ops.keys) k: 'ReportClosedError, live: false',
+        });
       },
     );
 

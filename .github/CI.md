@@ -31,7 +31,7 @@ push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or re
 
 ## Device tests (not in CI)
 
-`example/integration_test/{launch,cold_start,facade,exceptions}_test.dart` need the real SDKs and a device, so they run by hand
+`example/integration_test/{launch,cold_start,facade,exceptions,attachments}_test.dart` (the last also needs the stand-in API `support/mock_api.py`) need the real SDKs and a device, so they run by hand
 (Phase 7 owns a device harness): `cd example && flutter test integration_test/facade_test.dart -d <emulator or simulator>`.
 They use a placeholder token; iOS's SDK stops itself after the first refused upload, which `facade_test` accounts for (see
 `.claude/CLAUDE.md`). The facade's own JUnit (`FacadeOpsTest`) and XCTest (`BGSFlutterFacadeOpsTests`) run in the `build-android` and `test` jobs.

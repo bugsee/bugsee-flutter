@@ -716,6 +716,47 @@ void main() {
       },
     );
 
+    test(
+      'a paused subscription holds the server back: the backpressure reaches the socket',
+      () async {
+        const chunk = 256 * 1024;
+        const chunks = 400; // 100 MB in all
+        var written = 0;
+        final big = await Harness.start((request) async {
+          final response = request.response
+            ..headers.contentType = ContentType.text
+            ..bufferOutput = false;
+          final bytes = Uint8List(chunk);
+          try {
+            for (var i = 0; i < chunks; i++) {
+              response.add(bytes);
+              await response.flush();
+              written += chunk;
+            }
+          } catch (_) {}
+          await response.close().catchError((_) {});
+        });
+        addTearDown(big.close);
+        final request = await big.captured().getUrl(big.url('/'));
+        final response = await request.close();
+        var received = 0;
+        final done = Completer<void>();
+        late StreamSubscription<List<int>> sub;
+        sub = response.listen((data) {
+          received += data.length;
+          if (received == data.length) sub.pause();
+        }, onDone: done.complete);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        // Without backpressure the capture would have read all 100 MB into memory by now.
+        expect(written, lessThan(50 * 1024 * 1024));
+        expect(done.isCompleted, isFalse);
+        sub.resume();
+        await done.future.timeout(const Duration(seconds: 30));
+        expect(received, chunk * chunks);
+        expect(big.stage(NetworkStage.complete).single.size, chunk * chunks);
+      },
+    );
+
     test('a second listen fails the way the real response does', () async {
       final request = await streaming.captured().getUrl(streaming.url('/'));
       final response = await request.close();
@@ -927,6 +968,24 @@ void main() {
       expect(result.status, 200);
       expect(utf8.decode(result.bytes), '{"ok":true}');
       expect(h.recordCalls, greaterThanOrEqualTo(2));
+    });
+
+    test('the controller swallows a recorder that throws', () {
+      final controller = HttpCaptureController(
+        policy: () => const NetworkPolicy(accepting: true),
+        record: (_) => throw StateError('the pipeline broke'),
+      );
+      expect(
+        () => controller.emit(
+          BugseeNetworkEvent(
+            id: 'a',
+            stage: NetworkStage.before,
+            method: 'GET',
+            url: 'http://x/',
+          ),
+        ),
+        returnsNormally,
+      );
     });
 
     test(

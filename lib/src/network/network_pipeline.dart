@@ -115,7 +115,7 @@ final class NetworkPipeline {
     _filterTimeout = timeout;
   }
 
-  final Queue<BugseeNetworkEvent> _queue = Queue<BugseeNetworkEvent>();
+  final Queue<_Queued> _queue = Queue<_Queued>();
   int _queuedBytes = 0;
   bool _scheduled = false;
   bool _draining = false;
@@ -174,7 +174,9 @@ final class NetworkPipeline {
         }
         return;
       }
-      _queue.add(event);
+      // The filter in force NOW travels with the event: one removed or replaced before the event
+      // is processed (a toggle in the UI) must not let it through unfiltered.
+      _queue.add(_Queued(event, _filter, _filterTimeout));
       _queuedBytes += bytes;
       _captured++;
       _schedule();
@@ -215,12 +217,12 @@ final class NetworkPipeline {
         while (_queue.isNotEmpty &&
             batch.length < maxBatchEvents &&
             batchBytes < maxBatchBytes) {
-          final event = _queue.removeFirst();
-          _queuedBytes -= estimateBytes(event);
-          final message = await _prepare(event);
+          final queued = _queue.removeFirst();
+          _queuedBytes -= estimateBytes(queued.event);
+          final message = await _prepare(queued);
           if (message != null) {
             batch.add(message);
-            batchBytes += estimateBytes(event);
+            batchBytes += estimateBytes(queued.event);
           }
           // Yield between events once the slice is used up, so a long queue (or a slow filter)
           // never holds the isolate for long at a time.
@@ -239,19 +241,27 @@ final class NetworkPipeline {
     }
   }
 
-  Future<NetworkEventMessage?> _prepare(BugseeNetworkEvent original) async {
+  Future<NetworkEventMessage?> _prepare(_Queued queued) async {
+    final original = queued.event;
     if (!policy().accepting) {
       _droppedNotAccepting++;
       return null;
     }
-    BugseeNetworkEvent event = original;
-    final filter = _filter;
-    if (filter != null) {
-      final BugseeNetworkEvent? filtered;
+    // Every filter that applies, in order: the one in force when the event was captured, then the
+    // one in force now if it is another (set later, or swapped). Removing a filter therefore never
+    // lets an already captured event through unfiltered, and setting one covers what was queued.
+    final chain = <(BugseeNetworkFilter, Duration)>[
+      if (queued.filter != null) (queued.filter!, queued.timeout),
+      if (_filter != null && !identical(_filter, queued.filter))
+        (_filter!, _filterTimeout),
+    ];
+    var event = original;
+    for (final (filter, timeout) in chain) {
+      final BugseeNetworkEvent? next;
       try {
-        final Object? answer = filter(original.copy());
+        final Object? answer = filter(event.copy());
         final Object? resolved = answer is Future
-            ? await answer.timeout(_filterTimeout)
+            ? await answer.timeout(timeout)
             : answer;
         if (resolved == null) {
           _droppedByFilter++;
@@ -262,7 +272,7 @@ final class NetworkPipeline {
             'the network filter returned a ${resolved.runtimeType}, not a BugseeNetworkEvent or null',
           );
         }
-        filtered = resolved;
+        next = resolved;
       } catch (error) {
         // A filter that throws, hangs or answers nonsense drops the event: a redaction boundary
         // fails closed, like the SDKs'.
@@ -276,7 +286,7 @@ final class NetworkPipeline {
         }
         return null;
       }
-      event = filtered;
+      event = next;
     }
     return _toMessage(original, event);
   }
@@ -340,4 +350,13 @@ final class NetworkPipeline {
       }
     }
   }
+}
+
+/// An event waiting in the queue, with the filter that was in force when it was captured.
+final class _Queued {
+  _Queued(this.event, this.filter, this.timeout);
+
+  final BugseeNetworkEvent event;
+  final BugseeNetworkFilter? filter;
+  final Duration timeout;
 }

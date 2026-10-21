@@ -188,16 +188,48 @@ behaviour table with source line references, value rules, errors and threading: 
 ## 5. Phase 5 — Dart-side capture and data channels
 
 - Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
-  wrapper, filters chained ahead of app filters) — spec is **Proposed, unimplemented on both
-  SDKs**; build against the interface, gate on SDK support.
+  wrapper, filters chained ahead of app filters). The spec still says **Proposed**, but **both pinned SDKs ship the channel**
+  (Android 7.4.2 `BugseeWrapperChannel`, iOS 7.0.0-beta7 `BGSWrapperChannel`; checked in the pinned artifacts' sources and headers):
+  network events use it (5b); logs and breadcrumbs are still to do.
 - Dart exceptions: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
   obfuscation symbolication (debug-info) — port the useful parts of the 9.x `exceptions*`
   and `symbols.py` approach, as new code.
-- Network: HttpClient/`HttpOverrides` and package interceptors (dio/http).
+- Network: **built in 5b** (`HttpOverrides`; dio's default adapter and `package:http` ride `dart:io`, so no package interceptors).
+  Record below.
 - View hierarchy (`vh`): Flutter semantic/render tree → JSON, **no text content or free-text
   labels on secure nodes**, bounds in screen coords in platform units.
   **Blocker (6.7):** Dart runs off the platform thread, so Android's async-reply fix
   (`bugsee-android` PR #120) is required; track it.
+
+### 5b record — network capture
+
+Design and data flow: `doc/network.md` (the privacy model, the options, the limits, the SDK source refs). Decisions worth keeping:
+
+- **Channel**: at the pins the SDKs ship the wrapper channel, so events go through it (`FlutterWrapper.onWrapperChannelAvailable`
+  stores the channel in a process-wide holder; the wrapper object is replaced on the identity refinement and the SDK retires the old
+  channel then). No source attribution exists for network events at the pins (only `log`), so `mechanism: dart:io` is the label.
+  iOS 7.0.0-beta7's factory answers nil for `createNetworkEvent`, so iOS builds `BugseeNetworkEvent` directly.
+- **Filtering is always required** (`requiresFiltering = true`; `false` skips the SDK's default sanitizer and the app's native filter),
+  so a Dart filter runs first and does NOT replace the sanitizer; a native filter, if the app set one, runs after it (double filtering,
+  documented). The Dart filter is the privacy boundary: fails closed (throw / wrong type / hang drops the event), cannot change
+  id/stage/method/status/size, and applies to everything captured under it even if it is removed before the queue is drained
+  (found on the first device run: `setNetworkFilter(null)` right after a request let that request's response through).
+- **Gate**: only `launched` + `capture.network` (Android would buffer `launching`, iOS drops it); mirrored in Dart and natively;
+  the SDK's body rules (size limit, content type, `body-without-type`, request vs response order) are applied before anything is copied.
+- **Bounded**: queue 512 events / 8 MiB (the new event is dropped and counted), one batch (<= 32 events / 512 KiB) in flight,
+  filter and bridge off the HTTP path, body copy capped by the SDK limit.
+- **Device findings**: Android HTTP breadcrumbs carry the raw URL (query included; SDK design, same for its own traffic) while iOS
+  sanitizes it; the sanitizers' key lists differ (`x-session` redacted on Android only); iOS has no redirect stage, timings or
+  `statusText`; `dart:io` cancel drains the rest of the body (a server keeps writing), so cancel propagation is tested with a
+  controlled stream, not a socket.
+- **Runtime evidence** (`example/integration_test/network_test.dart`, bundles read from the app: Android emulator API 30 arm64
+  `run-as`, iOS 26.5 simulator container): the table in `doc/network.md` ("Verified on a device").
+- **Not verified**: a valid token (the stand-in refuses the upload on purpose), the upload's server side, `capture.network` off on a
+  device, an Android release build with R8 (the wrapper classes are `@Keep`-free but referenced by the SDK interface only through the
+  SDK's own keep rules: `FlutterWrapper implements BugseeWrapper`), tvOS/visionOS, a hot restart on a device (the isolate-local state is
+  covered by design and by the unit tests, not by a restart).
+- **Tests** (every new test mutation-checked: the behaviour broken in a copy of the code, the test seen failing, the code restored):
+  <<MUT>>
 
 ## 6. Phase 6 — Reports (Part 7, report-contract)
 

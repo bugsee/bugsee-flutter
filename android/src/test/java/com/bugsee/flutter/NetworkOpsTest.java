@@ -282,6 +282,36 @@ public class NetworkOpsTest {
     }
 
     @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public void aHeaderOrTimingThatIsNotWellFormedIsDroppedNotCrashedOn() {
+        final FakeSdk sdk = new FakeSdk();
+        final Map headers = new HashMap();
+        headers.put("ok", "yes");
+        headers.put("number", 5);
+        headers.put(7, "key is not a string");
+        final Map timings = new HashMap();
+        timings.put("fine", 1.5);
+        timings.put("nan", Double.NaN);
+        timings.put("inf", Double.POSITIVE_INFINITY);
+        timings.put("text", "x");
+        final Messages.NetworkEventMessage m = message("1", "complete");
+        m.setHeaders(headers);
+        m.setTimings(timings);
+        assertEquals(NetworkOps.Outcome.HANDED, NetworkOps.add(sdk, m));
+        final Map<String, String> sent = sdk.submitted.get(0).headers;
+        assertEquals(1, sent.size());
+        assertEquals("yes", sent.get("ok"));
+        assertEquals(Collections.singletonMap("fine", 1.5), sdk.submitted.get(0).timings);
+        // Headers and timings that were all unusable leave none, not an empty map of garbage.
+        final Messages.NetworkEventMessage empty = message("2", "complete");
+        final Map onlyNan = new HashMap();
+        onlyNan.put("nan", Double.NaN);
+        empty.setTimings(onlyNan);
+        NetworkOps.add(sdk, empty);
+        assertNull(sdk.submitted.get(1).timings);
+    }
+
+    @Test
     public void aStatusOutsideHttpIsZeroAndNegativeSizeIsZero() {
         final FakeSdk sdk = new FakeSdk();
         final Messages.NetworkEventMessage m = message("1", "complete");

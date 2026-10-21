@@ -151,6 +151,16 @@ void main() {
       await rig.pipeline.flush();
     });
 
+    test('what left the queue frees its byte budget too', () async {
+      final rig = Rig(maxQueuedBytes: 2500);
+      for (var i = 0; i < 4; i++) {
+        rig.pipeline.submit(event('$i', body: 'x' * 1000));
+        await rig.pipeline.flush();
+      }
+      expect(rig.pipeline.stats.droppedQueueFull, 0);
+      expect(rig.sent, hasLength(4));
+    });
+
     test('what left the queue frees its room', () async {
       final rig = Rig(maxQueuedEvents: 2, maxBatchEvents: 1);
       rig.pipeline.submit(event('a'));

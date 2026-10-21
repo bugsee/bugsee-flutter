@@ -90,8 +90,20 @@ void main() {
       expect(tee.bytes, [1, 2, 3]);
     });
 
+    test('a body that is never kept holds no bytes at all', () {
+      final tee = teeOf(List<int>.filled(500, 1), limit: 1000, keep: false);
+      expect(tee.keptLength, 0);
+      final declared = teeOf(
+        List<int>.filled(500, 1),
+        limit: 100,
+        declared: 500,
+      );
+      expect(declared.keptLength, 0);
+    });
+
     test('a limit of 0 keeps nothing and any byte exceeds it', () {
       final tee = teeOf([1], limit: 0);
+      expect(tee.keptLength, 0);
       expect(tee.exceeded, isTrue);
       expect(tee.bytes, isNull);
       expect(teeOf(const [], limit: 0).exceeded, isFalse);
@@ -299,6 +311,16 @@ void main() {
         );
         expect(
           resolve([0xff, 0xfe], type: 'text/plain').reason,
+          NoBodyReason.cantReadData,
+        );
+      },
+    );
+
+    test(
+      'a compressed body is cant_read_data even when its bytes were kept',
+      () {
+        expect(
+          resolve(utf8.encode('x'), encoded: true).reason,
           NoBodyReason.cantReadData,
         );
       },

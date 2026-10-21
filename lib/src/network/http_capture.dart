@@ -854,9 +854,9 @@ final class _CapturedResponse extends Stream<List<int>>
     Uri? url,
     bool? followLoops,
   ]) {
-    // The app follows this redirect itself: this response's body is not read, the new one carries
-    // the exchange on (its `redirects` list holds this hop).
-    _passedOn = true;
+    // The app follows this redirect itself: `dart:io` drains this response's body on its own
+    // (never through this wrapper), and the new response carries the exchange on (its `redirects`
+    // list holds this hop).
     return _inner.redirect(method, url, followLoops).then<HttpClientResponse>((
       next,
     ) {

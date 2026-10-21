@@ -19,10 +19,12 @@ class Rig {
       },
       loadPolicy: () async {
         loads++;
+        // What the SDK said when it was asked, however long the answer takes to arrive.
+        final answer = policy;
         final gate = loadGate;
         if (gate != null) await gate.future;
         if (loadThrows) throw StateError('cannot read');
-        return policy;
+        return answer;
       },
       ensureAttached: () => attaches++,
       statuses: () => statuses.stream,
@@ -198,6 +200,11 @@ void main() {
         server.listen((r) => r.response.close());
         final client = HttpClient();
         addTearDown(() => client.close(force: true));
+        expect(
+          client,
+          isNot(isA<CapturingHttpClient>()),
+          reason: 'a client made after the uninstall is not wrapped',
+        );
         await (await (await client.getUrl(
           Uri.parse('http://127.0.0.1:${server.port}/'),
         )).close()).drain<void>();

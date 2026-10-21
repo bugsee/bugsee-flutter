@@ -40,6 +40,9 @@ final class BodyTee {
   /// is over it, as in the SDKs).
   bool get exceeded => size > limit || _declaredExceeds;
 
+  /// How many bytes are held right now (for the memory-bound tests).
+  int get keptLength => _bytes.length;
+
   /// The kept bytes, or null when they were not kept.
   Uint8List? get bytes => _keeping ? _bytes.toBytes() : null;
 }

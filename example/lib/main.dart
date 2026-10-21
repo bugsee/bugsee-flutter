@@ -4,6 +4,7 @@ import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/material.dart';
 
 import 'facade_screen.dart';
+import 'view_hierarchy_screen.dart';
 
 /// The application token from the Bugsee dashboard. Pass your own with
 /// `--dart-define=BUGSEE_TOKEN=...`; the default is a placeholder, so the SDK launches but its
@@ -83,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) => Scaffold(
     body: IndexedStack(
       index: _page,
-      children: const [LaunchScreen(), FacadeScreen()],
+      children: const [LaunchScreen(), FacadeScreen(), ViewHierarchyScreen()],
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _page,
@@ -98,6 +99,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-facade'),
           icon: Icon(Icons.bug_report_outlined),
           label: 'Data',
+        ),
+        NavigationDestination(
+          key: Key('tab-view-hierarchy'),
+          icon: Icon(Icons.account_tree_outlined),
+          label: 'Hierarchy',
         ),
       ],
     ),

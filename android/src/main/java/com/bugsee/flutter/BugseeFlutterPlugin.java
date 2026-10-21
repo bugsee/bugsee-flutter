@@ -73,6 +73,8 @@ public class BugseeFlutterPlugin
     private LaunchOps.Sdk sdk;
     /** Non-null while attached to an engine, like {@link #sdk}; every facade call needs it. */
     private FacadeOps.Sdk facade;
+    /** Network injection (Phase 5b); non-null while attached, like {@link #facade}. */
+    private NetworkOps.Sdk network;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
@@ -83,6 +85,7 @@ public class BugseeFlutterPlugin
         messenger = binding.getBinaryMessenger();
         sdk = new BugseeSdk(binding.getApplicationContext());
         facade = new BugseeFacadeSdk();
+        network = new BugseeNetworkSdk(NetworkChannelHolder.shared());
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
@@ -142,6 +145,7 @@ public class BugseeFlutterPlugin
         messenger = null;
         sdk = null;
         facade = null;
+        network = null;
     }
 
     @Override
@@ -565,6 +569,19 @@ public class BugseeFlutterPlugin
             FacadeOps.upload(sdk, summary, description, severity, labels);
             return null;
         });
+    }
+
+    // ---- Network capture (Phase 5b; see NetworkOps) ---------------------------------------------
+
+    @NonNull
+    @Override
+    public Long addNetworkEvents(@NonNull final List<Messages.NetworkEventMessage> events) {
+        final NetworkOps.Sdk current = network;
+        if (current == null) {
+            throw new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null);
+        }
+        return (long) NetworkOps.addAll(current, events);
     }
 
     /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */

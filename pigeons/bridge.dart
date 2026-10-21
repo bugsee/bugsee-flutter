@@ -214,6 +214,79 @@ class BreadcrumbMessage {
   Map<String, Object?>? data;
 }
 
+/// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
+/// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
+/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+/// through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
+/// native filter still apply (doc/network.md).
+class NetworkEventMessage {
+  NetworkEventMessage({
+    required this.id,
+    required this.stage,
+    required this.mechanism,
+    required this.method,
+    required this.url,
+    required this.ageMs,
+    required this.size,
+    required this.statusCode,
+    this.headers,
+    this.body,
+    this.noBodyReason,
+    this.statusText,
+    this.errorShortMessage,
+    this.errorDescription,
+    this.redirectedFromUrl,
+    this.timings,
+  });
+
+  /// Shared by every stage of one request; never empty.
+  String id;
+
+  /// `before`, `redirect`, `complete`, `error` or `abort` (the SDK's own stage names; iOS spells
+  /// `abort` `cancel` and has no `redirect` stage, which native handles).
+  String stage;
+
+  /// The intercepted stack, free-form (`dart:io`).
+  String mechanism;
+  String method;
+  String url;
+
+  /// How long ago the event happened, in milliseconds, measured on Dart's monotonic clock when the
+  /// batch was handed to the bridge. Native subtracts it from the SDK's own clock, so the event
+  /// is stamped on the clock the SDK validates against (Android: `currentTimestamp()`, which is not
+  /// `DateTime.now()` once the device clock has been corrected) and not on one the SDK may drop.
+  int ageMs;
+
+  /// Body size in bytes, 0 when unknown.
+  int size;
+
+  /// HTTP status, 0 for a stage with none.
+  int statusCode;
+
+  /// Header names are lower-case (Dart's), repeated values joined by `, `.
+  Map<String, String>? headers;
+
+  /// The body as text, only when Dart captured it (text content, within the SDK's size limit).
+  String? body;
+
+  /// Why [body] is absent: `no_data`, `size_too_large`, `unsupported_content_type`,
+  /// `no_content_type` or `cant_read_data` (the SDKs' wire values).
+  String? noBodyReason;
+
+  /// Android stores it, iOS drops it (the iOS bundle writes null).
+  String? statusText;
+  String? errorShortMessage;
+  String? errorDescription;
+
+  /// iOS carries a redirect as the original URL on the final event; Android has `redirect` stages.
+  String? redirectedFromUrl;
+
+  /// Milliseconds, Android only (iOS has no field for them).
+  Map<String, double>? timings;
+}
+
 /// Dart calls native.
 @HostApi()
 abstract class BugseeBridgeHostApi {
@@ -377,6 +450,14 @@ abstract class BugseeBridgeHostApi {
     int? severity,
     List<String>? labels,
   );
+
+  // ---- Network capture (Phase 5b). Runs on the platform thread like the rest of the facade.
+
+  /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+  /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+  /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+  /// throws for a single bad event.
+  int addNetworkEvents(List<NetworkEventMessage> events);
 }
 
 /// Native calls Dart. Always from the platform (main) thread.

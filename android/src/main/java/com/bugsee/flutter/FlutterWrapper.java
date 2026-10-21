@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 
 import com.bugsee.library.contracts.common.DataRequestResultCallback;
 import com.bugsee.library.contracts.internal.BugseeWrapper;
+import com.bugsee.library.contracts.internal.BugseeWrapperChannel;
 import com.bugsee.library.contracts.reporting.Report;
 
 import java.util.Collections;
@@ -181,6 +182,18 @@ final class FlutterWrapper implements BugseeWrapper {
         // The SDK's worker thread. The hub strips the prefix, hops to the main
         // thread and never throws.
         lifecycle.dispatch(eventType, data);
+    }
+
+    /**
+     * The SDK's data-injection channel for THIS registration (v7.4.2 {@code BugseeWrapperChannel}),
+     * delivered synchronously inside {@code Bugsee.setWrapper}, under the SDK's registration lock.
+     * Store and return, nothing else (calling back into the SDK from here is what the contract
+     * warns about). It goes to the process-wide holder: this object is replaced on a refined
+     * identity, and the previous channel is retired by the SDK at that moment.
+     */
+    @Override
+    public void onWrapperChannelAvailable(@NonNull final BugseeWrapperChannel channel) {
+        NetworkChannelHolder.shared().set(channel);
     }
 
     @Nullable

@@ -146,7 +146,13 @@ void checkNetwork(Run run, String label, Bundle b, String marker) {
 
 /// With the secure region on, its box in [on] is black and none of its colour shows; [off] is the same
 /// screen with the region unsecured, which is where the box is. Returns the region box found.
-Rect? checkRedaction(Run run, String label, RawImage on, RawImage off) {
+Rect? checkRedaction(
+  Run run,
+  String label,
+  RawImage on,
+  RawImage off, {
+  String? evidenceDir,
+}) {
   const magenta = Rgb(255, 0, 255);
   const black = Rgb(0, 0, 0);
   final region = off.boundingBoxOf(magenta);
@@ -188,6 +194,14 @@ Rect? checkRedaction(Run run, String label, RawImage on, RawImage off) {
     ringBlack <= 0.5,
     'ring black ${(ringBlack * 100).toStringAsFixed(1)}% of the ring',
   );
+  if (evidenceDir != null &&
+      run.result.checks.any((c) => !c.ok && c.name.startsWith('[$label]'))) {
+    final dir = Directory(evidenceDir)..createSync(recursive: true);
+    final base = label.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '-');
+    File('${dir.path}/$base-secured.ppm').writeAsBytesSync(on.toPpm());
+    File('${dir.path}/$base-unsecured.ppm').writeAsBytesSync(off.toPpm());
+    run.note('[$label] the two frames are kept for inspection in $evidenceDir');
+  }
   return region;
 }
 

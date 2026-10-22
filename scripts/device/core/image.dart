@@ -124,6 +124,12 @@ class RawImage {
     return total == 0 ? 0 : same / total;
   }
 
+  /// Binary PPM (`P6`) bytes: any viewer, and ffmpeg, reads them.
+  Uint8List toPpm() {
+    final head = 'P6\n$width $height\n255\n'.codeUnits;
+    return Uint8List.fromList([...head, ...rgb]);
+  }
+
   /// Whether the whole image is (nearly) one colour.
   bool isUniform({int tolerance = 8}) {
     final first = at(0, 0);

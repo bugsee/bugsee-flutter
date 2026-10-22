@@ -919,7 +919,13 @@ class IosCtx {
         'ios-off',
       );
       if (onFrame != null && offFrame != null) {
-        final region = checkRedaction(run, 'ios @3x', onFrame, offFrame);
+        final region = checkRedaction(
+          run,
+          'ios @3x',
+          onFrame,
+          offFrame,
+          evidenceDir: '${tc.workDir}/failed-frames',
+        );
         final layout = videoLayout(off);
         if (region != null && geo != null && layout != null) {
           checkRegionPlacement(

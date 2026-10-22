@@ -767,15 +767,35 @@ void main() {
       );
     });
 
-    test('both packages are dry-run published, the core first', () {
-      final publish = job('publish-check');
-      final core = publish.indexOf('flutter pub publish --dry-run');
-      final feedback = publish.indexOf(
-        'cd $pkg && flutter pub publish --dry-run',
-      );
-      expect(core, isNonNegative);
-      expect(feedback, greaterThan(core));
-    });
+    test(
+      'both packages are dry-run published, the core first, and the core is checked for the sibling',
+      () {
+        final publish = job('publish-check');
+        final core = publish.indexOf('flutter pub publish --dry-run');
+        final feedback = publish.indexOf('scripts/publish_feedback.sh');
+        expect(core, isNonNegative);
+        expect(feedback, greaterThan(core));
+        expect(publish, contains('grep -q bugsee_flutter_feedback'));
+        expect(publish, contains('set -o pipefail'));
+      },
+    );
+
+    test(
+      'the publish script dry-runs by default, publishes only on request, from a copy without git',
+      () {
+        final script = read('scripts/publish_feedback.sh');
+        expect(script, contains('mode=(--dry-run)'));
+        expect(script, contains('--publish) mode=() ;;'));
+        expect(script, contains('--exclude .git '));
+        expect(script, contains('cd packages/bugsee_flutter_feedback'));
+        expect(script, contains('flutter pub publish'));
+        expect(
+          File('scripts/publish_feedback.sh').statSync().mode & 0x40,
+          isNonZero,
+          reason: 'executable',
+        );
+      },
+    );
 
     test(
       'no job was added for it (ci-ok and branch protection stay as they are)',

@@ -187,9 +187,17 @@ jobs:
           cache: true
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
-      - run: flutter pub publish --dry-run
-      # The sibling package, published separately (the core first: it depends on it).
-      - run: cd packages/bugsee_flutter_feedback && flutter pub publish --dry-run
+      # The core must not ship its sibling (the root .pubignore drops /packages/).
+      - run: |
+          set -o pipefail
+          flutter pub publish --dry-run 2>&1 | tee "$RUNNER_TEMP/root-publish.txt"
+          if grep -q bugsee_flutter_feedback "$RUNNER_TEMP/root-publish.txt"; then
+            echo "::error::the core package would ship packages/bugsee_flutter_feedback"
+            exit 1
+          fi
+      # The sibling package, published separately (the core first: it depends on it). From a copy
+      # outside git: see the script for why it cannot be published from its own directory here.
+      - run: scripts/publish_feedback.sh
 
   # The one stable name for branch protection: require `ci-ok` and nothing else, so
   # matrix legs can be renamed or added without touching repository settings.

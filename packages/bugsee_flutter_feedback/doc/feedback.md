@@ -49,7 +49,9 @@ The package is therefore thin: three operations and one listener, no invented AP
   `workspace:`, with `example`). Inside the workspace the feedback package's hosted constraint on `bugsee_flutter`
   resolves to the sibling; outside it (an app, pub.dev) to the hosted package. A path dependency would not be
   publishable, and `dependency_overrides` would have to be repeated in every consumer. The root `.pubignore` drops
-  `/packages/`, so the root package does not ship the sibling. Publish the core first, then the feedback package.
+  `/packages/`, so the root package does not ship the sibling; pub applies every `.pubignore` between the git root and the package
+  it publishes, so the sibling cannot then be published from its own directory in the repository, and `scripts/publish_feedback.sh`
+  (dry-run by default, `--publish` for real) publishes it from a copy of the workspace without `.git`. Publish the core first, then the feedback package.
 * Versions: the same number as the core, released together. The constraint is `>=<core version> <next minor>` (pub warns
   about an exact pin, and `^` would let a newer core minor with other native pins in); at run time the Dart side also
   compares its own version with the core's (`BugseeFeedbackFailure.incompatibleCore`). `test/feedback_package_drift_test.dart`

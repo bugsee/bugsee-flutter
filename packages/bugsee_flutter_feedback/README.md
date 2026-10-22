@@ -77,9 +77,13 @@ Future<void> main() async {
 
 // Wherever you offer it, for example a "Contact support" button: present the chat.
 Future<void> onContactSupport() async {
-  // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too; `isAvailable` is false when the module is not registered.
-  if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {
-    await BugseeFeedback.show();
+  try {
+    // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too; `isAvailable` is false when the module is not registered.
+    if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {
+      await BugseeFeedback.show();
+    }
+  } on BugseeFeedbackException {
+    // `nativeError` or `incompatibleCore` (see Errors below): hide the button or tell the user to try later.
   }
 }
 ```

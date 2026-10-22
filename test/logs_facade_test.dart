@@ -7,7 +7,10 @@ import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
 import 'package:bugsee_flutter/src/bugsee.dart' show debugSetBugseeRuntime;
 import 'package:bugsee_flutter/src/bugsee_runtime.dart';
+import 'package:bugsee_flutter/src/logs/log_capture.dart'
+    show LogCaptureService;
 import 'package:bugsee_flutter/src/options/option_registry.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -337,20 +340,44 @@ void main() {
     );
 
     test(
-      'a hung filter holds the report back for a fraction of a second, no more',
-      () async {
-        await install();
-        Bugsee.setLogFilter(
-          (e) => Completer<BugseeLogEvent?>().future,
-          timeout: const Duration(seconds: 30),
-        );
-        Bugsee.runWithLogCapture(() => print('behind a hung filter'));
-        final watch = Stopwatch()..start();
-        await Bugsee.upload('s', 'd');
-        // A ceiling, not a measurement: 10x the 200 ms LogCapture.flushLimit that bounds the
-        // hold-back, well under the filter's 30 s timeout it must not wait for.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
-        expect(host.calls, ['upload']);
+      'a hung filter holds the report back for flushLimit, no more (virtual time)',
+      () {
+        // Everything runs in a fake-time zone, attach and install included (a future created
+        // outside it would complete on the real event loop): the 200 ms flush timeout and the
+        // filter's 30 s timeout elapse only when the test says so, with no wall-clock ceiling.
+        fakeAsync((async) {
+          expect(Bugsee.installLogCapture(), isTrue);
+          unawaited(runtime.logs.refreshPolicy());
+          unawaited(Bugsee.upload('warm-up', 'd')); // attaches to native
+          async.flushMicrotasks();
+          host.calls.clear();
+
+          Bugsee.setLogFilter(
+            (e) => Completer<BugseeLogEvent?>().future,
+            timeout: const Duration(seconds: 30),
+          );
+          Bugsee.runWithLogCapture(() => print('behind a hung filter'));
+          var uploaded = false;
+          unawaited(Bugsee.upload('s', 'd').then((_) => uploaded = true));
+          async.flushMicrotasks();
+          // The documented contract (a literal, so raising the limit fails here): 200 ms.
+          expect(
+            LogCaptureService.flushLimit,
+            const Duration(milliseconds: 200),
+          );
+          async.elapse(const Duration(milliseconds: 199));
+          expect(uploaded, isFalse, reason: 'held back until the flush limit');
+          expect(host.calls, isEmpty);
+          async.elapse(const Duration(milliseconds: 1));
+          async.flushMicrotasks();
+          expect(uploaded, isTrue, reason: 'released at the flush limit');
+          expect(host.calls, ['upload'], reason: 'no lines batch went with it');
+          // The filter's own timeout later drops the line; it never reaches native.
+          async.elapse(const Duration(seconds: 30));
+          async.flushMicrotasks();
+          expect(host.calls, ['upload']);
+          expect(runtime.logs.pipeline.stats.filterFailures, 1);
+        });
       },
     );
 

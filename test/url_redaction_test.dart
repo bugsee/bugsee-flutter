@@ -60,6 +60,15 @@ void main() {
       expect(stripUserInfo('http://h/p/q//x@y'), 'http://h/p/q//x@y');
     });
 
+    test(
+      'a bracketed scheme-relative URL is redacted, a bracket in a path is not',
+      () {
+        expect(stripUserInfo('failed [//u:p@h/path]'), 'failed [//h/path]');
+        expect(stripUserInfo('[//u:p@h/path]'), '[//h/path]');
+        expect(stripUserInfo('/a[//u:p@h'), '/a[//u:p@h');
+      },
+    );
+
     test('a scheme-relative URL after a separator is', () {
       expect(redactHeaderValue('refresh', '0; url=//u:p@h/x'), '0; url=//h/x');
       expect(

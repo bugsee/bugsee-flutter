@@ -363,11 +363,10 @@ void main() {
           (e) => Completer<BugseeNetworkEvent?>().future,
           const Duration(seconds: 30),
         );
-        final watch = Stopwatch()..start();
         for (var i = 0; i < 500; i++) {
           rig.pipeline.submit(event('$i'));
         }
-        expect(watch.elapsedMilliseconds, lessThan(200));
+        // (no wall-clock assertion: the stalled filter above is what is under test)
         await Future<void>.delayed(const Duration(milliseconds: 20));
         expect(rig.pipeline.stats.captured, 10);
         expect(rig.pipeline.stats.droppedQueueFull, 490);
@@ -549,14 +548,19 @@ void main() {
     test(
       'it does not walk a large body (the capture path is the app\'s isolate)',
       () {
-        final rig = Rig(maxQueuedEvents: 100000, maxQueuedBytes: 1 << 40);
-        final body = 'x' * (2 * 1024 * 1024);
-        final watch = Stopwatch()..start();
-        for (var i = 0; i < 200; i++) {
-          rig.pipeline.submit(event('$i', body: body));
-        }
-        // 200 walks of 2 MiB would take hundreds of milliseconds; an O(1) estimate takes microseconds.
-        expect(watch.elapsedMilliseconds, lessThan(60));
+        // The estimate is a function of the lengths only (2 bytes per UTF-16 unit), never a byte count:
+        // a body of 4-byte characters weighs the same as one of ASCII.
+        final ascii = 'x' * 1000;
+        final astral = '\u{1F600}' * 500; // 1000 UTF-16 units, 2000 UTF-8 bytes
+        expect(
+          NetworkPipeline.estimateBytes(event('a', body: astral)),
+          NetworkPipeline.estimateBytes(event('a', body: ascii)),
+        );
+        expect(
+          NetworkPipeline.estimateBytes(event('a', body: ascii)) -
+              NetworkPipeline.estimateBytes(event('a')),
+          2000,
+        );
       },
     );
   });

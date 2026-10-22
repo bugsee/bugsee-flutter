@@ -20,8 +20,10 @@ const Set<String> urlValuedHeaders = {
 // Up to the LAST `@` of the authority (`Uri` takes userinfo that way: `u:p@ss@h` is user `u`,
 // password `p@ss`); `/`, `?` and `#` end the authority, so it cannot run into the path.
 // A scheme-relative `//` counts only at the start of a value or after a separator (`url=//u:p@h`),
-// never inside a path (`img//photo@2x.png`).
-final RegExp _userInfo = RegExp(r'''(://|(?<![^\s=;,"'(])//)[^\s/?#'"]*@''');
+// never inside a path (`img//photo@2x.png`); `[` counts only when it itself starts a value (`failed [//u:p@h]`).
+final RegExp _userInfo = RegExp(
+  r'''(://|(?<![^\s=;,"'(])//|(?<=(?:^|[\s=;,"'(])\[)//)[^\s/?#'"]*@''',
+);
 final RegExp _fragment = RegExp(r'''#[^\s'"]*''');
 final RegExp _query = RegExp(r'''\?([^\s#'"]*)''');
 

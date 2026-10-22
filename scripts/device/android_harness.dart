@@ -26,7 +26,19 @@ class Launched {
 
 /// A crash the harness caused and proved: signal 11, from the logcat and from the exit record.
 class CrashEvidence {
-  CrashEvidence(this.pid, this.signal, this.exit, this.method);
+  CrashEvidence(
+    this.pid,
+    this.signal,
+    this.exit,
+    this.method,
+    this.handlerPs,
+    this.handlerLibs,
+  );
+
+  /// The crashpad handler process caught right after the kill (`ps` line) and the libbugsee libraries
+  /// in that process's own maps; empty when the race was lost.
+  final String? handlerPs;
+  final Set<String> handlerLibs;
   final int pid;
   final ({int number, String name, String code}) signal;
   final ExitInfo exit;
@@ -226,7 +238,8 @@ class AndroidSession {
           : ['pid $pid is not the app process (${await dev.pid()})'],
       'pid $pid',
     );
-    final kill = await dev.killSegv(pid);
+    final kill = await dev.killSegvProbingHandler(pid);
+    final probe = parseHandlerProbe(kill.stdout);
     String log = '';
     ({int number, String name, String code})? signal;
     await until<bool>(
@@ -255,7 +268,7 @@ class AndroidSession {
       'killed pid $pid via ${dev.via}; logcat: Fatal signal ${signal?.number} (${signal?.name}), code ${signal?.code}; '
           'ApplicationExitInfo: reason=${exit?.reason} status=${exit?.status}',
     );
-    return CrashEvidence(pid, signal!, exit!, dev.via);
+    return CrashEvidence(pid, signal!, exit!, dev.via, probe.ps, probe.libs);
   }
 
   /// Airplane mode on, and proof it is on (9.1.3).

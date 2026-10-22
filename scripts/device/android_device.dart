@@ -180,6 +180,20 @@ class AndroidDevice {
   /// is crashed).
   Future<Out> killSegv(int pid) => inApp(['kill', '-11', '$pid']);
 
+  /// SIGSEGV, and in the same shell, right away: the crashpad handler process the SDK execs on a crash
+  /// (it exists only for a moment). Prints `PS:<its ps line>` and `MAP:<each libbugsee*.so in ITS
+  /// /proc/PID/maps>`: the handler pair measured in the process that runs it, not inferred from files.
+  Future<Out> killSegvProbingHandler(int pid) {
+    const loop =
+        r'i=0; while [ $i -lt 400 ]; do L=$(ps -A -o PID,PPID,NAME,ARGS | grep crashpad-trampoline | grep -v grep); '
+        r'if [ -n "$L" ]; then echo "PS:$L"; HP=$(echo $L | cut -d" " -f1); '
+        r'cat /proc/$HP/maps 2>/dev/null | grep -o "libbugsee[a-z_-]*[.]so" | sort -u | sed "s/^/MAP:/"; break; fi; i=$((i+1)); done';
+    final script = 'kill -11 $pid; $loop';
+    return _direct
+        ? adb(['shell', script])
+        : adb(['shell', 'run-as', pkg, 'sh', '-c', "'$script'"]);
+  }
+
   Future<String> exitInfo() async => shell('dumpsys activity exit-info $pkg');
 
   Future<void> airplane(bool on) async {

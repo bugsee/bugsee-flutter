@@ -285,3 +285,15 @@ int? objcClassAddress(String nm, String name) {
   ).firstMatch(nm);
   return m == null ? null : int.parse(m.group(1)!, radix: 16);
 }
+
+/// What [AndroidDevice.killSegvProbingHandler] printed: the handler process's `ps` line and the
+/// libbugsee libraries in its own maps.
+({String? ps, Set<String> libs}) parseHandlerProbe(String out) {
+  String? ps;
+  final libs = <String>{};
+  for (final line in out.split('\n')) {
+    if (line.startsWith('PS:')) ps = line.substring(3).trim();
+    if (line.startsWith('MAP:')) libs.add(line.substring(4).trim());
+  }
+  return (ps: ps, libs: libs);
+}

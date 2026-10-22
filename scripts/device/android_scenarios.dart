@@ -462,24 +462,28 @@ class AndroidCtx {
           '${bundle.app['version']} (${bundle.app['build']})',
         );
         final plain = distinctBugseeLibs(c.allLogs);
-        final all = {...plain, ...c.mapped, ...c.extracted};
-        run.note(
-          '[$name] workbook measure (logcat grep over cold start + crash + relaunch): ${plain.length} distinct $plain; the avc audit lines it reads are rate limited by the kernel, so it can miss libraries that did load',
-        );
+        final pair = {
+          'libbugsee-crashpad-trampoline.so',
+          'libbugsee-crashpad-handler.so',
+        };
+        final inProcess = {'libbugsee-native.so', 'libbugsee-crashcp.so'};
         final ranHandler = bundle.entriesOfType('minidump').isNotEmpty;
+        final handlerMeasured = c.crash.handlerLibs.containsAll(pair);
+        run.note(
+          '[$name] workbook measure (logcat grep over cold start + crash + relaunch): ${plain.length} distinct $plain. It can only ever see libraries executed from FILES in the app data directory (an `avc: granted { execute }` audit line names the path); libraries mapped from base.apk are never named in logcat, so it cannot reach four on this setup',
+        );
         run.expect(
-          '[$name] four distinct libbugsee*.so load (in-process: /proc maps; the crashpad pair: extracted next to the app and the minidump the handler wrote is in the bundle)',
-          all.length == 4 &&
-              c.mapped.containsAll({
-                'libbugsee-native.so',
-                'libbugsee-crashcp.so',
-              }) &&
-              c.extracted.containsAll({
-                'libbugsee-crashpad-trampoline.so',
-                'libbugsee-crashpad-handler.so',
-              }) &&
-              ranHandler,
-          '${all.length}: mapped ${c.mapped} + extracted ${c.extracted}; minidump in bundle: $ranHandler; logcat alone saw $plain',
+          '[$name] MEASURED: libbugsee-native.so and libbugsee-crashcp.so are mapped into the app process (/proc/PID/maps resolved against the APK)',
+          c.mapped.containsAll(inProcess),
+          '${c.mapped}',
+        );
+        run.expect(
+          '[$name] the crashpad pair: ${handlerMeasured ? 'MEASURED in the handler process\'s own maps' : 'INFERRED (the handler process was not caught): extracted next to the app and its minidump is in the bundle'}',
+          handlerMeasured || (c.extracted.containsAll(pair) && ranHandler),
+          'handler process: ${c.crash.handlerPs ?? 'not caught'}; its maps: ${c.crash.handlerLibs}; extracted: ${c.extracted}; minidump in bundle: $ranHandler',
+        );
+        run.note(
+          '[$name] four distinct libbugsee*.so: ${{...c.mapped, ...(handlerMeasured ? c.crash.handlerLibs : c.extracted)}.length} (${handlerMeasured ? 'all four measured' : '2 measured + 2 inferred'})',
         );
       }
       run.result.notCovered.addAll([

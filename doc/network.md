@@ -264,6 +264,9 @@ options are read again. A failure to read leaves nothing accepted.
 * `before.headers` are the request headers as `dart:io` holds them when the request is closed: the app's, plus the ones
   `dart:io` itself sets (`host`, `user-agent`, `accept-encoding`, `content-length`/`transfer-encoding`). Cookies added
   through `request.cookies` are serialised later and are not in it.
+* The queue's byte budget counts two bytes per UTF-16 unit (an O(1) upper bound: `submit` runs on the app's isolate), so a body
+  near the 2 MiB cap weighs about 4 MiB and a second one queued before the first drains is dropped as `droppedQueueFull`
+  (counted, warned once).
 * The queue holds 512 events and 8 MiB; a burst the native side cannot absorb drops the newest events and says so
   in `networkCaptureStats`.
 * **A body-size limit above 2 MiB is capped at 2 MiB** (`NetworkPolicy.maxBodyBytes`): memory is the cap times the requests in

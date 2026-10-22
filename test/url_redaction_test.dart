@@ -51,6 +51,23 @@ void main() {
       expect(stripUserInfo('//a@b@h/p'), '//h/p');
     });
 
+    test('a // inside a path or query is not a scheme-relative URL', () {
+      expect(
+        stripUserInfo('https://cdn.example.com/img//photo@2x.png'),
+        'https://cdn.example.com/img//photo@2x.png',
+      );
+      expect(stripUserInfo('/a//b@c'), '/a//b@c');
+      expect(stripUserInfo('http://h/p/q//x@y'), 'http://h/p/q//x@y');
+    });
+
+    test('a scheme-relative URL after a separator is', () {
+      expect(redactHeaderValue('refresh', '0; url=//u:p@h/x'), '0; url=//h/x');
+      expect(
+        stripUserInfo('see //u:p@h/x and (//a:b@c/d)'),
+        'see //h/x and (//c/d)',
+      );
+    });
+
     test('an @ after the authority is not userinfo', () {
       expect(stripUserInfo('http://h/p@q@r'), 'http://h/p@q@r');
       expect(stripUserInfo('http://h?x=a@b#c@d'), 'http://h?x=a@b#c@d');

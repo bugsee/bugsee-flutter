@@ -25,6 +25,13 @@
     "deploymentTarget": "15.0",
     "provenance": "Tag 7.0.0-beta7 of bugsee/spm (73ed983) and bugsee/feedback-spm (40dd3b0)."
   },
+  "feedback": {
+    "package": "bugsee_flutter_feedback",
+    "dir": "packages/bugsee_flutter_feedback",
+    "androidArtifact": "com.bugsee:bugsee-android-feedback",
+    "iosProduct": "BugseeFeedback",
+    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, 2026-10-22: bugsee-android-feedback 7.4.2, which depends on bugsee-android 7.4.2); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
+  },
   "pigeon": {
     "version": "29.0.7",
     "provenance": "pub.dev, published 2026-10-07 (latest at the time was 29.0.11, 2026-10-20); needs Dart ^3.11.0. Not a dependency of the plugin (it requires meta >=1.18, Flutter 3.41.0 ships 1.17.0): it runs from the pure-Dart package in pigeons/, locked by pigeons/pubspec.lock."

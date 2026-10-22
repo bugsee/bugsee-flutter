@@ -10,6 +10,7 @@ const pins = {
     'spmUrl': 'https://github.com/bugsee/spm',
     'feedbackSpmUrl': 'https://github.com/bugsee/feedback-spm',
   },
+  'feedback': {'androidArtifact': 'com.bugsee:bugsee-android-feedback'},
 };
 
 PinReport run({
@@ -18,6 +19,7 @@ PinReport run({
   List<String> plugin = const ['4.0.7', '4.0.8'],
   List<String> spm = const ['7.0.0-beta7'],
   List<String> feedback = const ['7.0.0-beta7'],
+  List<String> androidFeedback = const ['7.4.2'],
 }) => evaluate(
   pins,
   androidSdk: sdk,
@@ -25,6 +27,7 @@ PinReport run({
   gradlePlugin: plugin,
   spmTags: spm,
   feedbackSpmTags: feedback,
+  androidFeedback: androidFeedback,
 );
 
 void main() {
@@ -70,6 +73,10 @@ void main() {
     expect(run(plugin: ['4.0.7']).errors.single, contains('gradle plugin'));
     expect(run(spm: []).errors.single, contains('bugsee/spm'));
     expect(run(feedback: ['7.0.0']).errors.single, contains('feedback-spm'));
+    expect(
+      run(androidFeedback: ['7.4.1']).errors.single,
+      contains('bugsee-android-feedback 7.4.2'),
+    );
   });
 
   test('a newer Android 7.x is reported but does not fail', () {

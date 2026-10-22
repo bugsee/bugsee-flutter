@@ -509,7 +509,7 @@ void main() {
         final gradle = RegExp(
           r'package-ecosystem: gradle\n(?:(?!  - package-ecosystem)[\s\S])*',
         ).allMatches(dep).toList();
-        expect(gradle, hasLength(2));
+        expect(gradle, hasLength(3));
         for (final g in gradle) {
           expect(g.group(0), contains('dependency-name: "com.bugsee*"'));
         }
@@ -525,12 +525,12 @@ void main() {
     });
 
     test(
-      'format gate is enforced on lib, test, example, scripts and pigeons',
+      'format gate is enforced on lib, test, example, scripts, pigeons and packages',
       () {
         expect(
           liveOf(read('.github/workflows/ci.yml')),
           contains(
-            'dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons',
+            'dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons packages',
           ),
         );
       },

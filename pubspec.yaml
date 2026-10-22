@@ -6,6 +6,10 @@ documentation: https://docs.bugsee.com/sdk/flutter/installation/
 repository: https://github.com/bugsee/bugsee-flutter
 issue_tracker: https://github.com/bugsee/bugsee-flutter/issues
 
+workspace:
+  - packages/bugsee_flutter_feedback
+  - example
+
 environment:
   # Floors come from native-versions.json (flutter.min / flutter.dart).
   sdk: ^3.11.0

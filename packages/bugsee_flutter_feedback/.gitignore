@@ -1,0 +1,11 @@
+# The rules of the repository root that apply to a package directory (they are anchored there, so
+# they do not reach this one).
+.DS_Store
+.build/
+.swiftpm/
+.dart_tool/
+**/doc/api/
+/build/
+/coverage/
+/pubspec.lock
+/ios/feedback_wrapper_tests/Package.resolved

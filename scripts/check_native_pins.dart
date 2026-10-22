@@ -76,6 +76,7 @@ PinReport evaluate(
   required Iterable<String> gradlePlugin,
   required Iterable<String> spmTags,
   required Iterable<String> feedbackSpmTags,
+  required Iterable<String> androidFeedback,
 }) {
   final android = pins['android'] as Map<String, dynamic>;
   final ios = pins['ios'] as Map<String, dynamic>;
@@ -97,6 +98,12 @@ PinReport evaluate(
   require('com.bugsee.android.gradle plugin', plugin, gradlePlugin);
   require('${ios['spmUrl']} tag', tag, spmTags);
   require('${ios['feedbackSpmUrl']} tag', tag, feedbackSpmTags);
+  // The feedback package's Android artifact is published at the same version as the core.
+  require(
+    '${(pins['feedback'] as Map<String, dynamic>)['androidArtifact']}',
+    sdk,
+    androidFeedback,
+  );
 
   final newer = newerSameMajor(sdk, androidSdk);
   if (newer.isNotEmpty) {
@@ -184,6 +191,12 @@ Future<void> main(List<String> args) async {
       gradlePlugin: parseMavenVersions(await _get(gradlePluginMetadata)),
       spmTags: await _tags(ios['spmUrl'] as String),
       feedbackSpmTags: await _tags(ios['feedbackSpmUrl'] as String),
+      androidFeedback: parseMavenVersions(
+        await _get(
+          '$mavenCentral/${((pins['feedback'] as Map)['androidArtifact'] as String).split(':').last}'
+          '/maven-metadata.xml',
+        ),
+      ),
     );
   } catch (e) {
     stdout.writeln('ERROR: could not verify pins: $e');

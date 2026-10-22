@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Deliberately empty. The feedback module registers itself with the SDK from the
+      <provider> its own AAR declares (com.bugsee.library.BugseeFeedbackInitProvider, merged
+      into the app's manifest, or stripped by the Bugsee Gradle plugin and replaced by an
+      injected registerFeedbackExtension() call). This package adds no provider of its own:
+      a class named Bugsee*InitProvider would be stripped by that plugin without the injected
+      call that makes up for it, and any other name has nothing left to do.
+      test/feedback_package_drift_test.dart asserts there is none. The activity and the
+      INTERNET permission come from the AAR as well.
+    -->
+
+</manifest>

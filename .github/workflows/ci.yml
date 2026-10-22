@@ -33,7 +33,7 @@ jobs:
           cache: true
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons
+      - run: dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons packages
 
   # The committed Dart/Java/Swift bridge files must be what pigeons/bridge.dart generates
   # with the pinned pigeon (native-versions.json `pigeon.version`). On the floor, like
@@ -52,8 +52,11 @@ jobs:
           flutter-version: '3.41.0'
           cache: true
       - run: dart scripts/generate_pigeon.dart --check
-      # Excluded from the root analysis (its package needs its own pub get, done by the line above).
+      # The feedback package has its own bridge (the core's is not widened for it).
+      - run: dart scripts/generate_pigeon.dart --package packages/bugsee_flutter_feedback --check
+      # Excluded from the root analysis (its package needs its own pub get, done by the lines above).
       - run: cd pigeons && dart analyze --fatal-infos
+      - run: cd packages/bugsee_flutter_feedback/pigeons && dart analyze --fatal-infos
 
   # The typed BugseeOptions and the option registry are generated from the manifests the two SDKs
   # publish (vendored in test/fixtures/option_manifests), so this works offline. On the floor,
@@ -107,6 +110,11 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+      # The feedback package (a member of the same pub workspace): its own analysis and tests.
+      - run: cd packages/bugsee_flutter_feedback && flutter analyze
+      - run: cd packages/bugsee_flutter_feedback && flutter test
+      # The example app uses BOTH packages, so this builds the feedback add-on (SwiftUI, from
+      # feedback-spm) into an iOS app next to the core.
       - run: cd example && flutter build ios --debug --no-codesign
       # XCTest of the Objective-C wrapper target (lifecycle hub, secure-rectangle store)
       # in the test-only package ios/wrapper_tests; independent of Flutter, so once is enough.
@@ -122,6 +130,8 @@ jobs:
           echo "simulator: $UDID"
           cd ios/wrapper_tests
           xcodebuild test -scheme bugsee_flutter_wrapper_tests -destination "platform=iOS Simulator,id=$UDID"
+          cd ../../packages/bugsee_flutter_feedback/ios/feedback_wrapper_tests
+          xcodebuild test -scheme bugsee_flutter_feedback_wrapper_tests -destination "platform=iOS Simulator,id=$UDID"
 
   build-android:
     name: build apk (${{ matrix.channel }})
@@ -154,9 +164,11 @@ jobs:
           cache: true
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
+      # The example app uses both packages: the APK carries the feedback module next to the core.
       - run: cd example && flutter build apk --debug
-      # JUnit tests of the wrapper and its init provider (android/src/test).
-      - run: cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest
+      # JUnit tests of the wrapper and its init provider (android/src/test) and of the feedback
+      # package's glue (packages/bugsee_flutter_feedback/android/src/test).
+      - run: cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest :bugsee_flutter_feedback:testDebugUnitTest
 
   publish-check:
     # Package validity only: `--dry-run` never uploads and needs no credentials.
@@ -176,6 +188,8 @@ jobs:
       - run: flutter config --enable-swift-package-manager
       - run: flutter pub get
       - run: flutter pub publish --dry-run
+      # The sibling package, published separately (the core first: it depends on it).
+      - run: cd packages/bugsee_flutter_feedback && flutter pub publish --dry-run
 
   # The one stable name for branch protection: require `ci-ok` and nothing else, so
   # matrix legs can be renamed or added without touching repository settings.

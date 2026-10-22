@@ -1,0 +1,703 @@
+// Drift guards for the separate feedback package (packages/bugsee_flutter_feedback, PLAN.md D4):
+// how it is laid out and published next to the core, which native pins it repeats and where, how
+// its native module registers with the SDK, and that the core stays free of it.
+//
+// The package's own behaviour is tested in the package (its Dart tests, Gradle JUnit, XCTest);
+// everything that must agree ACROSS the two packages is here, because the core's tests run from
+// the repository root and see both.
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+const pkg = 'packages/bugsee_flutter_feedback';
+
+String read(String path) => File(path).readAsStringSync();
+
+/// Source with `//` and `/* */` comments removed, so a call that is only commented out does not
+/// satisfy a guard.
+String code(String path) => read(path)
+    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+    .replaceAll(RegExp(r'//[^\n]*'), '');
+
+String liveOf(String yaml) =>
+    yaml.split('\n').where((l) => !l.trimLeft().startsWith('#')).join('\n');
+
+/// Every file under [dir] with one of [extensions], recursively.
+List<File> filesUnder(String dir, List<String> extensions) => Directory(dir)
+    .listSync(recursive: true)
+    .whereType<File>()
+    .where((f) => extensions.any(f.path.endsWith))
+    .toList();
+
+String topLevel(String yaml, String key) =>
+    RegExp('^$key: *(.+?) *\$', multiLine: true).firstMatch(yaml)!.group(1)!;
+
+/// The pattern the Bugsee Gradle plugin strips from the merged manifest (the core's guard uses the
+/// same one).
+final strippedByGradlePlugin = RegExp(r'^.*\.Bugsee[A-Za-z0-9_]+InitProvider$');
+
+void main() {
+  final pins = jsonDecode(read('native-versions.json')) as Map<String, dynamic>;
+  final android = pins['android'] as Map<String, dynamic>;
+  final ios = pins['ios'] as Map<String, dynamic>;
+  final flutterPin = pins['flutter'] as Map<String, dynamic>;
+  final feedbackPin = pins['feedback'] as Map<String, dynamic>;
+
+  final rootPubspec = read('pubspec.yaml');
+  final feedbackPubspec = read('$pkg/pubspec.yaml');
+  final coreVersion = topLevel(rootPubspec, 'version');
+
+  group('layout and publishing', () {
+    test('native-versions.json names the package and where it lives', () {
+      expect(feedbackPin['dir'], pkg);
+      expect(topLevel(feedbackPubspec, 'name'), feedbackPin['package']);
+      expect(File('$pkg/pubspec.yaml').existsSync(), isTrue);
+    });
+
+    test(
+      'the root pubspec is the pub workspace of the repo: both packages and the example',
+      () {
+        final workspace = RegExp(
+          r'^workspace:\n((?:  - .+\n)+)',
+          multiLine: true,
+        ).firstMatch(rootPubspec)!.group(1)!;
+        expect(
+          workspace
+              .split('\n')
+              .where((l) => l.isNotEmpty)
+              .map((l) => l.substring(4)),
+          unorderedEquals([pkg, 'example']),
+        );
+        for (final member in [feedbackPubspec, read('example/pubspec.yaml')]) {
+          expect(member, contains('\nresolution: workspace\n'));
+        }
+      },
+    );
+
+    test('the root package does not ship the sibling (or anything of it)', () {
+      final pub = read('.pubignore');
+      expect(pub, contains('\n/packages/\n'));
+      // The example is not a package to publish either (it is `publish_to: none`).
+      expect(read('example/pubspec.yaml'), contains("publish_to: 'none'"));
+    });
+
+    test(
+      'the feedback package repeats .gitignore in .pubignore and drops its dev trees',
+      () {
+        final pub = read('$pkg/.pubignore');
+        for (final rule
+            in read('$pkg/.gitignore')
+                .split('\n')
+                .where(
+                  (l) => l.trim().isNotEmpty && !l.trimLeft().startsWith('#'),
+                )) {
+          expect(pub, contains(rule), reason: '.pubignore lacks `$rule`');
+        }
+        expect(pub, contains('\n/ios/feedback_wrapper_tests/\n'));
+        expect(pub, contains('\n/pigeons/\n'));
+      },
+    );
+
+    test(
+      'has its own LICENSE (pub publish needs one in the package root), the same text',
+      () {
+        expect(read('$pkg/LICENSE'), read('LICENSE'));
+      },
+    );
+
+    test('has a README, a CHANGELOG and an example for pub.dev', () {
+      for (final f in ['README.md', 'CHANGELOG.md', 'example/example.md']) {
+        expect(File('$pkg/$f').existsSync(), isTrue, reason: f);
+      }
+    });
+
+    test('same repository and issue tracker as the core', () {
+      for (final key in ['repository', 'issue_tracker', 'homepage']) {
+        expect(topLevel(feedbackPubspec, key), topLevel(rootPubspec, key));
+      }
+    });
+
+    test('has no podspec: the iOS side is SwiftPM only, like the core', () {
+      expect(
+        Directory('$pkg/ios')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.podspec')),
+        isEmpty,
+      );
+    });
+  });
+
+  group('the core works without it', () {
+    test(
+      'the core pubspec, Gradle file and manifest never mention the feedback package',
+      () {
+        expect(
+          liveOf(rootPubspec).replaceAll(
+            RegExp(r'^workspace:\n(  - .+\n)+', multiLine: true),
+            '',
+          ),
+          isNot(contains('feedback')),
+        );
+        expect(code('android/build.gradle'), isNot(contains('feedback')));
+        expect(
+          read(
+            'android/src/main/AndroidManifest.xml',
+          ).replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ''),
+          isNot(contains('eedback')),
+        );
+        expect(
+          code('ios/bugsee_flutter/Package.swift'),
+          isNot(contains('eedback')),
+        );
+        expect(
+          code('ios/wrapper_tests/Package.swift'),
+          isNot(contains('eedback')),
+        );
+      },
+    );
+
+    test(
+      'no core source (Dart, Java, Swift, Objective-C) refers to the feedback module or SwiftUI',
+      () {
+        final sources = [
+          ...filesUnder('lib', ['.dart']),
+          ...filesUnder('android/src/main', ['.java', '.kt', '.xml']),
+          ...filesUnder('ios/bugsee_flutter/Sources', ['.m', '.h', '.swift']),
+          File('pigeons/bridge.dart'),
+        ];
+        for (final f in sources) {
+          final text = code(f.path);
+          expect(text, isNot(contains('BugseeFeedback')), reason: f.path);
+          expect(
+            text,
+            isNot(contains('contracts.extensions.Feedback')),
+            reason: f.path,
+          );
+          expect(
+            text,
+            isNot(contains('bugsee_flutter_feedback')),
+            reason: f.path,
+          );
+          expect(text, isNot(contains('SwiftUI')), reason: f.path);
+        }
+      },
+    );
+
+    test(
+      'the core bridge does not carry feedback calls (the feedback package has its own)',
+      () {
+        expect(
+          read('pigeons/bridge.dart').toLowerCase(),
+          isNot(contains('feedback')),
+        );
+      },
+    );
+  });
+
+  group('version policy: released together, constrained to the same minor', () {
+    test('the same version number as the core', () {
+      expect(topLevel(feedbackPubspec, 'version'), coreVersion);
+    });
+
+    test('the Dart constant is the pubspec version', () {
+      expect(
+        read('$pkg/lib/src/feedback_version.dart'),
+        contains("const String feedbackVersion = '$coreVersion';"),
+      );
+    });
+
+    test(
+      'depends on the core from that version up to, not including, the next minor',
+      () {
+        final m = RegExp(r'^\d+\.(\d+)\.\d+').firstMatch(coreVersion)!;
+        final major = coreVersion.split('.').first;
+        final next = '$major.${int.parse(m.group(1)!) + 1}.0';
+        expect(
+          feedbackPubspec,
+          contains('\n  bugsee_flutter: ">=$coreVersion <$next"\n'),
+          reason:
+              'bump both packages and this constraint together (see feedback_version.dart)',
+        );
+        // Never a path or git dependency (not publishable); the workspace resolves it locally.
+        expect(
+          RegExp(
+            r'bugsee_flutter:\s*\n\s+(path|git):',
+          ).hasMatch(feedbackPubspec),
+          isFalse,
+        );
+        expect(
+          liveOf(feedbackPubspec),
+          isNot(contains('dependency_overrides')),
+        );
+      },
+    );
+
+    test('the CHANGELOG starts with this version', () {
+      expect(read('$pkg/CHANGELOG.md'), startsWith('## $coreVersion\n'));
+    });
+
+    test(
+      'the same Dart and Flutter floors as the core, from native-versions.json',
+      () {
+        final dart = flutterPin['dart'] as String;
+        final caret = '^${dart.split('.').take(2).join('.')}.0';
+        expect(feedbackPubspec, contains('sdk: $caret'));
+        expect(feedbackPubspec, contains('flutter: ">=${flutterPin['min']}"'));
+        expect(topLevel(rootPubspec, 'version'), isNotEmpty);
+      },
+    );
+
+    test(
+      'depends on nothing the core does not: only flutter, bugsee_flutter and meta',
+      () {
+        final deps = RegExp(
+          r'^dependencies:\n((?:  .+\n)+)',
+          multiLine: true,
+        ).firstMatch(feedbackPubspec)!.group(1)!;
+        final names = RegExp(
+          r'^  ([a-z_]+):',
+          multiLine: true,
+        ).allMatches(deps).map((m) => m.group(1)).toSet();
+        expect(names, {'flutter', 'bugsee_flutter', 'meta'});
+      },
+    );
+  });
+
+  group('native pins', () {
+    final gradle = read('$pkg/android/build.gradle');
+    final manifest = read('$pkg/ios/bugsee_flutter_feedback/Package.swift');
+    final testManifest = read('$pkg/ios/feedback_wrapper_tests/Package.swift');
+
+    test('the Android artifact is the feedback module at android.sdk', () {
+      expect(
+        feedbackPin['androidArtifact'],
+        'com.bugsee:bugsee-android-feedback',
+      );
+      expect(gradle, contains('def feedbackSdkVersion = "${android['sdk']}"'));
+      expect(
+        gradle,
+        contains(
+          'api "${feedbackPin['androidArtifact']}:\${feedbackSdkVersion}"',
+        ),
+      );
+      expect(
+        RegExp(r'com\.bugsee:bugsee-android[a-z-]*:\d').hasMatch(gradle),
+        isFalse,
+        reason:
+            'a literal artifact version outside feedbackSdkVersion is not covered by the pins',
+      );
+    });
+
+    test('minSdk is the SDK floor', () {
+      expect(gradle, contains('def feedbackMinSdk = ${android['minSdk']}'));
+      expect(gradle, contains('minSdk = feedbackMinSdk'));
+    });
+
+    test('Android is the same Gradle/AGP setup as the core', () {
+      final core = read('android/build.gradle');
+      for (final line in [
+        'classpath("com.android.tools.build:gradle:8.11.1")',
+        'compileSdk = 35',
+        'sourceCompatibility = JavaVersion.VERSION_1_8',
+      ]) {
+        expect(core, contains(line));
+        expect(gradle, contains(line));
+      }
+    });
+
+    test(
+      'iOS pins the core SPM package and the feedback add-on exactly, at ios.sdk',
+      () {
+        for (final m in [manifest, testManifest]) {
+          expect(
+            m,
+            contains(
+              '.package(url: "${ios['spmUrl']}", exact: "${ios['sdk']}")',
+            ),
+          );
+          expect(
+            m,
+            contains(
+              '.package(url: "${ios['feedbackSpmUrl']}", exact: "${ios['sdk']}")',
+            ),
+          );
+          expect(m, contains('.iOS("${ios['deploymentTarget']}")'));
+          expect(
+            m,
+            contains(
+              '.product(name: "${feedbackPin['iosProduct']}", package: "feedback-spm")',
+            ),
+          );
+        }
+      },
+    );
+
+    test('and the core plugin pins the very same core package version', () {
+      expect(
+        read('ios/bugsee_flutter/Package.swift'),
+        contains('.package(url: "${ios['spmUrl']}", exact: "${ios['sdk']}")'),
+      );
+    });
+
+    test('committed Package.resolved files pin the feedback add-on too', () {
+      final files = Process.runSync('git', [
+        'ls-files',
+        '*Package.resolved',
+      ]).stdout.toString().trim().split('\n').where((f) => f.isNotEmpty);
+      expect(files, isNotEmpty);
+      for (final f in files) {
+        final resolved = (jsonDecode(read(f))['pins'] as List)
+            .cast<Map<String, dynamic>>();
+        final feedback = resolved.where(
+          (p) =>
+              (p['location'] as String).toLowerCase() ==
+              (ios['feedbackSpmUrl'] as String).toLowerCase(),
+        );
+        expect(
+          feedback,
+          hasLength(1),
+          reason:
+              '$f must pin ${ios['feedbackSpmUrl']} (the example uses the package)',
+        );
+        expect(
+          feedback.single['state']['version'],
+          ios['sdk'],
+          reason: '$f drifted from native-versions.json',
+        );
+      }
+    });
+  });
+
+  group('plugin identity', () {
+    test(
+      'the Dart, Android and iOS plugin classes are the ones the pubspec names',
+      () {
+        expect(
+          feedbackPubspec,
+          contains(
+            'package: com.bugsee.flutter.feedback\n        pluginClass: BugseeFlutterFeedbackPlugin',
+          ),
+        );
+        expect(
+          feedbackPubspec,
+          contains('ios:\n        pluginClass: BugseeFlutterFeedbackPlugin'),
+        );
+        expect(
+          File(
+            '$pkg/android/src/main/java/com/bugsee/flutter/feedback/BugseeFlutterFeedbackPlugin.java',
+          ).existsSync(),
+          isTrue,
+        );
+        expect(
+          code(
+            '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback/BugseeFlutterFeedbackPlugin.swift',
+          ),
+          contains(
+            'public class BugseeFlutterFeedbackPlugin: NSObject, FlutterPlugin',
+          ),
+        );
+      },
+    );
+
+    test(
+      'the Android namespace is the plugin package, and distinct from the core\'s',
+      () {
+        expect(
+          read('$pkg/android/build.gradle'),
+          contains('namespace = "com.bugsee.flutter.feedback"'),
+        );
+        expect(
+          read('android/build.gradle'),
+          contains('namespace = "com.bugsee.flutter"'),
+        );
+        expect(
+          read('$pkg/android/settings.gradle'),
+          contains("rootProject.name = 'bugsee_flutter_feedback'"),
+        );
+      },
+    );
+
+    test(
+      'the SwiftPM library is the hyphenated plugin name Flutter looks for',
+      () {
+        final manifest = read('$pkg/ios/bugsee_flutter_feedback/Package.swift');
+        expect(manifest, contains('name: "bugsee_flutter_feedback"'));
+        expect(
+          manifest,
+          contains(
+            '.library(name: "bugsee-flutter-feedback", targets: ["bugsee_flutter_feedback"])',
+          ),
+        );
+      },
+    );
+
+    test('the Pigeon channels cannot collide with the core\'s', () {
+      final dart = read('$pkg/lib/src/bridge/messages.g.dart');
+      final channels = RegExp(
+        r"'(dev\.flutter\.pigeon\.[^']+)\$",
+      ).allMatches(dart);
+      expect(channels, isNotEmpty);
+      for (final c in channels) {
+        expect(
+          c.group(1),
+          startsWith('dev.flutter.pigeon.bugsee_flutter_feedback.'),
+        );
+      }
+    });
+
+    test('nothing of the bridge is exported', () {
+      final lib = read('$pkg/lib/bugsee_flutter_feedback.dart');
+      expect(lib, isNot(contains('bridge')));
+      expect(lib, isNot(contains('messages')));
+      expect(lib, isNot(contains('runtime')));
+    });
+  });
+
+  group('native registration', () {
+    final androidSources = filesUnder('$pkg/android/src/main', [
+      '.java',
+      '.kt',
+    ]);
+
+    test(
+      'the feedback module registers itself: this package adds no provider',
+      () {
+        final manifest = read(
+          '$pkg/android/src/main/AndroidManifest.xml',
+        ).replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
+        expect(RegExp(r'<provider\b').hasMatch(manifest), isFalse);
+        expect(manifest, isNot(contains('InitProvider')));
+      },
+    );
+
+    test('no class of this package matches the name the Gradle plugin strips', () {
+      for (final f in androidSources) {
+        final text = code(f.path);
+        final pkgName = RegExp(
+          r'^package ([\w.]+);',
+          multiLine: true,
+        ).firstMatch(text)!.group(1)!;
+        for (final m in RegExp(
+          r'\b(?:class|interface|enum)\s+(\w+)',
+        ).allMatches(text)) {
+          expect(
+            strippedByGradlePlugin.hasMatch('$pkgName.${m.group(1)}'),
+            isFalse,
+            reason:
+                '${f.path}: ${m.group(1)} would be stripped from the manifest',
+          );
+        }
+      }
+      // The regex does catch the trap (guards the guard) and is the SDK's own provider's shape.
+      expect(
+        strippedByGradlePlugin.hasMatch(
+          'com.bugsee.flutter.feedback.BugseeFeedbackInitProvider',
+        ),
+        isTrue,
+      );
+      expect(
+        strippedByGradlePlugin.hasMatch(
+          'com.bugsee.library.BugseeFeedbackInitProvider',
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'Android: the SDK registrar is only called from the SDK seam, and it is the SDK\'s own method',
+      () {
+        final calls = androidSources
+            .where((f) => code(f.path).contains('registerFeedbackExtension()'))
+            .map((f) => f.path.split('/').last);
+        expect(calls, ['BugseeFeedbackSdk.java']);
+        expect(
+          code(
+            '$pkg/android/src/main/java/com/bugsee/flutter/feedback/BugseeFeedbackSdk.java',
+          ),
+          contains('import com.bugsee.library.BugseeFeedback;'),
+        );
+        // Called when the engine attaches, i.e. before Dart can launch the SDK.
+        expect(
+          code(
+            '$pkg/android/src/main/java/com/bugsee/flutter/feedback/BugseeFlutterFeedbackPlugin.java',
+          ),
+          contains('sdk.registerIfMissing();'),
+        );
+      },
+    );
+
+    test(
+      'Android: Bugsee.ext is asked for the Feedback contract interface, never the facade class',
+      () {
+        expect(
+          code(
+            '$pkg/android/src/main/java/com/bugsee/flutter/feedback/BugseeFeedbackSdk.java',
+          ),
+          contains('Bugsee.ext(Feedback.class)'),
+        );
+      },
+    );
+
+    test(
+      'iOS: the add-on is registered at image load, once, and the plugin references that',
+      () {
+        final registrar = code(
+          '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback_wrapper/BGSFlutterFeedbackOps.m',
+        );
+        expect(
+          registrar,
+          matches(
+            RegExp(r'\+ \(void\)load \{\s*\[self ensureRegistered\];\s*\}'),
+          ),
+        );
+        expect(registrar, contains('dispatch_once(&gOnce'));
+        expect(registrar, contains('[BugseeFeedback register];'));
+        final plugin = code(
+          '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback/BugseeFlutterFeedbackPlugin.swift',
+        );
+        // The reference that keeps the translation unit (and its +load) in a static link.
+        expect(
+          plugin,
+          contains('BGSFlutterFeedbackRegistrar.ensureRegistered()'),
+        );
+        expect(plugin, contains('registerIfMissing()'));
+      },
+    );
+
+    test(
+      'iOS: the wrapper target links the add-on product and imports its module',
+      () {
+        expect(
+          read('$pkg/ios/bugsee_flutter_feedback/Package.swift'),
+          contains('.product(name: "BugseeFeedback", package: "feedback-spm")'),
+        );
+        expect(
+          code(
+            '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback_wrapper/BGSFlutterFeedbackOps.m',
+          ),
+          contains('@import BugseeFeedback;'),
+        );
+      },
+    );
+
+    test(
+      'iOS: no header of the wrapper imports the add-on module (the Swift side must not need it)',
+      () {
+        for (final f in filesUnder(
+          '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback_wrapper/include',
+          ['.h'],
+        )) {
+          expect(
+            code(f.path),
+            isNot(contains('BugseeFeedback;')),
+            reason: f.path,
+          );
+        }
+      },
+    );
+  });
+
+  group('wire codes', () {
+    final dart = read('$pkg/lib/src/errors.dart');
+    final java = read(
+      '$pkg/android/src/main/java/com/bugsee/flutter/feedback/FeedbackOps.java',
+    );
+    final objc = read(
+      '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback_wrapper/BGSFlutterFeedbackOps.m',
+    );
+
+    test('Dart, Java and Objective-C spell the failure codes alike', () {
+      for (final (dartName, javaName, objcName, value) in [
+        ('notRegistered', 'NOT_REGISTERED', 'kNotRegistered', 'not-registered'),
+        ('sdkError', 'SDK_ERROR', 'kSdkError', 'sdk-error'),
+      ]) {
+        expect(dart, contains("static const $dartName = '$value';"));
+        expect(java, contains('static final String $javaName = "$value";'));
+        expect(objc, contains('static NSString *const $objcName = @"$value";'));
+      }
+    });
+
+    test('the Dart mapping reads the not-registered code', () {
+      expect(
+        code('$pkg/lib/src/feedback_runtime.dart'),
+        contains('FeedbackWire.notRegistered'),
+      );
+    });
+  });
+
+  group('pigeon', () {
+    final pin = (pins['pigeon'] as Map<String, dynamic>)['version'] as String;
+
+    test(
+      'the generator package pins the same version, exactly, and its lock agrees',
+      () {
+        expect(
+          read('$pkg/pigeons/pubspec.yaml'),
+          matches(
+            RegExp('^  pigeon: ${RegExp.escape(pin)}\$', multiLine: true),
+          ),
+        );
+        expect(
+          read('$pkg/pigeons/pubspec.lock'),
+          matches(
+            RegExp('pigeon:\\n(?:.*\\n)*?    version: "${RegExp.escape(pin)}"'),
+          ),
+        );
+      },
+    );
+
+    test('every committed generated file was produced by that version', () {
+      for (final f in [
+        '$pkg/lib/src/bridge/messages.g.dart',
+        '$pkg/android/src/main/java/com/bugsee/flutter/feedback/Messages.java',
+        '$pkg/ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback/Messages.g.swift',
+      ]) {
+        expect(
+          read(f),
+          contains('Autogenerated from Pigeon (v$pin)'),
+          reason: f,
+        );
+      }
+    });
+
+    test('the definition writes exactly the three files the guards read', () {
+      final outs =
+          RegExp(
+                r"^\s*(?:dart|java|swift)Out:\s*\n?\s*'([^']+)'",
+                multiLine: true,
+              )
+              .allMatches(read('$pkg/pigeons/bridge.dart'))
+              .map((m) => m.group(1))
+              .toList();
+      expect(outs, [
+        '../lib/src/bridge/messages.g.dart',
+        '../android/src/main/java/com/bugsee/flutter/feedback/Messages.java',
+        '../ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback/Messages.g.swift',
+      ]);
+    });
+
+    test('pigeon is not a dependency of the package (needs a newer meta)', () {
+      expect(feedbackPubspec, isNot(contains('pigeon:')));
+    });
+  });
+
+  group('the example uses it', () {
+    test('as a path dependency in the example app, and calls it', () {
+      expect(
+        read('example/pubspec.yaml'),
+        contains(
+          'bugsee_flutter_feedback:\n    path: ../packages/bugsee_flutter_feedback',
+        ),
+      );
+      expect(
+        read('example/lib/feedback_screen.dart'),
+        contains(
+          "import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';",
+        ),
+      );
+      expect(read('example/lib/main.dart'), contains('FeedbackScreen()'));
+    });
+  });
+}

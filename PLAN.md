@@ -272,7 +272,26 @@ retention + `request.json` read, crash across update, Dart exception, secure-rec
 
 ## 8. Phase 8 — Feedback package, docs, release
 
-`bugsee_flutter_feedback`; README/migration guide (9.x→7.x API, since it is a clean break);
+### 8a - the feedback package (done)
+
+`packages/bugsee_flutter_feedback` (full write-up with SDK references: its `doc/feedback.md`). Decisions:
+
+- **Layout**: a member of a pub **workspace** (root `workspace:` = the feedback package + `example`), published separately
+  (core first). The workspace lets the feedback package depend on `bugsee_flutter` by a hosted constraint that resolves to
+  the sibling locally: no path dependency (unpublishable), no `dependency_overrides`. The root `.pubignore` drops `/packages/`.
+  Cost: `example/pubspec.lock` is gone (one gitignored lock at the root, like the packages).
+- **Versions**: lock-step number; the constraint is `>=<core> <next minor>` (pub warns about an exact pin); the Dart side
+  also checks the core's version at run time (`incompatibleCore`). Native pins repeated as literals in the package (a published
+  copy has no `native-versions.json`), compared by `test/feedback_package_drift_test.dart`; `native-versions.json` gained a
+  `feedback` section and the weekly pin check also looks for `bugsee-android-feedback` on Maven.
+- **API** is what both SDKs have: show, greeting, listener (two streams), plus `isAvailable`. No unread count, options,
+  appearance (skipped like the core's), invented nothing. Its own Pigeon bridge; the core's is untouched and a guard keeps
+  feedback out of the core.
+- **Registration**: the SDKs register the module themselves (Android init provider or the Gradle plugin's injected call;
+  iOS `+load` shim). The package adds no provider (guarded), registers on Android only as a safety net, and on iOS has its
+  own `+load` registrar that the plugin references, because the add-on's shim can be dead-stripped from a static link.
+
+README/migration guide (9.x→7.x API, since it is a clean break);
 CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app covering all screens.
 
 ## Risks / open items

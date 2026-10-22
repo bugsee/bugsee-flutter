@@ -396,9 +396,10 @@ abstract final class Bugsee {
   ///
   /// ```dart
   /// void main() {
-  ///   Bugsee.installLogCapture();
+  ///   // The bindings and `runApp` share one zone, and it is the one that records `print`.
   ///   Bugsee.runWithLogCapture(() {
   ///     WidgetsFlutterBinding.ensureInitialized();
+  ///     Bugsee.installLogCapture();
   ///     runApp(const MyApp());
   ///   });
   /// }

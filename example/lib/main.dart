@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'attachments_screen.dart';
 import 'exceptions_screen.dart';
 import 'facade_screen.dart';
+import 'logs_screen.dart';
 import 'network_screen.dart';
 
 /// The application token from the Bugsee dashboard. Pass your own with
@@ -54,14 +55,22 @@ Future<void> _afterReport(ReportProxy report) async {
   await report.setAttribute('example.phase', 'after');
 }
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  // Records the app's `dart:io` HTTP traffic from the moment the SDK is launched (the SDKs'
-  // own interception cannot see it); chained to any HttpOverrides the app installs.
-  Bugsee.installNetworkCapture();
-  // Before launch, so reports the SDK recovers while launching are seen too.
-  await Bugsee.setReportHandler(exampleReportHandler);
-  runApp(const ExampleApp());
+void main() {
+  // Everything runs inside a zone that records `print` (the hook is inert until the capture is
+  // installed); the bindings are initialized in it too, so `runApp` shares their zone.
+  Bugsee.runWithLogCapture(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Records what the app prints (`print`, `debugPrint`) into the report's log, with the plugin's
+    // own source: the app's deliberate `Bugsee.log` calls stay distinguishable. Filter it with
+    // `Bugsee.setLogFilter`.
+    Bugsee.installLogCapture();
+    // Records the app's `dart:io` HTTP traffic from the moment the SDK is launched (the SDKs'
+    // own interception cannot see it); chained to any HttpOverrides the app installs.
+    Bugsee.installNetworkCapture();
+    // Before launch, so reports the SDK recovers while launching are seen too.
+    await Bugsee.setReportHandler(exampleReportHandler);
+    runApp(const ExampleApp());
+  });
 }
 
 class ExampleApp extends StatelessWidget {
@@ -95,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ExceptionsScreen(),
         AttachmentsScreen(),
         NetworkScreen(),
+        LogsScreen(),
       ],
     ),
     bottomNavigationBar: NavigationBar(
@@ -125,6 +135,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-network'),
           icon: Icon(Icons.swap_vert),
           label: 'Network',
+        ),
+        NavigationDestination(
+          key: Key('tab-logs'),
+          icon: Icon(Icons.notes),
+          label: 'Logs',
         ),
       ],
     ),

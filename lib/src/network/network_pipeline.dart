@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import '../bridge/messages.g.dart';
 import 'network_event.dart';
 import 'network_policy.dart';
+import 'body_capture.dart' show utf8Length;
 import 'url_redaction.dart';
 
 /// The wire constants shared with native (`NetworkOps.java`, `BGSFlutterNetworkOps`); compared by
@@ -163,6 +164,13 @@ final class NetworkPipeline {
     return bytes;
   }
 
+  /// What a message weighs for a batch (the filter may have changed what the event carried).
+  static int _messageBytes(NetworkEventMessage m) {
+    var bytes = 512 + m.url.length + (m.body?.length ?? 0);
+    m.headers?.forEach((k, v) => bytes += k.length + v.length);
+    return bytes;
+  }
+
   /// Called by the capture for every event. Never throws, never waits.
   void submit(BugseeNetworkEvent event) {
     try {
@@ -236,7 +244,7 @@ final class NetworkPipeline {
           if (message != null) {
             batch.add(message);
             origins.add(queued.event.monotonicUs);
-            batchBytes += estimateBytes(queued.event);
+            batchBytes += _messageBytes(message);
           }
           // Yield between events once the slice is used up, so a long queue (or a slow filter)
           // never holds the isolate for long at a time.
@@ -318,7 +326,15 @@ final class NetworkPipeline {
       _droppedByFilter++;
       return null;
     }
-    final body = filtered.body;
+    // Whatever a filter returned is held to the same limit as a captured body: the SDK would
+    // drop a longer one, and it should not cross the bridge to be dropped there.
+    final limit = policy().bodySizeLimit;
+    var body = filtered.body;
+    NoBodyReason? reason = filtered.noBodyReason;
+    if (body != null && utf8Length(body) > limit) {
+      body = null;
+      reason = NoBodyReason.sizeTooLarge;
+    }
     return NetworkEventMessage(
       id: original.id,
       stage: original.stage.name,
@@ -332,7 +348,7 @@ final class NetworkPipeline {
       headers: <String, String>{...filtered.headers},
       body: body,
       // A body and a reason about its absence are exclusive.
-      noBodyReason: body == null ? filtered.noBodyReason?.wire : null,
+      noBodyReason: body == null ? reason?.wire : null,
       statusText: filtered.statusText,
       errorShortMessage: filtered.error,
       errorDescription: filtered.errorDescription,

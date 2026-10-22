@@ -33,6 +33,7 @@ class Rig {
     int maxBatchEvents = 32,
     int maxBatchBytes = 512 * 1024,
     bool dropRedirectStage = false,
+    int bodySizeLimit = 20480,
   }) {
     pipeline = NetworkPipeline(
       send: (batch) async {
@@ -49,7 +50,8 @@ class Rig {
           inFlight--;
         }
       },
-      policy: () => NetworkPolicy(accepting: accepting),
+      policy: () =>
+          NetworkPolicy(accepting: accepting, bodySizeLimit: bodySizeLimit),
       maxQueuedEvents: maxQueuedEvents,
       maxQueuedBytes: maxQueuedBytes,
       maxBatchEvents: maxBatchEvents,
@@ -505,6 +507,42 @@ void main() {
       headers['a'] = 'changed';
       expect(rig.sent.single.headers, {'a': 'b'});
     });
+  });
+
+  group('limits after the filter', () {
+    test(
+      'a body a filter returns over the limit is dropped, by bytes not characters',
+      () async {
+        final rig = Rig(bodySizeLimit: 10);
+        rig.pipeline.setFilter(
+          (e) => e
+            ..body = e.id == 'big' ? '\u20ac\u20ac\u20ac\u20ac' : 'abcdefghij',
+          const Duration(seconds: 1),
+        );
+        rig.pipeline.submit(event('big'));
+        rig.pipeline.submit(event('ok'));
+        await rig.pipeline.flush();
+        expect(rig.sent[0].body, isNull);
+        expect(rig.sent[0].noBodyReason, 'size_too_large');
+        expect(rig.sent[1].body, 'abcdefghij');
+      },
+    );
+
+    test(
+      'a batch is cut by what the messages weigh, not what the events did',
+      () async {
+        final rig = Rig(maxBatchBytes: 1500, bodySizeLimit: 100000);
+        rig.pipeline.setFilter(
+          (e) => e..body = 'x' * 1000,
+          const Duration(seconds: 1),
+        );
+        for (var i = 0; i < 3; i++) {
+          rig.pipeline.submit(event('$i'));
+        }
+        await rig.pipeline.flush();
+        expect(rig.batches.map((b) => b.length), [1, 1, 1]);
+      },
+    );
   });
 
   group('what a filter is handed', () {

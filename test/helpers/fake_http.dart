@@ -61,6 +61,16 @@ class FakeResponse extends Stream<List<int>> implements HttpClientResponse {
     cancelOnError: cancelOnError,
   );
 
+  /// What `redirect()` answers (a response of the redirected request), if set.
+  FakeResponse? redirectTo;
+
+  @override
+  Future<HttpClientResponse> redirect([
+    String? method,
+    Uri? url,
+    bool? followLoops,
+  ]) async => redirectTo!;
+
   @override
   int get statusCode => status;
   @override
@@ -80,6 +90,16 @@ class FakeResponse extends Stream<List<int>> implements HttpClientResponse {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('FakeResponse.${invocation.memberName}');
+}
+
+class FakeRedirectInfo implements RedirectInfo {
+  FakeRedirectInfo(this.location);
+  @override
+  final Uri location;
+  @override
+  int get statusCode => 302;
+  @override
+  String get method => 'GET';
 }
 
 class FakeRequest implements HttpClientRequest {

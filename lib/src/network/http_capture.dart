@@ -158,8 +158,9 @@ final class _Exchange {
     this.startedUs, {
     this.parentUrl,
     this.skipHops = 0,
+    int? generation,
   }) : id = ctl.nextId(),
-       _generation = ctl.generation;
+       _generation = generation ?? ctl.generation;
 
   final int _generation;
 
@@ -179,6 +180,8 @@ final class _Exchange {
       monotonicMicros(),
       parentUrl: from.toString(),
       skipHops: hopIndex + 1,
+      // The installation the PARENT began under, not the one current when the redirect resolves.
+      generation: _generation,
     );
   }
 

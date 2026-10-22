@@ -257,6 +257,47 @@ void main() {
     },
   );
 
+  test(
+    'a manual redirect resolving after an uninstall and reinstall does not record',
+    () async {
+      final (rig, response) = await open();
+      final headers = await realHeaders();
+      rig.response.redirectTo = FakeResponse(
+        headers,
+        redirectInfos: [
+          FakeRedirectInfo(Uri.parse('http://example.test/next')),
+        ],
+      );
+      // The parent began under the first installation; the app follows its redirect after an
+      // uninstall and a reinstall.
+      controller.active = false;
+      controller.generation++;
+      controller.active = true;
+      final next = await response.redirect();
+      final done = Completer<void>();
+      next.listen((_) {}, onDone: done.complete);
+      await Future<void>.delayed(Duration.zero);
+      expect(stages(), [
+        NetworkStage.before,
+      ], reason: 'only the parent\'s own before');
+    },
+  );
+
+  test('a manual redirect within the same installation does record', () async {
+    final (rig, response) = await open();
+    final headers = await realHeaders();
+    rig.response.redirectTo = FakeResponse(
+      headers,
+      redirectInfos: [FakeRedirectInfo(Uri.parse('http://example.test/next'))],
+    );
+    final next = await response.redirect();
+    final done = Completer<void>();
+    next.listen((_) {}, onDone: done.complete);
+    await rig.response.redirectTo!.data.close();
+    await done.future;
+    expect(stages(), contains(NetworkStage.complete));
+  });
+
   test('a cancel after the uninstall records no abort either', () async {
     final (rig, response) = await open();
     final sub = response.listen((_) {});

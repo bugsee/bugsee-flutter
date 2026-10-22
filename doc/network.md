@@ -292,7 +292,7 @@ after its first chunk, a refused connection, a request to the SDK's own endpoint
 
 | | Android | iOS |
 |---|---|---|
-| captured / submitted to the SDK / dropped by the filter / refused by native | 26 / 24 / 2 / 0 | 26 / 22 / 2 / 2 in the first run (the two redirect hops iOS has no stage for; since the review round they are not created on iOS, so 0 refused) |
+| captured / submitted to the SDK / dropped by the filter / refused by native | 26 / 24 / 2 / 0 | 26 / 22 / 2 / 2 (first run; the two redirect hops iOS has no stage for. Since the review round Dart does not create them on iOS: later runs are 32 / 30 / 2 / 0) |
 | `network.json` entries | 24 | 22 |
 | request made before launch, request to the SDK's endpoint, the filter-dropped `/secret` | absent | absent |
 | redirect chain | `before`, `redirect` 302, `redirect` 301, `complete` (url = `/json`) | `before`, `complete` (url = `/json`, `redirect: true`) |
@@ -312,7 +312,7 @@ Review-round re-run (same harness, 34 requests: a URL with `user:pw@` and a toke
 `LOCSECRET` anywhere in `network.json` or the breadcrumbs on either platform; the URL-valued headers read
 `/final?token=<redacted>&x=<redacted>`, `http://h.example/x?a=<redacted>`, `http://h.example/p?k=<redacted>`; the manual
 redirect is two exchanges (`before`+`complete` 302, `before`+`complete` 301, `redirect: true` on iOS); Android 32 of 34
-submitted (2 filtered), iOS 30 (2 filtered, 2 redirect hops refused by design).
+submitted (2 filtered), iOS 30 of 32 (2 filtered; the redirect hops are no longer created on iOS, so none refused).
 
 Not shown on a device: a launched SDK with `capture.network` off (covered by the policy tests), a real server's acceptance of
 the upload (the stand-in refuses it on purpose so the bundle stays), the iOS `Launching`-window drop (the Dart gate never sends

@@ -77,7 +77,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   Dart: edits are operations keyed by a handle; a late edit throws `ReportClosedError` (a `StateError`) and native ignores it.
   `onAfter` is at-least-once: each delivery carries a stable `deliveryId` (`before|after:<reportId>`) and Dart skips a repeat
   within the isolate (128 remembered). Enums cross by value (the bridge has none; severity is the SDK integer; Dart
-  `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (TODO seam in `ReportProxy`).
+  `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (done, below).
 - `requestData` (3c): the stub answers null/nil for every type incl. `vh`, also on the replaced wrapper; tested on both platforms.
 
 ## 4. Phase 4 — Public API and options (Part 8)
@@ -242,3 +242,22 @@ CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app cove
 ## Suggested order
 
 P1 → P2 → P3 (ship a correct MVP, then device-verify) → P4 → P6 → P5 → P7 → P8.
+
+### 6 - attachments, annotated screenshots, `createReport` (done)
+
+Full write-up, tables and evidence: `doc/attachments.md`. Decisions:
+
+- **At the pins** both SDKs have path-first attachments, bytes, clear, lifetime enforcement, a 1000 cap, annotated screenshots
+  and display ids (Android `v7.4.2` via PR #117/#136/#178 on `main`; the spec's `feat/report-contract-parity` is NOT merged
+  into the tag but is not needed; iOS `nextgen@0581aa02c` BGSReport.m). `createReport` exists on both, but iOS hands the
+  legacy `BugseeExtendedReport` (3 in-memory attachments of at most 3 MiB, no id/type/e-mail/annotated flag): exposed with
+  the differences written on `CreatedReport`, not faked.
+- **Native file work off the platform thread** on a one-thread worker, with a lease on the handler's report so the SDK's
+  completion waits for the claim (never a blocked thread). Failure codes cross as strings (no Pigeon enums); limits are
+  repeated in Dart/Java/ObjC and compared by `test/report_attachments_drift_test.dart`; the SDKs' own caps are extracted
+  from source into the fixture.
+- **createReport fails closed**: one at a time, stamped reservation, 45 s SDK budget, time to live (default 10 min), reset on
+  hot restart; Android deletes the app's attachments on release.
+- **Verified** on the Android emulator (API 30) and the iOS simulator (27.0) with a stand-in API; JUnit, XCTest, Dart
+  mocks; every new test mutation-checked (see the PR description). **Not verified**: iOS device, a real token, scoped
+  storage outside the app directory, very large files on a device.

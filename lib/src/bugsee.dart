@@ -13,6 +13,7 @@ import 'facade/breadcrumb.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
 import 'options/bugsee_options.g.dart';
+import 'report/created_report.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
@@ -285,8 +286,8 @@ abstract final class Bugsee {
   /// Creates and uploads a bug report at once, without UI, from what the SDK has captured.
   ///
   /// A no-op before [launch]. Without a [severity] the SDK applies its default bug priority. To
-  /// edit a report as it is created, use [setReportHandler]; adding files to it comes with the
-  /// report API (not here yet).
+  /// edit a report as it is created, use [setReportHandler] (`ReportProxy.addAttachment` attaches
+  /// files from there); to fill one in yourself and send it, use [createReport].
   static Future<void> upload(
     String summary,
     String description, {
@@ -294,6 +295,24 @@ abstract final class Bugsee {
     List<String>? labels,
   }) =>
       _runtime.upload(summary, description, severity: severity, labels: labels);
+
+  /// Asks the SDK for a report to fill in and send yourself: add attachments, a screenshot, labels and
+  /// attributes to the returned [CreatedReport], then [CreatedReport.upload] it. Completes with `null`
+  /// when the SDK made none (it is not launched).
+  ///
+  /// One created report may be outstanding at a time ([CreateReportException] `busy`). The plugin holds
+  /// it natively for [timeToLive] (default ten minutes, between one second and one hour) and then
+  /// discards it, so a report the app forgot never stays in the SDK's hands; every later call on it
+  /// throws a [CreatedReportClosedError]. The SDKs have no way to cancel a created report: a discarded
+  /// one is simply never sent.
+  ///
+  /// Android and iOS hand the app different objects, so [CreatedReport] documents what differs
+  /// (iOS: at most 3 in-memory attachments of at most 3 MiB, no `mimeType`, no id). The report
+  /// handler ([setReportHandler]) runs for it too: Android runs the before phase inside this call and
+  /// the after phase at [CreatedReport.upload]; iOS runs both at upload.
+  static Future<CreatedReport?> createReport({
+    Duration timeToLive = const Duration(minutes: 10),
+  }) => _runtime.createReport(timeToLive: timeToLive);
 
   // ---- Report handler and lifecycle events ------------------------------------------------------
 
@@ -307,7 +326,7 @@ abstract final class Bugsee {
   /// Register it **before [launch]** to see reports the SDK recovers while launching. Read
   /// [BugseeReportHandler] for the delivery rules (`onBeforeReportCreated` at most once,
   /// `onAfterReportCreated` at least once and idempotent), and [ReportProxy] for what a handler can
-  /// change. Attachments are not part of the report API yet.
+  /// change, including its attachments and screenshots.
   static Future<void> setReportHandler(BugseeReportHandler? handler) =>
       _runtime.setReportHandler(handler);
 

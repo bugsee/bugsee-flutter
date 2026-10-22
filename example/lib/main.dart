@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/material.dart';
 
+import 'attachments_screen.dart';
 import 'exceptions_screen.dart';
 import 'facade_screen.dart';
 
@@ -84,7 +85,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) => Scaffold(
     body: IndexedStack(
       index: _page,
-      children: const [LaunchScreen(), FacadeScreen(), ExceptionsScreen()],
+      children: const [
+        LaunchScreen(),
+        FacadeScreen(),
+        ExceptionsScreen(),
+        AttachmentsScreen(),
+      ],
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _page,
@@ -104,6 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-errors'),
           icon: Icon(Icons.error_outline),
           label: 'Errors',
+        ),
+        NavigationDestination(
+          key: Key('tab-files'),
+          icon: Icon(Icons.attach_file),
+          label: 'Files',
         ),
       ],
     ),

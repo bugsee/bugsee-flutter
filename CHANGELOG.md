@@ -17,6 +17,12 @@
   sent to the SDKs is the backend's `FlutterManagedException` one (with the `signature` both SDKs hash), and a
   non-symbolic (obfuscated / `--split-debug-info`) stack is sent untouched. See `doc/exceptions.md`.
 
+* Report attachments and screenshots: `ReportProxy.addAttachment(path, {name, mimeType, move})` (path-first: the file
+  never crosses the bridge), `addAttachmentBytes` (up to 1 MiB), `clearAttachments`, `setScreenshot(path, {displayId,
+  annotated})`, `removeScreenshot`, and `attachments` / `screenshots` on `ReportSnapshot`; typed errors
+  (`ReportAttachmentException`). `Bugsee.createReport({timeToLive})` returns a `CreatedReport` to fill in and `upload()`
+  (one at a time, released at its time to live). See `doc/attachments.md` for what differs on iOS.
+
 ## 0.0.1
 
 * TODO: Describe initial release.

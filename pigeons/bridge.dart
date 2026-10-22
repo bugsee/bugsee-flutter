@@ -142,6 +142,24 @@ class ReportHandlerRequestMessage {
   int deadlineMs;
 }
 
+/// One attachment of a report, as the SDK lists it: the display name, the MIME type and the
+/// source file's base name. Never the file's content or its place in the SDK's storage.
+class ReportAttachmentMessage {
+  ReportAttachmentMessage({this.name, this.mimeType, this.fileName});
+
+  String? name;
+  String? mimeType;
+  String? fileName;
+}
+
+/// One screenshot a report holds. [annotated] is whether the user (or the app) drew on it.
+class ReportScreenshotMessage {
+  ReportScreenshotMessage({required this.displayId, required this.annotated});
+
+  int displayId;
+  bool annotated;
+}
+
 /// A read of a live report. [severity] is the SDK's internal integer (1..5), or
 /// null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
 class ReportSnapshotMessage {
@@ -154,6 +172,8 @@ class ReportSnapshotMessage {
     this.severity,
     required this.labels,
     required this.attributes,
+    required this.attachments,
+    required this.screenshots,
   });
 
   String id;
@@ -169,6 +189,74 @@ class ReportSnapshotMessage {
   /// Only values both SDKs accept: String, bool, int, double. Anything else the
   /// report holds is left out rather than stringified.
   Map<String, Object> attributes;
+
+  /// The attachments, in the order they were added; metadata only.
+  List<ReportAttachmentMessage> attachments;
+
+  /// The displays that hold a screenshot, ascending by display id.
+  List<ReportScreenshotMessage> screenshots;
+}
+
+/// A read of a report made by `createReport` (workbook 7.3 plus the SDKs' own creation APIs). iOS
+/// gives the app a `BugseeExtendedReport`, which has no id, type, e-mail, screenshot flag or
+/// attachment metadata beyond the name: those are absent here ([reportId] and [type] are empty
+/// strings, [attachmentNames] carries only what iOS can list, [screenshotDisplayIds] is `[0]` or
+/// empty there).
+class CreatedReportSnapshotMessage {
+  CreatedReportSnapshotMessage({
+    required this.reportId,
+    required this.type,
+    this.summary,
+    this.reportDescription,
+    this.severity,
+    required this.labels,
+    required this.attributes,
+    required this.attachmentNames,
+    required this.screenshotDisplayIds,
+  });
+
+  String reportId;
+  String type;
+  String? summary;
+  String? reportDescription;
+  int? severity;
+  List<String> labels;
+  Map<String, Object> attributes;
+  List<String> attachmentNames;
+  List<int> screenshotDisplayIds;
+}
+
+/// Edits to a created report, validated as a WHOLE before any is applied (one bad field changes
+/// nothing). A `set*` flag says the field is part of the patch: that is how a `null` summary
+/// (clear it) differs from an absent one (leave it).
+class CreatedReportPatchMessage {
+  CreatedReportPatchMessage({
+    this.setSummary = false,
+    this.summary,
+    this.setDescription = false,
+    this.reportDescription,
+    this.severity,
+    this.labels,
+    this.clearAttributes = false,
+    this.attributes,
+    this.removeAttributes,
+  });
+
+  bool setSummary;
+  String? summary;
+  bool setDescription;
+  String? reportDescription;
+
+  /// The SDK's internal integer (1..5), or null to leave it.
+  int? severity;
+
+  /// Replaces the labels when not null.
+  List<String>? labels;
+
+  /// Applied first, then [attributes], then [removeAttributes].
+  bool clearAttributes;
+  Map<String, Object>? attributes;
+  List<String>? removeAttributes;
 }
 
 /// What native did with a launch request. Strings, not an enum: Pigeon sends an enum as its
@@ -276,6 +364,115 @@ abstract class BugseeBridgeHostApi {
   bool reportRemoveAttribute(String handle, String name);
 
   bool reportClearAttributes(String handle);
+
+  // ---- Attachments and screenshots of a handler's report (Phase 6; workbook 7.3.3, report-contract
+  // "path-first"). The file work is native: a path crosses, never a stream or a bitmap, and bytes
+  // only up to a small cap (see `kMaxAttachmentBytes` in Dart). These run on a background thread (a
+  // copy costs I/O proportional to the file; the SDKs say not to do it on the UI thread) and the reply
+  // is a failure CODE: null when it was applied, `not-live` when the handle is no longer live (Dart
+  // turns it into a ReportClosedError), or one of the codes in `AttachmentWire`. An argument the SDK
+  // cannot take is a PlatformException `invalid-argument`. A handle that is live when the call is made
+  // is kept live until the call has finished (the SDK's completion waits for it, never the other way).
+
+  /// Copies ([move] false) or moves ([move] true) the file at [path] into the report's storage.
+  @async
+  String? reportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+    bool move,
+  );
+
+  /// Writes [data] (at most `kMaxAttachmentBytes`) into the report's storage.
+  @async
+  String? reportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  );
+
+  /// Removes every attachment, deleting their files.
+  @async
+  String? reportClearAttachments(String handle);
+
+  /// Decodes the image file at [path] natively and stores it as the screenshot of [displayId].
+  /// [annotated] says the picture carries the user's drawing (it reaches the bundle as the screenshot
+  /// entry's `annotated` attribute).
+  @async
+  String? reportSetScreenshot(
+    String handle,
+    String path,
+    int displayId,
+    bool annotated,
+  );
+
+  /// Removes the screenshot of [displayId] (a no-op when there is none).
+  @async
+  String? reportRemoveScreenshot(String handle, int displayId);
+
+  // ---- createReport (Phase 6). The SDKs' own way to make a report in code: Android
+  // `Bugsee.createReport(listener)` hands the app a `Report`; iOS `+createReportWithCompletion:` hands
+  // it a `BugseeExtendedReport`, a different and smaller object. One report at a time, held natively
+  // under an opaque handle, released by upload, discard or the time limit; every operation answers
+  // `not-live` once it is gone.
+
+  /// Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
+  /// (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
+  /// does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
+  /// SDK did not answer in time.
+  @async
+  String? createReport(int ttlMs);
+
+  /// Null when the handle is not live.
+  CreatedReportSnapshotMessage? createdReportRead(String handle);
+
+  /// Applies [patch] as a whole. False when the handle is not live. An unusable field is a
+  /// PlatformException `invalid-argument` and nothing is applied.
+  bool createdReportApply(String handle, CreatedReportPatchMessage patch);
+
+  /// Copies the file at [path] into the report (never moves it). iOS keeps the bytes in memory
+  /// until upload and its SDK takes at most 3 files of 3 MiB (see doc/api-surface.md); a refusal
+  /// is `limit` / `too-large`.
+  @async
+  String? createdReportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+  );
+
+  @async
+  String? createdReportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  );
+
+  @async
+  String? createdReportClearAttachments(String handle);
+
+  /// [annotated] is Android only: iOS answers `unsupported` for true.
+  @async
+  String? createdReportSetScreenshot(
+    String handle,
+    String path,
+    bool annotated,
+  );
+
+  /// Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
+  /// answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
+  /// handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+  /// live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
+  @async
+  bool createdReportUpload(String handle);
+
+  /// Releases the report without uploading it (deletes the attachments the app added on Android; the
+  /// SDK has no way to cancel a created report, so it is simply never sent). A no-op for an unknown
+  /// handle.
+  void createdReportDiscard(String handle);
 
   /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
   /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes

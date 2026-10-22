@@ -14,7 +14,15 @@
 //     --ios-contracts .../BGSContracts.h \
 //     --android-coordinator /tmp/BugseeIssueReportingCoordinator.java \
 //     --android-chain /tmp/ReportHandlerChain.java --android-options /tmp/OptionsDescriptors.java \
-//     --ios-coordinator /tmp/BGSIssueReportingCoordinator.m --ios-source-ref origin/nextgen@0581aa02c [--check]
+//     --ios-coordinator /tmp/BGSIssueReportingCoordinator.m --ios-source-ref origin/nextgen@0581aa02c \
+//     --android-report /tmp/IssueReport.java --ios-report /tmp/BGSReport.m --ios-attachment /tmp/BGSAttachment.h [--check]
+//
+// (Phase 6) The same fixture carries the SDKs' ATTACHMENT limits: Android `IssueReport.MAX_ATTACHMENTS`
+// (v7.4.2, `library/src/main/java/com/bugsee/library/reporting/IssueReport.java`), iOS
+// `kBGSMaxReportAttachments` (`BGSReport.m`) and the legacy `BugseeExtendedReport` rules
+// `ATTACHMENTS_LIMIT` / `MAX_SIZE_ATTACHMENT` (`BGSAttachment.h`), all `BugseeDev/BugseeLib/BugseeLib/` at
+// the nextgen commit of --ios-source-ref, so the wrapper's copies of those numbers are compared with
+// the SDKs', never with themselves.
 //
 // The same fixture also carries the SDKs' report-handler TIMINGS (workbook 7.3.5), read from
 // source, so the wrapper's deadlines are compared with the SDK's real numbers and not with
@@ -90,6 +98,37 @@ num objcSeconds(String source, String name) {
   return num.parse(m.group(1)!);
 }
 
+/// `private static final int NAME = 1000;` in Java.
+int javaInt(String source, String name) {
+  final m = RegExp(
+    '(?:static\\s+final\\s+int|final\\s+int)\\s+$name\\s*=\\s*([\\d_]+)\\s*;',
+  ).firstMatch(stripComments(source));
+  if (m == null) throw FormatException('no constant $name');
+  return int.parse(m.group(1)!.replaceAll('_', ''));
+}
+
+/// `static const NSUInteger NAME = 1000;` in Objective-C.
+int objcInt(String source, String name) {
+  final m = RegExp(
+    '$name\\s*=\\s*(\\d+)\\s*;',
+  ).firstMatch(stripComments(source));
+  if (m == null) throw FormatException('no constant $name');
+  return int.parse(m.group(1)!);
+}
+
+/// `#define NAME 3` or `#define NAME (3*1024*1024)` in a header: the product of the integers.
+int objcDefine(String source, String name) {
+  final m = RegExp(
+    '#define\\s+$name\\s+\\(?([\\d*\\s]+)\\)?',
+  ).firstMatch(stripComments(source));
+  if (m == null) throw FormatException('no #define $name');
+  return m
+      .group(1)!
+      .split('*')
+      .map((p) => int.parse(p.trim()))
+      .reduce((a, b) => a * b);
+}
+
 /// `typedef enum : T { A = 1, B = 2 } Name;` and `typedef NS_ENUM(T, Name) { ... };`.
 Map<String, int> objcEnum(String source, String enumName) {
   final clean = stripComments(source);
@@ -141,6 +180,9 @@ Map<String, Object?> extract({
   required String androidChain,
   required String androidOptions,
   required String iosCoordinator,
+  required String androidReport,
+  required String iosReport,
+  required String iosAttachment,
   required String iosSourceRef,
   required Map<String, Object?> pins,
 }) => {
@@ -162,6 +204,7 @@ Map<String, Object?> extract({
         'ReportHandlerCallbackTimeout',
       ),
     },
+    'attachments': {'maxPerReport': javaInt(androidReport, 'MAX_ATTACHMENTS')},
   },
   'ios': {
     'BugseeSeverityLevel': objcEnum(iosConstants, 'BugseeSeverityLevel'),
@@ -179,6 +222,18 @@ Map<String, Object?> extract({
       'boundedCapSeconds': objcSeconds(
         iosCoordinator,
         'kBGSBoundedReportHandlerCapSeconds',
+      ),
+    },
+    'attachments': {
+      'source': iosSourceRef,
+      'maxPerReport': objcInt(iosReport, 'kBGSMaxReportAttachments'),
+      'legacyCreatedReportMaxCount': objcDefine(
+        iosAttachment,
+        'ATTACHMENTS_LIMIT',
+      ),
+      'legacyCreatedReportMaxBytes': objcDefine(
+        iosAttachment,
+        'MAX_SIZE_ATTACHMENT',
       ),
     },
   },
@@ -208,6 +263,9 @@ void main(List<String> args) {
     androidChain: File(arg(args, '--android-chain')).readAsStringSync(),
     androidOptions: File(arg(args, '--android-options')).readAsStringSync(),
     iosCoordinator: File(arg(args, '--ios-coordinator')).readAsStringSync(),
+    androidReport: File(arg(args, '--android-report')).readAsStringSync(),
+    iosReport: File(arg(args, '--ios-report')).readAsStringSync(),
+    iosAttachment: File(arg(args, '--ios-attachment')).readAsStringSync(),
     iosSourceRef: arg(args, '--ios-source-ref'),
     pins: {
       'android': (versions['android'] as Map)['sdk'],

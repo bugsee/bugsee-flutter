@@ -22,6 +22,22 @@ export 'src/options/bugsee_options.g.dart'
         LogLevel,
         VideoMode,
         VideoQuality;
+export 'src/report/attachments.dart'
+    show
+        ReportAttachment,
+        ReportAttachmentException,
+        ReportAttachmentFailure,
+        ReportScreenshot,
+        maxAttachmentBytes,
+        maxAttachmentFileBytes,
+        maxScreenshotPixels;
+export 'src/report/created_report.dart'
+    show
+        CreateReportException,
+        CreateReportFailure,
+        CreatedReport,
+        CreatedReportClosedError,
+        CreatedReportSnapshot;
 export 'src/report/report_enums.dart' show ReportSeverity, ReportType;
 export 'src/report/report_handler.dart' show BugseeReportHandler, ReportHandler;
 export 'src/report/report_proxy.dart'

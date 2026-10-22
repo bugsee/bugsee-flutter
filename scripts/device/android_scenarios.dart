@@ -311,7 +311,7 @@ class AndroidCtx {
         '$mapped',
       );
       run.note(
-        '[$name] distinct libbugsee*.so seen on a cold start (logcat union maps): ${union.length} $union (the crashpad pair appears in logcat only when the handler is exec\'d, i.e. on a crash: scenario 2 completes the four)',
+        '[$name] distinct libbugsee*.so seen on a cold start (logcat union maps): ${union.length} $union (logcat names only libraries executed from files in the data directory; scenario 2 measures the crashpad pair in the handler process)',
       );
       // The identity reaches a report.
       final report = await _report(run, 'upload s1-$name');

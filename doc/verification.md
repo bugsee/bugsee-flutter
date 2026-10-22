@@ -21,9 +21,8 @@ dart scripts/device/verify.dart build ios --udid <simulator>
 dart scripts/device/verify.dart ios --udid <simulator> [--scenarios ...] [--reuse]
 ```
 
-`--reuse` runs the builds already in `build/device-verify/`. Results are printed with their evidence and written
-to `build/device-verify/report-<platform>.json` (and `.log`). The exit code is 1 when a scenario failed or was
-invalid. The harness is not run in CI (it needs a device and builds the app); its pure core (parsers, assertions,
+`--reuse` runs the builds already in `build/device-verify/`. A run refuses a dirty working tree (`--allow-dirty` snapshots it instead) and asserts `git status` clean again at the end of every scenario; it exits 1 when a scenario failed or was invalid and **2 when one was NOT POSSIBLE** (a skipped run must not read as a pass; `--allow-not-possible` accepts it, as the iOS simulator run needs). A KNOWN-GAP (below) is not a failure. `ffmpeg` and `ffprobe` are required and checked before anything runs. Results are printed with their evidence and written
+to `build/device-verify/report-<platform>.json` (and `.log`). The harness is not run in CI (it needs a device and builds the app); its pure core (parsers, assertions,
 the guards) is covered by `test/device_harness_test.dart`, which does run, against text taken from these runs and
 against text that must make each check fail.
 
@@ -49,7 +48,7 @@ failure.
 | 9.1.3 precondition | Staged facts are read back: data wiped (the app is gone), the right `versionCode`/`CFBundleVersion` installed, no retained bundle before a crash, airplane mode really on (`settings get global airplane_mode_on`), the crash data of build N still there after the update. |
 | 9.1.4 event | The process died of signal 11: logcat `Fatal signal 11 (SIGSEGV)` for that pid AND `ApplicationExitInfo` reason 5 status 11 (Android); launchd's `exited due to SIGSEGV | sent by kill[...]` (iOS simulator). A hot restart really ran (`flutter run` printed it); a report really appeared for the command that should make one. |
 | 9.2 absence | Every "nothing arrived" is paired with a positive control in the same setup (a live report DID arrive) and a measured cause. |
-| 9.1.5 defaults | The above is the harness, not a run. After each scenario the device is restored (airplane mode off, density reset, app uninstalled, `adb reverse` removed) and `git status` is asserted identical to the start of the run. |
+| 9.1.5 defaults | The above is the harness, not a run. The working tree must be clean BEFORE anything runs; after each scenario the device is restored (airplane mode off, density reset, app uninstalled, `adb reverse` removed) and `git status` is asserted clean. A missing video, a video that does not decode, or a missing tool is a failed check or a refusal to start, never a skipped one. |
 
 Nothing in the repository is modified by a run: the app is configured with build flags, the example's manifest and
 `Info.plist` are untouched, and temporary files live in `build/device-verify/` (ignored by git).
@@ -87,6 +86,7 @@ were never touched (every command names its own serial or UDID).
 | 6 | Crash across an app update | PASS | NOT POSSIBLE (no recovered crash on a simulator) |
 | 7 | Secure rectangles at density != 1 | PASS (440, 320, 560 dpi; debug and release) | PASS at 3x; a density change at run time is not possible |
 | 8 | Hot restart | PASS | PASS |
+| 9 | Report screenshot by render mode | KNOWN-GAP: all black in the default SurfaceView mode (SDK); real content, redacted, in TextureView mode | not applicable (the iOS screenshot has content, scenario 7) |
 
 ## Scenarios
 
@@ -100,15 +100,20 @@ Android, debug and release (R8, `--obfuscate`), a cold start captured for 32 s:
 * Artefacts: `./gradlew :app:dependencies` resolves `bugsee-android:7.4.2` and `bugsee-android-ndk:7.4.2`; the Gradle plugin
   in use is 4.0.8; the APK carries `libbugsee-crashcp.so`, `-crashpad-handler.so`, `-crashpad-trampoline.so` and `-native.so`; the
   plugin stamped `assets/bugsee_build_id.properties`, and a crash report's `crash.json uuid` is that id (scenario 2).
-* **The four libraries.** Workbook 1.4.2's measure (`logcat | grep -oE "libbugsee[a-z-]*\.so" | sort -u | wc -l`, at least 30 s)
-  saw **1** distinct library on this image after a cold start (the crashpad trampoline) and 1 to 2 across a whole crash cycle:
-  the lines it reads are SELinux `avc: granted` audit lines, which the kernel rate-limits, and only a library that is `exec`ed
-  or mapped through a path the policy audits appears at all. Used alone, that measure would have read "broken" on a correct build
-  (9.2). The harness therefore counts the four by what each does: `libbugsee-native.so` and `libbugsee-crashcp.so` are mapped into
-  the app process (`/proc/<pid>/maps` shows only `base.apk` and a file offset, so each mapping is resolved against the offsets
-  of the stored `lib/arm64-v8a/*.so` entries in the APK's central directory); the crashpad pair is extracted next to the app
-  (`no_backup/bugsee_crashpad_handler/*/` lists both) and the handler it contains ran: the minidump it wrote is in the
-  recovered bundle. Four distinct, in both builds. The plain logcat count is still printed.
+* **The four libraries (measured vs inferred, 9.4).** Workbook 1.4.2's measure (`logcat | grep -oE "libbugsee[a-z-]*\.so" | sort -u | wc -l`, at
+  least 30 s) saw **1** distinct library after a cold start here (the crashpad trampoline) and 1 to 2 across a whole crash cycle. Measured mechanism:
+  the only lines that ever name a library are `avc: granted { execute } for path=".../no_backup/bugsee_crashpad_handler/<id>/libbugsee-crashpad-*.so"`
+  audit lines, i.e. libraries **executed from files in the app's data directory**; `libbugsee-native.so` and `libbugsee-crashcp.so` are mapped straight from
+  `base.apk` and leave no name in logcat, so the grep can never reach four on this setup, on a correct build. (Which of the pair gets an audit
+  line varies between runs; that variation is not explained here, and the kernel's rate limiting, which an earlier draft blamed, was not observed.)
+  Used alone, that measure would have read "broken" (9.2). The harness measures instead:
+  1. **measured, in the app process:** `libbugsee-native.so` and `libbugsee-crashcp.so`. `/proc/<pid>/maps` shows `base.apk` and a file offset, not a
+     name, so each mapping of the package's OWN base.apk (the path from `pm path`; other APKs such as `framework-res.apk` have offsets of their own that
+     can fall inside the same range) is resolved against the offsets of the stored `lib/arm64-v8a/*.so` entries in the APK's central directory;
+  2. **measured, in the crashpad handler process:** the handler is `exec`ed only when the app crashes, so the harness kills the app and, in the same
+     shell, polls `ps` for the child (`linker64 .../libbugsee-crashpad-trampoline.so .../libbugsee-crashpad-handler.so --database=...`, ppid = the crashed app) and reads
+     ITS `/proc/<pid>/maps`: both libraries are in it. All four are measured when that race is won (it was, in every run); if it were lost the report
+     says "2 measured + 2 inferred" (the pair extracted under `no_backup/bugsee_crashpad_handler/*/` with the APK's sizes, and the minidump the handler wrote in the bundle).
 * The identity reaches the report: a live report's `request.json` has `environment.sdk.wrapper` =
   `{"type":"flutter","version":"10.0.0-dev.1","context":{"dart":"3.11.0","flutter":"3.41.0","flutter-engine":"3452d735bd","build-configuration":"debug"|"release"}}`,
   `sdk` `7.4.2` / `3b7af6371`, `app` `1.0.1` (`1`), and no `identity_source` (a live report is not recovered).
@@ -128,13 +133,16 @@ from it:
 
 * manifest entries `minidump`, `crash`, `log`, `video`, `viewtree`, `attachment`...; `crash.json`: `ndkCrash: true`,
   `exception_type: native`, `signal: {name: SIGSEGV, number: 11, code_name: SI_USER}`, `uuid` = the APK's Gradle build id.
+* the four libraries, as in scenario 1 (in-process pair from `/proc/PID/maps`, handler pair from the handler process's own maps).
 * `environment.sdk.wrapper` is on the **recovered** report with the full identity (the workbook's "fails only on a relaunch after
   a crash" trap does not bite), `environment.identity_source` is `session` (specs `sdk/report-identity`: the identity of the
   producing session, from its persisted `identity.json`), `app.build` is the crashed build, severity 4 (the `crash-priority` option).
 
 iOS simulator: NOT POSSIBLE. A SIGSEGV was proven (launchd: `exited due to SIGSEGV | sent by kill[...]`) and the relaunch
-recovered nothing: no crash bundle reached the mock API in 80 s and no `RelaunchedAfterCrash` event, while a live report
-sent through the same setup did arrive (the positive control). Cause, measured: the simulator slice of the SDK
+recovered nothing: no crash bundle reached the mock API in 80 s and no `RelaunchedAfterCrash` event. The positive controls are on both sides of the crash: a live
+report sent before it arrived, and **a live report sent from the RELAUNCHED process after the 80 s window arrived too** (so that process could upload); the simulator
+container was searched as well: the SDK does keep the bundles it could not upload (`Library/Caches/com.bugsee.data/capture/bundles/*.bundle.zip`, so iOS does retain bundle
+files), and their `request.json` types are all `bug`, no crash bundle and no `.dmp`/`.plcrash`/crash-report file. Cause, measured: the simulator slice of the SDK
 (`Bugsee.xcframework/ios-arm64_x86_64-simulator`) has no crash reporter (0 strings matching `BGSCrashManager|PLCrashReporter`;
 the `ios-arm64` slice has 27); the SDK compiles it out under `TARGET_OS_SIMULATOR`. Airplane mode does not exist on a simulator
 either; the mock API refusing the upload with 503 (and storing a copy) is the stand-in the task allows, and it is what the
@@ -148,7 +156,7 @@ Android, from the crash cycle of scenario 2 (the wrapper's own log lines, the Da
 |---|---|
 | Dart handler ran | `onBefore` once and `onAfter` once, for the recovered report; type `crash`; one `deliveryId` per phase |
 | `isTerminating` | not visible to Dart (`ReportProxy` has no such field by design). The observable: the wrapper completes `isTerminating=true` deliveries natively without Dart, and Dart ran, so it was `false`, as workbook 7.1.3 says |
-| Thread | the SDK called the native handler on a thread other than main (`phase=before` logged with tid != pid), the wrapper hopped to main for Dart (`delivery gap` and `completed by=dart` on tid == pid). The wrapper gave it the LIVE window (`deadline=20000`), which it grants only to the SDK's `BugseeReportHandlerThread`: **a native-crash report recovered after a normal session is dispatched like a live report, on the waited-for handler thread, not on the bounded early-crash thread and not on main** (the workbook table says main) |
+| Thread | the SDK called the native handler on a thread other than main (`phase=before` logged with tid != pid), the wrapper hopped to main for Dart (`delivery gap` and `completed by=dart` on tid == pid). The wrapper gave it the LIVE window (`deadline=20000`), which it grants only to the SDK's `BugseeReportHandlerThread`: **a native-crash report recovered after a normal session is dispatched like a live report, on the waited-for handler thread, not on the bounded early-crash thread and not on main** (the workbook table says main). *Measured vs deduced:* "not main" is measured directly (`tid != pid` in the log line); "it is `BugseeReportHandlerThread`" is DEDUCED from `deadline=20000`, which the wrapper gives only to a thread with that name (the thread name itself was not logged) |
 | Timing | across the runs, before at 0.4 to 1.3 s and after at 0.4 to 1.8 s since `main()` of the relaunched process (a loaded host is the slow end); `delivery gap` 113 to 295 ms (the hop to the platform thread), `remaining` ~19.7 s of 20 s |
 | Completion | by Dart both times, never by the deadline |
 | Enrichment | **lands**: the recovered bundle's manifest has the attributes `verify.before` / `verify.after` the handler set, the label `verify-after`, and the file `verify-enrichment` (content equal to what the handler wrote) |
@@ -237,14 +245,12 @@ of the report's video** (ffmpeg, raw RGB) is compared:
 * with the region unsecured its magenta box is found, and it is where its logical box times the ratio puts it in the frame, from the
   video's own layout (`video.aux.json` `paddingH/screenW`): within 3 px at all three densities. That fixes the logical-to-physical
   step independently of the redaction;
-* with the region secured, the same box is black, 100.0 % of it, and none of the magenta shows, at all three densities: **the
+* with the region secured, the same box is black, 100.0 % of it, and none of the magenta shows, at all three densities, **and the rest of the frame is the real screen** (at least 95 % of the pixels outside the box grown by 20 px equal the unsecured frame, so a frame blacked out whole cannot pass) and the 14 px ring around the box is not mostly black (at most 50 %; measured 7 to 20 %): **the
   rectangle the SDK pulled is in physical pixels and follows the density without a republish** of the app code (the harness changes
-  the density, the next report is correct). The redaction over-covers a little (the 14 px ring around the box is black for 7 to 14 % of the box area,
-  never under).
+  the density, the next report is correct).
 * the transient between a density change and Dart's republish (when the wrapper covers the whole display) was not sampled: only the
   settled state is.
-* the **report screenshot is not usable evidence on this setup**: it decodes to one flat colour (all black), with the region
-  secured and unsecured alike, in debug and release (see Findings). The video frame is the evidence.
+* the **Android report screenshot is not usable evidence in the default render mode**: see scenario 9 (a KNOWN-GAP). The video frame is the evidence here.
 
 iOS: the simulator is 3x and fixed (`wm density` has no iOS equivalent): at 3x (ratio 3.0, physical 1206x2622) the secure box is found in the
 report video (416x880, a QuickTime `.mov`) and is black, 100.0 % of it, with the region secured; **the iOS report screenshot has real content** (a 484x1024
@@ -265,6 +271,33 @@ redaction check was. A density change at run time is NOT POSSIBLE on a simulator
 
 See Findings for what the new isolate is and is not told about the status.
 
+### 9. Report screenshot by render mode (Android; KNOWN-GAP)
+
+The Android report screenshot (`screenshot.bgsfile`, WebP 485x1024) is **entirely black in Flutter's default render mode** (`SurfaceView`), in debug and
+release, with the secure region on or off, while the display is not black (`adb exec-out screencap`: mean colour (225, 211, 225); the harness
+requires the screencap to be non-flat as a guard) and the report's video frames show the content and the redaction.
+
+**Cause, confirmed by experiment and by SDK source (v7.4.2):**
+`ScreenCaptureScreenshot.captureWithPixelCopy` (`library/.../capture/providers/screen/ScreenCaptureScreenshot.java`, l.190-226) calls
+`ScreenCapturePixelCopyShared.fillRenderRequestTargets(..., null /* surfaceViewCaptureManager - not used for screenshots */, ...)` (l.226);
+`ScreenCapturePixelCopyShared.fillRenderLayerSurfaceViews` (`ScreenCapturePixelCopyShared.java`, l.279) then says SurfaceViews are "captured ONLY via the flag-protected, async
+SurfaceViewCapture path" (l.344) and only fills a layer `if (surfaceViewCapture != null)` (l.356): with `null` the SurfaceView is skipped, and the window copy keeps the
+black hole where the SurfaceView is punched out. `FlutterActivity` renders into a `SurfaceView` by default, so this should reproduce on every device for a default Flutter app; the
+emulator was the only device used here.
+
+**Experiment (the harness, scenario 9):** the same debug build launched with the supported intent extra `background_mode: transparent` (`am start ... --es background_mode
+transparent`), which makes `FlutterActivity` use a `TextureView`; SurfaceFlinger's layer list proves the mode (a `SurfaceView - <pkg>` layer exists only in the default mode).
+Result in texture mode: the screenshot has real content (mean (201, 209, 201) secured, (224, 210, 224) unsecured), the secure box is black 100.0 % secured, magenta unsecured, the
+rest of the frame equals the unsecured screenshot (100.0 %), and the video redaction still passes (100.0 % black box, 100.0 % outside agreement). So **redaction works in screenshots in
+texture mode and the black screenshot is the SurfaceView gap, not the emulator, not the wrapper's secure regions.**
+
+**What can and cannot be claimed.** NO screenshot-based redaction claim can be made for Android Flutter apps in the default SurfaceView mode: the screenshot carries
+no content at all (which also means it shows nothing that needs redacting, but it is useless as a report screenshot, and the report editor shows black). The video is unaffected.
+The workaround is `RenderMode.texture` (override `FlutterActivity.getRenderMode()`, or launch with `background_mode: transparent`). Trade-offs (Flutter documents them): a
+`TextureView` presents through an extra composition step and can cost frame rate and memory, and platform views compose differently; the
+verification app's static content was all that was captured, so none of that was measured here. The fix belongs in the SDK (capture SurfaceViews for screenshots through the
+`SurfaceViewCapture` path). The harness records it as `KNOWN-GAP` (not a failure) and flips to PASS when the default-mode screenshot has content.
+
 ## Findings
 
 ### Defects
@@ -276,12 +309,8 @@ own reports use chunked uploads from `dart:io`); it now reads chunked bodies, an
 
 For follow-up (SDK or environment, not fixed here):
 
-1. **Android report screenshot is all black** on this emulator (`screenshot.bgsfile`, WebP 485x1024 or similar, one flat colour) in
-   debug and release and with the secure region on or off, while the report's video frames show the content (and
-   the redaction). The SDK's screenshot path is a `PixelCopy` of the window (`ScreenCaptureScreenshot`); the video is captured
-   by the same family of code and is correct. Not yet separated into emulator (headless, SwiftShader) versus Flutter's surface
-   versus SDK; it needs a physical device and the same app. Until then no screenshot-based redaction claim can be made for Android.
-   (The emulator's display is not black: `adb exec-out screencap` has mean colour (225, 211, 225).)
+1. **Android report screenshot is all black in the default SurfaceView render mode**: an SDK gap, root-caused and confirmed (scenario 9, with the SDK source references, the
+   texture-mode experiment and the workaround). Issue text for bugsee-android is in the PR description.
 2. **iOS: no crash recovery and no logged exceptions on a simulator** are SDK facts (documented in the SDK's source); listed
    here so a missing iOS recovery is never read as a wrapper defect. Everything about recovered iOS reports needs a physical iPhone.
 

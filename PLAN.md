@@ -340,7 +340,8 @@ are tested in `test/device_harness_test.dart` (in `flutter test`), with drift gu
   unchanged `git status`.
 - **Android (all eight PASS)**: native `SIGSEGV` (debug with `run-as`, release as root) with the airplane-mode retained bundle;
   `sdk.wrapper` AND `identity_source: session` on the recovered report; four libraries (the workbook's logcat grep saw 1 to 2 on a
-  correct build here: `avc` audit lines are rate-limited, so the harness counts mapped + extracted libraries and the minidump);
+  correct build here: it can only see libraries executed from files in the app data directory, the two mapped from `base.apk` are never named; the harness MEASURES
+  the in-process pair from `/proc/PID/maps` and the crashpad pair in the handler process's own maps);
   the Dart handler runs on a recovered report and its attribute, label and file land in the bundle; handled / unhandled / async
   exceptions in debug and in an R8 `--obfuscate` release (carrier kept, symbolized with the exact build's symbols, refused with
   another's); view hierarchy, network, logs, attachments, `createReport` and the secure region in release and profile; crash
@@ -353,7 +354,7 @@ are tested in `test/device_harness_test.dart` (in `flutter test`), with drift gu
   builds for devices) and a run-time density change.
 - **Found**: a native-crash report recovered after a normal Android session is dispatched on `BugseeReportHandlerThread` with the
   live window, so the Dart handler runs and its edits land (3c's "completes at once" is the early-crash path only: corrected above and
-  in `.claude/CLAUDE.md`); the Android report screenshot is all black on the emulator (the video frame is right): follow-up.
+  in `.claude/CLAUDE.md`); the Android report screenshot is all black in Flutter's default SurfaceView render mode (an SDK gap: the screenshot path skips SurfaceViews, v7.4.2; real content and working redaction in TextureView mode; the video is right): scenario 9, recorded as KNOWN-GAP.
 - Pre-existing and worked around: `flutter build ios --simulator` fails on Flutter 3.41 / Xcode 27.1 (order-sensitive architecture check);
   the harness builds with `flutter build ios --config-only` plus `xcodebuild` for one simulator and `ARCHS=arm64`.
 

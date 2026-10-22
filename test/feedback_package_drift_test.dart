@@ -900,9 +900,10 @@ void main() {
       File('${bin.path}/flutter')
         ..writeAsStringSync('''#!/bin/sh
 echo "\$PWD: \$*" >> "$log"
-case "\$*" in
+all="\$*"
+case "\$all" in
   *--to-archive=*)
-    f="\${*##*--to-archive=}"
+    f="\${all##*--to-archive=}"
     t="\$(mktemp -d)"
     echo x > "\$t/pubspec.yaml"
     if [ -n "\$FAKE_LEAK" ]; then mkdir -p "\$t/android"; echo sdk.dir=/x > "\$t/android/local.properties"; fi

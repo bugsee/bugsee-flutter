@@ -1,7 +1,7 @@
 # Used by `pub publish` INSTEAD of .gitignore (pub reads one or the other per directory),
 # so everything in .gitignore is repeated here, then the dev-only trees: the iOS
 # wrapper test package (its Sources is a symlink that would be published as a full
-# duplicate of the plugin's Objective-C sources) and the pigeon code generator.
+# duplicate of the plugin's Objective-C sources), the pigeon code generator and the sibling package.
 # test/native_versions_test.dart asserts the .gitignore rules are all here.
 # Miscellaneous
 *.class
@@ -29,7 +29,8 @@ migrate_working_dir/
 #.vscode/
 
 # Flutter/Dart/Pub related
-# Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
+# Libraries should not publish pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock
+# (the repository commits it for CI: see .gitignore).
 /pubspec.lock
 **/doc/api/
 .dart_tool/
@@ -40,3 +41,5 @@ migrate_working_dir/
 # Dev-only; not part of the package
 /ios/wrapper_tests/
 /pigeons/
+# The sibling feedback package is published by itself, from its own directory.
+/packages/

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'attachments_screen.dart';
 import 'exceptions_screen.dart';
+import 'feedback_screen.dart';
 import 'facade_screen.dart';
 import 'network_screen.dart';
 
@@ -95,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ExceptionsScreen(),
         AttachmentsScreen(),
         NetworkScreen(),
+        FeedbackScreen(),
       ],
     ),
     bottomNavigationBar: NavigationBar(
@@ -125,6 +127,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-network'),
           icon: Icon(Icons.swap_vert),
           label: 'Network',
+        ),
+        NavigationDestination(
+          key: Key('tab-feedback'),
+          icon: Icon(Icons.chat_bubble_outline),
+          label: 'Chat',
         ),
       ],
     ),

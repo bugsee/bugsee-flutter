@@ -82,6 +82,7 @@ void main() {
     ],
     'src/secure/bugsee_secure_view.dart': ['BugseeSecureView'],
     'src/status.dart': ['BugseeStatus'],
+    'src/wrapper_identity.dart': ['bugseeFlutterVersion'],
   };
 
   test('the entry point exports exactly these symbols', () {

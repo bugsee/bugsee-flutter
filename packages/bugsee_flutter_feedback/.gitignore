@@ -1,0 +1,25 @@
+# The rules of the repository root that apply to a package directory (they are anchored there, so
+# they do not reach this one).
+.DS_Store
+*.class
+*.log
+*.pyc
+*.swp
+*.iml
+*.ipr
+*.iws
+.idea/
+.history
+.svn/
+migrate_working_dir/
+/android/local.properties
+/android/.gradle/
+/android/build/
+.build/
+.swiftpm/
+.dart_tool/
+**/doc/api/
+/build/
+/coverage/
+/pubspec.lock
+/ios/feedback_wrapper_tests/Package.resolved

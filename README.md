@@ -219,6 +219,19 @@ Things worth knowing (each is documented on the method):
 - **Left out on purpose**: the 7.x appearance system, `relaunch`, APM transactions and spans, secure
   rectangles and activities, native views (see `doc/api-surface.md`).
 
+## In-app feedback chat
+
+The chat your users write to you in is a separate package, [`bugsee_flutter_feedback`](packages/bugsee_flutter_feedback/README.md),
+so apps that never show it do not carry its UI (SwiftUI on iOS, Jetpack Compose on Android). Add it next to this one,
+at the same version; there is nothing else to configure:
+
+```dart
+await Bugsee.launch('YOUR_APP_TOKEN');   // first: before the SDK has launched Android's show() does nothing
+await BugseeFeedback.show();            // import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
+```
+
+This package works the same without it.
+
 ## Requirements
 
 Flutter 3.41.0 or newer (Dart 3.11). Because the plugin is SwiftPM-only, older Flutter

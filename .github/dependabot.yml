@@ -20,6 +20,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  - package-ecosystem: pub
+    directory: /packages/bugsee_flutter_feedback
+    target-branch: nextgen
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
   # Bugsee's own artifacts and Gradle plugin are pinned in native-versions.json and
   # asserted by the drift guard (example/android/settings.gradle.kts repeats the plugin
   # version literally), so Dependabot must never bump them: it would break the guard.
@@ -34,6 +40,14 @@ updates:
       - dependency-name: "com.bugsee*"
   - package-ecosystem: gradle
     directory: /example/android
+    target-branch: nextgen
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "com.bugsee*"
+  - package-ecosystem: gradle
+    directory: /packages/bugsee_flutter_feedback/android
     target-branch: nextgen
     schedule:
       interval: weekly

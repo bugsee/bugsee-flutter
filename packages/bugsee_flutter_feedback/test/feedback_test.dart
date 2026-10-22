@@ -24,6 +24,8 @@ class FakeNative extends FeedbackHostApi {
   bool throwMissing = false;
   int attachCalls = 0;
   Completer<void>? listenerGate;
+  int inFlight = 0;
+  int maxInFlight = 0;
 
   void _missing() {
     if (throwMissing) throw MissingPluginException('no plugin');
@@ -55,7 +57,13 @@ class FakeNative extends FeedbackHostApi {
   Future<void> setListenerEnabled(bool enabled) async {
     _missing();
     calls.add('listener:$enabled');
-    await listenerGate?.future;
+    inFlight++;
+    if (inFlight > maxInFlight) maxInFlight = inFlight;
+    try {
+      await listenerGate?.future;
+    } finally {
+      inFlight--;
+    }
     if (failListener != null) throw failListener!;
   }
 }
@@ -352,6 +360,36 @@ void main() {
         await sub.cancel();
       },
     );
+
+    test(
+      'the last cancel removes the listener whichever stream it is',
+      () async {
+        final r = runtime.messagesReceived.listen((_) {});
+        await settle();
+        await r.cancel();
+        await settle();
+        expect(native.calls, ['attach', 'listener:true', 'listener:false']);
+        final s = runtime.messagesSent.listen((_) {});
+        await settle();
+        await s.cancel();
+        await settle();
+        expect(native.calls.skip(3), ['listener:true', 'listener:false']);
+      },
+    );
+
+    test('setListenerEnabled calls never overlap', () async {
+      native.listenerGate = Completer<void>();
+      final a = runtime.messagesReceived.listen((_) {});
+      await settle();
+      await a.cancel();
+      final b = runtime.messagesSent.listen((_) {});
+      await settle();
+      native.listenerGate!.complete();
+      await settle();
+      await settle();
+      expect(native.maxInFlight, 1);
+      await b.cancel();
+    });
 
     test('a new isolate attaches again and installs its own listener', () async {
       final first = runtimeOn(native);

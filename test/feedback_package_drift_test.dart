@@ -30,6 +30,22 @@ List<File> filesUnder(String dir, List<String> extensions) => Directory(dir)
     .where((f) => extensions.any(f.path.endsWith))
     .toList();
 
+/// Job id -> body, for a workflow's `jobs:` section (two-space job keys).
+Map<String, String> jobsOf(String live) {
+  final section = live.substring(live.indexOf('\njobs:'));
+  final headers = RegExp(
+    r'^  ([a-z0-9-]+):\s*$',
+    multiLine: true,
+  ).allMatches(section).toList();
+  return {
+    for (var i = 0; i < headers.length; i++)
+      headers[i].group(1)!: section.substring(
+        headers[i].end,
+        i + 1 < headers.length ? headers[i + 1].start : section.length,
+      ),
+  };
+}
+
 String topLevel(String yaml, String key) =>
     RegExp('^$key: *(.+?) *\$', multiLine: true).firstMatch(yaml)!.group(1)!;
 
@@ -681,6 +697,116 @@ void main() {
     test('pigeon is not a dependency of the package (needs a newer meta)', () {
       expect(feedbackPubspec, isNot(contains('pigeon:')));
     });
+  });
+
+  group('CI covers both packages', () {
+    final ci = liveOf(read('.github/workflows/ci.yml'));
+    final jobs = jobsOf(ci);
+    String job(String id) => jobs[id]!;
+
+    test(
+      'the feedback bridge is checked and its generator package analyzed',
+      () {
+        final bridge = job('bridge-codegen');
+        expect(
+          bridge,
+          contains('dart scripts/generate_pigeon.dart --package $pkg --check'),
+        );
+        expect(
+          bridge,
+          contains('cd $pkg/pigeons && dart analyze --fatal-infos'),
+        );
+      },
+    );
+
+    test(
+      'the package is analyzed and tested next to the core, and the example builds with it',
+      () {
+        final test = job('test');
+        expect(test, contains('cd $pkg && flutter analyze'));
+        expect(test, contains('cd $pkg && flutter test'));
+        expect(
+          test,
+          contains('cd example && flutter build ios --debug --no-codesign'),
+        );
+        expect(
+          job('build-android'),
+          contains('cd example && flutter build apk --debug'),
+        );
+      },
+    );
+
+    test(
+      'the iOS glue tests run under the scheme the test package declares',
+      () {
+        expect(
+          job('test'),
+          contains('cd ../../$pkg/ios/feedback_wrapper_tests'),
+        );
+        expect(
+          job('test'),
+          contains(
+            'xcodebuild test -scheme bugsee_flutter_feedback_wrapper_tests',
+          ),
+        );
+        expect(
+          read('$pkg/ios/feedback_wrapper_tests/Package.swift'),
+          contains('name: "bugsee_flutter_feedback_wrapper_tests"'),
+        );
+      },
+    );
+
+    test('the JUnit tests of the glue run, under the Gradle project name', () {
+      expect(
+        job('build-android'),
+        contains(':bugsee_flutter_feedback:testDebugUnitTest'),
+      );
+      expect(
+        job('build-android'),
+        contains(':bugsee_flutter:testDebugUnitTest'),
+      );
+    });
+
+    test('both packages are dry-run published, the core first', () {
+      final publish = job('publish-check');
+      final core = publish.indexOf('flutter pub publish --dry-run');
+      final feedback = publish.indexOf(
+        'cd $pkg && flutter pub publish --dry-run',
+      );
+      expect(core, isNonNegative);
+      expect(feedback, greaterThan(core));
+    });
+
+    test(
+      'no job was added for it (ci-ok and branch protection stay as they are)',
+      () {
+        final needs = RegExp(
+          r'needs: \[([^\]]*)\]',
+        ).firstMatch(job('ci-ok'))!.group(1)!;
+        expect(needs.split(',').map((e) => e.trim()), [
+          'format',
+          'bridge-codegen',
+          'options-codegen',
+          'test',
+          'build-android',
+          'publish-check',
+        ]);
+      },
+    );
+
+    test(
+      'Dependabot watches the package (pub and Gradle, never bumping Bugsee artifacts)',
+      () {
+        final dep = liveOf(read('.github/dependabot.yml'));
+        expect(dep, contains('directory: /$pkg\n'));
+        final gradle = RegExp(
+          'package-ecosystem: gradle\\n\\s+directory: /$pkg/android\\n'
+          r'(?:(?!  - package-ecosystem)[\s\S])*',
+        ).firstMatch(dep)!;
+        expect(gradle.group(0), contains('dependency-name: "com.bugsee*"'));
+        expect(gradle.group(0), contains('target-branch: nextgen'));
+      },
+    );
   });
 
   group('the example uses it', () {

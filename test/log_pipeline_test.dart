@@ -664,6 +664,50 @@ void main() {
     );
   });
 
+  group('flush', () {
+    test('leaves no timer behind while native does not answer', () {
+      fakeAsync((async) {
+        final gate = Completer<int>();
+        final pipeline = LogPipeline(
+          send: (batch) => gate.future,
+          policy: () => accepting,
+          limiter: LogRateLimiter(burst: 1 << 20, perSecond: 1 << 20),
+          warn: (_) {},
+        );
+        pipeline.submit('stuck', LogLevel.info, null);
+        async.elapse(const Duration(milliseconds: 20));
+        // Reports that give up on it (a time limit) each used to leave a polling loop.
+        for (var i = 0; i < 30; i++) {
+          unawaited(
+            pipeline.flush().timeout(
+              const Duration(milliseconds: 5),
+              onTimeout: () {},
+            ),
+          );
+        }
+        async.elapse(const Duration(milliseconds: 50));
+        expect(async.pendingTimers, isEmpty);
+        var done = false;
+        unawaited(pipeline.flush().then((_) => done = true));
+        gate.complete(1);
+        async.elapse(const Duration(milliseconds: 20));
+        expect(done, isTrue);
+      });
+    });
+
+    test(
+      'a waiter is released when the drain ends, even with several waiting',
+      () async {
+        final rig = Rig(maxBatchLines: 1);
+        for (var i = 0; i < 5; i++) {
+          rig.line('l$i');
+        }
+        await Future.wait([for (var i = 0; i < 4; i++) rig.pipeline.flush()]);
+        expect(rig.texts, ['l0', 'l1', 'l2', 'l3', 'l4']);
+      },
+    );
+  });
+
   group('the pipeline is not blocked by a slow filter on the print path', () {
     test(
       'submit returns before any filtering when the filter is slow',

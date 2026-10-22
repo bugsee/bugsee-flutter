@@ -274,16 +274,20 @@ final class LogPipeline {
   Future<void> flush() async {
     while (_queue.isNotEmpty || _draining) {
       if (_draining) {
-        await Future<void>.delayed(const Duration(milliseconds: 1));
+        // One shared future, no timer: a waiter that gave up (a report's time limit) costs nothing.
+        await _drainDone!.future;
       } else {
         await _drain();
       }
     }
   }
 
+  Completer<void>? _drainDone;
+
   Future<void> _drain() async {
     if (_draining) return;
     _draining = true;
+    _drainDone = Completer<void>();
     try {
       while (_queue.isNotEmpty) {
         final batch = <LogLineMessage>[];
@@ -313,6 +317,9 @@ final class LogPipeline {
       }
     } finally {
       _draining = false;
+      final done = _drainDone;
+      _drainDone = null;
+      if (done != null && !done.isCompleted) done.complete();
       if (_queue.isNotEmpty) _schedule();
     }
   }

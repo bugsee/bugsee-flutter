@@ -8,6 +8,7 @@ import 'checks.dart';
 import 'core/bundle.dart';
 import 'core/expectations.dart';
 import 'core/experiment.dart';
+import 'core/image.dart';
 import 'core/log_parsers.dart';
 import 'ios_build.dart';
 import 'ios_device.dart';
@@ -905,31 +906,59 @@ class IosCtx {
         geo != null && (geo['devicePixelRatio'] as num) != 1,
         'ratio ${geo?['devicePixelRatio']}, physical ${geo?['physicalWidth']}x${geo?['physicalHeight']}, logical box ${geo?['secureLogical']}',
       );
-      await mock.command('secure on');
-      await delay(3);
-      final on = await report(
-        run,
-        'upload on-ios',
-        where: (x) => x.summary == 'verify upload on-ios',
-      );
-      await mock.command('secure off');
-      await delay(4);
-      final off = await report(
-        run,
-        'upload off-ios',
-        where: (x) => x.summary == 'verify upload off-ios',
-      );
-      final onFrame = await requireVideoFrame(
+      // A pair of reports (secured, unsecured). The video's last frame can be a transient one on a loaded
+      // host (the first run once read a secured frame that matched the real screen nowhere): the pair is
+      // taken again, up to three times, until the secured frame agrees with the unsecured one outside the box;
+      // a redaction that blacks out the whole frame does so on every attempt and fails the recorded check.
+      Bundle? on, off;
+      RawImage? onFrame, offFrame;
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        await mock.command('secure on');
+        await delay(3);
+        on = await report(
+          run,
+          'upload on-ios-$attempt',
+          where: (x) => x.summary == 'verify upload on-ios-$attempt',
+        );
+        await mock.command('secure off');
+        await delay(4);
+        off = await report(
+          run,
+          'upload off-ios-$attempt',
+          where: (x) => x.summary == 'verify upload off-ios-$attempt',
+        );
+        final a = await lastVideoFrame(on, tc.workDir, 'ios-on-probe');
+        final b = await lastVideoFrame(off, tc.workDir, 'ios-off-probe');
+        final box = b?.boundingBoxOf(const Rgb(255, 0, 255));
+        final stable =
+            a != null &&
+            b != null &&
+            box != null &&
+            a.agreementOutside(b, box.grow(20)) >= 0.95;
+        if (stable || attempt == 3) {
+          if (attempt > 1) {
+            run.note(
+              'the secured/unsecured pair was taken $attempt times before the frames agreed outside the box',
+            );
+          }
+          break;
+        }
+        run.note(
+          'attempt $attempt: the secured frame did not agree with the unsecured one outside the box; taking the pair again',
+        );
+      }
+      final offBundle = off!;
+      onFrame = await requireVideoFrame(
         run,
         'ios @3x',
-        on,
+        on!,
         tc.workDir,
         'ios-on',
       );
-      final offFrame = await requireVideoFrame(
+      offFrame = await requireVideoFrame(
         run,
         'ios @3x',
-        off,
+        off!,
         tc.workDir,
         'ios-off',
       );
@@ -954,7 +983,7 @@ class IosCtx {
           );
         } else if (region != null) {
           run.note(
-            'the iOS video carries no layout the harness can read (video.aux: ${off.entriesOfType('video.aux').map((e) => utf8.decode(off.content(e)))}): the region placement was not checked, only the redaction',
+            'the iOS video carries no layout the harness can read (video.aux: ${offBundle.entriesOfType('video.aux').map((e) => utf8.decode(offBundle.content(e)))}): the region placement was not checked, only the redaction',
           );
         }
       }

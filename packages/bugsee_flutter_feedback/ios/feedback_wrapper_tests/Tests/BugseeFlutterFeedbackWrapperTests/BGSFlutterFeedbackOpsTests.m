@@ -196,6 +196,15 @@
   XCTAssertEqual(self.sent.count, 0u);
 }
 
+- (void)testAFailedReinstallSilencesTheListenerThisEngineHadBefore {
+  [self.ops setListenerEnabled:YES];
+  id<BGSFlutterFeedbackListener> first = self.sdk.installed;
+  self.sdk.registered = NO;
+  XCTAssertTrue([self.ops setListenerEnabled:YES].failed);
+  [first onNewMessageSent:@"late"];
+  XCTAssertEqual(self.sent.count, 0u);
+}
+
 - (void)testAFailedInstallLeavesNothingInstalled {
   self.sdk.registered = NO;
   XCTAssertTrue([self.ops setListenerEnabled:YES].failed);
@@ -203,6 +212,12 @@
 }
 
 // ---- the real add-on ----
+
+/// Runs first (XCTest orders methods by name): nothing has called register yet, so only the
+/// plugin's `+load` can have registered the add-on.
+- (void)testAAddOnIsRegisteredByLoadBeforeAnyTestRegistersIt {
+  XCTAssertTrue([[BGSFlutterRealFeedback new] isRegistered]);
+}
 
 - (void)testTheRealAddOnRegistersWithTheSdkAndRegistrationIsIdempotent {
   // The plugin's +load / ensureRegistered path, then the explicit one the add-on documents.

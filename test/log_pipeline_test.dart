@@ -568,15 +568,14 @@ void main() {
         await rig.pipeline.flush();
         expect(calls, 3);
         expect(rig.pipeline.stats.filterFailures, 3);
-        // The fourth does not even ask the filter, and does not wait for its timeout.
-        final watch = Stopwatch()..start();
+        // The fourth does not even ask the filter (so it cannot wait for its timeout): the call
+        // count and the cool-down drops say so, no wall-clock threshold.
         rig.line('fourth');
         rig.line('fifth');
         await rig.pipeline.flush();
         expect(calls, 3);
         expect(rig.pipeline.stats.droppedFilterCoolDown, 2);
         expect(rig.sent, isEmpty);
-        expect(watch.elapsedMilliseconds, lessThan(short.inMilliseconds * 2));
         expect(
           rig.warnings.where((w) => w.contains('3 times in a row')),
           hasLength(1),
@@ -715,22 +714,22 @@ void main() {
   });
 
   group('the pipeline is not blocked by a slow filter on the print path', () {
-    test(
-      'submit returns before any filtering when the filter is slow',
-      () async {
-        final rig = Rig();
-        rig.pipeline.setFilter((e) async {
-          await Future<void>.delayed(const Duration(milliseconds: 30));
-          return e;
-        }, const Duration(seconds: 1));
-        final watch = Stopwatch()..start();
-        for (var i = 0; i < 50; i++) {
-          rig.line('l$i');
-        }
-        expect(watch.elapsedMilliseconds, lessThan(30));
-        await rig.pipeline.flush();
-        expect(rig.sent, hasLength(50));
-      },
-    );
+    test('submit returns before any filtering when the filter is slow', () async {
+      final rig = Rig();
+      var asked = 0;
+      rig.pipeline.setFilter((e) async {
+        asked++;
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        return e;
+      }, const Duration(seconds: 30));
+      for (var i = 0; i < 50; i++) {
+        rig.line('l$i');
+      }
+      // Submitting never ran, let alone waited for, the filter: no wall-clock threshold.
+      expect(asked, 0);
+      expect(rig.sent, isEmpty);
+      await rig.pipeline.flush();
+      expect(rig.sent, hasLength(50));
+    });
   });
 }

@@ -1,6 +1,6 @@
 # The feedback package: what the SDKs offer, what is exposed, how it registers
 
-Phase 8a of PLAN.md (decision D4: a separate package, mirroring the native split and the React Native SDK's
+The feedback package (PLAN.md, decision D4: a separate package, mirroring the native split and the React Native SDK's
 `@bugsee/react-native-feedback`). Sources read: Android `bugsee/bugsee-android` tag `v7.4.2` (`3b7af6371`), module
 `feedback/` and `.claude/rules/extensions.md`; iOS `bugsee/feedback-spm` tag `7.0.0-beta7` (`40dd3b0`, the same sources
 as `bugsee/bugsee-ios` `feedback/`); the Bugsee Gradle plugin `bugsee-android-gradle-plugin`

@@ -59,17 +59,19 @@ support" button); a call that needs it throws a `BugseeFeedbackException` with r
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
 
-await Bugsee.launch('YOUR_APP_TOKEN');
+Future<void> setUpSupport() async {
+  await Bugsee.launch('YOUR_APP_TOKEN');
 
-// The text an empty conversation opens with (null clears it).
-await BugseeFeedback.setGreeting('How can we help?');
+  // The text an empty conversation opens with (null clears it).
+  await BugseeFeedback.setGreeting('How can we help?');
 
-// Present the chat.
-await BugseeFeedback.show();
+  // Present the chat.
+  await BugseeFeedback.show();
 
-// Messages, as text only. The native listener is installed while a stream has a listener.
-final received = BugseeFeedback.messagesReceived.listen((messages) { /* from the dashboard, oldest first */ });
-final sent = BugseeFeedback.messageSent.listen((message) { /* the user sent one */ });
+  // Messages, as text only. The native listener is installed while a stream has a listener.
+  final received = BugseeFeedback.messagesReceived.listen((messages) { /* from the dashboard, oldest first */ });
+  final sent = BugseeFeedback.messageSent.listen((message) { /* the user sent one */ });
+}
 ```
 
 The streams fire **only while the chat is on screen** (both SDKs poll the backend only then), so they are not a source of

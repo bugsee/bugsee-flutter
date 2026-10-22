@@ -272,7 +272,7 @@ retention + `request.json` read, crash across update, Dart exception, secure-rec
 
 ## 8. Phase 8 — Feedback package, docs, release
 
-### 8a - the feedback package (done)
+### 8a - the feedback package (done; verified on the Android emulator API 30 and the iOS 27.0 simulator)
 
 `packages/bugsee_flutter_feedback` (full write-up with SDK references: its `doc/feedback.md`). Decisions:
 
@@ -290,6 +290,11 @@ retention + `request.json` read, crash across update, Dart exception, secure-rec
 - **Registration**: the SDKs register the module themselves (Android init provider or the Gradle plugin's injected call;
   iOS `+load` shim). The package adds no provider (guarded), registers on Android only as a safety net, and on iOS has its
   own `+load` registrar that the plugin references, because the add-on's shim can be dead-stripped from a static link.
+  Measured: with the plugin's `+load`/register removed the add-on's own shim still registered it in a debug simulator build (and in the XCTest
+  host), so the dead-strip risk the add-on's header describes was NOT reproduced there; a release (archive) build was not tried. Android default
+  (Gradle plugin 4.0.8, extension consolidation on): the AAR's provider is absent from the installed app and the SDK registered the module
+  (logcat `feedback module registered by the SDK`); the chat opened (`FeedbackActivity`, email screen) and the core's lifecycle stream carried
+  `BeforeFeedbackShown`/`AfterFeedbackShown`. Not verified: `optimizeExtensionsLoading=false`, the Android safety-net path, a real token (sending/receiving).
 
 README/migration guide (9.x→7.x API, since it is a clean break);
 CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app covering all screens.

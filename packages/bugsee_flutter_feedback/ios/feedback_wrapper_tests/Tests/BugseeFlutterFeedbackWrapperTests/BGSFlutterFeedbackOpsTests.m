@@ -160,6 +160,28 @@
   XCTAssertTrue(onMain);
 }
 
+- (void)testACallbackQueuedBeforeTheDisableIsDropped {
+  [self.ops setListenerEnabled:YES];
+  id<BGSFlutterFeedbackListener> installed = self.sdk.installed;
+  // From a background thread, while the main thread is not draining its queue: the callback is
+  // queued to the main thread, and only then is the listener disabled.
+  dispatch_semaphore_t queued = dispatch_semaphore_create(0);
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    [installed onNewMessageSent:@"queued"];
+    [installed onNewMessagesReceived:@[ @"queued" ]];
+    dispatch_semaphore_signal(queued);
+  });
+  dispatch_semaphore_wait(queued, DISPATCH_TIME_FOREVER);
+  [self.ops setListenerEnabled:NO];
+  XCTestExpectation *drained = [self expectationWithDescription:@"main queue drained"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [drained fulfill];
+  });
+  [self waitForExpectations:@[ drained ] timeout:5];
+  XCTAssertEqual(self.sent.count, 0u);
+  XCTAssertEqual(self.received.count, 0u);
+}
+
 - (void)testDisablingRemovesTheSdkListenerAndDropsStragglers {
   [self.ops setListenerEnabled:YES];
   id<BGSFlutterFeedbackListener> installed = self.sdk.installed;
@@ -213,8 +235,11 @@
 
 // ---- the real add-on ----
 
-/// Runs first (XCTest orders methods by name): nothing has called register yet, so only the
-/// plugin's `+load` can have registered the add-on.
+/// Runs first (XCTest orders methods by name): nothing has called register yet, so it was a
+/// `+load` that registered the add-on. Which one is not told apart here: the add-on's own shim
+/// (`BugseeFeedbackAutoRegister`) is linked into this test host too, so removing the plugin's
+/// `+load` does not fail this test (checked); that the plugin's own `+load`, `ensureRegistered`
+/// and the Swift reference are in place is guarded by test/feedback_package_drift_test.dart.
 - (void)testAAddOnIsRegisteredByLoadBeforeAnyTestRegistersIt {
   XCTAssertTrue([[BGSFlutterRealFeedback new] isRegistered]);
 }

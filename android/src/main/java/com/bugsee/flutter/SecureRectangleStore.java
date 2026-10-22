@@ -249,6 +249,68 @@ final class SecureRectangleStore {
         }
     }
 
+    /**
+     * Where one view's logical pixels land on the display, in the SDK's unit: the ONE place the
+     * ratio, unit, scale and position are combined, used for the secure rectangles and for the
+     * managed view hierarchy ({@link ViewHierarchyStore}), so the two can never disagree about
+     * where a point is. Immutable.
+     */
+    static final class Mapper {
+        final int display;
+        private final double factor;
+        private final double sx;
+        private final double sy;
+        private final double x;
+        private final double y;
+
+        private Mapper(
+                final int display,
+                final double factor,
+                final double sx,
+                final double sy,
+                final double x,
+                final double y
+        ) {
+            this.display = display;
+            this.factor = factor;
+            this.sx = sx;
+            this.sy = sy;
+            this.x = x;
+            this.y = y;
+        }
+
+        /**
+         * {@code null} when the numbers cannot be trusted: the view was measured at another
+         * density than the display has now, or a ratio, unit or scale is not a positive finite
+         * number. The caller fails closed.
+         */
+        @Nullable
+        static Mapper create(
+                @NonNull final Placement placement,
+                final double viewRatio,
+                final double nativeRatio,
+                final double unit
+        ) {
+            if (!isUsable(viewRatio) || !isUsable(nativeRatio) || !isUsable(unit)
+                    || !isUsable(placement.scaleX) || !isUsable(placement.scaleY)
+                    || Math.abs(nativeRatio - viewRatio) > RATIO_TOLERANCE * Math.max(1, viewRatio)) {
+                return null;
+            }
+            return new Mapper(placement.display, viewRatio * unit,
+                    placement.scaleX, placement.scaleY, placement.x, placement.y);
+        }
+
+        /** The display x of a logical x of the view, before any rounding. */
+        double px(final double logical) {
+            return logical * factor * sx + x;
+        }
+
+        /** The display y of a logical y of the view, before any rounding. */
+        double py(final double logical) {
+            return logical * factor * sy + y;
+        }
+    }
+
     /** One Flutter view of one Dart isolate. */
     private static final class Lane implements Comparable<Lane> {
         final long owner;
@@ -560,6 +622,37 @@ final class SecureRectangleStore {
         }
     }
 
+    /**
+     * Whether a refresh the pull asked for has not completed for {@link #REFRESH_STALE_MS}: the
+     * placements may be stale by an unknown amount.
+     */
+    private boolean refreshStuck() {
+        final long pendingSince = refreshPendingSince.get();
+        return pullHook.get() != null && pendingSince != NO_REFRESH_PENDING
+                && clock.nowMs() - pendingSince > REFRESH_STALE_MS;
+    }
+
+    /**
+     * How {@code owner}'s view {@code viewId}, measured at {@code viewRatio}, maps onto its display
+     * now, or {@code null} when that is not known or not trustworthy: unplaced, off screen, a
+     * placement refresh that is stuck, or a density that no longer matches. Same checks as
+     * {@link #snapshot}, the same {@link Mapper}; the caller serves nothing (fail closed).
+     */
+    @Nullable
+    Mapper mapperFor(final long owner, final int viewId, final double viewRatio) {
+        try {
+            final Placement placement = state.placements.get(new Lane(owner, viewId));
+            if (placement == null || placement.kind != Placement.KNOWN_KIND || refreshStuck()) {
+                return null;
+            }
+            final Environment env = environment;
+            return Mapper.create(placement, viewRatio, env.nativePixelRatio(placement.display),
+                    env.unitsPerPhysicalPixel(placement.display));
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** The rectangles of {@code a} then those of {@code b} that are not in {@code a}. */
     @NonNull
     private static int[] union(@NonNull final int[] a, @NonNull final int[] b) {
@@ -617,9 +710,7 @@ final class SecureRectangleStore {
         int[] out = new int[16];
         int n = 0;
         boolean whole = false;
-        final long pendingSince = refreshPendingSince.get();
-        final boolean refreshStuck = pullHook.get() != null && pendingSince != NO_REFRESH_PENDING
-                && clock.nowMs() - pendingSince > REFRESH_STALE_MS;
+        final boolean refreshStuck = refreshStuck();
 
         for (final Map.Entry<Lane, ViewRects> entry : s.rects.entrySet()) {
             final ViewRects view = entry.getValue();
@@ -647,14 +738,8 @@ final class SecureRectangleStore {
                 bounds = env.displayBounds(display);
                 envRead = true;
             }
-            final double ratio = view.ratio;
-            final double factor = ratio * unit;
-            final double sx = placement.scaleX;
-            final double sy = placement.scaleY;
-            if (!isUsable(ratio) || !isUsable(nativeRatio) || !isUsable(unit)
-                    || !isUsable(sx) || !isUsable(sy)
-                    || Math.abs(nativeRatio - ratio) > RATIO_TOLERANCE * Math.max(1, ratio)
-                    || logical.length % 4 != 0) {
+            final Mapper mapper = Mapper.create(placement, view.ratio, nativeRatio, unit);
+            if (mapper == null || logical.length % 4 != 0) {
                 // Measured at another density than the display has now, or not measurable.
                 whole = true;
                 continue;
@@ -672,10 +757,10 @@ final class SecureRectangleStore {
                     continue; // degenerate: nothing to hide
                 }
                 // Scale and place first, round outward last (5.3.1).
-                int il = toInt(Math.floor(l * factor * sx + placement.x));
-                int it = toInt(Math.floor(t * factor * sy + placement.y));
-                int ir = toInt(Math.ceil(r * factor * sx + placement.x));
-                int ib = toInt(Math.ceil(b * factor * sy + placement.y));
+                int il = toInt(Math.floor(mapper.px(l)));
+                int it = toInt(Math.floor(mapper.py(t)));
+                int ir = toInt(Math.ceil(mapper.px(r)));
+                int ib = toInt(Math.ceil(mapper.py(b)));
                 if (bounds != null && bounds[0] > 0 && bounds[1] > 0) {
                     il = clamp(il, bounds[0]);
                     ir = clamp(ir, bounds[0]);

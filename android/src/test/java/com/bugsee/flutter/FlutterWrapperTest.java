@@ -68,7 +68,7 @@ public class FlutterWrapperTest {
     }
 
     @Test
-    public void requestDataAnswersNullForEveryTypeAndNeverThrows() {
+    public void requestDataAnswersNullWhenThereIsNothingAndNeverThrows() {
         final FlutterWrapper w = FlutterWrapper.atProcessStart();
         for (final String type : new String[] {"vh", "", "something-new"}) {
             final AtomicInteger calls = new AtomicInteger();
@@ -233,6 +233,66 @@ public class FlutterWrapperTest {
         w.onAfterReportCreated(report, false, done::incrementAndGet);
         w.onAfterReportCreated(report, true, done::incrementAndGet);
         assertEquals(5, done.get());
+    }
+
+    /**
+     * `vh` is answered from the cache, synchronously on the calling thread (the SDK's main thread:
+     * a reply that waited for Dart would miss the report), exactly once; every other type is null.
+     */
+    @Test
+    public void vhIsAnsweredFromTheCacheSynchronouslyOnTheCallingThread() {
+        final SecureRectangleStore secure = new SecureRectangleStore(new ViewHierarchyStoreTest.Device());
+        final ViewHierarchyStore views = new ViewHierarchyStore(secure, () -> 5000L);
+        secure.setPlacement(1, 0, SecureRectangleStore.Placement.known(0, 0, 0));
+        assertTrue(views.publish(1, 1, 1, 0, 3, java.util.Arrays.asList("A", "B", "C"),
+                new double[] {0, 0, 10, 20}));
+        final FlutterWrapper w = FlutterWrapper.create("flutter", "1", null, null,
+                new LifecycleHub(Runnable::run), secure, ReportHandlerPipeline.shared(), views);
+        final AtomicInteger calls = new AtomicInteger();
+        final AtomicReference<String> got = new AtomicReference<>();
+        final AtomicReference<Thread> on = new AtomicReference<>();
+        w.requestData("vh", data -> {
+            calls.incrementAndGet();
+            got.set(data);
+            on.set(Thread.currentThread());
+        });
+        assertEquals("answered before requestData returned, exactly once", 1, calls.get());
+        assertEquals("A0B[0,0,30,60]C", got.get());
+        assertEquals(Thread.currentThread(), on.get());
+        for (final String other : new String[] {"", "VH", "vh ", "something-new"}) {
+            final AtomicReference<String> reply = new AtomicReference<>("sentinel");
+            w.requestData(other, reply::set);
+            assertNull(other, reply.get());
+        }
+    }
+
+    /** The wrapper is replaced when Dart refines the identity: the cache is not in it. */
+    @Test
+    public void theReplacedWrapperServesTheSameCache() {
+        final ViewHierarchyStoreTest.Device device = new ViewHierarchyStoreTest.Device();
+        final SecureRectangleStore secure = SecureRectangleStore.shared();
+        final ViewHierarchyStore views = ViewHierarchyStore.shared();
+        secure.clearForTests();
+        views.clearForTests();
+        try {
+            secure.setEnvironment(device);
+            secure.setPlacement(77, 0, SecureRectangleStore.Placement.known(0, 0, 0));
+            assertTrue(views.publish(77, 1, 1, 0, 3, java.util.Arrays.asList("A", "B", "C"),
+                    new double[] {0, 0, 10, 20}));
+            final List<BugseeWrapper> registered = new ArrayList<>();
+            FlutterWrapperInitProvider.registerRefined(
+                    registered::add, "flutter", "1.2.3", null, Collections.singletonMap("a", "b"));
+            final AtomicReference<String> fromPlaceholder = new AtomicReference<>();
+            final AtomicReference<String> fromRefined = new AtomicReference<>();
+            FlutterWrapper.atProcessStart().requestData("vh", fromPlaceholder::set);
+            registered.get(0).requestData("vh", fromRefined::set);
+            assertEquals("A0B[0,0,30,60]C".length(), fromRefined.get().length());
+            assertEquals(fromPlaceholder.get().replaceFirst("^A\\d+", "A"),
+                    fromRefined.get().replaceFirst("^A\\d+", "A"));
+        } finally {
+            views.clearForTests();
+            secure.clearForTests();
+        }
     }
 
     /** The wrapper is replaced when Dart refines the identity; its answers must not change. */

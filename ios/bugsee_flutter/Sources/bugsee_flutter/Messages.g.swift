@@ -404,6 +404,84 @@ struct SecureRectanglesMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// One snapshot of the managed view hierarchy (`vh`) of one Flutter view, as a JSON TEMPLATE
+/// plus the numbers that fill it in (doc/view-hierarchy.md). Native keeps it in memory and
+/// answers the SDK's `vh` request from it, synchronously, on whatever thread asks.
+///
+/// [segments] has `bounds.length / 4 + 2` entries: native writes `segments[0]`, the snapshot's
+/// age in milliseconds, `segments[1]`, then for node `k` the box `[x,y,w,h]` converted from
+/// `bounds[4k..4k+3]` and `segments[k + 2]`. Never parsed, never changed otherwise. An EMPTY
+/// [segments] means "no hierarchy": it clears this isolate's snapshot. A list that does not
+/// have the shape above is refused and clears it too (fail closed).
+///
+/// [bounds] is flat `[l, t, r, b, ...]` in the view's LOGICAL pixels measured at
+/// [devicePixelRatio], origin at the view's top-left, converted by the same code that places the
+/// secure rectangles (physical pixels on Android, points on iOS).
+///
+/// Ordering is the secure rectangles' (`epoch`: a random id of the Dart isolate; `sequence`
+/// grows per message): a message that is not newer than one native applied is ignored.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct ViewHierarchyMessage: Hashable, CustomStringConvertible {
+  var epoch: Int64
+  var sequence: Int64
+  /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
+  var viewId: Int64
+  var devicePixelRatio: Double
+  var segments: [String]
+  var bounds: [Double]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> ViewHierarchyMessage? {
+    let epoch = pigeonVar_list[0] as! Int64
+    let sequence = pigeonVar_list[1] as! Int64
+    let viewId = pigeonVar_list[2] as! Int64
+    let devicePixelRatio = pigeonVar_list[3] as! Double
+    let segments = pigeonVar_list[4] as! [String]
+    let bounds = pigeonVar_list[5] as! [Double]
+
+    return ViewHierarchyMessage(
+      epoch: epoch,
+      sequence: sequence,
+      viewId: viewId,
+      devicePixelRatio: devicePixelRatio,
+      segments: segments,
+      bounds: bounds
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      epoch,
+      sequence,
+      viewId,
+      devicePixelRatio,
+      segments,
+      bounds,
+    ]
+  }
+  static func == (lhs: ViewHierarchyMessage, rhs: ViewHierarchyMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.epoch, rhs.epoch) && MessagesPigeonInternal.deepEquals(lhs.sequence, rhs.sequence) && MessagesPigeonInternal.deepEquals(lhs.viewId, rhs.viewId) && MessagesPigeonInternal.deepEquals(lhs.devicePixelRatio, rhs.devicePixelRatio) && MessagesPigeonInternal.deepEquals(lhs.segments, rhs.segments) && MessagesPigeonInternal.deepEquals(lhs.bounds, rhs.bounds)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("ViewHierarchyMessage")
+    MessagesPigeonInternal.deepHash(value: epoch, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: sequence, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: viewId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: devicePixelRatio, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: segments, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: bounds, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "ViewHierarchyMessage(epoch: \(String(describing: epoch)), sequence: \(String(describing: sequence)), viewId: \(String(describing: viewId)), devicePixelRatio: \(String(describing: devicePixelRatio)), segments: \(String(describing: segments)), bounds: \(String(describing: bounds)))"
+  }
+}
+
 /// One report-handler delivery native hands to Dart: the report is reachable
 /// only through [handle] (a proxy, never a copy; workbook 7.3.1), and only until
 /// the handler's completion runs (7.3.4).
@@ -1148,24 +1226,26 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
     case 132:
       return SecureRectanglesMessage.fromList(self.readValue() as! [Any?])
     case 133:
-      return ReportHandlerRequestMessage.fromList(self.readValue() as! [Any?])
+      return ViewHierarchyMessage.fromList(self.readValue() as! [Any?])
     case 134:
-      return ReportAttachmentMessage.fromList(self.readValue() as! [Any?])
+      return ReportHandlerRequestMessage.fromList(self.readValue() as! [Any?])
     case 135:
-      return ReportScreenshotMessage.fromList(self.readValue() as! [Any?])
+      return ReportAttachmentMessage.fromList(self.readValue() as! [Any?])
     case 136:
-      return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
+      return ReportScreenshotMessage.fromList(self.readValue() as! [Any?])
     case 137:
-      return CreatedReportSnapshotMessage.fromList(self.readValue() as! [Any?])
+      return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
     case 138:
-      return CreatedReportPatchMessage.fromList(self.readValue() as! [Any?])
+      return CreatedReportSnapshotMessage.fromList(self.readValue() as! [Any?])
     case 139:
-      return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
+      return CreatedReportPatchMessage.fromList(self.readValue() as! [Any?])
     case 140:
-      return BreadcrumbMessage.fromList(self.readValue() as! [Any?])
+      return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
     case 141:
-      return LogLineMessage.fromList(self.readValue() as! [Any?])
+      return BreadcrumbMessage.fromList(self.readValue() as! [Any?])
     case 142:
+      return LogLineMessage.fromList(self.readValue() as! [Any?])
+    case 143:
       return NetworkEventMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -1187,35 +1267,38 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? SecureRectanglesMessage {
       super.writeByte(132)
       super.writeValue(value.toList())
-    } else if let value = value as? ReportHandlerRequestMessage {
+    } else if let value = value as? ViewHierarchyMessage {
       super.writeByte(133)
       super.writeValue(value.toList())
-    } else if let value = value as? ReportAttachmentMessage {
+    } else if let value = value as? ReportHandlerRequestMessage {
       super.writeByte(134)
       super.writeValue(value.toList())
-    } else if let value = value as? ReportScreenshotMessage {
+    } else if let value = value as? ReportAttachmentMessage {
       super.writeByte(135)
       super.writeValue(value.toList())
-    } else if let value = value as? ReportSnapshotMessage {
+    } else if let value = value as? ReportScreenshotMessage {
       super.writeByte(136)
       super.writeValue(value.toList())
-    } else if let value = value as? CreatedReportSnapshotMessage {
+    } else if let value = value as? ReportSnapshotMessage {
       super.writeByte(137)
       super.writeValue(value.toList())
-    } else if let value = value as? CreatedReportPatchMessage {
+    } else if let value = value as? CreatedReportSnapshotMessage {
       super.writeByte(138)
       super.writeValue(value.toList())
-    } else if let value = value as? LaunchOutcomeMessage {
+    } else if let value = value as? CreatedReportPatchMessage {
       super.writeByte(139)
       super.writeValue(value.toList())
-    } else if let value = value as? BreadcrumbMessage {
+    } else if let value = value as? LaunchOutcomeMessage {
       super.writeByte(140)
       super.writeValue(value.toList())
-    } else if let value = value as? LogLineMessage {
+    } else if let value = value as? BreadcrumbMessage {
       super.writeByte(141)
       super.writeValue(value.toList())
-    } else if let value = value as? NetworkEventMessage {
+    } else if let value = value as? LogLineMessage {
       super.writeByte(142)
+      super.writeValue(value.toList())
+    } else if let value = value as? NetworkEventMessage {
+      super.writeByte(143)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1253,6 +1336,10 @@ protocol BugseeBridgeHostApi {
   /// whether the message was applied (`false`: it was older than one already
   /// applied, which is not an error).
   func setSecureRectangles(state: SecureRectanglesMessage) throws -> Bool
+  /// Publishes (or, with empty segments, clears) the managed view hierarchy native serves for
+  /// the SDK's `vh` request (see [ViewHierarchyMessage]). Never throws on content. Returns
+  /// whether the message was applied (`false`: older than one already applied, not an error).
+  func setViewHierarchy(snapshot: ViewHierarchyMessage) throws -> Bool
   /// A new Dart isolate is up (`BugseeBridge.start` calls it once, first): native completes
   /// every delivery still outstanding to the previous isolate (a hot restart would otherwise
   /// leave each report waiting for its deadline) and forgets which phases had a handler.
@@ -1373,6 +1460,10 @@ protocol BugseeBridgeHostApi {
   func log(message: String, level: Int64) throws
   func startBlackout() throws
   func endBlackout() throws
+  /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+  /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+  /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+  func captureViewHierarchy() throws
   func isBlackout() throws -> Bool
   /// Opens the SDK's report dialog. A no-op before the SDK is launched.
   func showReportDialog(summary: String?, description: String?, severity: Int64?, labels: [String]?) throws
@@ -1478,6 +1569,24 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       setSecureRectanglesChannel.setMessageHandler(nil)
+    }
+    /// Publishes (or, with empty segments, clears) the managed view hierarchy native serves for
+    /// the SDK's `vh` request (see [ViewHierarchyMessage]). Never throws on content. Returns
+    /// whether the message was applied (`false`: older than one already applied, not an error).
+    let setViewHierarchyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setViewHierarchy\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setViewHierarchyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let snapshotArg = args[0] as! ViewHierarchyMessage
+        do {
+          let result = try api.setViewHierarchy(snapshot: snapshotArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      setViewHierarchyChannel.setMessageHandler(nil)
     }
     /// A new Dart isolate is up (`BugseeBridge.start` calls it once, first): native completes
     /// every delivery still outstanding to the previous isolate (a hot restart would otherwise
@@ -2291,6 +2400,22 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       endBlackoutChannel.setMessageHandler(nil)
+    }
+    /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+    /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+    /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+    let captureViewHierarchyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.captureViewHierarchy\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      captureViewHierarchyChannel.setMessageHandler { _, reply in
+        do {
+          try api.captureViewHierarchy()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      captureViewHierarchyChannel.setMessageHandler(nil)
     }
     let isBlackoutChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.isBlackout\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

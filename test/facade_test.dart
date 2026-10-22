@@ -605,6 +605,13 @@ void main() {
     });
   });
 
+  group('captureViewHierarchy', () {
+    test('reaches the SDK once, with no argument', () async {
+      await Bugsee.captureViewHierarchy();
+      expect(native.calls, ['captureViewHierarchy()']);
+    });
+  });
+
   group('blackout', () {
     test('start, end and read back', () async {
       expect(await Bugsee.isBlackout(), isFalse);
@@ -739,6 +746,7 @@ void main() {
         'startBlackout': Bugsee.startBlackout,
         'endBlackout': Bugsee.endBlackout,
         'isBlackout': Bugsee.isBlackout,
+        'captureViewHierarchy': Bugsee.captureViewHierarchy,
         'showReportDialog': Bugsee.showReportDialog,
         'upload': () => Bugsee.upload('s', 'd'),
       };
@@ -757,7 +765,7 @@ void main() {
         );
         native.failing.clear();
       }
-      expect(calls.keys.toSet(), hasLength(17));
+      expect(calls.keys.toSet(), hasLength(18));
     });
 
     test(

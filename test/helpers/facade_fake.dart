@@ -181,6 +181,10 @@ class FacadeFake extends BugseeBridgeHostApi {
   Future<bool> isBlackout() async => _record('isBlackout', [], blackout);
 
   @override
+  Future<void> captureViewHierarchy() async =>
+      _record('captureViewHierarchy', [], null);
+
+  @override
   Future<bool> logException(
     String payload,
     bool handled,

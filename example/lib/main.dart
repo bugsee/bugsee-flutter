@@ -8,6 +8,7 @@ import 'exceptions_screen.dart';
 import 'feedback_screen.dart';
 import 'facade_screen.dart';
 import 'logs_screen.dart';
+import 'view_hierarchy_screen.dart';
 import 'network_screen.dart';
 
 /// The application token from the Bugsee dashboard. Pass your own with
@@ -108,6 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
         NetworkScreen(),
         LogsScreen(),
         FeedbackScreen(),
+        ViewHierarchyScreen(),
       ],
     ),
     bottomNavigationBar: NavigationBar(
@@ -148,6 +150,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-feedback'),
           icon: Icon(Icons.chat_bubble_outline),
           label: 'Chat',
+        ),
+        NavigationDestination(
+          key: Key('tab-view-hierarchy'),
+          icon: Icon(Icons.account_tree_outlined),
+          label: 'Hierarchy',
         ),
       ],
     ),

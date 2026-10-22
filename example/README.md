@@ -22,6 +22,13 @@ back, launching twice, stop, launch again) against the real SDK:
 flutter test integration_test/launch_test.dart -d <emulator or simulator id>
 ```
 
+`integration_test/view_hierarchy_test.dart` shows the Flutter widget tree the SDK stores in a report (no text, the
+secure view redacted, boxes in the platform's unit) on the same screen as `lib/view_hierarchy_screen.dart`:
+
+```
+flutter test integration_test/view_hierarchy_test.dart -d <emulator or simulator id>
+```
+
 The `Chat` tab uses the separate `bugsee_flutter_feedback` package (the in-app feedback chat): set the greeting, show the SDK's
 native chat screen, ask whether the module is registered, and log the messages the listener streams deliver. Launch on the first
 tab first (on Android the chat refuses to open before the SDK has launched). `integration_test/feedback_test.dart` checks the

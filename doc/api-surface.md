@@ -56,7 +56,7 @@ here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/at
 | secure rectangles | `addSecureRectangle(Rect)` (physical px), `removeSecureRectangle`, `removeAllSecureRectangles`, `getAllSecureRectangles`, `setSystemSecureRects` | `addSecureRectangle:` (points, max 10), remove, removeAll, `getAllSecureRectangles` | **skip**: the wrapper IS the rectangle provider (the SDK pulls them from the wrapper; Phase 3b). A second, app-driven set in native units would be a footgun next to a widget that does the same in Flutter units and tracks layout. Use `BugseeSecureView` |
 | secure activities | `addSecureActivity`/`removeSecureActivity`/`isSecureActivity` (string and class) | none | **skip**: Android-only and whole-screen; a Flutter app's activity is the whole app. Wrap the root in `BugseeSecureView`, or set `FLAG_SECURE` (`captureRespectFlagSecure`) |
 | `resetVideoCapturePermission` | yes (MediaProjection consent) | none | **skip** (later): Android-only, only meaningful for the fullscreen video mode |
-| `captureViewHierarchy` | yes | yes | **skip (Phase 5)**: the Flutter view hierarchy is the wrapper's data request (`vh`), not an SDK call |
+| `captureViewHierarchy` | yes | yes | **expose** (Phase 5c): `Bugsee.captureViewHierarchy()` flushes the plugin's copy of the Flutter tree, then asks the SDK for a pass; the SDK asks the wrapper for `vh`, which is answered from the native snapshot cache (`doc/view-hierarchy.md`). A no-op before launch, after stop and with `capture.view-hierarchy` off; no launch gate of the wrapper's own |
 
 ### Reports
 

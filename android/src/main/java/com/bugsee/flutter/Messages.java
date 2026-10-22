@@ -754,6 +754,220 @@ public class Messages {
   }
 
   /**
+   * One snapshot of the managed view hierarchy (`vh`) of one Flutter view, as a JSON TEMPLATE
+   * plus the numbers that fill it in (doc/view-hierarchy.md). Native keeps it in memory and
+   * answers the SDK's `vh` request from it, synchronously, on whatever thread asks.
+   *
+   * [segments] has `bounds.length / 4 + 2` entries: native writes `segments[0]`, the snapshot's
+   * age in milliseconds, `segments[1]`, then for node `k` the box `[x,y,w,h]` converted from
+   * `bounds[4k..4k+3]` and `segments[k + 2]`. Never parsed, never changed otherwise. An EMPTY
+   * [segments] means "no hierarchy": it clears this isolate's snapshot. A list that does not
+   * have the shape above is refused and clears it too (fail closed).
+   *
+   * [bounds] is flat `[l, t, r, b, ...]` in the view's LOGICAL pixels measured at
+   * [devicePixelRatio], origin at the view's top-left, converted by the same code that places the
+   * secure rectangles (physical pixels on Android, points on iOS).
+   *
+   * Ordering is the secure rectangles' (`epoch`: a random id of the Dart isolate; `sequence`
+   * grows per message): a message that is not newer than one native applied is ignored.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class ViewHierarchyMessage {
+    private @NonNull Long epoch;
+
+    public @NonNull Long getEpoch() {
+      return epoch;
+    }
+
+    public void setEpoch(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"epoch\" is null.");
+      }
+      this.epoch = setterArg;
+    }
+
+    private @NonNull Long sequence;
+
+    public @NonNull Long getSequence() {
+      return sequence;
+    }
+
+    public void setSequence(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"sequence\" is null.");
+      }
+      this.sequence = setterArg;
+    }
+
+    /** `FlutterView.viewId`. Mobile engines have only the implicit view (0). */
+    private @NonNull Long viewId;
+
+    public @NonNull Long getViewId() {
+      return viewId;
+    }
+
+    public void setViewId(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"viewId\" is null.");
+      }
+      this.viewId = setterArg;
+    }
+
+    private @NonNull Double devicePixelRatio;
+
+    public @NonNull Double getDevicePixelRatio() {
+      return devicePixelRatio;
+    }
+
+    public void setDevicePixelRatio(@NonNull Double setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"devicePixelRatio\" is null.");
+      }
+      this.devicePixelRatio = setterArg;
+    }
+
+    private @NonNull List<String> segments;
+
+    public @NonNull List<String> getSegments() {
+      return segments;
+    }
+
+    public void setSegments(@NonNull List<String> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"segments\" is null.");
+      }
+      this.segments = setterArg;
+    }
+
+    private @NonNull List<Double> bounds;
+
+    public @NonNull List<Double> getBounds() {
+      return bounds;
+    }
+
+    public void setBounds(@NonNull List<Double> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"bounds\" is null.");
+      }
+      this.bounds = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    ViewHierarchyMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      ViewHierarchyMessage that = (ViewHierarchyMessage) o;
+      return pigeonDeepEquals(epoch, that.epoch) && pigeonDeepEquals(sequence, that.sequence) && pigeonDeepEquals(viewId, that.viewId) && pigeonDeepEquals(devicePixelRatio, that.devicePixelRatio) && pigeonDeepEquals(segments, that.segments) && pigeonDeepEquals(bounds, that.bounds);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), epoch, sequence, viewId, devicePixelRatio, segments, bounds};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "ViewHierarchyMessage{" + "epoch=" + epoch + ", " + "sequence=" + sequence + ", " + "viewId=" + viewId + ", " + "devicePixelRatio=" + devicePixelRatio + ", " + "segments=" + segments + ", " + "bounds=" + bounds + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable Long epoch;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setEpoch(@NonNull Long setterArg) {
+        this.epoch = setterArg;
+        return this;
+      }
+
+      private @Nullable Long sequence;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSequence(@NonNull Long setterArg) {
+        this.sequence = setterArg;
+        return this;
+      }
+
+      private @Nullable Long viewId;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setViewId(@NonNull Long setterArg) {
+        this.viewId = setterArg;
+        return this;
+      }
+
+      private @Nullable Double devicePixelRatio;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setDevicePixelRatio(@NonNull Double setterArg) {
+        this.devicePixelRatio = setterArg;
+        return this;
+      }
+
+      private @Nullable List<String> segments;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSegments(@NonNull List<String> setterArg) {
+        this.segments = setterArg;
+        return this;
+      }
+
+      private @Nullable List<Double> bounds;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setBounds(@NonNull List<Double> setterArg) {
+        this.bounds = setterArg;
+        return this;
+      }
+
+      public @NonNull ViewHierarchyMessage build() {
+        ViewHierarchyMessage pigeonReturn = new ViewHierarchyMessage();
+        pigeonReturn.setEpoch(epoch);
+        pigeonReturn.setSequence(sequence);
+        pigeonReturn.setViewId(viewId);
+        pigeonReturn.setDevicePixelRatio(devicePixelRatio);
+        pigeonReturn.setSegments(segments);
+        pigeonReturn.setBounds(bounds);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(6);
+      toListResult.add(epoch);
+      toListResult.add(sequence);
+      toListResult.add(viewId);
+      toListResult.add(devicePixelRatio);
+      toListResult.add(segments);
+      toListResult.add(bounds);
+      return toListResult;
+    }
+
+    static @NonNull ViewHierarchyMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      ViewHierarchyMessage pigeonResult = new ViewHierarchyMessage();
+      Object epoch = pigeonVar_list.get(0);
+      pigeonResult.setEpoch((Long) epoch);
+      Object sequence = pigeonVar_list.get(1);
+      pigeonResult.setSequence((Long) sequence);
+      Object viewId = pigeonVar_list.get(2);
+      pigeonResult.setViewId((Long) viewId);
+      Object devicePixelRatio = pigeonVar_list.get(3);
+      pigeonResult.setDevicePixelRatio((Double) devicePixelRatio);
+      Object segments = pigeonVar_list.get(4);
+      pigeonResult.setSegments((List<String>) segments);
+      Object bounds = pigeonVar_list.get(5);
+      pigeonResult.setBounds((List<Double>) bounds);
+      return pigeonResult;
+    }
+  }
+
+  /**
    * One report-handler delivery native hands to Dart: the report is reachable
    * only through [handle] (a proxy, never a copy; workbook 7.3.1), and only until
    * the handler's completion runs (7.3.4).
@@ -2896,24 +3110,26 @@ public class Messages {
         case (byte) 132:
           return SecureRectanglesMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 133:
-          return ReportHandlerRequestMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ViewHierarchyMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 134:
-          return ReportAttachmentMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ReportHandlerRequestMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 135:
-          return ReportScreenshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ReportAttachmentMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 136:
-          return ReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ReportScreenshotMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 137:
-          return CreatedReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 138:
-          return CreatedReportPatchMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return CreatedReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 139:
-          return LaunchOutcomeMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return CreatedReportPatchMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 140:
-          return BreadcrumbMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return LaunchOutcomeMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 141:
-          return LogLineMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return BreadcrumbMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 142:
+          return LogLineMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 143:
           return NetworkEventMessage.fromList((ArrayList<Object>) readValue(buffer));
         default:
           return super.readValueOfType(type, buffer);
@@ -2934,35 +3150,38 @@ public class Messages {
       } else if (value instanceof SecureRectanglesMessage) {
         stream.write(132);
         writeValue(stream, ((SecureRectanglesMessage) value).toList());
-      } else if (value instanceof ReportHandlerRequestMessage) {
+      } else if (value instanceof ViewHierarchyMessage) {
         stream.write(133);
+        writeValue(stream, ((ViewHierarchyMessage) value).toList());
+      } else if (value instanceof ReportHandlerRequestMessage) {
+        stream.write(134);
         writeValue(stream, ((ReportHandlerRequestMessage) value).toList());
       } else if (value instanceof ReportAttachmentMessage) {
-        stream.write(134);
+        stream.write(135);
         writeValue(stream, ((ReportAttachmentMessage) value).toList());
       } else if (value instanceof ReportScreenshotMessage) {
-        stream.write(135);
+        stream.write(136);
         writeValue(stream, ((ReportScreenshotMessage) value).toList());
       } else if (value instanceof ReportSnapshotMessage) {
-        stream.write(136);
+        stream.write(137);
         writeValue(stream, ((ReportSnapshotMessage) value).toList());
       } else if (value instanceof CreatedReportSnapshotMessage) {
-        stream.write(137);
+        stream.write(138);
         writeValue(stream, ((CreatedReportSnapshotMessage) value).toList());
       } else if (value instanceof CreatedReportPatchMessage) {
-        stream.write(138);
+        stream.write(139);
         writeValue(stream, ((CreatedReportPatchMessage) value).toList());
       } else if (value instanceof LaunchOutcomeMessage) {
-        stream.write(139);
+        stream.write(140);
         writeValue(stream, ((LaunchOutcomeMessage) value).toList());
       } else if (value instanceof BreadcrumbMessage) {
-        stream.write(140);
+        stream.write(141);
         writeValue(stream, ((BreadcrumbMessage) value).toList());
       } else if (value instanceof LogLineMessage) {
-        stream.write(141);
+        stream.write(142);
         writeValue(stream, ((LogLineMessage) value).toList());
       } else if (value instanceof NetworkEventMessage) {
-        stream.write(142);
+        stream.write(143);
         writeValue(stream, ((NetworkEventMessage) value).toList());
       } else {
         super.writeValue(stream, value);
@@ -3019,6 +3238,13 @@ public class Messages {
      */
     @NonNull 
     Boolean setSecureRectangles(@NonNull SecureRectanglesMessage state);
+    /**
+     * Publishes (or, with empty segments, clears) the managed view hierarchy native serves for
+     * the SDK's `vh` request (see [ViewHierarchyMessage]). Never throws on content. Returns
+     * whether the message was applied (`false`: older than one already applied, not an error).
+     */
+    @NonNull 
+    Boolean setViewHierarchy(@NonNull ViewHierarchyMessage snapshot);
     /**
      * A new Dart isolate is up (`BugseeBridge.start` calls it once, first): native completes
      * every delivery still outstanding to the previous isolate (a hot restart would otherwise
@@ -3206,6 +3432,12 @@ public class Messages {
     void startBlackout();
 
     void endBlackout();
+    /**
+     * Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+     * wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+     * before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+     */
+    void captureViewHierarchy();
 
     @NonNull 
     Boolean isBlackout();
@@ -3326,6 +3558,29 @@ public class Messages {
                 SecureRectanglesMessage stateArg = (SecureRectanglesMessage) args.get(0);
                 try {
                   Boolean output = api.setSecureRectangles(stateArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setViewHierarchy" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                ViewHierarchyMessage snapshotArg = (ViewHierarchyMessage) args.get(0);
+                try {
+                  Boolean output = api.setViewHierarchy(snapshotArg);
                   wrapped.add(0, output);
                 }
  catch (Throwable exception) {
@@ -4485,6 +4740,27 @@ public class Messages {
                 ArrayList<Object> wrapped = new ArrayList<>();
                 try {
                   api.endBlackout();
+                  wrapped.add(0, null);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.captureViewHierarchy" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  api.captureViewHierarchy();
                   wrapped.add(0, null);
                 }
  catch (Throwable exception) {

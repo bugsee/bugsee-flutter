@@ -33,6 +33,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)startBlackout;
 - (void)endBlackout;
 - (BOOL)isBlackout;
+/// `+[Bugsee captureViewHierarchy]`.
+- (void)captureViewHierarchy;
 /// `severity` 0 is "not given": the SDK applies its default priority.
 - (void)showReportDialogSummary:(nullable NSString *)summary
                     description:(nullable NSString *)description
@@ -118,6 +120,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (BGSFlutterFacadeResult *)startBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(startBlackout(sdk:));
 + (BGSFlutterFacadeResult *)endBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(endBlackout(sdk:));
 + (BGSFlutterFacadeResult *)isBlackoutWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(isBlackout(sdk:));
+
+// View hierarchy.
++ (BGSFlutterFacadeResult *)captureViewHierarchyWithSdk:(id<BGSFlutterFacadeSDK>)sdk NS_SWIFT_NAME(captureViewHierarchy(sdk:));
 
 // Reports.
 + (BGSFlutterFacadeResult *)showReportDialogWithSdk:(id<BGSFlutterFacadeSDK>)sdk

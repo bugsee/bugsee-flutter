@@ -253,6 +253,19 @@ abstract final class Bugsee {
     urgent: urgent,
   );
 
+  /// Asks the SDK to capture the view hierarchy now and keep it in the capture buffer, so it is in
+  /// any report created afterwards (the SDK also captures it for every report on its own, at the
+  /// moment the report is made). The SDK's own tree (native views) goes in, and the Flutter widget
+  /// tree beside it: this call first brings the plugin's copy of the Flutter tree up to date, so a
+  /// capture right after a screen change shows the new screen.
+  ///
+  /// The Flutter tree carries no text (no labels, field values, keys or semantics) and a
+  /// [BugseeSecureView] subtree is a single node with only its box; see `doc/view-hierarchy.md`.
+  ///
+  /// A no-op, on both platforms, before [launch], after [stop], and when the
+  /// `captureViewHierarchy` launch option is off; nothing is queued.
+  static Future<void> captureViewHierarchy() => _runtime.captureViewHierarchy();
+
   /// Stops recording everything that describes the screen: the video (black frames), the report
   /// screenshot, touch recording and the view hierarchy. Logs, network events, traces and the
   /// rest keep being captured. End it with [endBlackout]; there is no pause and no resume.

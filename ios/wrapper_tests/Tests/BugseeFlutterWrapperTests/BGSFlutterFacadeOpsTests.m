@@ -135,6 +135,9 @@
   [self record:@"isBlackout"];
   return _blackout;
 }
+- (void)captureViewHierarchy {
+  [self record:@"captureViewHierarchy"];
+}
 - (void)showReportDialogSummary:(NSString *)summary
                     description:(NSString *)description
                        severity:(NSInteger)severity
@@ -297,6 +300,7 @@
     [BGSFlutterFacadeOps startBlackoutWithSdk:_sdk],
     [BGSFlutterFacadeOps endBlackoutWithSdk:_sdk],
     [BGSFlutterFacadeOps isBlackoutWithSdk:_sdk],
+    [BGSFlutterFacadeOps captureViewHierarchyWithSdk:_sdk],
     [BGSFlutterFacadeOps showReportDialogWithSdk:_sdk summary:nil description:nil severity:nil labels:nil],
     [BGSFlutterFacadeOps uploadWithSdk:_sdk summary:@"s" description:@"d" severity:nil labels:nil],
   ];
@@ -445,6 +449,16 @@
   [self assertInvalid:[BGSFlutterFacadeOps relayNotificationWithSdk:_sdk title:@"T" body:nil severity:@6 fields:nil urgent:NO]];
   [self assertInvalid:[BGSFlutterFacadeOps relayNotificationWithSdk:_sdk title:@"T" body:nil severity:nil fields:@[ @"k" ] urgent:NO]];
   [self assertInvalid:[BGSFlutterFacadeOps relayNotificationWithSdk:_sdk title:@"T" body:nil severity:nil fields:@[ @"k", @1 ] urgent:NO]];
+}
+
+// ---- view hierarchy ---------------------------------------------------------------------------
+
+- (void)testCaptureViewHierarchyIsPassedStraightToTheSdk {
+  // SDK source (BGSCaptureDataProviderViewHierarchy.m): a pass only while its provider runs; the
+  // wrapper adds nothing and has no launch gate of its own.
+  BGSFlutterFacadeResult *result = [BGSFlutterFacadeOps captureViewHierarchyWithSdk:_sdk];
+  XCTAssertFalse(result.failed);
+  XCTAssertEqualObjects(_sdk.calls, (@[ @"captureViewHierarchy" ]));
 }
 
 // ---- blackout ---------------------------------------------------------------------------------

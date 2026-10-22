@@ -2,8 +2,9 @@
 
 > **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options, `stop`,
 > status, attributes, user identity, events and traces, breadcrumbs, notifications, blackout, the
-> report handler, the lifecycle event stream and the secure-view widget work on Android and iOS. Not
-> yet: Dart exception, network and `print` capture, report attachments and `createReport`, APM spans.
+> report handler, the lifecycle event stream, the secure-view widget and the Flutter view hierarchy in
+> reports work on Android and iOS. Not yet: Dart exception, network and `print` capture, report
+> attachments and `createReport`, APM spans.
 > Existing users should stay on the latest published release until the migration guide is available.
 > This API is a clean break from 9.x.
 
@@ -149,6 +150,13 @@ recorded in the clear for its first frame or so (Dart can only measure it once l
 it), so for something that must never be captured keep the `BugseeSecureView` mounted and swap its
 content, rather than inserting the whole widget at the moment the content appears. The other known
 limits are listed on the widget.
+
+The reports also carry the **Flutter widget tree** (the SDK sees a Flutter app as one native view, so
+the plugin answers its request for the app's own hierarchy). It is boxes and widget type names only:
+no text, labels, field values, keys or semantics, and a `BugseeSecureView` subtree is a single node
+with only its box. It is on while the SDK is launched, its `captureViewHierarchy` option is on (the
+default) and the app is in the foreground; `Bugsee.captureViewHierarchy()` asks for a capture now.
+Design, payload, privacy rules and limits: `doc/view-hierarchy.md`.
 
 Things worth knowing (each is documented on the method):
 

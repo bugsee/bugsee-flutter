@@ -251,6 +251,17 @@ public class FeedbackOpsTest {
     }
 
     @Test
+    public void aFailedReinstallSilencesTheListenerThisEngineHadBefore() {
+        ops.setListenerEnabled(true);
+        final FeedbackListener first = sdk.listener;
+        sdk.registered = false;
+        assertEquals(FeedbackOps.NOT_REGISTERED, codeOf(() -> ops.setListenerEnabled(true)));
+        first.onNewMessageSent("late");
+        main.drain();
+        assertTrue(sink.sent.isEmpty());
+    }
+
+    @Test
     public void nonNullKeepsOrderAndDropsNulls() {
         assertEquals(Arrays.asList("1", "2"), FeedbackOps.nonNull(Arrays.asList("1", null, "2")));
         assertTrue(FeedbackOps.nonNull(null).isEmpty());

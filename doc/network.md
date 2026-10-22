@@ -1,4 +1,4 @@
-# Network capture (Phase 5b)
+# Network capture
 
 Dart's `dart:io` `HttpClient` is not the platform's networking stack, so neither SDK sees what is built on it
 (`package:http`'s default client, `dio`'s default adapter, `Image.network`, the WebSocket handshake, a plain
@@ -181,7 +181,7 @@ and a binary body is counted and never copied:
    verbatim** (`?token=abc123` stays, by the SDK's design: "sanitization is the responsibility of the user's
    `setBreadcrumbFilter`", `BreadcrumbNetworkRequest.java`; it is the same for traffic the SDK intercepts itself) while iOS
    applies the query sanitizer to it (`?token=%3Credacted%3E`). A Dart filter runs first, so redacting the URL there
-   protects the breadcrumb on both platforms; a breadcrumb filter is Phase 5 (`setBreadcrumbFilter` is not exposed yet).
+   protects the breadcrumb on both platforms; `setBreadcrumbFilter` is not exposed by this plugin (a native breadcrumb filter set by the app still applies).
 7. The default sanitizer's rules are the SDK's and **differ per platform** (measured: the same `x-session: s1` request header
    was redacted on Android and kept on iOS; `authorization`, `set-cookie`, the `token` query parameter and JSON `token` /
    `password` values were redacted on both). Redact in the Dart filter what must be hidden on both.
@@ -280,7 +280,7 @@ options are read again. A failure to read leaves nothing accepted.
 `test/http_capture_test.dart` (real `HttpServer`, a differential test against an unwrapped client), `body_capture_test`,
 `network_pipeline_test`, `network_service_test`, `network_facade_test` (the runtime with a fake native side),
 `network_drift_test` (`test/fixtures/network_wire.json` against Dart, Java and Objective-C), JUnit `NetworkOpsTest` and
-`NetworkWireParityTest`, XCTest `BGSFlutterNetworkOpsTests`. Every one of them was mutation-checked (PLAN.md 5b).
+`NetworkWireParityTest`, XCTest `BGSFlutterNetworkOpsTests`. Every one of them was mutation-checked (counts in PLAN.md).
 Runtime: `example/integration_test/network_test.dart`.
 
 ## Verified on a device

@@ -1,4 +1,4 @@
-# Dart errors (Phase 5a)
+# Dart errors
 
 How a Dart error reaches the Bugsee backend, what the two SDKs do with it, what the installed handlers
 do (and never do), and how an obfuscated build is symbolicated. Everything below was read from source

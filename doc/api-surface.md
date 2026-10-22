@@ -1,4 +1,4 @@
-# Public API surface and its inventory (Phase 4b)
+# Public API surface and its inventory
 
 This is the written inventory the public facade was built from: every public method of the
 Android 7.4.2 and iOS 7.0.0-beta7 SDKs, whether it is cross-platform, one-platform or
@@ -11,30 +11,30 @@ Sources read: Android `bugsee/bugsee-android` tag `v7.4.2` (`3b7af6371`):
 `docs/api-7.x.md`; iOS `bugsee/bugsee-ios` `origin/nextgen` (`0581aa02c`, the 7.0.0-beta7 headers):
 `Bugsee.h`, `Bugsee.m`, `BGSBugseeEnvironment.m`, `BGSContracts.h`. Line numbers below refer to those.
 
-Phase 4a shipped `launch`, `stop`, status and `BugseeOptions`; the report-handler pipeline (native +
-the `ReportProxy`) and the secure-region widget were built internally in Phase 3 and are made public
-here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/attachments.md`); wrapper-owned log/exception capture is Phase 5 (network capture, 5b, is built: `doc/network.md`).
+Everything below is implemented. Details that have a page of their own: attachments, annotated screenshots and
+`createReport` in [attachments.md](attachments.md); Dart error reporting in [exceptions.md](exceptions.md); network capture in
+[network.md](network.md); log capture in [logs.md](logs.md); the Flutter view hierarchy in [view-hierarchy.md](view-hierarchy.md).
 
 ## Legend
 
 * **expose**: a cross-platform method with one Dart signature.
 * **expose, per platform**: exposed, with a documented difference.
-* **skip**: not exposed, with the reason. "Phase 5/6/later" means the decision is deferred, not made.
+* **skip**: not exposed, with the reason. "later" means the decision is deferred, not made.
 
 ## Inventory
 
-### Lifecycle and configuration (Phase 4a, listed for completeness)
+### Lifecycle and configuration
 
 | Capability | Android 7.4.2 | iOS 7.0.0-beta7 | Decision |
 |---|---|---|---|
-| launch (token, options) | `launch` x4 (+ manifest auto-init) | `launchWithToken:` x4 | exposed in 4a: `Bugsee.launch`, `waitUntilLaunched` |
-| stop | `stop()`, `stop(Runnable)` | `stop:` | exposed in 4a: `Bugsee.stop` |
-| status | `getStatus()`, `getLaunched()` | `status`, `launched`, delegate `bugseeDidChangeStatus:` | exposed in 4a: `status`, `statusChanges`, `getStatus`, `isLaunched` (from the lifecycle channel; the delegate is the app's) |
-| launch options | `getLaunchOptions()`, `getHostLaunchOptions()` | `getLaunchOptions`, `getHostLaunchOptions` | exposed in 4a |
-| relaunch | `relaunch` x4 | `relaunch...` x4 | **skip**: `stop()` then `launch()` is the same thing and applies new options explicitly; relaunch re-reads the saved token/options, which a wrapper that owns them does not need. Revisit with Phase 7 (crash relaunch) |
+| launch (token, options) | `launch` x4 (+ manifest auto-init) | `launchWithToken:` x4 | **expose**: `Bugsee.launch`, `waitUntilLaunched` |
+| stop | `stop()`, `stop(Runnable)` | `stop:` | **expose**: `Bugsee.stop` |
+| status | `getStatus()`, `getLaunched()` | `status`, `launched`, delegate `bugseeDidChangeStatus:` | **expose**: `status`, `statusChanges`, `getStatus`, `isLaunched` (from the lifecycle channel; the delegate is the app's) |
+| launch options | `getLaunchOptions()`, `getHostLaunchOptions()` | `getLaunchOptions`, `getHostLaunchOptions` | **expose** |
+| relaunch | `relaunch` x4 | `relaunch...` x4 | **skip**: `stop()` then `launch()` is the same thing and applies new options explicitly; relaunch re-reads the saved token/options, which a wrapper that owns them does not need. Not needed by the crash-relaunch recipes of the device harness either (`doc/verification.md`) |
 | deleteCollectedDataOnDevice | x2 (SDK must be stopped, refuses otherwise) | x2 | **skip** (later): destructive, needs a stopped SDK, and the two SDKs disagree on what `includingIntermediate` removes (Android 7.3.1 deletes the rolling capture either way). Needs its own design |
 
-### Data the app adds (exposed in 4b)
+### Data the app adds
 
 | Capability | Android | iOS | Decision |
 |---|---|---|---|
@@ -42,8 +42,8 @@ here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/at
 | user identity | `setUserIdentifier`, `getUserIdentifier`, `clearUserIdentifier` | same three | **expose** (`setUserIdentifier`, `getUserIdentifier`, `clearUserIdentifier`). One field: neither SDK has a separate name or email. Empty string clears |
 | event (name, params) | `event(String)`, `event(String, HashMap)` | `event:`, `event:params:` | **expose** `Bugsee.event(name, [params])` |
 | trace (name, value) | `trace(String, Object)` | `trace:value:` | **expose** `Bugsee.trace(name, value)` |
-| log | `log(String)`, `log(String, LogLevel)`, `log(.., requiresFiltering)` | `log:`, `log:level:`, `log:level:requiresFiltering:` | **expose** `Bugsee.log(message, {level})`. App-level log: bypasses the app's log filter (the default of both SDKs). `requiresFiltering` is **skipped**: the log filter is Phase 5 |
-| breadcrumbs | `addBreadcrumb(Breadcrumb)` + `getExchangeFactory().createBreadcrumb()` | `addBreadcrumb:` + `getExchangeFactory` | **expose** `Bugsee.addBreadcrumb(BugseeBreadcrumb)`; the factory is wrapper-internal. `setBreadcrumbFilter` is **skip** (Phase 5: filters) |
+| log | `log(String)`, `log(String, LogLevel)`, `log(.., requiresFiltering)` | `log:`, `log:level:`, `log:level:requiresFiltering:` | **expose** `Bugsee.log(message, {level})`. App-level log: bypasses the app's log filter (the default of both SDKs). `requiresFiltering` is **skipped**: an app-level log bypasses the SDK's filters by design; `Bugsee.setLogFilter` applies to the captured `print` / `forwardLog` lines only (see below) |
+| breadcrumbs | `addBreadcrumb(Breadcrumb)` + `getExchangeFactory().createBreadcrumb()` | `addBreadcrumb:` + `getExchangeFactory` | **expose** `Bugsee.addBreadcrumb(BugseeBreadcrumb)`; the factory is wrapper-internal. `setBreadcrumbFilter` is **skip**: not exposed (the SDKs' own breadcrumbs, such as Android's `http` ones, are filtered only by a native filter: see `doc/network.md`) |
 | notification relay | `notify` x5 | `notifyWithTitle:` x5 | **expose** `Bugsee.notify(title, {body, severity, fields, urgent})` |
 | APM: transaction / span | `startTransaction` x2, `startSpan`, `getActiveSpan` | same four, `BGSTransaction`/`BGSSpan` | **skip (justified, later)**: both SDKs return handle objects whose "active span" is a per-thread notion (Android thread-local, iOS pthread TLS, "does not auto-propagate across `dispatch_async`"). Every Pigeon call lands on the platform thread, so a Dart transaction would have to be a native handle with its own lifetime registry, finish/cancel semantics and a story for Dart async code that interleaves on one thread. That is a design of its own, not a method; RN built a `SpanHandles` registry for it. Both SDKs return a no-op when APM is off, so skipping loses nothing silently |
 
@@ -52,34 +52,34 @@ here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/at
 | Capability | Android | iOS | Decision |
 |---|---|---|---|
 | blackout | `startBlackout`, `endBlackout`, `isBlackout` | same three | **expose** `Bugsee.startBlackout/endBlackout/isBlackout`. 7.x semantics only: **no pause/resume shim** (6.x `pause` also suspended the loggers; blackout does not) |
-| secure views (widget) | `addSecureView(View)`, `removeSecureView`, `addSecureWebView`, fragments | `addSecureView:`, `removeSecureView:`, `addSecureWebView:`, `UIView.bugseeProtectedView` | **expose, as a widget**: `BugseeSecureView` (over the internal `BugseeSecureRegion`, Phase 3b). Native views and web views are not Flutter widgets |
-| secure rectangles | `addSecureRectangle(Rect)` (physical px), `removeSecureRectangle`, `removeAllSecureRectangles`, `getAllSecureRectangles`, `setSystemSecureRects` | `addSecureRectangle:` (points, max 10), remove, removeAll, `getAllSecureRectangles` | **skip**: the wrapper IS the rectangle provider (the SDK pulls them from the wrapper; Phase 3b). A second, app-driven set in native units would be a footgun next to a widget that does the same in Flutter units and tracks layout. Use `BugseeSecureView` |
+| secure views (widget) | `addSecureView(View)`, `removeSecureView`, `addSecureWebView`, fragments | `addSecureView:`, `removeSecureView:`, `addSecureWebView:`, `UIView.bugseeProtectedView` | **expose, as a widget**: `BugseeSecureView` (over the internal `BugseeSecureRegion`). Native views and web views are not Flutter widgets |
+| secure rectangles | `addSecureRectangle(Rect)` (physical px), `removeSecureRectangle`, `removeAllSecureRectangles`, `getAllSecureRectangles`, `setSystemSecureRects` | `addSecureRectangle:` (points, max 10), remove, removeAll, `getAllSecureRectangles` | **skip**: the wrapper IS the rectangle provider (the SDK pulls them from the wrapper). A second, app-driven set in native units would be a footgun next to a widget that does the same in Flutter units and tracks layout. Use `BugseeSecureView` |
 | secure activities | `addSecureActivity`/`removeSecureActivity`/`isSecureActivity` (string and class) | none | **skip**: Android-only and whole-screen; a Flutter app's activity is the whole app. Wrap the root in `BugseeSecureView`, or set `FLAG_SECURE` (`captureRespectFlagSecure`) |
 | `resetVideoCapturePermission` | yes (MediaProjection consent) | none | **skip** (later): Android-only, only meaningful for the fullscreen video mode |
-| `captureViewHierarchy` | yes | yes | **expose** (Phase 5c): `Bugsee.captureViewHierarchy()` flushes the plugin's copy of the Flutter tree, then asks the SDK for a pass; the SDK asks the wrapper for `vh`, which is answered from the native snapshot cache (`doc/view-hierarchy.md`). A no-op before launch, after stop and with `capture.view-hierarchy` off; no launch gate of the wrapper's own |
+| `captureViewHierarchy` | yes | yes | **expose**: `Bugsee.captureViewHierarchy()` flushes the plugin's copy of the Flutter tree, then asks the SDK for a pass; the SDK asks the wrapper for `vh`, which is answered from the native snapshot cache (`doc/view-hierarchy.md`). A no-op before launch, after stop and with `capture.view-hierarchy` off; no launch gate of the wrapper's own |
 
 ### Reports
 
 | Capability | Android | iOS | Decision |
 |---|---|---|---|
-| report handler (before / after) | `setReportHandler(ReportHandler)` | via `setWrapper:` (the wrapper's report handler); iOS has no app-level handler class | **expose** `Bugsee.setReportHandler(BugseeReportHandler?)` + `Bugsee.reportHandler` over the Phase 3c pipeline and `ReportProxy`. Attachments and screenshots: Phase 6, below |
+| report handler (before / after) | `setReportHandler(ReportHandler)` | via `setWrapper:` (the wrapper's report handler); iOS has no app-level handler class | **expose** `Bugsee.setReportHandler(BugseeReportHandler?)` + `Bugsee.reportHandler` over the native report-handler pipeline and `ReportProxy`. Attachments and screenshots: below |
 | lifecycle events | `setLifecycleEventsListener` | `bugseeLifecycleEvent:` (delegate) | **expose** `Bugsee.lifecycleEvents` (`Stream<LifecycleEvent>`, names unknown to this version preserved). The wrapper owns the SDKs' single listener slot; apps get the stream |
 | showReportDialog | x4 | x4 | **expose** `Bugsee.showReportDialog({summary, description, severity, labels})` |
 | upload (no UI) | `upload(summary, description[, severity[, labels]])` | `uploadWithSummary:` x3 | **expose** `Bugsee.upload(summary, description, {severity, labels})` |
-| createReport / upload(Report) | `createReport(listener)`, `upload(Report[, cb])` | `createReportWithCompletion:`, `uploadReport:` x2 | **expose (Phase 6)** `Bugsee.createReport({timeToLive})` -> `CreatedReport` (`upload()` / `discard()`), per platform: iOS hands a legacy `BugseeExtendedReport` (3 in-memory attachments of at most 3 MiB, no id, no annotated flag). See `doc/attachments.md` |
-| attachments, annotated screenshot (handler report) | `addAttachment(File/byte[])`, `clearAttachments`, `setScreenshot(.., annotated)`, `isScreenshotAnnotated` | `addAttachmentWith...`, `clearAttachments`, `setScreenshot:...annotated:` | **expose (Phase 6)** `ReportProxy.addAttachment` (path-first, `move`), `addAttachmentBytes` (1 MiB), `clearAttachments`, `setScreenshot(path, {annotated})`, `removeScreenshot`, and `attachments` / `screenshots` on the snapshot. `createAndAddAttachment`/`openStream`, per-attachment setters, single removal, async setters, bitmap reads: **skip** (reasons in `doc/attachments.md`) |
-| logException / logUnhandledException / onUncaughtException / logError | yes | yes | **expose (Phase 5a)** `Bugsee.logException(error, [stack])` / `logUnhandledException(error, [stack])` / `reportException(error, {stackTrace, handled, domain})` over `logException` / `logUnhandledException` (never `onUncaughtException`; `logError(NSError)` has no Dart meaning), plus the opt-in handlers `installErrorHandlers` / `runGuarded` / `listenToIsolateErrors`. `skipFrames` and `includeVideo`/`labels` are skipped (they act on the carrier's native stack / are ignored by the SDKs). Before launch and after stop both are dropped (the wrapper gates the iOS unhandled path, which the SDK does not). See `doc/exceptions.md` |
-| `testCrash` | yes | yes | **skip** (Phase 7 device verification owns crash recipes) |
+| createReport / upload(Report) | `createReport(listener)`, `upload(Report[, cb])` | `createReportWithCompletion:`, `uploadReport:` x2 | **expose** `Bugsee.createReport({timeToLive})` -> `CreatedReport` (`upload()` / `discard()`), per platform: iOS hands a legacy `BugseeExtendedReport` (3 in-memory attachments of at most 3 MiB, no id, no annotated flag). See `doc/attachments.md` |
+| attachments, annotated screenshot (handler report) | `addAttachment(File/byte[])`, `clearAttachments`, `setScreenshot(.., annotated)`, `isScreenshotAnnotated` | `addAttachmentWith...`, `clearAttachments`, `setScreenshot:...annotated:` | **expose** `ReportProxy.addAttachment` (path-first, `move`), `addAttachmentBytes` (1 MiB), `clearAttachments`, `setScreenshot(path, {annotated})`, `removeScreenshot`, and `attachments` / `screenshots` on the snapshot. `createAndAddAttachment`/`openStream`, per-attachment setters, single removal, async setters, bitmap reads: **skip** (reasons in `doc/attachments.md`) |
+| logException / logUnhandledException / onUncaughtException / logError | yes | yes | **expose** `Bugsee.logException(error, [stack])` / `logUnhandledException(error, [stack])` / `reportException(error, {stackTrace, handled, domain})` over `logException` / `logUnhandledException` (never `onUncaughtException`; `logError(NSError)` has no Dart meaning), plus the opt-in handlers `installErrorHandlers` / `runGuarded` / `listenToIsolateErrors`. `skipFrames` and `includeVideo`/`labels` are skipped (they act on the carrier's native stack / are ignored by the SDKs). Before launch and after stop both are dropped (the wrapper gates the iOS unhandled path, which the SDK does not). See `doc/exceptions.md` |
+| `testCrash` | yes | yes | **skip**: not a product feature; the device harness has its own crash recipes (`doc/verification.md`) |
 
 ### Wrapper-internal, capture-side and extension points
 
 | Capability | Decision |
 |---|---|
-| `setWrapper` / `BugseeWrapper` | **wrapper-internal** (Phases 2-3; the plugin registers itself) |
-| `addNetworkEvent`, `setNetworkEventFilter`, `getDefaultNetworkSanitizer` | **done in 5b, not as a one-to-one method**: the wrapper's own capture (`Bugsee.installNetworkCapture`) records `dart:io` and submits through the SDK's wrapper channel (`BugseeWrapperChannel` / `BGSWrapperChannel`, both shipped at the pins) with filtering required; the filter is `Bugsee.setNetworkFilter`, a Dart-side filter that runs BEFORE the SDK's native filter slot (which stays the app's); the default sanitizer is the SDK's (`capture.network.default-sanitizer`). A free-form `addNetworkEvent` for another stack is not exposed. `doc/network.md` |
-| `setLogEventFilter`, `setLogFilter` | **done in 5d, not as a one-to-one method**: `Bugsee.setLogFilter` is a Dart-side, fail-closed filter on the wrapper's own capture (`Bugsee.installLogCapture`, `forwardLog`), which the SDK then runs through the app's native log filter (`doc/logs.md`). The native slot stays the app's |
-| `setBreadcrumbFilter`, `setAdditionalDataCapture` | **skip (Phase 5)**: breadcrumb capture is still to do |
-| wrapper channel `log(tag, message, level, source)` | **done in 5d**: used with source `Custom` only (`Bugsee.installLogCapture` / `forwardLog`); `Bugsee.log` stays the app-sourced route (`source` 4) |
+| `setWrapper` / `BugseeWrapper` | **wrapper-internal** (the plugin registers itself before launch: `doc/architecture.md`) |
+| `addNetworkEvent`, `setNetworkEventFilter`, `getDefaultNetworkSanitizer` | **done, not as a one-to-one method**: the wrapper's own capture (`Bugsee.installNetworkCapture`) records `dart:io` and submits through the SDK's wrapper channel (`BugseeWrapperChannel` / `BGSWrapperChannel`, both shipped at the pins) with filtering required; the filter is `Bugsee.setNetworkFilter`, a Dart-side filter that runs BEFORE the SDK's native filter slot (which stays the app's); the default sanitizer is the SDK's (`capture.network.default-sanitizer`). A free-form `addNetworkEvent` for another stack is not exposed. `doc/network.md` |
+| `setLogEventFilter`, `setLogFilter` | **done, not as a one-to-one method**: `Bugsee.setLogFilter` is a Dart-side, fail-closed filter on the wrapper's own capture (`Bugsee.installLogCapture`, `forwardLog`), which the SDK then runs through the app's native log filter (`doc/logs.md`). The native slot stays the app's |
+| `setBreadcrumbFilter`, `setAdditionalDataCapture` | **skip**: not exposed (the native slots stay the app's) |
+| wrapper channel `log(tag, message, level, source)` | **done**: used with source `Custom` only (`Bugsee.installLogCapture` / `forwardLog`); `Bugsee.log` stays the app-sourced route (`source` 4) |
 | `getExchangeFactory` | **wrapper-internal** (used to build a breadcrumb) |
 | `getAppearance` (Android `Appearance`, iOS `BugseeTheme`) | **skip, deliberately**: the 7.x appearance system is a large per-property colour/string surface that differs between the platforms (Android namespaced keys, iOS properties); RN needed a whole bridge for it, and the 9.x one was larger still. Not a plain SDK method. A later, separate design |
 | `ext` / `registerExt` | **skip**: native modules (feedback is a separate package, decision D4: `packages/bugsee_flutter_feedback`, see its `doc/feedback.md`) |
@@ -135,8 +135,8 @@ error you can `await`, not a synchronous throw). A message never contains an att
 | `BugseeArgumentException` (`argument` names the parameter) | an argument no SDK can honour (empty name, a value outside the accepted domain, a cycle, an empty label, a blank notification title); nothing reached the SDK. Native refuses with `invalid-argument` too |
 | `BugseeAttributeException` (`AttributeFailure.invalidName`, `.invalidValue`, `.rejected`), NOT a `BugseeArgumentException` | an attribute call; `invalidName`/`invalidValue` are found before the SDK, `rejected` is the SDK's own refusal found by the read-back above, so `on BugseeArgumentException` keeps meaning "refused before the SDK" |
 | `BugseeException` | the SDK threw (`sdk-error`), the plugin is not attached (`not-attached`), the plugin is missing, or the call came from a background isolate |
-| `ReportClosedError` (`CreatedReportClosedError`) | a report edit after the handler's report was handed back (Phase 3c), or a created report that was uploaded, discarded or expired |
-| `ReportAttachmentException` (`ReportAttachmentFailure`) | a file, bytes or image the SDK or the file system refused (Phase 6); `CreateReportException` (`busy`, `timeout`) for `createReport` |
+| `ReportClosedError` (`CreatedReportClosedError`) | a report edit after the handler's report was handed back, or a created report that was uploaded, discarded or expired |
+| `ReportAttachmentException` (`ReportAttachmentFailure`) | a file, bytes or image the SDK or the file system refused; `CreateReportException` (`busy`, `timeout`, `rateLimited`, `uploadTimeout`) for `createReport` |
 
 The status vocabulary is unchanged: launch failures stay `BugseeLaunchException`.
 
@@ -153,13 +153,26 @@ preferences asynchronously). An SDK exception cannot escape: Java and Objective-
 `Bugsee.setReportHandler(BugseeReportHandler(onBeforeReportCreated:, onAfterReportCreated:))`, `null` or an empty handler
 clears; `Bugsee.reportHandler` reads it back. The handler receives a `ReportProxy`: `id`, `type`, `deliveryId`, `isLive`,
 `read()` (a `ReportSnapshot`), `setSummary`, `setDescription`, `setEmail`, `setSeverity`, `replaceLabels`, `addLabels`,
-`clearLabels`, `setAttribute`, `removeAttribute`, `clearAttributes`. Attachments and screenshots (Phase 6): `addAttachment`, `addAttachmentBytes`,
+`clearLabels`, `setAttribute`, `removeAttribute`, `clearAttributes`. Attachments and screenshots: `addAttachment`, `addAttachmentBytes`,
 `clearAttachments`, `setScreenshot`, `removeScreenshot` (path-first; `doc/attachments.md`). The delivery rules (at-most-once
-`onBefore`, at-least-once idempotent `onAfter`, the budget, what is never delivered) are the Phase 3c pipeline's and are
+`onBefore`, at-least-once idempotent `onAfter`, the budget, what is never delivered) are the pipeline's and are
 documented on `BugseeReportHandler`.
 
 ## Evidence
 
-Device runs of `example/integration_test/facade_test.dart` (Android emulator, API 33; iOS simulator, iOS 26.5): see PLAN.md
-section 4b for the readbacks, the SDK log lines and what could not be verified (notably: iOS stops a placeholder token after
-the first refused upload, and write-only calls such as `event` have no SDK readback).
+`example/integration_test/facade_test.dart` ran on an Android emulator (API 33) and an iOS simulator (26.5), next to
+`launch_test` and `cold_start_test`:
+
+* attributes (five types) and the user identifier read back from the SDKs before launch; the attribute limits listed above;
+  blackout read back before launch and `BlackoutStarted` / `BlackoutEnded` while launched; breadcrumbs `true` for all five
+  levels when launched with capture on and `false` before; the public `BugseeSecureView` mounted while launched;
+* a real `Bugsee.upload` with the public report handler on both SDKs: `before` and `after` delivered, the handler's
+  `setAttribute` / `replaceLabels` visible on the live report through `read()`, with the global attribute and the `critical`
+  severity, and the SDK's own `BeforeReportAssembled` / `AfterReportAssembled` / `BeforeReportUploaded` events.
+
+Not verified: write-only calls (`event`, `trace`, `log`, `notify`) have no SDK readback, so on a device they are only shown to
+complete without error while launched (JUnit and XCTest show what reaches the SDK seam); there was no valid token, so no
+server-side confirmation that events or breadcrumbs arrive; the order of `notify` fields on the wire; iOS `deferred` launches;
+tvOS and visionOS. iOS stops a placeholder token itself after the first refused upload (`ReportUploadFailedWithFutureRetry`,
+then `Stopping`, `Stopped`), so the integration test uploads first and tolerates later launches being refused. The rest of the
+device evidence, including the harness runs, is in [verification.md](verification.md).

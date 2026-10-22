@@ -1010,6 +1010,25 @@ exit 0
           ]).exitCode;
         }
 
+        // A missing or corrupt archive is a failure, not a clean listing.
+        expect(
+          Process.runSync('bash', [
+            'scripts/check_pub_archive.sh',
+            'no-such.tar.gz',
+          ]).exitCode,
+          isNot(0),
+        );
+        final corrupt = File(
+          '${Directory.systemTemp.createTempSync('corrupt').path}/a.tar.gz',
+        )..writeAsStringSync('not an archive');
+        expect(
+          Process.runSync('bash', [
+            'scripts/check_pub_archive.sh',
+            corrupt.path,
+          ]).exitCode,
+          isNot(0),
+        );
+
         expect(
           check([
             'pubspec.yaml',

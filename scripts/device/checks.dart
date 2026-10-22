@@ -181,14 +181,13 @@ Rect? checkRedaction(
     '${(agree * 100).toStringAsFixed(1)}% of the pixels outside the box grown by ${ring + 6} px equal the unsecured frame',
   );
   final ringBox = region.grow(ring);
-  final ringArea =
-      ringBox.width * ringBox.height - region.width * region.height;
-  final ringBlack =
-      (on.fractionOf(ringBox, black, tolerance: 24) *
-              ringBox.width *
-              ringBox.height -
-          blackInside * region.width * region.height) /
-      ringArea;
+  // Counted on the clamped rectangles, so a box near the frame edge does not skew the fraction.
+  final outerCount = on.countOf(ringBox, black, tolerance: 24);
+  final innerCount = on.countOf(region, black, tolerance: 24);
+  final ringTotal = outerCount.total - innerCount.total;
+  final ringBlack = ringTotal <= 0
+      ? 0.0
+      : (outerCount.hit - innerCount.hit) / ringTotal;
   run.expect(
     '[$label] the redaction over-covers only a little: the $ring px ring around the box is not mostly black',
     ringBlack <= 0.5,

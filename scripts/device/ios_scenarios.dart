@@ -192,7 +192,7 @@ class IosCtx {
     );
     r.checks.add(c);
     say('  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name} -- ${c.evidence}');
-    if (!c.ok && (r.status == Status.pass || r.status == Status.notPossible)) {
+    if (!c.ok && r.status != Status.fail && r.status != Status.invalid) {
       r.status = Status.fail;
     }
   }

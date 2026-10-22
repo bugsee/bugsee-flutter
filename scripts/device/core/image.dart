@@ -98,6 +98,24 @@ class RawImage {
     return total == 0 ? 0 : hit / total;
   }
 
+  /// How many pixels of [r] (clamped to the frame) are within [tolerance] of [color], and how many pixels [r]
+  /// covers once clamped.
+  ({int hit, int total}) countOf(Rect r, Rgb color, {int tolerance = 40}) {
+    var hit = 0, total = 0;
+    for (var y = r.top.clamp(0, height); y < r.bottom.clamp(0, height); y++) {
+      for (var x = r.left.clamp(0, width); x < r.right.clamp(0, width); x++) {
+        final p = at(x, y);
+        total++;
+        if ((p.r - color.r).abs() <= tolerance &&
+            (p.g - color.g).abs() <= tolerance &&
+            (p.b - color.b).abs() <= tolerance) {
+          hit++;
+        }
+      }
+    }
+    return (hit: hit, total: total);
+  }
+
   /// The fraction of the pixels OUTSIDE [hole] that are within [tolerance] (per channel) of the same
   /// pixel of [other] (same size). A frame blacked out entirely agrees with the real one nowhere
   /// outside the box.

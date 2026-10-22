@@ -191,6 +191,25 @@ void main() {
           ios['sdk'],
           reason: '$f drifted from native-versions.json',
         );
+        // The revision too: the device verification harness matches it, and a retagged package
+        // keeps its version string.
+        expect(
+          spm.single['state']['revision'],
+          ios['spmRevision'],
+          reason: '$f: bugsee/spm revision drifted from native-versions.json',
+        );
+        final fb = pins.where(
+          (p) =>
+              (p['location'] as String).toLowerCase() ==
+              (ios['feedbackSpmUrl'] as String).toLowerCase(),
+        );
+        if (fb.isNotEmpty) {
+          expect(
+            fb.single['state']['revision'],
+            ios['feedbackSpmRevision'],
+            reason: '$f: bugsee/feedback-spm revision drifted',
+          );
+        }
       }
     });
 

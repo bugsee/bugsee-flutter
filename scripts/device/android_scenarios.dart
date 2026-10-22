@@ -209,7 +209,9 @@ class AndroidCtx {
     );
     r.checks.add(c);
     say('  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name} -- ${c.evidence}');
-    if (!c.ok && r.status == Status.pass) r.status = Status.fail;
+    if (!c.ok && r.status != Status.fail && r.status != Status.invalid) {
+      r.status = Status.fail;
+    }
   }
 
   Future<Bundle> _report(
@@ -772,7 +774,7 @@ class AndroidCtx {
     );
     return sh(
       [
-        tc.flutter.replaceAll('/flutter', '/dart'),
+        tc.dartExecutable,
         'scripts/device/../verify_symbolization.dart',
         '--symbols',
         file.path,

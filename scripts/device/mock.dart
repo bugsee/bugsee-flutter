@@ -32,6 +32,18 @@ class Mock {
         '127.0.0.1:$port is already in use: stop whatever listens there, or pass --port',
       );
     }
+    // iOS bundles are zstd zips (method 93), which Python's zipfile reads from 3.14 on: with an older
+    // python3 every iOS scenario would end INVALID with "no bundle reached the mock".
+    final py = await sh([
+      'python3',
+      '-c',
+      'import sys; print(sys.version_info[0] * 100 + sys.version_info[1])',
+    ]);
+    if (!py.ok || (int.tryParse(py.text) ?? 0) < 314) {
+      throw StateError(
+        'python3 3.14 or later is required (the mock reads zstd zip entries): found ${py.ok ? py.text : py.stderr}',
+      );
+    }
     final dump = '$workDir/mock-bundles-$port';
     Directory(dump).createSync(recursive: true);
     final log = '$workDir/mock-$port.log';

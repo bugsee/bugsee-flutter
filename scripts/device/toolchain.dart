@@ -73,6 +73,11 @@ class Toolchain {
         '${Platform.environment['PATH']}',
   };
 
+  /// The `dart` next to the Flutter executable (its own `bin/`), or plain `dart` when [flutter] is a bare
+  /// command name. Never derived by editing the path text (a checkout may live in a directory named flutter).
+  String get dartExecutable =>
+      flutter.contains('/') ? '${File(flutter).parent.path}/dart' : 'dart';
+
   String get adbPath => '$androidHome/platform-tools/adb';
 
   String get apkanalyzer {

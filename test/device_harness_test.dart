@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../scripts/device/build.dart';
 import '../scripts/device/checks.dart';
 import '../scripts/device/report.dart';
+import '../scripts/device/toolchain.dart';
 import '../scripts/device/core/bundle.dart';
 import '../scripts/device/core/experiment.dart';
 import '../scripts/device/core/expectations.dart';
@@ -1087,6 +1088,49 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       final r = await redaction(on, off);
       expect(r.status, Status.fail);
     });
+
+    test(
+      'a box near the frame edge is judged on the clamped ring (no spurious failure)',
+      () async {
+        // The box starts 5 px from the left edge: the 14 px ring runs off the frame.
+        RawImage edge(bool secured) {
+          final rgb = Uint8List(200 * 200 * 3)
+            ..fillRange(0, 200 * 200 * 3, 255);
+          for (var y = 50; y < 90; y++) {
+            for (var x = 5; x < 65; x++) {
+              final i = (y * 200 + x) * 3;
+              rgb.setRange(i, i + 3, secured ? [0, 0, 0] : [255, 0, 255]);
+            }
+          }
+          return RawImage(200, 200, rgb);
+        }
+
+        expect((await redaction(edge(true), edge(false))).status, Status.pass);
+        final c = edge(
+          true,
+        ).countOf(const Rect(-9, 36, 79, 104), const Rgb(0, 0, 0));
+        expect(c.total, (79 - 0) * (104 - 36));
+      },
+    );
+
+    test(
+      'the dart next to flutter is found from its directory, not by editing the path',
+      () {
+        Toolchain tc(String flutter) => Toolchain(
+          repoRoot: '.',
+          workDir: '.',
+          flutter: flutter,
+          javaHome: null,
+          gradleHome: '.',
+          androidHome: '.',
+        );
+        expect(
+          tc('/Users/x/flutter/bin/flutter').dartExecutable,
+          '/Users/x/flutter/bin/dart',
+        );
+        expect(tc('flutter').dartExecutable, 'dart');
+      },
+    );
 
     test('an unredacted box fails', () async {
       expect(

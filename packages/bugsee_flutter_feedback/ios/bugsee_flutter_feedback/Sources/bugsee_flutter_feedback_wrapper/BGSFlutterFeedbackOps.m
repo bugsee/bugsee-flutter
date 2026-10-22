@@ -43,8 +43,9 @@ static NSString *const kSdkError = @"sdk-error";
 - (void)installListener:(id<BGSFlutterFeedbackListener>)listener {
   @synchronized(self) {
     if (listener != nil && !_installed) {
-      _installed = YES;
+      // Marked only once the add-on took it: a raise leaves the next call to try again.
       _install(_adapter);
+      _installed = YES;
     }
     _adapter.target = listener;
   }

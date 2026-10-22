@@ -193,7 +193,10 @@ final class FeedbackRuntime implements FeedbackFlutterApi {
 
   void _listenersChanged() {
     if (!_supported) return;
-    _syncChain = _syncChain.then((_) => _syncListener());
+    // Never a failed chain: whatever _syncListener throws, the next change of subscribers runs.
+    _syncChain = _syncChain
+        .then((_) => _syncListener())
+        .catchError((Object _) {});
   }
 
   Future<void> _syncListener() async {
@@ -207,11 +210,19 @@ final class FeedbackRuntime implements FeedbackFlutterApi {
       if (want == _listenerOn) return;
       await _native('setListenerEnabled', () => host.setListenerEnabled(want));
       _listenerOn = want;
-    } on BugseeFeedbackException catch (e, s) {
+    } catch (e, s) {
       // A stream cannot throw from `listen`: the subscribers hear it as an error event, and the
-      // next change of subscribers tries again.
+      // next change of subscribers tries again. Anything that is not already ours (a decode error
+      // of a reply, a channel StateError) is wrapped, so the subscribers only ever see one type.
+      final error = e is BugseeFeedbackException
+          ? e
+          : BugseeFeedbackException(
+              BugseeFeedbackFailure.nativeError,
+              'setListenerEnabled: ${e.runtimeType}',
+              cause: e,
+            );
       for (final c in [_received, _sent]) {
-        if (c.hasListener) c.addError(e, s);
+        if (c.hasListener) c.addError(error, s);
       }
     }
   }

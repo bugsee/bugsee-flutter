@@ -948,15 +948,16 @@ exit 0
         final calls = File(log).readAsLinesSync();
         expect(calls, hasLength(3));
         expect(calls[0], endsWith(': pub get'));
+        // The archive is built (and checked) BEFORE anything is published.
+        expect(calls[1], contains('pub publish --to-archive='));
         expect(
-          calls[1],
+          calls[2],
           matches(
             RegExp(
               r'/packages/bugsee_flutter_feedback: pub publish --dry-run$',
             ),
           ),
         );
-        expect(calls[2], contains('pub publish --to-archive='));
         expect(
           calls.where((c) => RegExp(r'pub publish$').hasMatch(c)),
           isEmpty,
@@ -964,15 +965,23 @@ exit 0
       },
     );
 
-    test('a leak in the sibling archive fails the script', () {
-      final r = Process.runSync(
-        'bash',
-        ['scripts/publish_feedback.sh'],
-        environment: {...fakeFlutter(newLog()), 'FAKE_LEAK': '1'},
-      );
-      expect(r.exitCode, isNot(0));
-      expect('${r.stderr}', contains('android/local.properties'));
-    });
+    test(
+      'a leak in the sibling archive fails the script before anything is published',
+      () {
+        final log = newLog();
+        final r = Process.runSync(
+          'bash',
+          ['scripts/publish_feedback.sh'],
+          environment: {...fakeFlutter(log), 'FAKE_LEAK': '1'},
+        );
+        expect(r.exitCode, isNot(0));
+        expect('${r.stderr}', contains('android/local.properties'));
+        // Nothing is published (not even a dry run) after the check failed.
+        final calls = File(log).readAsStringSync();
+        expect(calls, isNot(contains('--dry-run')));
+        expect(calls, isNot(matches(RegExp(r'pub publish$', multiLine: true))));
+      },
+    );
 
     test(
       'the archive check rejects every kind of leak and accepts a clean archive',

@@ -46,6 +46,7 @@ git -C "$root" ls-files -z | rsync -a --from0 --files-from=- "$root/" "$tmp/"
 cd "$tmp"
 flutter pub get
 cd packages/bugsee_flutter_feedback
-flutter pub publish ${mode[@]+"${mode[@]}"}
+# The archive is built and checked BEFORE anything is published: a real publish cannot be undone.
 flutter pub publish --to-archive="$tmp/feedback.tar.gz" > /dev/null
 "$root/scripts/check_pub_archive.sh" "$tmp/feedback.tar.gz"
+flutter pub publish ${mode[@]+"${mode[@]}"}

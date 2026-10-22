@@ -22,6 +22,7 @@ class FakeNative extends FeedbackHostApi {
   PlatformException? failListener;
   PlatformException? failAttach;
   bool throwMissing = false;
+  Object? throwOnceOnListener;
   int attachCalls = 0;
   Completer<void>? listenerGate;
   int inFlight = 0;
@@ -66,6 +67,12 @@ class FakeNative extends FeedbackHostApi {
   Future<void> setListenerEnabled(bool enabled) async {
     _missing();
     calls.add('listener:$enabled');
+    final boom = throwOnceOnListener;
+    if (boom != null) {
+      throwOnceOnListener = null;
+      // ignore: only_throw_errors
+      throw boom;
+    }
     inFlight++;
     if (inFlight > maxInFlight) maxInFlight = inFlight;
     try {
@@ -413,6 +420,37 @@ void main() {
       expect(native.maxInFlight, 1);
       await b.cancel();
     });
+
+    test(
+      'an unexpected error does not stop the listener sync for good',
+      () async {
+        native.throwOnceOnListener = StateError('channel closed');
+        final errors = <Object>[];
+        final first = runtime.messagesReceived.listen(
+          (_) {},
+          onError: errors.add,
+        );
+        await settle();
+        await settle();
+        expect(errors, hasLength(1));
+        expect(errors.single, isA<BugseeFeedbackException>());
+        expect(
+          (errors.single as BugseeFeedbackException).reason,
+          BugseeFeedbackFailure.nativeError,
+        );
+        await first.cancel();
+        await settle();
+        // The chain is alive: the next listen installs the listener.
+        final again = runtime.messagesReceived.listen((_) {});
+        await settle();
+        await settle();
+        expect(
+          native.calls.where((c) => c.startsWith('listener:')).last,
+          'listener:true',
+        );
+        await again.cancel();
+      },
+    );
 
     test('a new isolate attaches again and installs its own listener', () async {
       final first = runtimeOn(native);

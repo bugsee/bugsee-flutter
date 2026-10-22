@@ -309,6 +309,22 @@
   XCTAssertEqual(installs.count, 1u);
 }
 
+- (void)testTheAdapterSlotTriesAgainAfterTheAddOnRaised {
+  __block int calls = 0;
+  BGSFlutterFeedbackAdapterSlot *slot = [[BGSFlutterFeedbackAdapterSlot alloc]
+      initWithInstaller:^(id adapter) {
+        calls++;
+        if (calls == 1) @throw [NSException exceptionWithName:@"Boom" reason:@"x" userInfo:nil];
+      }];
+  NSMutableArray *got = [NSMutableArray array];
+  id<BGSFlutterFeedbackListener> one = (id<BGSFlutterFeedbackListener>)[self collectorInto:got];
+  XCTAssertThrows([slot installListener:one]);
+  [slot installListener:one];
+  XCTAssertEqual(calls, 2, @"a raise must not count as installed");
+  [(id<BGSFlutterFeedbackListener>)slot.adapter onNewMessageSent:@"x"];
+  XCTAssertEqualObjects(got, @[ @"x" ]);
+}
+
 - (id)collectorInto:(NSMutableArray *)into {
   return [[FeedbackCollector alloc] initInto:into];
 }

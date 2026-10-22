@@ -91,7 +91,10 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
   replacement are not).
 * A repeated `installLogCapture` drops nothing (it keeps the policy in force) and attaches once.
 * A throttled `debugPrint` whose timer predates the install prints later, from a zone that carries the hook: pieces of a message
-  the hook recorded a moment ago (3 s) are recognised and not recorded again as `print`.
+  the hook recorded a moment ago (3 s) are recognised and not recorded again as `print`. The match is narrow: the piece must sit
+  at word boundaries and be at least 12 characters (or a whole line of the message), each piece is used up by one print, the
+  remembered text is capped like a recorded line, and every such drop is counted (`droppedEchoes`). A short `print` of the app
+  ('12', '}') is never taken for an echo; a wrapped tail shorter than 12 characters may be recorded once more as `print`.
 * **Hot restart**: hooks, queue and policy are per isolate; the new isolate's `main` installs again. Native keeps no log state.
   Installing over a hook an old service left behind records once.
 * Calls from a background isolate: `installLogCapture` throws a `BugseeException`; output of another isolate is not captured.

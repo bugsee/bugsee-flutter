@@ -1,10 +1,11 @@
 # bugsee_flutter_feedback
 
-> **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Released together with
-> [`bugsee_flutter`](../../README.md) 10.0.0-dev.1; nothing here works without it.
+> **Version 10.0.0-dev.1, not published yet.** Released together with
+> [`bugsee_flutter`](https://pub.dev/packages/bugsee_flutter) at the same version; nothing here works without it.
 
-The in-app feedback chat for [`bugsee_flutter`](../../README.md): your users write to you from inside the
-app, with the same session context Bugsee already captures, and you answer from the Bugsee dashboard.
+The in-app feedback chat for [`bugsee_flutter`](https://pub.dev/packages/bugsee_flutter): your users write to you from inside the
+app, with the same session context Bugsee already captures, and you answer from the Bugsee dashboard. It replaces the 9.x
+`Bugsee.showFeedbackUI`, `setDefaultFeedbackGreeting` and `setNewFeedbackMessagesCallback`.
 
 It is a separate package on purpose, like the native SDKs' own split (`bugsee-android-feedback`, and
 `feedback-spm` on iOS): apps that never show the chat do not carry it. On iOS it is a SwiftUI screen, on
@@ -25,7 +26,7 @@ Use **the same version of both** (this package's `bugsee_flutter` constraint is 
 checks at run time that the core is the same major and minor): the two are released together and pin the same
 native SDK versions.
 
-Everything `bugsee_flutter` needs applies unchanged (see its README): Flutter 3.41.0 or newer, the
+Everything `bugsee_flutter` needs applies unchanged (see [its README](https://github.com/bugsee/bugsee-flutter/blob/nextgen/README.md)): Flutter 3.41.0 or newer, the
 `com.bugsee.android.gradle` Gradle plugin applied in your app, iOS 15.0 or newer, and Swift Package Manager
 for iOS (there is no CocoaPods pod: `flutter config --enable-swift-package-manager` where it is not the default).
 
@@ -81,7 +82,7 @@ That is the whole API, because it is all both SDKs have: show the chat, the gree
 SDK has an unread count, a notification setting, an option key for the chat, or a separate user name or e-mail
 (the chat asks the user for an e-mail address itself, and skips that screen when the identifier you set with
 `Bugsee.setUserIdentifier` contains an `@`). The chat's colours (`FeedbackAppearance` on Android, `BugseeTheme` on iOS) are
-not exposed, like the core's appearance system (see `bugsee_flutter`'s `doc/api-surface.md`): the iOS 7.0.0-beta7 chat does not read
+not exposed, like the core's appearance system (see `doc/api-surface.md` of `bugsee_flutter`): the iOS 7.0.0-beta7 chat does not read
 `BugseeTheme` anyway. The details, with source references, are in [doc/feedback.md](doc/feedback.md).
 
 Call it after `Bugsee.launch`: on Android `show()` does nothing before the SDK has launched; on iOS it presents a chat

@@ -18,7 +18,7 @@ String read(String path) => File(path).readAsStringSync();
 /// satisfy a guard.
 String code(String path) => read(path)
     .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+    .replaceAll(RegExp(r'(?<![:/])//[^\n]*'), '');
 
 String liveOf(String yaml) =>
     yaml.split('\n').where((l) => !l.trimLeft().startsWith('#')).join('\n');
@@ -393,12 +393,12 @@ void main() {
         expect(
           feedbackPubspec,
           contains(
-            'package: com.bugsee.flutter.feedback\n        pluginClass: BugseeFlutterFeedbackPlugin',
+            'package: com.bugsee.flutter.feedback\n        pluginClass: BugseeFlutterFeedbackPlugin\n',
           ),
         );
         expect(
           feedbackPubspec,
-          contains('ios:\n        pluginClass: BugseeFlutterFeedbackPlugin'),
+          contains('ios:\n        pluginClass: BugseeFlutterFeedbackPlugin\n'),
         );
         expect(
           File(

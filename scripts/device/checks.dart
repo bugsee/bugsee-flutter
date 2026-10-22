@@ -273,7 +273,9 @@ Future<RawImage?> lastVideoFrame(Bundle b, String workDir, String tag) async {
     if (!probe.ok) return null;
     final wh = probe.text.split(',');
     final w = int.parse(wh[0]), h = int.parse(wh[1]);
-    final raw = await sh([
+    // The last frame: seek to the end when the video is long enough to, else (a video shorter than the
+    // seek, as a short iOS recording can be) decode every frame and keep the last.
+    var raw = await sh([
       'ffmpeg',
       '-v',
       'error',
@@ -290,7 +292,36 @@ Future<RawImage?> lastVideoFrame(Bundle b, String workDir, String tag) async {
       '-',
     ], raw: true);
     if (!raw.ok || raw.bytes == null || raw.bytes!.length < w * h * 3) {
-      return null;
+      raw = await sh(
+        [
+          'ffmpeg',
+          '-v',
+          'error',
+          '-i',
+          mp4.path,
+          '-f',
+          'rawvideo',
+          '-pix_fmt',
+          'rgb24',
+          '-',
+        ],
+        raw: true,
+        timeout: const Duration(minutes: 3),
+      );
+      if (!raw.ok || raw.bytes == null || raw.bytes!.length < w * h * 3) {
+        return null;
+      }
+      final all = raw.bytes!;
+      final frames = all.length ~/ (w * h * 3);
+      return RawImage(
+        w,
+        h,
+        Uint8List.sublistView(
+          all,
+          (frames - 1) * w * h * 3,
+          frames * w * h * 3,
+        ),
+      );
     }
     return RawImage(w, h, Uint8List.sublistView(raw.bytes!, 0, w * h * 3));
   } finally {

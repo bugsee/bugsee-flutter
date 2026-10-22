@@ -273,6 +273,11 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
         task();
       }
       log:^(NSString *line) {
+      }
+      // A clock that never advances: the delivery gap is deducted from the deadline, and a real
+      // clock made the deadline 1999 ms on a slow runner. The tests assert the full budget.
+      clock:^int64_t {
+        return 0;
       }];
   *owner = [pipeline attachSink:^(BGSFlutterReportRequest *request, dispatch_block_t unreachable) {
     @synchronized(requests) {

@@ -40,6 +40,7 @@ class Rig {
     controller = ViewHierarchyController(
       publisher: publisher,
       foreground: foreground,
+      readRetryDelays: const [],
       readOption: () async {
         reads++;
         final gate = optionGate;
@@ -143,6 +144,98 @@ void main() {
         expect(r.builds, 0);
         expect(r.sent, isEmpty);
       });
+    });
+
+    testWidgets('a read that fails once is retried, not final', (tester) async {
+      await tester.pumpWidget(const SizedBox());
+      var calls = 0;
+      final publisher = ViewHierarchyPublisher(
+        send: (m) async => true,
+        epoch: 1,
+        builder: (limits, now) => fake('A'),
+      );
+      final controller = ViewHierarchyController(
+        publisher: publisher,
+        readRetryDelays: const [
+          Duration(milliseconds: 100),
+          Duration(milliseconds: 200),
+        ],
+        readOption: () async {
+          if (++calls < 3) throw PlatformException(code: 'channel-error');
+          return true;
+        },
+      );
+      controller.onStatus(BugseeStatus.launched);
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(publisher.active, isFalse);
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(calls, 3);
+      expect(publisher.active, isTrue);
+      await publisher.deactivate();
+      publisher.dispose();
+    });
+
+    testWidgets('a read that keeps failing ends as off, after the retries', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const SizedBox());
+      var calls = 0;
+      final publisher = ViewHierarchyPublisher(
+        send: (m) async => true,
+        epoch: 1,
+        builder: (limits, now) => fake('A'),
+      );
+      final controller = ViewHierarchyController(
+        publisher: publisher,
+        readRetryDelays: const [
+          Duration(milliseconds: 50),
+          Duration(milliseconds: 50),
+        ],
+        readOption: () async {
+          calls++;
+          throw PlatformException(code: 'channel-error');
+        },
+      );
+      controller.onStatus(BugseeStatus.launched);
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      expect(calls, 3, reason: 'the first read and two retries, no more');
+      expect(publisher.active, isFalse);
+      publisher.dispose();
+    });
+
+    testWidgets('a stop during the retry wait ends the retries', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const SizedBox());
+      var calls = 0;
+      final publisher = ViewHierarchyPublisher(
+        send: (m) async => true,
+        epoch: 1,
+        builder: (limits, now) => fake('A'),
+      );
+      final controller = ViewHierarchyController(
+        publisher: publisher,
+        readRetryDelays: const [
+          Duration(milliseconds: 100),
+          Duration(milliseconds: 100),
+        ],
+        readOption: () async {
+          calls++;
+          throw PlatformException(code: 'channel-error');
+        },
+      );
+      controller.onStatus(BugseeStatus.launched);
+      await tester.pump(const Duration(milliseconds: 10));
+      controller.onStatus(BugseeStatus.stopped);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(calls, 1);
+      publisher.dispose();
     });
 
     testWidgets('an option that cannot be read counts as off', (tester) async {

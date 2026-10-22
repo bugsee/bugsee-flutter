@@ -54,8 +54,9 @@ final class SecurePlacement implements ViewTreeObserver.OnGlobalLayoutListener {
     private final SecureRectangleStore store;
     private final SecureEnvironment environment;
 
+    /** Read off the main thread too (the view-hierarchy blackout gate): volatile. */
     @Nullable
-    private Activity activity;
+    private volatile Activity activity;
     @Nullable
     private FlutterView observed;
     private final int[] location = new int[2];

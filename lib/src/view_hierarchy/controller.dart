@@ -24,6 +24,11 @@ class ViewHierarchyController with WidgetsBindingObserver {
     required this.publisher,
     required this.readOption,
     bool? foreground,
+    this.readRetryDelays = const [
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+    ],
   }) : _foreground = foreground ?? _foregroundNow();
 
   final ViewHierarchyPublisher publisher;
@@ -31,6 +36,11 @@ class ViewHierarchyController with WidgetsBindingObserver {
   /// Reads the launch options in effect and answers whether the SDK captures the view hierarchy.
   /// An error counts as "off" (fail closed).
   final Future<bool> Function() readOption;
+
+  /// Waits between the retries of an option read that FAILED (a channel hiccup right after
+  /// `launched` must not switch publishing off for the whole launch); a read that answered
+  /// "off" is final. After the last retry it counts as off.
+  final List<Duration> readRetryDelays;
 
   bool _launched = false;
   bool _optionOn = false;
@@ -82,11 +92,18 @@ class ViewHierarchyController with WidgetsBindingObserver {
     }
     _launched = true;
     unawaited(() async {
-      bool on;
-      try {
-        on = await readOption();
-      } catch (_) {
-        on = false;
+      var on = false;
+      for (var attempt = 0; ; attempt++) {
+        try {
+          on = await readOption();
+          break;
+        } catch (_) {
+          on = false;
+        }
+        if (attempt >= readRetryDelays.length) break;
+        await Future<void>.delayed(readRetryDelays[attempt]);
+        // A newer transition during the wait wins: stop retrying for a launch that is over.
+        if (generation != _generation) return;
       }
       // A newer transition (a stop while the read was in flight) wins.
       if (generation != _generation) return;

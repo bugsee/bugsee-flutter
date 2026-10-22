@@ -235,8 +235,13 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
   BGSCountingCallback *fromRefined = [[BGSCountingCallback alloc] init];
   [(id<BugseeWrapper>)[BGSFlutterWrapper wrapperAtProcessStart] requestDataWithType:@"vh" callback:fromPlaceholder];
   [(id<BugseeWrapper>)registered.firstObject requestDataWithType:@"vh" callback:fromRefined];
-  XCTAssertEqualObjects(fromRefined.last, @"A0B[0,0,10,20]C");
-  XCTAssertEqualObjects(fromPlaceholder.last, fromRefined.last);
+  // The age (the number after "A") depends on the clock: compare what does not.
+  NSRegularExpression *age = [NSRegularExpression regularExpressionWithPattern:@"^A\\d+B" options:0 error:nil];
+  NSString *(^withoutAge)(NSString *) = ^NSString *(NSString *s) {
+    return [age stringByReplacingMatchesInString:s options:0 range:NSMakeRange(0, s.length) withTemplate:@"AB"];
+  };
+  XCTAssertEqualObjects(withoutAge(fromRefined.last), @"AB[0,0,10,20]C");
+  XCTAssertEqualObjects(withoutAge(fromPlaceholder.last), withoutAge(fromRefined.last));
 }
 
 /// The wrapper is replaced at runtime when Dart refines the identity; the replacement answers too.

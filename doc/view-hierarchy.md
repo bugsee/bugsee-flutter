@@ -97,8 +97,7 @@ While active the publisher (`publisher.dart`):
   and the cut nodes carry `"truncated": true` (and the root's `options.truncated`), the answer stays valid; a template over
   the byte cap is dropped, not trimmed.
 
-Measured: a stock Material screen (app bar with tabs, a `TabBarView`, a list of 40 `Card(ListTile(Icon, Text, Checkbox))`) is **771 nodes / 81 KB** (~105 bytes a node) and is not cut at the limits (a regression test builds it with and without caps and compares); the small example screen is 316 nodes / 30.8 KB, and one walk of it took 2.7 ms on the Android emulator and 1.8 ms on the iOS simulator (debug build, JIT, so a ceiling). The walk's byte estimate is the real size within a few percent and stops 1/16 short of the cap; the exact check at the end drops a template that is still over.
-30.8 KB on the Android emulator (`integration_test/view_hierarchy_test.dart` prints the cost of one walk).
+Measured: a stock Material screen (app bar with tabs, a `TabBarView`, a list of 40 `Card(ListTile(Icon, Text, Checkbox))`) is **771 nodes / 81 KB** (~105 bytes a node) and is not cut at the limits (a regression test builds it with and without caps and compares); the small example screen is 316 nodes / 30.8 KB, and one walk of it took 2.7 ms on the Android emulator and 1.8 ms on the iOS simulator (debug build, JIT, so a ceiling). The walk's byte estimate is the real size within a few percent and stops 1/16 short of the cap; the exact check at the end drops a template that is still over. `integration_test/view_hierarchy_test.dart` prints the cost of one walk.
 
 ### What the answer is, and when it is null
 

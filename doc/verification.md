@@ -149,7 +149,7 @@ Android, from the crash cycle of scenario 2 (the wrapper's own log lines, the Da
 | Dart handler ran | `onBefore` once and `onAfter` once, for the recovered report; type `crash`; one `deliveryId` per phase |
 | `isTerminating` | not visible to Dart (`ReportProxy` has no such field by design). The observable: the wrapper completes `isTerminating=true` deliveries natively without Dart, and Dart ran, so it was `false`, as workbook 7.1.3 says |
 | Thread | the SDK called the native handler on a thread other than main (`phase=before` logged with tid != pid), the wrapper hopped to main for Dart (`delivery gap` and `completed by=dart` on tid == pid). The wrapper gave it the LIVE window (`deadline=20000`), which it grants only to the SDK's `BugseeReportHandlerThread`: **a native-crash report recovered after a normal session is dispatched like a live report, on the waited-for handler thread, not on the bounded early-crash thread and not on main** (the workbook table says main) |
-| Timing | before at ~0.6 to 1.3 s and after at ~1.1 to 1.8 s since `main()` of the relaunched process; `delivery gap` 113 to 295 ms (the hop to the platform thread), `remaining` ~19.7 s of 20 s |
+| Timing | across the runs, before at 0.4 to 1.3 s and after at 0.4 to 1.8 s since `main()` of the relaunched process (a loaded host is the slow end); `delivery gap` 113 to 295 ms (the hop to the platform thread), `remaining` ~19.7 s of 20 s |
 | Completion | by Dart both times, never by the deadline |
 | Enrichment | **lands**: the recovered bundle's manifest has the attributes `verify.before` / `verify.after` the handler set, the label `verify-after`, and the file `verify-enrichment` (content equal to what the handler wrote) |
 
@@ -246,8 +246,11 @@ of the report's video** (ffmpeg, raw RGB) is compared:
 * the **report screenshot is not usable evidence on this setup**: it decodes to one flat colour (all black), with the region
   secured and unsecured alike, in debug and release (see Findings). The video frame is the evidence.
 
-iOS: the simulator is 3x and fixed (`wm density` has no iOS equivalent): at 3x (ratio 3.0, physical 1206x2622) the redaction check passes on the report
-video (box black, none of the region shows). A density change at run time is NOT POSSIBLE on a simulator.
+iOS: the simulator is 3x and fixed (`wm density` has no iOS equivalent): at 3x (ratio 3.0, physical 1206x2622) the secure box is found in the
+report video (416x880, a QuickTime `.mov`) and is black, 100.0 % of it, with the region secured; **the iOS report screenshot has real content** (a 484x1024
+JPEG) and shows the same: the box is magenta unsecured and black, none of the colour showing, secured. The iOS video's layout record
+(`video.aux.json`: `density: 3`, `frameW: 402`, `frameH: 874`) is not the Android one, so the placement-from-the-logical-box check was not run there; the
+redaction check was. A density change at run time is NOT POSSIBLE on a simulator.
 
 ### 8. Hot restart
 

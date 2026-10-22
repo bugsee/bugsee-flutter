@@ -85,6 +85,13 @@ class AndroidDevice {
     await adb(['shell', 'am', 'start', '-n', '$pkg/.MainActivity', ...extras]);
   }
 
+  /// Wakes the display and dismisses the keyguard: a sleeping screen stops the activity, and a stopped
+  /// activity gets no metrics change and draws no frames.
+  Future<void> wake() async {
+    await adb(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+    await adb(['shell', 'wm', 'dismiss-keyguard']);
+  }
+
   /// `true` when the app's window composes a `SurfaceView` layer (Flutter's default render mode), `false`
   /// for a `TextureView` (the `transparent` background mode): from SurfaceFlinger's layer list.
   Future<bool> hasSurfaceViewLayer() async => (await shell(

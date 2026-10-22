@@ -124,6 +124,7 @@ class AndroidSession {
       await dev.forceStop();
       await dev.start(extras: extras);
     }
+    await dev.wake();
     final pid = await dev.waitForPid(timeout: const Duration(seconds: 30));
     if (pid == null) {
       run.guard('SDK launched', ['the app process did not start'], '');

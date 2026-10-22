@@ -1005,14 +1005,23 @@ class AndroidCtx {
         // Asked again until the app reports the new ratio: a density change makes the activity lay out
         // again, and a loaded emulator can take a while.
         VerifyEvent? geo;
-        for (var attempt = 0; attempt < 12 && geo == null; attempt++) {
-          await s.command('geometry');
-          geo = await s.waitEvent(
-            (e) =>
-                e.kind == 'geometry' &&
-                (e['devicePixelRatio'] as num).toDouble() == dpi / 160.0,
-            timeout: const Duration(seconds: 8),
-          );
+        // Two tries at the density itself: if the app never sees the new ratio the second try resets and
+        // sets it again (the screen is woken first: a sleeping display stops the activity).
+        for (var round = 0; round < 2 && geo == null; round++) {
+          if (round == 1 && dpi != base) {
+            await dev.density(null);
+            await dev.density(dpi);
+          }
+          await dev.wake();
+          for (var attempt = 0; attempt < 6 && geo == null; attempt++) {
+            await s.command('geometry');
+            geo = await s.waitEvent(
+              (e) =>
+                  e.kind == 'geometry' &&
+                  (e['devicePixelRatio'] as num).toDouble() == dpi / 160.0,
+              timeout: const Duration(seconds: 8),
+            );
+          }
         }
         run.expect(
           '[$name @${dpi}dpi] the app sees devicePixelRatio ${dpi / 160}',

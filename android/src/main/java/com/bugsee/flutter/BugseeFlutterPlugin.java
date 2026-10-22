@@ -106,6 +106,8 @@ public class BugseeFlutterPlugin
     private FacadeOps.Sdk facade;
     /** Network injection (Phase 5b); non-null while attached, like {@link #facade}. */
     private volatile NetworkOps.Sdk network;
+    /** Log injection (Phase 5d); non-null while attached, like {@link #network}. */
+    private volatile LogOps.Sdk logs;
     private volatile ExceptionOps.Sdk exceptions;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
@@ -118,6 +120,7 @@ public class BugseeFlutterPlugin
         sdk = new BugseeSdk(binding.getApplicationContext());
         facade = new BugseeFacadeSdk();
         network = new BugseeNetworkSdk(NetworkChannelHolder.shared());
+        logs = new BugseeLogSdk(NetworkChannelHolder.shared());
         exceptions = new BugseeExceptionSdk();
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
@@ -186,6 +189,7 @@ public class BugseeFlutterPlugin
         sdk = null;
         facade = null;
         network = null;
+        logs = null;
         exceptions = null;
     }
 
@@ -873,6 +877,19 @@ public class BugseeFlutterPlugin
                     "the plugin is not attached to an engine", null);
         }
         return (long) NetworkOps.addAll(current, events);
+    }
+
+    // ---- Log capture (Phase 5d; see LogOps) -------------------------------------------------------
+
+    @NonNull
+    @Override
+    public Long addLogLines(@NonNull final List<Messages.LogLineMessage> lines) {
+        final LogOps.Sdk current = logs;
+        if (current == null) {
+            throw new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null);
+        }
+        return (long) LogOps.addAll(current, lines);
     }
 
     // ---- Exceptions (Phase 5a; see ExceptionOps) ----------------------------------------------

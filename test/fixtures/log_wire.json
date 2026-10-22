@@ -1,0 +1,35 @@
+{
+  "_comment": "What the log capture repeats across Dart, Java and Objective-C, and what the SDKs define. Compared with Dart, the Java/ObjC sources (test/logs_drift_test.dart) and the REAL SDK enums (LogWireParityTest.java, BGSFlutterLogOpsTests.m). The source is a constant of native code: the wrapper channel accepts Custom 98 (the host runtime's own logs), WebView 5, StdOut 1, StdErr 2 and Unknown 0 and records every other value as Custom; this wrapper claims only Custom, never Bugsee (4, the app's own Bugsee.log, which would also skip the app's log filter). Levels are the SDKs' LogLevel / BugseeLogLevel values (the same on both; Breadcrumb levels are not).",
+  "source": 98,
+  "androidSourceEnum": "Custom",
+  "iosSourceConstant": "BGSLogEventSourceCustom",
+  "levels": {
+    "error": 1,
+    "warning": 2,
+    "info": 3,
+    "debug": 4,
+    "verbose": 5
+  },
+  "androidLevelEnum": {
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info",
+    "debug": "Debug",
+    "verbose": "Verbose"
+  },
+  "iosLevelConstants": {
+    "error": "BugseeLogLevelError",
+    "warning": "BugseeLogLevelWarning",
+    "info": "BugseeLogLevelInfo",
+    "debug": "BugseeLogLevelDebug",
+    "verbose": "BugseeLogLevelVerbose"
+  },
+  "minLevel": 1,
+  "maxLevel": 5,
+  "maxLineLength": 4000,
+  "filterTimeoutSeconds": 10,
+  "options": {
+    "capture": "com.bugsee.option.capture.logs",
+    "level": "com.bugsee.option.capture.logs.level"
+  }
+}

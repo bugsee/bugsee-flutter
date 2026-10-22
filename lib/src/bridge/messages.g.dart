@@ -1079,6 +1079,67 @@ class BreadcrumbMessage {
   }
 }
 
+/// One line of Dart output the log capture (Phase 5d: `print`, `debugPrint`, `Bugsee.forwardLog`)
+/// hands to the SDK. Strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native submits it through the wrapper channel with the wrapper's own source (`Custom`, 98: a
+/// constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
+/// has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
+/// the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
+/// Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+class LogLineMessage {
+  LogLineMessage({required this.message, required this.level, this.tag});
+
+  /// The text, already filtered and cut to the line cap by Dart; never empty.
+  String message;
+
+  /// The SDK's internal `LogLevel` integer (1 error .. 5 verbose: the same on both SDKs).
+  int level;
+
+  /// Recorded on Android (`log.json` `tag`); iOS has no tag and drops it. Null or empty: none.
+  String? tag;
+
+  List<Object?> _toList() {
+    return <Object?>[message, level, tag];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static LogLineMessage decode(Object result) {
+    result as List<Object?>;
+    return LogLineMessage(
+      message: result[0]! as String,
+      level: result[1]! as int,
+      tag: result[2] as String?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! LogLineMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(message, other.message) &&
+        _deepEquals(level, other.level) &&
+        _deepEquals(tag, other.tag);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'LogLineMessage(message: $message, level: $level, tag: $tag)';
+  }
+}
+
 /// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
 /// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
 ///
@@ -1285,8 +1346,11 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is BreadcrumbMessage) {
       buffer.putUint8(141);
       writeValue(buffer, value.encode());
-    } else if (value is NetworkEventMessage) {
+    } else if (value is LogLineMessage) {
       buffer.putUint8(142);
+      writeValue(buffer, value.encode());
+    } else if (value is NetworkEventMessage) {
+      buffer.putUint8(143);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -1323,6 +1387,8 @@ class _PigeonCodec extends StandardMessageCodec {
       case 141:
         return BreadcrumbMessage.decode(readValue(buffer)!);
       case 142:
+        return LogLineMessage.decode(readValue(buffer)!);
+      case 143:
         return NetworkEventMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -2607,6 +2673,35 @@ class BugseeBridgeHostApi {
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
       <Object?>[events],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as int;
+  }
+
+  /// Hands a batch of captured Dart output lines to the SDK through the wrapper channel, in order,
+  /// attributed to the wrapper (`Custom`). Returns how many lines the SDK was handed: native drops
+  /// the rest without error (the SDK is neither launching nor launched, `capture.logs` is off, the
+  /// plugin has no channel yet, a malformed line). Never throws for a single bad line.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin: the app's native log filter, if it set one,
+  /// runs on the calling thread (documented for the channel), and an exception it throws must not
+  /// reach the platform thread.
+  Future<int> addLogLines(List<LogLineMessage> lines) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addLogLines$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[lines],
     );
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 

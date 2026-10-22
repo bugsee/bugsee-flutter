@@ -1022,6 +1022,63 @@ struct BreadcrumbMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// One line of Dart output the log capture (Phase 5d: `print`, `debugPrint`, `Bugsee.forwardLog`)
+/// hands to the SDK. Strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native submits it through the wrapper channel with the wrapper's own source (`Custom`, 98: a
+/// constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
+/// has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
+/// the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
+/// Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct LogLineMessage: Hashable, CustomStringConvertible {
+  /// The text, already filtered and cut to the line cap by Dart; never empty.
+  var message: String
+  /// The SDK's internal `LogLevel` integer (1 error .. 5 verbose: the same on both SDKs).
+  var level: Int64
+  /// Recorded on Android (`log.json` `tag`); iOS has no tag and drops it. Null or empty: none.
+  var tag: String? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> LogLineMessage? {
+    let message = pigeonVar_list[0] as! String
+    let level = pigeonVar_list[1] as! Int64
+    let tag: String? = nilOrValue(pigeonVar_list[2])
+
+    return LogLineMessage(
+      message: message,
+      level: level,
+      tag: tag
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      message,
+      level,
+      tag,
+    ]
+  }
+  static func == (lhs: LogLineMessage, rhs: LogLineMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.message, rhs.message) && MessagesPigeonInternal.deepEquals(lhs.level, rhs.level) && MessagesPigeonInternal.deepEquals(lhs.tag, rhs.tag)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("LogLineMessage")
+    MessagesPigeonInternal.deepHash(value: message, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: level, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: tag, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "LogLineMessage(message: \(String(describing: message)), level: \(String(describing: level)), tag: \(String(describing: tag)))"
+  }
+}
+
 /// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
 /// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
 ///
@@ -1187,6 +1244,8 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
     case 141:
       return BreadcrumbMessage.fromList(self.readValue() as! [Any?])
     case 142:
+      return LogLineMessage.fromList(self.readValue() as! [Any?])
+    case 143:
       return NetworkEventMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -1235,8 +1294,11 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? BreadcrumbMessage {
       super.writeByte(141)
       super.writeValue(value.toList())
-    } else if let value = value as? NetworkEventMessage {
+    } else if let value = value as? LogLineMessage {
       super.writeByte(142)
+      super.writeValue(value.toList())
+    } else if let value = value as? NetworkEventMessage {
+      super.writeByte(143)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1417,6 +1479,15 @@ protocol BugseeBridgeHostApi {
   /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
   /// documented to be callable from any thread; one queue keeps the order.
   func addNetworkEvents(events: [NetworkEventMessage]) throws -> Int64
+  /// Hands a batch of captured Dart output lines to the SDK through the wrapper channel, in order,
+  /// attributed to the wrapper (`Custom`). Returns how many lines the SDK was handed: native drops
+  /// the rest without error (the SDK is neither launching nor launched, `capture.logs` is off, the
+  /// plugin has no channel yet, a malformed line). Never throws for a single bad line.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin: the app's native log filter, if it set one,
+  /// runs on the calling thread (documented for the channel), and an exception it throws must not
+  /// reach the platform thread.
+  func addLogLines(lines: [LogLineMessage]) throws -> Int64
   /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
   /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
   /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
@@ -2422,6 +2493,31 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       addNetworkEventsChannel.setMessageHandler(nil)
+    }
+    /// Hands a batch of captured Dart output lines to the SDK through the wrapper channel, in order,
+    /// attributed to the wrapper (`Custom`). Returns how many lines the SDK was handed: native drops
+    /// the rest without error (the SDK is neither launching nor launched, `capture.logs` is off, the
+    /// plugin has no channel yet, a malformed line). Never throws for a single bad line.
+    ///
+    /// Runs on a serial BACKGROUND thread of the plugin: the app's native log filter, if it set one,
+    /// runs on the calling thread (documented for the channel), and an exception it throws must not
+    /// reach the platform thread.
+    let addLogLinesChannel = taskQueue == nil
+      ? FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addLogLines\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+      : FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addLogLines\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec, taskQueue: taskQueue)
+    if let api = api {
+      addLogLinesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let linesArg = args[0] as! [LogLineMessage]
+        do {
+          let result = try api.addLogLines(lines: linesArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      addLogLinesChannel.setMessageHandler(nil)
     }
     /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
     /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of

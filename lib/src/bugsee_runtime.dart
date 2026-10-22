@@ -17,6 +17,9 @@ import 'facade/breadcrumb.dart';
 import 'facade/validation.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'logs/log_capture.dart';
+import 'logs/log_event.dart';
+import 'logs/log_policy.dart';
 import 'network/network_event.dart';
 import 'network/network_pipeline.dart';
 import 'network/network_policy.dart';
@@ -168,6 +171,7 @@ final class BugseeRuntime {
     // The capture's policy follows the SDK's status; the lifecycle event may arrive after this
     // returns, so ask now too.
     unawaited(network.refreshPolicy());
+    unawaited(logs.refreshPolicy());
     switch (outcome.outcome) {
       case LaunchWire.launched:
         _detectCrash = _detectCrashOf(encoded.values);
@@ -222,6 +226,10 @@ final class BugseeRuntime {
       );
     } finally {
       unawaited(network.refreshPolicy());
+      // A stop takes effect for the log capture at once; the read that follows restores it if the
+      // stop failed.
+      logs.holdUntilRead();
+      unawaited(logs.refreshPolicy());
     }
   }
 
@@ -534,13 +542,15 @@ final class BugseeRuntime {
     List<String>? labels,
   }) async {
     final checked = labels == null ? null : checkLabels(labels);
-    await _call<void>(
-      'showReportDialog',
-      null,
-      () =>
-          host.showReportDialog(summary, description, severity?.value, checked),
-      argument: 'severity',
-    );
+    await _call<void>('showReportDialog', null, () async {
+      await logs.flushBeforeReport();
+      await host.showReportDialog(
+        summary,
+        description,
+        severity?.value,
+        checked,
+      );
+    }, argument: 'severity');
   }
 
   Future<void> upload(
@@ -550,12 +560,10 @@ final class BugseeRuntime {
     List<String>? labels,
   }) async {
     final checked = labels == null ? null : checkLabels(labels);
-    await _call<void>(
-      'upload',
-      null,
-      () => host.upload(summary, description, severity?.value, checked),
-      argument: 'severity',
-    );
+    await _call<void>('upload', null, () async {
+      await logs.flushBeforeReport();
+      await host.upload(summary, description, severity?.value, checked);
+    }, argument: 'severity');
   }
 
   // ---- Network capture (Phase 5b) ---------------------------------------------------------------
@@ -600,6 +608,44 @@ final class BugseeRuntime {
 
   NetworkCaptureStats get networkCaptureStats => network.pipeline.stats;
 
+  // ---- Log capture (Phase 5d) -------------------------------------------------------------------
+
+  /// The capture of Dart output, the filter and the queue to the SDK; see `lib/src/logs`.
+  late final LogCaptureService logs = LogCaptureService(
+    send: (batch) => host.addLogLines(batch),
+    loadPolicy: _loadLogPolicy,
+    ensureAttached: ensureStartedInBackground,
+    statuses: () => bridge.statusChanges,
+    supported: () => _platform() != null,
+    // Android's own logcat capture records the same prints, outside the Dart filter.
+    echoRisk: () => _platform() == OptionPlatform.android,
+    warn: _warn,
+  );
+
+  Future<LogPolicy> _loadLogPolicy() async {
+    final status = await host.status();
+    final options = await host.launchOptions(false);
+    return LogPolicy.from(options, status: status);
+  }
+
+  /// Installs the log capture (see `Bugsee.installLogCapture`). A call from a background isolate
+  /// is a [BugseeException]: it has no platform channels to reach the SDK with.
+  bool installLogCapture(LogLevel level) {
+    _requireBinding();
+    return logs.install(level: level);
+  }
+
+  void uninstallLogCapture() => logs.uninstall();
+
+  bool get logCaptureInstalled => logs.installed;
+
+  void setLogFilter(BugseeLogFilter? filter, Duration timeout) =>
+      logs.setFilter(filter, timeout);
+
+  BugseeLogFilter? get logFilter => logs.pipeline.filter;
+
+  LogCaptureStats get logCaptureStats => logs.pipeline.stats;
+
   /// The shortest and longest time a created report is held.
   static const Duration minCreatedReportTimeToLive = Duration(seconds: 1);
   static const Duration maxCreatedReportTimeToLive = Duration(hours: 1);
@@ -614,6 +660,7 @@ final class BugseeRuntime {
       );
     }
     final handle = await _call<String?>('createReport', null, () async {
+      await logs.flushBeforeReport();
       try {
         return await host.createReport(timeToLive.inMilliseconds);
       } on PlatformException catch (e) {
@@ -732,7 +779,11 @@ final class BugseeRuntime {
   }) => _call<bool>(
     'logException',
     false,
-    () => host.logException(payload.json, handled, domain),
+    () async {
+      // The lines printed before the error are in the report it makes.
+      await logs.flushBeforeReport();
+      return host.logException(payload.json, handled, domain);
+    },
     // Dart checked the domain and built a document under the limit, so a refusal is about the
     // document: the native message says what (never the domain, which was valid).
     argument: 'error',

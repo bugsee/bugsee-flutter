@@ -338,6 +338,27 @@ class BreadcrumbMessage {
   Map<String, Object?>? data;
 }
 
+/// One line of Dart output the log capture (Phase 5d: `print`, `debugPrint`, `Bugsee.forwardLog`)
+/// hands to the SDK. Strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native submits it through the wrapper channel with the wrapper's own source (`Custom`, 98: a
+/// constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
+/// has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
+/// the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
+/// Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+class LogLineMessage {
+  LogLineMessage({required this.message, required this.level, this.tag});
+
+  /// The text, already filtered and cut to the line cap by Dart; never empty.
+  String message;
+
+  /// The SDK's internal `LogLevel` integer (1 error .. 5 verbose: the same on both SDKs).
+  int level;
+
+  /// Recorded on Android (`log.json` `tag`); iOS has no tag and drops it. Null or empty: none.
+  String? tag;
+}
+
 /// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
 /// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
 ///
@@ -707,6 +728,19 @@ abstract class BugseeBridgeHostApi {
   /// documented to be callable from any thread; one queue keeps the order.
   @TaskQueue(type: TaskQueueType.serialBackgroundThread)
   int addNetworkEvents(List<NetworkEventMessage> events);
+
+  // ---- Log capture (Phase 5d). Like network injection this runs on a background thread.
+
+  /// Hands a batch of captured Dart output lines to the SDK through the wrapper channel, in order,
+  /// attributed to the wrapper (`Custom`). Returns how many lines the SDK was handed: native drops
+  /// the rest without error (the SDK is neither launching nor launched, `capture.logs` is off, the
+  /// plugin has no channel yet, a malformed line). Never throws for a single bad line.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin: the app's native log filter, if it set one,
+  /// runs on the calling thread (documented for the channel), and an exception it throws must not
+  /// reach the platform thread.
+  @TaskQueue(type: TaskQueueType.serialBackgroundThread)
+  int addLogLines(List<LogLineMessage> lines);
 
   // ---- Exceptions (Phase 5a). One call on the platform thread, like the facade; failures use the
   // facade's codes (`invalid-argument`, `sdk-error`, `not-attached`).

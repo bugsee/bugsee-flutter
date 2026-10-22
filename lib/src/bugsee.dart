@@ -1,5 +1,5 @@
 // The public entry point. Everything behind it is `BugseeRuntime`, which a test can replace.
-import 'dart:async' show runZonedGuarded;
+import 'dart:async' show ZoneSpecification, runZoned, runZonedGuarded;
 import 'dart:isolate' show Isolate;
 
 import 'package:flutter/foundation.dart'
@@ -12,6 +12,7 @@ import 'exceptions/error_capture.dart';
 import 'facade/breadcrumb.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'logs/log_event.dart';
 import 'network/network_event.dart';
 import 'network/network_pipeline.dart' show NetworkCaptureStats;
 import 'options/bugsee_options.g.dart';
@@ -210,8 +211,10 @@ abstract final class Bugsee {
       _runtime.trace(name, value);
 
   /// Adds a line to the SDK's log, at [level] (default [LogLevel.info]). This is the app-level
-  /// `Bugsee.log`: it does not print to the console, and it bypasses the app's log filter. The
-  /// wrapper's own capture of Dart's `print` and `debugPrint` is separate (and later).
+  /// `Bugsee.log`: it does not print to the console, it is recorded as the application's own
+  /// deliberate line (source `Bugsee`), and it bypasses the app's log filter. The capture of Dart's
+  /// `print` and `debugPrint` is separate ([installLogCapture]) and is recorded with another source
+  /// (`Custom`), so the two stay distinguishable in the report.
   ///
   /// Dropped before [launch] on both platforms.
   static Future<void> log(String message, {LogLevel level = LogLevel.info}) =>
@@ -398,6 +401,153 @@ abstract final class Bugsee {
   static NetworkCaptureStats get networkCaptureStats =>
       _runtime.networkCaptureStats;
 
+  // ---- Log capture ------------------------------------------------------------------------------
+
+  /// Starts recording what the app prints from Dart into the report's log, attributed to the
+  /// **plugin** (the SDK records it with source `Custom`, the wrapper's own, not as the app's
+  /// deliberate [log] calls, which stay `Bugsee`). Call it once, early in `main`:
+  ///
+  /// ```dart
+  /// void main() {
+  ///   // The bindings and `runApp` share one zone, and it is the one that records `print`.
+  ///   Bugsee.runWithLogCapture(() {
+  ///     WidgetsFlutterBinding.ensureInitialized();
+  ///     Bugsee.installLogCapture();
+  ///     runApp(const MyApp());
+  ///   });
+  /// }
+  /// ```
+  ///
+  /// What is recorded: `debugPrint` (chained: the callback that was installed is still called, with
+  /// the same arguments, and put back by [uninstallLogCapture]) and `print` called inside a zone that
+  /// carries [logCaptureZoneSpecification] ([runWithLogCapture], [runGuarded], or your own
+  /// `runZoned`). A `print` in the root zone cannot be hooked in Dart and is not recorded; neither is
+  /// `dart:developer`'s `log` (it does not reach the console either), `stdout`/`stderr` writes, nor
+  /// output of another isolate; send those with [forwardLog]. `FlutterError`'s diagnostics dump (the
+  /// widget trees in its text) and the plugin's own messages are never recorded. The original output
+  /// always happens, first and unchanged; nothing is swallowed.
+  ///
+  /// [level] is the level `print` and `debugPrint` lines are recorded at: they carry none (default
+  /// [LogLevel.info]). A line is cut to 4000 characters, at most
+  /// 500 lines a second are taken (a burst of 1000), and a
+  /// slow native side drops the newest lines; [logCaptureStats] counts every drop.
+  ///
+  /// Nothing is recorded while the SDK is neither launching nor launched (a line printed before
+  /// [launch] is dropped, not buffered), nor while `capture.logs` is off
+  /// (`BugseeOptions.captureLogs`), nor below
+  /// `capture.logs.level`. **Privacy**: every line THIS capture records runs through [setLogFilter]
+  /// first (in Dart, before anything leaves the isolate), then through the SDK's own log filter, the
+  /// app's, if it set one on the native SDK; the SDK has no default log sanitizer. See `doc/logs.md`.
+  ///
+  /// **Android: the Dart filter does NOT cover the SDK's own logcat capture.** The SDK also reads the
+  /// process's logcat, where the engine writes every `print` and `debugPrint` (source `LogCat`, tag
+  /// `flutter`), and records those lines RAW, with the same text, whatever [setLogFilter] did to this
+  /// capture's copy. The same holds for the `FlutterError` dump on a real app (its widget tree is
+  /// printed to logcat; only this capture's own copy is withheld). No option turns that route off
+  /// alone (`captureLogs` turns off both). To redact or drop there, set a native log filter in the
+  /// host app (it runs on every non-`Bugsee` source):
+  ///
+  /// ```kotlin
+  /// Bugsee.setLogEventFilter { event, callback ->
+  ///     when {
+  ///         // the plugin's own lines (source Custom) were filtered in Dart already
+  ///         event.logSource == LogSource.LogCat && event.tag == "flutter" -> callback.run(null) // drop the echo
+  ///         else -> callback.run(event)
+  ///     }
+  /// }
+  /// ```
+  ///
+  /// iOS recorded no such echo on the simulator (not verified on a device). A debug build warns once
+  /// on Android when a filter is set. See `doc/logs.md`.
+  ///
+  /// Returns whether the capture is in effect, `false` on a platform with no SDK. Idempotent. Throws a
+  /// [BugseeException] when called from a background isolate.
+  static bool installLogCapture({LogLevel level = LogLevel.info}) =>
+      _runtime.installLogCapture(level);
+
+  /// Stops recording: `debugPrint` is put back when it is still the hook, and the zone hook records
+  /// nothing. Lines already queued are still handed to the SDK. [installLogCapture] starts it again.
+  static void uninstallLogCapture() => _runtime.uninstallLogCapture();
+
+  /// Whether [installLogCapture] was called and not undone.
+  static bool get logCaptureInstalled => _runtime.logCaptureInstalled;
+
+  /// The [ZoneSpecification] whose `print` hook records into the report (once [installLogCapture]
+  /// was called; inert before). Use it to build a zone yourself:
+  /// `runZonedGuarded(body, onError, zoneSpecification: Bugsee.logCaptureZoneSpecification)`. A zone
+  /// can have one `print` handler: to have your own too, nest the zones ([runWithLogCapture] inside
+  /// yours records the line your code printed; yours inside records what yours lets through).
+  static ZoneSpecification get logCaptureZoneSpecification =>
+      _runtime.logs.zoneSpecification;
+
+  /// Runs [body] in a zone that records `print` output (see [installLogCapture]). Returns what
+  /// [body] returns; errors are not handled (use [runGuarded] for that: it records `print` too).
+  static R runWithLogCapture<R>(R Function() body) =>
+      runZoned<R>(body, zoneSpecification: logCaptureZoneSpecification);
+
+  /// Records a line your own logging produced (`package:logging`, a logger of yours) the way
+  /// [installLogCapture] records `print`: filtered by [setLogFilter] and then by the SDK's log filter,
+  /// attributed to the plugin, subject to the same gates and limits. It is **not** [log]: it is
+  /// recorded with source `Custom`, not as a deliberate application line, and goes through the
+  /// filters. [tag] is recorded on Android only. Returns whether the capture took it (`false` when
+  /// [installLogCapture] was not called). Never throws.
+  ///
+  /// ```dart
+  /// Logger.root.onRecord.listen((r) => Bugsee.forwardLog(
+  ///   '${r.loggerName}: ${r.message}',
+  ///   level: logLevelForLoggingValue(r.level.value),
+  ///   tag: r.loggerName,
+  /// ));
+  /// ```
+  ///
+  /// The plugin does not depend on `package:logging`: [logLevelForLoggingValue] maps its `Level.value`.
+  static bool forwardLog(
+    String message, {
+    LogLevel level = LogLevel.info,
+    String? tag,
+  }) => _runtime.logs.forward(message, level, tag);
+
+  /// Sets the filter every captured line goes through **before** it is handed to the SDK; `null`
+  /// removes it. Return the event (changed in place or a copy) to record it, `null` to drop it:
+  ///
+  /// ```dart
+  /// Bugsee.setLogFilter((event) {
+  ///   if (event.message.contains('password')) return null;            // not recorded
+  ///   event.message = event.message.replaceAll(RegExp(r'\b\d{16}\b'), '<card>');
+  ///   return event;
+  /// });
+  /// ```
+  ///
+  /// This is where redaction of what this capture records belongs: it runs in Dart, so nothing this
+  /// capture records can skip it, and it sees the line before anything leaves the isolate. The SDK then
+  /// runs the app's own filter on what it returns (a filter set on the native SDK), and the SDK has
+  /// **no default log sanitizer**: what this filter does not remove is recorded. **On Android the SDK's
+  /// own logcat capture records the same `print` / `debugPrint` text again, raw (source `LogCat`, tag
+  /// `flutter`), and that route does not pass through this filter**: it needs a native
+  /// `Bugsee.setLogEventFilter` that drops or redacts `LogSource.LogCat` events tagged `flutter` (a
+  /// Kotlin snippet is in [installLogCapture]; a debug build warns once when this filter is set on
+  /// Android). It runs on the isolate that printed, one line at a time and in order,
+  /// never inside the `print` call; keep it fast, it may return a `Future`. Anything it prints is not
+  /// recorded.
+  ///
+  /// **Fails closed.** A filter that throws, returns something other than a `BugseeLogEvent` or `null`,
+  /// or a future that does not complete within [timeout] drops that line (a debug warning is printed
+  /// once; [logCaptureStats] counts them). [timeout] defaults to 10 seconds, the SDK's own log filter
+  /// timeout, and must be positive and at most 5 minutes (a [BugseeArgumentException] otherwise).
+  static void setLogFilter(
+    BugseeLogFilter? filter, {
+    // The SDK's own log filter timeout; `test/logs_drift_test.dart` compares the copies.
+    Duration timeout = const Duration(seconds: 10),
+  }) => _runtime.setLogFilter(filter, timeout);
+
+  /// The filter set with [setLogFilter], or `null`.
+  static BugseeLogFilter? get logFilter => _runtime.logFilter;
+
+  /// What happened to the captured lines so far (for diagnosis): captured, submitted to the SDK's
+  /// wrapper channel (not the same as recorded), dropped by the rate limit, a full queue, the gates,
+  /// the filter, or a failure to deliver.
+  static LogCaptureStats get logCaptureStats => _runtime.logCaptureStats;
+
   /// Asks the SDK for a report to fill in and send yourself: add attachments, a screenshot, labels and
   /// attributes to the returned [CreatedReport], then [CreatedReport.upload] it. Completes with `null`
   /// when the SDK made none (it is not launched).
@@ -573,26 +723,34 @@ abstract final class Bugsee {
   /// started in it) and then calls [onError]; without [onError] the error goes to
   /// `FlutterError.reportError`, so it is still printed and still reaches the app's handlers.
   /// Reported like the installed handlers report: an error report, or a crash report when
-  /// [installErrorHandlers] was told `reportAsCrash: true`.
+  /// [installErrorHandlers] was told `reportAsCrash: true`. The zone also records `print` output once
+  /// [installLogCapture] is called ([logCaptureZoneSpecification]).
   static R? runGuarded<R>(
     R Function() body, {
     void Function(Object error, StackTrace stack)? onError,
   }) {
-    return runZonedGuarded<R>(body, (error, stack) {
-      _runtime.errorCapture.captureZoneError(error, stack);
-      if (onError != null) {
-        onError(error, stack);
-      } else {
-        FlutterError.reportError(
-          FlutterErrorDetails(
-            exception: error,
-            stack: stack,
-            library: 'bugsee_flutter',
-            context: ErrorDescription('in a zone guarded by Bugsee.runGuarded'),
-          ),
-        );
-      }
-    });
+    return runZonedGuarded<R>(
+      body,
+      (error, stack) {
+        _runtime.errorCapture.captureZoneError(error, stack);
+        if (onError != null) {
+          onError(error, stack);
+        } else {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stack,
+              library: 'bugsee_flutter',
+              context: ErrorDescription(
+                'in a zone guarded by Bugsee.runGuarded',
+              ),
+            ),
+          );
+        }
+      },
+      // The zone also carries the `print` hook of [installLogCapture] (inert until it is installed).
+      zoneSpecification: _runtime.logs.zoneSpecification,
+    );
   }
 
   /// Reports the errors that [isolate] (one you spawned) does not catch, until you call `cancel` on

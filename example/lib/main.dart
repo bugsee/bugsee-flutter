@@ -7,6 +7,7 @@ import 'attachments_screen.dart';
 import 'exceptions_screen.dart';
 import 'feedback_screen.dart';
 import 'facade_screen.dart';
+import 'logs_screen.dart';
 import 'view_hierarchy_screen.dart';
 import 'network_screen.dart';
 
@@ -56,14 +57,23 @@ Future<void> _afterReport(ReportProxy report) async {
   await report.setAttribute('example.phase', 'after');
 }
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  // Records the app's `dart:io` HTTP traffic from the moment the SDK is launched (the SDKs'
-  // own interception cannot see it); chained to any HttpOverrides the app installs.
-  Bugsee.installNetworkCapture();
-  // Before launch, so reports the SDK recovers while launching are seen too.
-  await Bugsee.setReportHandler(exampleReportHandler);
-  runApp(const ExampleApp());
+void main() {
+  // Everything runs inside one guarded zone: it reports what escapes (an error nobody caught), and it
+  // records `print` once the capture is installed. The bindings are initialized in it too, so
+  // `runApp` shares their zone.
+  Bugsee.runGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Records what the app prints (`print`, `debugPrint`) into the report's log, with the plugin's
+    // own source: the app's deliberate `Bugsee.log` calls stay distinguishable. Filter it with
+    // `Bugsee.setLogFilter`.
+    Bugsee.installLogCapture();
+    // Records the app's `dart:io` HTTP traffic from the moment the SDK is launched (the SDKs'
+    // own interception cannot see it); chained to any HttpOverrides the app installs.
+    Bugsee.installNetworkCapture();
+    // Before launch, so reports the SDK recovers while launching are seen too.
+    await Bugsee.setReportHandler(exampleReportHandler);
+    runApp(const ExampleApp());
+  });
 }
 
 class ExampleApp extends StatelessWidget {
@@ -97,6 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ExceptionsScreen(),
         AttachmentsScreen(),
         NetworkScreen(),
+        LogsScreen(),
         FeedbackScreen(),
         ViewHierarchyScreen(),
       ],
@@ -129,6 +140,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-network'),
           icon: Icon(Icons.swap_vert),
           label: 'Network',
+        ),
+        NavigationDestination(
+          key: Key('tab-logs'),
+          icon: Icon(Icons.notes),
+          label: 'Logs',
         ),
         NavigationDestination(
           key: Key('tab-feedback'),

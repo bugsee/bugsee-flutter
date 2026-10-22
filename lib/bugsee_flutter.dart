@@ -12,6 +12,12 @@ export 'src/facade/breadcrumb.dart' show BreadcrumbLevel, BugseeBreadcrumb;
 export 'src/launch.dart'
     show BugseeException, BugseeLaunchException, LaunchFailure, LaunchResult;
 export 'src/lifecycle_event.dart' show LifecycleEvent;
+export 'src/logs/log_event.dart'
+    show
+        BugseeLogEvent,
+        BugseeLogFilter,
+        LogCaptureStats,
+        logLevelForLoggingValue;
 export 'src/network/network_event.dart'
     show BugseeNetworkEvent, BugseeNetworkFilter, NetworkStage, NoBodyReason;
 export 'src/network/network_pipeline.dart' show NetworkCaptureStats;

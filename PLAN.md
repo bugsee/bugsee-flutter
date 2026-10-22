@@ -216,7 +216,7 @@ Design, payload schema, privacy rules, staleness, SDK facts and spec gaps: **`do
 - Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
   wrapper, filters chained ahead of app filters). The spec still says **Proposed**, but **both pinned SDKs ship the channel**
   (Android 7.4.2 `BugseeWrapperChannel`, iOS 7.0.0-beta7 `BGSWrapperChannel`; checked in the pinned artifacts' sources and headers):
-  network events use it (5b); logs and breadcrumbs are still to do.
+  network events use it (5b), logs use it (5d); breadcrumbs are still to do.
 - **5a — Dart exceptions (done, see below)**: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
   obfuscation symbolication (debug-info).
 
@@ -279,6 +279,45 @@ Design and data flow: `doc/network.md` (the privacy model, the options, the limi
   Three were equivalent and are recorded as such: `BodyTee` limit 0 without the `limit > 0` guard (the first byte overflows
   anyway), removing the `StateError` for a wrong filter return type (a failing cast is caught and drops the event the same way),
   `_passedOn` in `redirect()` (dart:io drains that response itself; the line was dead and was removed).
+
+### 5d record — log capture
+
+Design, data flow, the SDK rules with source refs, the privacy model, limits and device evidence: `doc/logs.md`. Decisions worth keeping:
+
+- **Source attribution is the point**: lines go through the wrapper channel with source `Custom` (98) ONLY. Both SDKs accept five wrapper
+  sources (Custom, WebView, StdOut, StdErr, Unknown) and record every other value as Custom; claiming only Custom never relies on the
+  coercion, never triggers its once-per-process notice and never takes `Bugsee` (4), the app's own `Bugsee.log`, which would also skip the
+  filter on Android's default rule. `Bugsee.log` is unchanged (source 4: verified side by side in one bundle on both platforms).
+- **`print` needs a zone, `debugPrint` a chained global**: `Zone.root` cannot be replaced, so `runWithLogCapture` / `runGuarded` / the app's own
+  `runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)`. Original output first and unchanged; nested hooks record once; the
+  `debugPrint` closure is per install (an app that wraps ours and installs again must not recurse); forwards run in a zone the capture ignores
+  (a throttled `debugPrint` prints from a timer), as does a Dart filter (a filter that prints cannot loop).
+- **`FlutterError.presentError` is not the hook**: `FlutterError.onError` defaults to `dumpErrorToConsole` itself, so chaining `presentError` would
+  catch nothing; the diagnostics dump is ONE `debugPrint` headed `══╡`, recognised and never recorded (the tree carries widget text).
+- **Findings that shaped the docs**: (1) neither SDK has a log sanitizer (an unfiltered `password=hunter2` is recorded verbatim); (2) the channel
+  takes no timestamp (stamped on receipt; bugsee-android#299 / bugsee-cocoa#265), so no `ageMs`; (3) Android's provider does not apply
+  `capture.logs.level` to channel lines, iOS does: Dart applies it on both; (4) iOS drops the tag; (5) **Android's own logcat capture records the
+  same `print` again as source 3 / tag `flutter`, raw, and records root-zone prints the hook never sees: the Dart filter does not govern it** (a
+  native log filter does); iOS recorded no echo on the simulator; (6) under `flutter test` the zone sends `print` to the reporter, so an echo is
+  only visible in a plain app run.
+- **Gates mirrored**: launching|launched + `capture.logs` (+ level) in Dart and native; before launch lines are dropped, not buffered (a buffer would
+  stamp them at flush time).
+- **TODO (pin condition)**: pass the capture time to the channel (`BugseeLogEvent.time`) once a release has the timestamp overload:
+  Android `aa9ea4c18` (bugsee-android#299, on `main`, in no tag, not in `v7.4.2`) and iOS bugsee-cocoa#265 (open). Revisit when
+  `native-versions.json` moves past `v7.4.2`.
+- **Review round 1 (Opus)**: dartdocs/doc state the Android logcat echo as not covered by the Dart filter (+ one-time debug warning); `presentError`
+  / default `onError` chained so a dump cannot leak piece by piece; pending lines flushed (<= 200 ms) before uploads, error reports,
+  `createReport` and the dialog; three filter timeouts in a row cool the filter down for 30 s; a throttled `debugPrint` is not recorded twice;
+  Android catches `Throwable` per line; a repeated install drops nothing.
+- **Not built, with reasons**: `dart:developer` `log` (cannot be intercepted; VM service only), `stdout`/`stderr` (would need `IOOverrides` and the
+  source claim would be false), a `package:logging` adapter (no dependency: `forwardLog` + `logLevelForLoggingValue`), an echo-dropping native filter
+  (the SDK filter slot is the app's).
+- **Runtime evidence**: `example/integration_test/logs_test.dart` on the Android emulator API 30 arm64 and the iOS 26.5 simulator against
+  `support/mock_api.py`: the tables in `doc/logs.md`.
+- **Not verified**: a physical device, release/obfuscated builds, iOS echo on a device, a native log filter set by the app (the Android exception
+  path is unit-tested only), tvOS/visionOS, hot restart on a device, the production backend.
+- **Tests**: Dart `log_pipeline_test`, `log_capture_test`, `logs_facade_test`, `logs_drift_test`, public API pins; JUnit `LogOpsTest`, `LogWireParityTest`;
+  XCTest `BGSFlutterLogOpsTests`. Mutations (each applied to the code, the tests run, the code restored): **66 Dart, 14 Android, 13 iOS**. All killed in the end; survivors of the first pass were real gaps and were fixed (a stale policy read that the newer one did not supersede: the fake read the policy after the gate instead of when asked; launch's own policy refresh hidden by a test that refreshed by hand; `forwardLog`'s default level). Left as equivalent or untestable: the install early-return (the re-chain check makes it redundant), the uninstalled hook's own `_active` check (the record path checks it again), a no-op `copy` mutant, and the real SDK's `Launching` gate in `acceptsLogs` (static SDK state: device-verified, not unit-testable).
 
 ## 6. Phase 6 — Reports (Part 7, report-contract)
 

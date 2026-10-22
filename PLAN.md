@@ -190,7 +190,7 @@ behaviour table with source line references, value rules, errors and threading: 
 - Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
   wrapper, filters chained ahead of app filters). The spec still says **Proposed**, but **both pinned SDKs ship the channel**
   (Android 7.4.2 `BugseeWrapperChannel`, iOS 7.0.0-beta7 `BGSWrapperChannel`; checked in the pinned artifacts' sources and headers):
-  network events use it (5b); logs and breadcrumbs are still to do.
+  network events use it (5b), logs use it (5d); breadcrumbs are still to do.
 - **5a — Dart exceptions (done, see below)**: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
   obfuscation symbolication (debug-info).
 

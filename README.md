@@ -3,8 +3,8 @@
 > **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options, `stop`,
 > status, attributes, user identity, events and traces, breadcrumbs, notifications, blackout, the
 > report handler, the lifecycle event stream, the secure-view widget, Dart error reporting, report
-> attachments and `createReport`, and the `dart:io` network capture work on Android and iOS. Not yet:
-> `print` capture, APM spans.
+> attachments and `createReport`, the `dart:io` network capture and the `print` / `debugPrint` log capture work on
+> Android and iOS. Not yet: APM spans.
 > Existing users should stay on the latest published release until the migration guide is available.
 > This API is a clean break from 9.x.
 
@@ -169,6 +169,33 @@ breadcrumbs when `captureBreadcrumbs` is on, which keeps its query: redact it in
 isolates, WebSocket frames and a client created before the install are not captured. The data flow, the
 privacy model and the limits are in [doc/network.md](doc/network.md).
 
+### Log capture
+
+What the app prints from Dart is recorded into the report's log, attributed to the plugin (source `Custom`) and not as
+the app's own `Bugsee.log` calls. Opt-in; `print` needs a zone that carries the hook (`Zone.root` cannot be replaced):
+
+```dart
+void main() {
+  Bugsee.runWithLogCapture(() {            // or Bugsee.runGuarded, or your own runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)
+    WidgetsFlutterBinding.ensureInitialized();
+    Bugsee.installLogCapture();            // print (in the zone) and debugPrint, chained: the original output always happens
+    runApp(const MyApp());
+  });
+}
+
+// Runs in Dart BEFORE anything reaches the SDK. The SDKs have no log sanitizer of their own: redact here.
+Bugsee.setLogFilter((event) {
+  event.message = event.message.replaceAll(RegExp(r'\d{12,}'), '<number>');
+  return event;                            // or null to drop; a filter that throws or hangs drops the line
+});
+Bugsee.forwardLog('from my logger', level: LogLevel.warning, tag: 'net');   // package:logging adapter: see doc/logs.md
+```
+
+Nothing is recorded before the SDK is launching or launched, with `captureLogs` off, or below `captureLogsLevel`. The
+SDK's own console capture (Android logcat) may record the same `print` again, raw, from the platform side: the Dart
+filter does not govern that echo, a native log filter does. `dart:developer` `log`, `stdout` and root-zone `print` are
+not captured. Data flow, SDK rules, privacy and limits: [doc/logs.md](doc/logs.md).
+
 Dart errors ([doc/exceptions.md](doc/exceptions.md): the backend contract, what each SDK does, symbols):
 
 ```dart
@@ -272,6 +299,6 @@ tasks.matching { it.name.startsWith("injectBugsee") && it.name.endsWith("BuildId
 ## Developing
 
 The example app (`example/`) has a launch screen, a data screen that calls every method above and a
-network screen; `example/integration_test/launch_test.dart`, `facade_test.dart` and `network_test.dart`
+network screen; `example/integration_test/launch_test.dart`, `facade_test.dart`, `network_test.dart` and `logs_test.dart`
 run them against the real SDKs on a device or simulator.
 See [PLAN.md](PLAN.md) for the implementation plan and `.github/CI.md` for the checks.

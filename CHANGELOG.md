@@ -15,6 +15,13 @@
   `HttpOverrides` and hand it to the SDK through the SDKs' wrapper channel, with the SDK's body options and
   privacy rules; `Bugsee.setNetworkFilter` is a Dart-side, fail-closed filter that runs before anything
   reaches the SDK; `Bugsee.networkCaptureStats` counts what was dropped and why. See `doc/network.md`.
+* Log capture: `Bugsee.installLogCapture` / `uninstallLogCapture` record `print` (inside a zone that carries
+  `Bugsee.logCaptureZoneSpecification`: `runWithLogCapture`, `runGuarded`) and a chained `debugPrint`, and
+  `Bugsee.forwardLog` records lines from your own logging (`logLevelForLoggingValue` maps `package:logging`), through the
+  SDKs' wrapper channel with the plugin's own source (`Custom`), not as the app's `Bugsee.log`; `Bugsee.setLogFilter`
+  is a Dart-side, fail-closed filter that runs before anything reaches the SDK; `Bugsee.logCaptureStats` counts what was
+  dropped and why. The SDKs have no log sanitizer, and Android's own logcat capture may record the same line again raw.
+  See `doc/logs.md`.
 * Dart errors: `Bugsee.logException(error, [stackTrace])` (an error report), `logUnhandledException(error,
   [stackTrace])` (a crash report) and `reportException(error, {stackTrace, handled, domain})`; the opt-in
   `installErrorHandlers` / `uninstallErrorHandlers` (chained to existing handlers, restored, once per error, rate

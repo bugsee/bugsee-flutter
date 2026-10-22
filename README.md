@@ -169,8 +169,7 @@ await Bugsee.trace('cart-size', 3);
 await Bugsee.log('payment declined', level: LogLevel.warning);
 await Bugsee.notify('Deploy finished', body: 'v2.1', severity: ReportSeverity.medium);   // to your Slack/Teams integration
 
-// Breadcrumb capture is off by default on both SDKs: launch with it on.
-await Bugsee.launch('YOUR_APP_TOKEN', options: const BugseeOptions(captureBreadcrumbs: true));
+// Breadcrumb capture is off by default on both SDKs: launch with BugseeOptions(captureBreadcrumbs: true).
 final taken = await Bugsee.addBreadcrumb(
   const BugseeBreadcrumb(category: 'nav', message: 'opened cart', level: BreadcrumbLevel.info),
 );

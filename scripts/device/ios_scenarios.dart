@@ -497,9 +497,10 @@ class IosCtx {
       after.summary == 'verify upload control-after',
       '${after.type} ${after.source}',
     );
-    // And nothing retained on the device side: the simulator container's files.
+    // And nothing crash-shaped retained on the device side: the SDK keeps the bundles it could not upload
+    // under the container's Library/Caches/com.bugsee.data/capture/bundles; their types are read.
     final container = await dev.dataContainer();
-    final retained = container == null
+    final listing = container == null
         ? ''
         : (await sh([
             'find',
@@ -520,12 +521,26 @@ class IosCtx {
             '*crash*report*',
             ')',
           ])).text;
+    final files = listing.split('\n').where((l) => l.isNotEmpty).toList();
+    final types = <String>[];
+    for (final f in files.where((f) => f.endsWith('.bundle.zip'))) {
+      final r = await sh([
+        'python3',
+        '-I',
+        '-c',
+        'import zipfile,json,sys; print(json.loads(zipfile.ZipFile(sys.argv[1]).read("request.json"))["type"])',
+        f,
+      ]);
+      types.add(r.ok ? r.text : 'unreadable');
+    }
+    final other = files.where((f) => !f.endsWith('.bundle.zip')).toList();
     run.expect(
-      'no crash bundle or crash file is retained in the simulator container',
-      container != null && retained.isEmpty,
-      retained.isEmpty
-          ? 'searched $container for *.bundle.zip, *.dmp, *.plcrash, *crash*report*'
-          : retained,
+      'the simulator container retains no crash bundle and no crash file (retained bundles: ${types.length}, types $types)',
+      container != null &&
+          !types.contains('crash') &&
+          !types.contains('unreadable') &&
+          other.isEmpty,
+      'searched $container: ${files.map((f) => f.split('/').last).toList()}',
     );
     run.expect(
       'no crash report is recovered on the simulator (nothing at the mock API after the relaunch)',

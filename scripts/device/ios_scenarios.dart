@@ -958,7 +958,7 @@ class IosCtx {
       offFrame = await requireVideoFrame(
         run,
         'ios @3x',
-        off!,
+        off,
         tc.workDir,
         'ios-off',
       );

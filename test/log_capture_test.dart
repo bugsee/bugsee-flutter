@@ -930,6 +930,37 @@ void main() {
     );
   });
 
+  group('flushBeforeReport after an uninstall', () {
+    test('does not wait for lines the capture no longer takes', () async {
+      final rig = Rig();
+      await rig.install();
+      rig.service.setFilter(
+        (e) => Completer<BugseeLogEvent?>().future,
+        const Duration(seconds: 30),
+      );
+      rig.inCaptureZone(() => print('queued, then uninstalled'));
+      rig.service.uninstall();
+      final watch = Stopwatch()..start();
+      await rig.service.flushBeforeReport();
+      expect(watch.elapsedMilliseconds, lessThan(100));
+    });
+  });
+
+  group('the echo window', () {
+    test(
+      'a line that matches an old debugPrint after the window is recorded',
+      () async {
+        final rig = Rig();
+        await rig.install();
+        debugPrint('abc def');
+        await Future<void>.delayed(const Duration(milliseconds: 3200));
+        rig.inCaptureZone(() => print('abc def'));
+        await rig.drain();
+        expect(rig.texts, ['abc def', 'abc def']);
+      },
+    );
+  });
+
   group('forward', () {
     test(
       'records a line from the app\'s own logging with its level and tag',

@@ -347,9 +347,9 @@ void main() {
         Bugsee.runWithLogCapture(() => print('behind a hung filter'));
         final watch = Stopwatch()..start();
         await Bugsee.upload('s', 'd');
-        // A ceiling, not a measurement: 25x the 200 ms LogCapture.flushLimit that bounds the
+        // A ceiling, not a measurement: 10x the 200 ms LogCapture.flushLimit that bounds the
         // hold-back, well under the filter's 30 s timeout it must not wait for.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+        expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
         expect(host.calls, ['upload']);
       },
     );

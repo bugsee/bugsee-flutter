@@ -25,7 +25,7 @@ arguments for `event` and `trace`); this page follows the code.
 | Import | `package:bugsee_flutter/bugsee_flutter.dart` (also `bugsee.dart`) | `package:bugsee_flutter/bugsee_flutter.dart` only |
 | Feedback chat | part of the plugin | the separate package `bugsee_flutter_feedback` |
 | Pause and resume | `Bugsee.pause()` / `resume()` | **removed**: use blackout (below) |
-| Symbols upload for `--obfuscate` | `scripts/symbols.py` | unchanged: the same script and protocol (doc/exceptions.md, section 5) |
+| Symbols upload for `--obfuscate` | `scripts/symbols.py` | unchanged: the same script (`scripts/symbols.py` on the `release` branch) and protocol ([exceptions.md](exceptions.md), section 5) |
 
 ## What changed in the model
 

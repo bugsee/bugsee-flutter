@@ -82,7 +82,7 @@ Everything below is implemented. Details that have a page of their own: attachme
 | wrapper channel `log(tag, message, level, source)` | **done**: used with source `Custom` only (`Bugsee.installLogCapture` / `forwardLog`); `Bugsee.log` stays the app-sourced route (`source` 4) |
 | `getExchangeFactory` | **wrapper-internal** (used to build a breadcrumb) |
 | `getAppearance` (Android `Appearance`, iOS `BugseeTheme`) | **skip, deliberately**: the 7.x appearance system is a large per-property colour/string surface that differs between the platforms (Android namespaced keys, iOS properties); RN needed a whole bridge for it, and the 9.x one was larger still. Not a plain SDK method. A later, separate design |
-| `ext` / `registerExt` | **skip**: native modules (feedback is a separate package, decision D4: `packages/bugsee_flutter_feedback`, see its `doc/feedback.md`) |
+| `ext` / `registerExt` | **skip**: native modules (feedback is a separate package, decision D4: `packages/bugsee_flutter_feedback`, see `packages/bugsee_flutter_feedback/doc/feedback.md`) |
 | `getVideoFrameConsumer` | **skip**: native SDK extension point |
 | `showVideoCapturePreview` / `hideVideoCapturePreview` (iOS) | **skip**: developer diagnostic |
 | `deleteCollectedDataOnDevice`, `relaunch` | see above |

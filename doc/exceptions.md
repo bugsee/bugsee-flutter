@@ -203,7 +203,7 @@ ELF itself to get the build id): build, then run the 9.x script with the app tok
 
 ```bash
 flutter build apk --release --obfuscate --split-debug-info=build/symbols     # also: ios, appbundle
-git show origin/release:scripts/symbols.py > symbols.py    # or the copy in a 9.x release of the package
+curl -fsSL https://raw.githubusercontent.com/bugsee/bugsee-flutter/release/scripts/symbols.py -o symbols.py   # the 9.x script, on the `release` branch
 python3 symbols.py --token <APP_TOKEN> --version <pubspec version> --symdir build/symbols [--endpoint https://api.bugsee.com/v2/]
 ```
 

@@ -1,54 +1,57 @@
 ## 10.0.0-dev.1
 
-* Rewrite for the Bugsee 7.x native SDKs (in progress, not yet published).
-* Public API: `Bugsee.launch`, `stop`, `status`, `statusChanges`, `getStatus`, `isLaunched`,
-  `getLaunchOptions`, `getHostLaunchOptions`; `BugseeOptions` with a typed field for every
-  option both SDKs register, generated from their published manifests.
-* Public API, continued: attributes (`setAttribute`, `getAttribute`, `getAllAttributes`, `clearAttribute`,
-  `clearAllAttributes`), the user identifier, `event`, `trace`, `log`, `addBreadcrumb`, `notify`,
-  `startBlackout`/`endBlackout`/`isBlackout`, `showReportDialog`, `upload`, `setReportHandler`/`reportHandler`
-  with `ReportProxy`, the `lifecycleEvents` stream and the `BugseeSecureView` widget. See `doc/api-surface.md`
-  for the inventory of both SDKs, what is left out and why, and what each call does before `launch`.
-* The Flutter widget tree in reports (the SDK's `vh` data request): boxes and type names only, no text, keys
-  or semantics, a `BugseeSecureView` subtree redacted whole, answered synchronously from a native snapshot
-  cache the Dart side keeps current while the SDK is launched, its `captureViewHierarchy` option is on and the
-  app is in the foreground. New `Bugsee.captureViewHierarchy()`. See `doc/view-hierarchy.md`.
+A rewrite for the Bugsee 7.x native SDKs (Android 7.4.2, iOS 7.0.0-beta7). **Not published yet; a prerelease.** Existing 9.x apps
+should stay on 9.x: there is no compatibility layer (the decision is open), see `doc/migration-from-9x.md`.
 
-* Network capture: `Bugsee.installNetworkCapture` / `uninstallNetworkCapture` record the app's `dart:io`
-  HTTP traffic (`package:http`, `dio`'s default adapter, `Image.network`, ...) through a chaining
-  `HttpOverrides` and hand it to the SDK through the SDKs' wrapper channel, with the SDK's body options and
-  privacy rules; `Bugsee.setNetworkFilter` is a Dart-side, fail-closed filter that runs before anything
-  reaches the SDK; `Bugsee.networkCaptureStats` counts what was dropped and why. See `doc/network.md`.
-* Log capture: `Bugsee.installLogCapture` / `uninstallLogCapture` record `print` (inside a zone that carries
-  `Bugsee.logCaptureZoneSpecification`: `runWithLogCapture`, `runGuarded`) and a chained `debugPrint`, and
-  `Bugsee.forwardLog` records lines from your own logging (`logLevelForLoggingValue` maps `package:logging`), through the
-  SDKs' wrapper channel with the plugin's own source (`Custom`), not as the app's `Bugsee.log`; `Bugsee.setLogFilter`
-  is a Dart-side, fail-closed filter that runs before anything reaches the SDK; `Bugsee.logCaptureStats` counts what was
-  dropped and why. The SDKs have no log sanitizer, and Android's own logcat capture may record the same line again raw.
-  See `doc/logs.md`.
-* Dart errors: `Bugsee.logException(error, [stackTrace])` (an error report), `logUnhandledException(error,
-  [stackTrace])` (a crash report) and `reportException(error, {stackTrace, handled, domain})`; the opt-in
-  `installErrorHandlers` / `uninstallErrorHandlers` (chained to existing handlers, restored, once per error, rate
-  limited, error reports by default), `errorHandlersActive`, `runGuarded` and `listenToIsolateErrors`. The document
-  sent to the SDKs is the backend's `FlutterManagedException` one (with the `signature` both SDKs hash), and a
-  non-symbolic (obfuscated / `--split-debug-info`) stack is sent untouched. See `doc/exceptions.md`.
+### Features
 
-* Report attachments and screenshots: `ReportProxy.addAttachment(path, {name, mimeType, move})` (path-first: the file
-  never crosses the bridge), `addAttachmentBytes` (up to 1 MiB), `clearAttachments`, `setScreenshot(path, {displayId,
-  annotated})`, `removeScreenshot`, and `attachments` / `screenshots` on `ReportSnapshot`; typed errors
-  (`ReportAttachmentException`). `Bugsee.createReport({timeToLive})` returns a `CreatedReport` to fill in and `upload()`
-  (one at a time, released at its time to live). See `doc/attachments.md` for what differs on iOS.
+* **Launch and configuration.** `Bugsee.launch(token, {options})` returning `LaunchResult` (`launched`, `alreadyRunning`, `deferred`),
+  `waitUntilLaunched`, `stop`, `status`, `statusChanges`, `getStatus`, `isLaunched`, `getLaunchOptions`, `getHostLaunchOptions`.
+  `BugseeOptions` has a typed, documented field for each of the 100 options the SDKs register, generated from the manifests they
+  publish (enums carry the SDK's internal value); an unknown key or a wrong type is an `ArgumentError` before the SDK sees it.
+* **Data.** Attributes (`setAttribute`, `getAttribute`, `getAllAttributes`, `clearAttribute`, `clearAllAttributes`), the user identifier,
+  `event`, `trace`, `log`, `addBreadcrumb`, `notify`, blackout (`startBlackout`, `endBlackout`, `isBlackout`), `showReportDialog`, `upload`.
+* **Reports.** `setReportHandler` / `reportHandler` with `ReportProxy` (before and after callbacks, edits to summary, description,
+  severity, labels and attributes), report attachments and annotated screenshots (path-first, no bytes cross the bridge, `addAttachmentBytes`
+  up to 1 MiB), `Bugsee.createReport({timeToLive})` returning a `CreatedReport`, and the `lifecycleEvents` stream.
+* **Privacy.** The `BugseeSecureView` widget, and the Flutter widget tree in reports (boxes and type names only, no text, keys or semantics;
+  a secure view is one node) answered synchronously from a native snapshot cache; `Bugsee.captureViewHierarchy()`.
+* **Dart errors.** `logException`, `logUnhandledException`, `reportException`; opt-in `installErrorHandlers` (chained, restored, once per
+  error, rate limited, **error reports by default**, `reportAsCrash: true` for crash reports), `errorHandlersActive`, `runGuarded`,
+  `listenToIsolateErrors`; obfuscated (`--split-debug-info`) stacks are sent untouched for the backend to symbolicate.
+* **Network.** Opt-in `installNetworkCapture` records `dart:io` HTTP traffic (`package:http`, dio's default adapter, `Image.network`, ...)
+  and hands it to the SDK through the wrapper channel with the SDK's body options and sanitizer; `setNetworkFilter` is a Dart-side,
+  fail-closed filter that runs first; `networkCaptureStats`.
+* **Logs.** Opt-in `installLogCapture` records `print` (in a zone: `runWithLogCapture`, `runGuarded`) and `debugPrint`; `forwardLog` for your
+  own logging; `setLogFilter` (fail closed); `logCaptureStats`. Recorded with the plugin's own source (`Custom`), not as `Bugsee.log`.
+* `bugseeFlutterVersion`, so the feedback package can check it runs with the core it was released with.
+* The in-app feedback chat is the separate package `bugsee_flutter_feedback`, released in lock-step.
+* The wrapper registers with the SDK before it can launch (an Android content provider at `initOrder` 200; iOS `+load`), so reports recovered
+  after a crash carry the wrapper identity.
+* Development only, not published: the device verification harness (`scripts/device/`) and its evidence (`doc/verification.md`).
 
-* `bugseeFlutterVersion`: the package's own version, public so that `bugsee_flutter_feedback` can check it runs with the core it was released with.
+### Breaking changes from 9.x
 
-* Device verification harness (development only, not published): `scripts/device/` builds a verification app
-  (`example/lib/verify_main.dart`) and asserts on an Android emulator and an iOS simulator what workbook Part 9
-  asks (native `SIGSEGV` and the recovered report's identity, airplane-mode retention, crash across an update,
-  obfuscated release builds and their symbolization, secure rectangles at other densities, hot restart), with the
-  build, launch, precondition and event guards on by default. Results and evidence: `doc/verification.md`.
-  `native-versions.json` gained `android.sdkBuild`, `ios.sdkBuild`, `ios.spmRevision` and `ios.feedbackSpmRevision`
-  (what the harness matches the SDK banners and SwiftPM's resolution against).
+* A new API: `Bugsee.launch` returns `LaunchResult` and takes `BugseeOptions` (no `AndroidLaunchOptions` / `IOSLaunchOptions`, no
+  `appRunCallback`); email becomes the user identifier; attachments move to the report handler; secure rectangles are replaced by
+  `BugseeSecureView`; `pause` / `resume` are replaced by blackout; `relaunch`, the appearance system, `setApplicationVersion`,
+  `registerNetworkEvent`, `BugseeIgnoreSecureView` and the test-crash calls are removed. Network, log and error capture are opt-in.
+  The full mapping is in `doc/migration-from-9x.md`.
+* The Dart log, network and lifecycle types are new (`BugseeLogEvent.message` instead of `text`, `LifecycleEvent` instead of
+  `BugseeLifecycleEventType`, `ReportSeverity` instead of `BugseeSeverityLevel`).
 
-## 0.0.1
+### Requirements
 
-* TODO: Describe initial release.
+* Flutter 3.41.0 or newer, Dart 3.11 or newer (the plugin is SwiftPM-only).
+* Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.0.8 applied by the app (mandatory), and the Gradle ordering workaround
+  for [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33).
+* iOS: 15.0 or newer, Swift Package Manager only (no CocoaPods).
+
+### Known gaps
+
+* Verified on an Android emulator and iOS simulators only; no physical device yet. The iOS simulator slice has no crash reporter and
+  files no logged exceptions, so those paths are unverified on iOS.
+* The Android report screenshot is black in Flutter's default `SurfaceView` render mode (SDK issue
+  [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316)); render with a `TextureView` as the workaround.
+* Not exposed: APM transactions and spans, the appearance system, `relaunch`.
+* See `PLAN.md` for the open decisions and the full list.

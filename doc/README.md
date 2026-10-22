@@ -21,6 +21,7 @@ The pages below go deeper.
 | Page | What it is |
 |---|---|
 | [architecture.md](architecture.md) | The layers (Dart facade, Pigeon bridge, native wrapper, SDK), registration before launch, threading and fail-closed rules |
+| [design-rules.md](design-rules.md) | The detailed invariants per area (secure rectangles, report handlers, view hierarchy, options, facade, network, logs, exceptions, attachments, feedback, harness) with the guards that hold them |
 | [workbook-conformance.md](workbook-conformance.md) | Each step, trap and minimum-viable-wrapper item of the wrapper workbook mapped to its implementation, guard and device scenario, with the gaps |
 | [verification.md](verification.md) | The device verification harness, its default guards, the environment, results per scenario, findings and what was not covered |
 | [../PLAN.md](../PLAN.md) | Project status, decisions, open questions, known gaps and the release checklist |

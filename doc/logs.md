@@ -214,6 +214,7 @@ XCTest `BGSFlutterLogOpsTests`. Every one was mutation-checked (PLAN.md 5d). Run
 | with the Dart filter | `card <digits> password=<redacted>`; `internal` line absent; throwing filter: line absent | the same |
 | `FlutterError` dump with a marker in its tree | absent | absent |
 | line before launch | absent | absent |
+| a line printed right before `Bugsee.upload` (re-run after review round 1: captured 1017 / 1016) | present, source 98 | present, source 98 |
 | flood of 3000 | 999 recorded, 1952 rate limited, 50 queue-full | 999 recorded |
 | platform echo (plain app run) | source 3, tag `flutter`, raw | none (not recorded) |
 

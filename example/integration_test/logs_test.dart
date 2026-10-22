@@ -194,6 +194,10 @@ Future<void> main() async {
       expect(stats.truncated, 1);
 
       // A report: this is what the bundle (log.json) is read from.
+      // Printed the line before the report: the report waits (at most 200 ms) for it.
+      Bugsee.runWithLogCapture(
+        () => print('LOGTEST E printed right before the upload'),
+      );
       await Bugsee.upload('log capture test', 'lines printed from Dart');
       say('upload requested');
       await Future<void>.delayed(const Duration(seconds: 12));

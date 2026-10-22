@@ -665,34 +665,40 @@ void main() {
   });
 
   group('flush', () {
-    test('leaves no timer behind while native does not answer', () {
-      fakeAsync((async) {
-        final gate = Completer<int>();
-        final pipeline = LogPipeline(
-          send: (batch) => gate.future,
-          policy: () => accepting,
-          limiter: LogRateLimiter(burst: 1 << 20, perSecond: 1 << 20),
-          warn: (_) {},
-        );
-        pipeline.submit('stuck', LogLevel.info, null);
-        async.elapse(const Duration(milliseconds: 20));
-        // Reports that give up on it (a time limit) each used to leave a polling loop.
-        for (var i = 0; i < 30; i++) {
-          unawaited(
-            pipeline.flush().timeout(
-              const Duration(milliseconds: 5),
-              onTimeout: () {},
-            ),
-          );
-        }
-        async.elapse(const Duration(milliseconds: 50));
-        expect(async.pendingTimers, isEmpty);
-        var done = false;
-        unawaited(pipeline.flush().then((_) => done = true));
-        gate.complete(1);
-        async.elapse(const Duration(milliseconds: 20));
-        expect(done, isTrue);
-      });
+    test('leaves no timer behind while native does not answer', () async {
+      final gate = Completer<int>();
+      final pipeline = LogPipeline(
+        send: (batch) => gate.future,
+        policy: () => accepting,
+        limiter: LogRateLimiter(burst: 1 << 20, perSecond: 1 << 20),
+        warn: (_) {},
+      );
+      pipeline.submit('stuck', LogLevel.info, null);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      var timers = 0;
+      // Reports that give up on it (a time limit) each used to leave a polling loop of timers.
+      runZoned(
+        () {
+          for (var i = 0; i < 30; i++) {
+            unawaited(
+              pipeline.flush().timeout(
+                const Duration(milliseconds: 5),
+                onTimeout: () {},
+              ),
+            );
+          }
+        },
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, f) {
+            if (duration != const Duration(milliseconds: 5)) timers++;
+            return parent.createTimer(zone, duration, f);
+          },
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(timers, 0);
+      gate.complete(1);
+      await pipeline.flush();
     });
 
     test(

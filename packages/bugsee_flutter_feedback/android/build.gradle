@@ -1,0 +1,66 @@
+group = "com.bugsee.flutter.feedback"
+version = "1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.11.1")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+// The pins. They are LITERALS here, unlike the core plugin's build.gradle which reads
+// native-versions.json: that file lives at the repository root, and a published copy of this
+// package (the pub cache) has no such file next to it. test/feedback_package_drift_test.dart in the
+// repository root compares both literals to native-versions.json (android.sdk, android.minSdk), so
+// they cannot drift from the core's.
+def feedbackSdkVersion = "7.4.2"
+def feedbackMinSdk = 21
+
+android {
+    namespace = "com.bugsee.flutter.feedback"
+
+    compileSdk = 35
+
+    compileOptions {
+        // The SDK compiles at 1.8; a wrapper must not emit newer bytecode than the library it
+        // bridges to.
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        // The SDK's own floor; a wrapper must not raise it.
+        minSdk = feedbackMinSdk
+    }
+
+    dependencies {
+        // The extension module: BugseeFeedback, its activity, its init provider and the
+        // `Feedback` contract. `api`, like the core does for the SDK: the app's own code can use
+        // the contract types. Its POM brings `com.bugsee:bugsee-android` at the SAME version.
+        api "com.bugsee:bugsee-android-feedback:${feedbackSdkVersion}"
+
+        testImplementation("junit:junit:4.13.2")
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+        unitTests.all {
+            testLogging {
+                events "passed", "skipped", "failed"
+            }
+        }
+    }
+}

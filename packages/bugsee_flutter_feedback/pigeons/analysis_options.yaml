@@ -1,0 +1,2 @@
+# Keeps tools (dart format) from resolving the root analysis_options.yaml, whose
+# package:flutter_lints include this pure-Dart package cannot resolve.

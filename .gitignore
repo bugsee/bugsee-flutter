@@ -24,8 +24,9 @@ migrate_working_dir/
 #.vscode/
 
 # Flutter/Dart/Pub related
-# Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
-/pubspec.lock
+# The repository is a pub workspace and its one lock file (pubspec.lock at the root, covering the
+# plugin, the feedback package and the example app) IS committed, so CI and the example builds
+# resolve the same versions every run. It is not published: .pubignore drops it.
 **/doc/api/
 .dart_tool/
 .flutter-plugins-dependencies

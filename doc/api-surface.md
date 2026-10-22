@@ -80,7 +80,7 @@ here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/at
 | `setLogEventFilter`, `setLogFilter`, `setBreadcrumbFilter`, `setAdditionalDataCapture` | **skip (Phase 5)**: filters chain behind the wrapper's own capture |
 | `getExchangeFactory` | **wrapper-internal** (used to build a breadcrumb) |
 | `getAppearance` (Android `Appearance`, iOS `BugseeTheme`) | **skip, deliberately**: the 7.x appearance system is a large per-property colour/string surface that differs between the platforms (Android namespaced keys, iOS properties); RN needed a whole bridge for it, and the 9.x one was larger still. Not a plain SDK method. A later, separate design |
-| `ext` / `registerExt` | **skip**: native modules (feedback is a separate package, decision D4) |
+| `ext` / `registerExt` | **skip**: native modules (feedback is a separate package, decision D4: `packages/bugsee_flutter_feedback`, see its `doc/feedback.md`) |
 | `getVideoFrameConsumer` | **skip**: native SDK extension point |
 | `showVideoCapturePreview` / `hideVideoCapturePreview` (iOS) | **skip**: developer diagnostic |
 | `deleteCollectedDataOnDevice`, `relaunch` | see above |

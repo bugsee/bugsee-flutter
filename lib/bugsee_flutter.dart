@@ -53,3 +53,4 @@ export 'src/report/report_proxy.dart'
     show ReportClosedError, ReportProxy, ReportSnapshot;
 export 'src/secure/bugsee_secure_view.dart' show BugseeSecureView;
 export 'src/status.dart' show BugseeStatus;
+export 'src/wrapper_identity.dart' show bugseeFlutterVersion;

@@ -170,6 +170,8 @@ carry the SDK's internal value, never an ordinal.
 
 ## Features
 
+The snippets below are fragments: they assume `import 'package:bugsee_flutter/bugsee_flutter.dart';` and `import 'package:flutter/material.dart';` (plus a `dart:` or package import where one is shown), and run inside `main()` or another `async` function.
+
 Calls that talk to the SDK are statics on `Bugsee` that return a `Future`, and report an invalid argument through that `Future`. The setup
 calls for what only Dart can see (`installNetworkCapture`, `installLogCapture`, `installErrorHandlers`, `setNetworkFilter`, `setLogFilter`,
 `forwardLog`, `runGuarded`, `listenToIsolateErrors`) are synchronous, and an invalid argument there (a `setNetworkFilter` or `setLogFilter`
@@ -265,8 +267,12 @@ void myLogger(String line) => Bugsee.forwardLog(line, level: LogLevel.warning, t
 ### Report handler, attachments, `createReport` ([doc/attachments.md](doc/attachments.md))
 
 ```dart
+import 'dart:typed_data';
+
+import 'package:bugsee_flutter/bugsee_flutter.dart';
+
 // Register BEFORE launch to see reports the SDK recovers while launching.
-await Bugsee.setReportHandler(
+Future<void> registerHandler() => Bugsee.setReportHandler(
   BugseeReportHandler(
     onAfterReportCreated: (report) async {    // at least once: make it idempotent
       await report.replaceLabels(['flutter']);
@@ -277,11 +283,13 @@ await Bugsee.setReportHandler(
 );
 
 // Or build a report yourself.
-final report = await Bugsee.createReport();
-if (report != null) {
-  await report.setSummary('Checkout failed');
-  await report.addAttachmentBytes(Uint8List.fromList([104, 105]), name: 'note');
-  await report.upload();
+Future<void> reportByHand() async {
+  final report = await Bugsee.createReport();
+  if (report != null) {
+    await report.setSummary('Checkout failed');
+    await report.addAttachmentBytes(Uint8List.fromList([104, 105]), name: 'note');
+    await report.upload();
+  }
 }
 ```
 
@@ -325,8 +333,13 @@ Future<void> main() async {
 
 // For example from a "Contact support" button.
 Future<void> contactSupport() async {
-  if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {   // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too
-    await BugseeFeedback.show();
+  try {
+    // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too; `isAvailable` is false when the module is not registered.
+    if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {
+      await BugseeFeedback.show();
+    }
+  } on BugseeFeedbackException {
+    // `nativeError` or `incompatibleCore`: hide the button or tell the user to try later.
   }
 }
 ```

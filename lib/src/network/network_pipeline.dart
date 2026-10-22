@@ -161,11 +161,11 @@ final class NetworkPipeline {
   /// A rough size of an event for the queue's byte budget: what it carries, plus a fixed
   /// allowance for its fields.
   static int estimateBytes(BugseeNetworkEvent event) {
-    var bytes =
-        512 +
-        utf8Length(event.url) +
-        (event.body == null ? 0 : utf8Length(event.body!));
-    event.headers.forEach((k, v) => bytes += utf8Length(k) + utf8Length(v));
+    // O(1): `submit` runs on the app's isolate, so no walk over a body. A Dart string is at most
+    // two bytes a unit, which is what the queue's memory budget is about; the batch limit, which
+    // is about the bridge, counts UTF-8 bytes later (`_messageBytes`), off the capture path.
+    var bytes = 512 + 2 * event.url.length + 2 * (event.body?.length ?? 0);
+    event.headers.forEach((k, v) => bytes += 2 * (k.length + v.length));
     return bytes;
   }
 

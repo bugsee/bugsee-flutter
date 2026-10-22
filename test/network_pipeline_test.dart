@@ -156,7 +156,7 @@ void main() {
     });
 
     test('what left the queue frees its byte budget too', () async {
-      final rig = Rig(maxQueuedBytes: 2500);
+      final rig = Rig(maxQueuedBytes: 3500);
       for (var i = 0; i < 4; i++) {
         rig.pipeline.submit(event('$i', body: 'x' * 1000));
         await rig.pipeline.flush();
@@ -545,6 +545,22 @@ void main() {
     );
   });
 
+  group('submit stays cheap', () {
+    test(
+      'it does not walk a large body (the capture path is the app\'s isolate)',
+      () {
+        final rig = Rig(maxQueuedEvents: 100000, maxQueuedBytes: 1 << 40);
+        final body = 'x' * (2 * 1024 * 1024);
+        final watch = Stopwatch()..start();
+        for (var i = 0; i < 200; i++) {
+          rig.pipeline.submit(event('$i', body: body));
+        }
+        // 200 walks of 2 MiB would take hundreds of milliseconds; an O(1) estimate takes microseconds.
+        expect(watch.elapsedMilliseconds, lessThan(60));
+      },
+    );
+  });
+
   group('the batch byte limit', () {
     test(
       'counts UTF-8 bytes: multi-byte bodies fill a batch that characters would not',
@@ -608,7 +624,8 @@ void main() {
           (e) => e
             ..headers['location'] = 'http://u:p@h/x?token=abc#frag'
             ..headers['x-note'] = 'http://u:p@h/x?token=abc'
-            ..error = 'failed uri = http://u:p@h/x?token=abc'
+            ..headers['Referer'] = 'http://u:p@h/p?k=v'
+            ..error = 'failed uri = HTTPS://u:p@h/x?token=abc'
             ..errorDescription = 'long http://u:p@h/y?k=v',
           const Duration(seconds: 1),
         );
@@ -621,7 +638,8 @@ void main() {
           'http://u:p@h/x?token=abc',
           reason: 'not URL-valued by name',
         );
-        expect(m.errorShortMessage, 'failed uri = http://h/x?<redacted>');
+        expect(m.headers!['Referer'], 'http://h/p?k=<redacted>');
+        expect(m.errorShortMessage, 'failed uri = HTTPS://h/x?<redacted>');
         expect(m.errorDescription, 'long http://h/y?<redacted>');
       },
     );

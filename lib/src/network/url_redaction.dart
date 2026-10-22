@@ -28,7 +28,10 @@ final RegExp _query = RegExp(r'''\?([^\s#'"]*)''');
 String stripUserInfo(String text) =>
     text.replaceAllMapped(_userInfo, (m) => m[1]!);
 
-final RegExp _urlQuery = RegExp(r'''(https?://[^\s?#'"]+)[?#][^\s'"]*''');
+final RegExp _urlQuery = RegExp(
+  r'''(https?://[^\s?#'"]+)[?#][^\s'"]*''',
+  caseSensitive: false,
+);
 
 /// An error text can carry the URL of the request (`HttpException`'s `uri = ...`): userinfo and
 /// query go. The SDK's sanitizer redacts a URL field, not the middle of a message.
@@ -51,6 +54,6 @@ String redactQueryValues(String text) => text.replaceAllMapped(_query, (m) {
 
 /// A header value as it may be recorded: URL-valued headers lose userinfo and query values.
 String redactHeaderValue(String name, String value) =>
-    urlValuedHeaders.contains(name)
+    urlValuedHeaders.contains(name.toLowerCase())
     ? redactQueryValues(stripFragment(stripUserInfo(value)))
     : value;

@@ -331,6 +331,20 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     return Int64(BGSFlutterNetworkOps.addEvents(sdk: networkSdk, events: dictionaries))
   }
 
+  // MARK: Log capture (Phase 5d; see BGSFlutterLogOps)
+
+  private let logSdk = BGSFlutterRealLogSdk()
+
+  func addLogLines(lines: [LogLineMessage]) throws -> Int64 {
+    // The ObjC operations take plain dictionaries (they cannot see this module's Pigeon types).
+    let dictionaries: [[String: Any]] = lines.map { line in
+      var d: [String: Any] = ["message": line.message, "level": line.level]
+      if let v = line.tag { d["tag"] = v }
+      return d
+    }
+    return Int64(BGSFlutterLogOps.addLines(sdk: logSdk, lines: dictionaries))
+  }
+
   // MARK: Exceptions (Phase 5a; see BGSFlutterExceptionOps)
 
   private let exceptionSdk = BGSFlutterRealExceptionSdk()

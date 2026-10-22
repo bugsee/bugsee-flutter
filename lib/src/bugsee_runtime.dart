@@ -17,6 +17,9 @@ import 'facade/breadcrumb.dart';
 import 'facade/validation.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'logs/log_capture.dart';
+import 'logs/log_event.dart';
+import 'logs/log_policy.dart';
 import 'network/network_event.dart';
 import 'network/network_pipeline.dart';
 import 'network/network_policy.dart';
@@ -146,6 +149,7 @@ final class BugseeRuntime {
     // The capture's policy follows the SDK's status; the lifecycle event may arrive after this
     // returns, so ask now too.
     unawaited(network.refreshPolicy());
+    unawaited(logs.refreshPolicy());
     switch (outcome.outcome) {
       case LaunchWire.launched:
         _detectCrash = _detectCrashOf(encoded.values);
@@ -200,6 +204,10 @@ final class BugseeRuntime {
       );
     } finally {
       unawaited(network.refreshPolicy());
+      // A stop takes effect for the log capture at once; the read that follows restores it if the
+      // stop failed.
+      logs.holdUntilRead();
+      unawaited(logs.refreshPolicy());
     }
   }
 
@@ -565,6 +573,42 @@ final class BugseeRuntime {
   BugseeNetworkFilter? get networkFilter => network.pipeline.filter;
 
   NetworkCaptureStats get networkCaptureStats => network.pipeline.stats;
+
+  // ---- Log capture (Phase 5d) -------------------------------------------------------------------
+
+  /// The capture of Dart output, the filter and the queue to the SDK; see `lib/src/logs`.
+  late final LogCaptureService logs = LogCaptureService(
+    send: (batch) => host.addLogLines(batch),
+    loadPolicy: _loadLogPolicy,
+    ensureAttached: ensureStartedInBackground,
+    statuses: () => bridge.statusChanges,
+    supported: () => _platform() != null,
+    warn: _warn,
+  );
+
+  Future<LogPolicy> _loadLogPolicy() async {
+    final status = await host.status();
+    final options = await host.launchOptions(false);
+    return LogPolicy.from(options, status: status);
+  }
+
+  /// Installs the log capture (see `Bugsee.installLogCapture`). A call from a background isolate
+  /// is a [BugseeException]: it has no platform channels to reach the SDK with.
+  bool installLogCapture(LogLevel level) {
+    _requireBinding();
+    return logs.install(level: level);
+  }
+
+  void uninstallLogCapture() => logs.uninstall();
+
+  bool get logCaptureInstalled => logs.installed;
+
+  void setLogFilter(BugseeLogFilter? filter, Duration timeout) =>
+      logs.setFilter(filter, timeout);
+
+  BugseeLogFilter? get logFilter => logs.pipeline.filter;
+
+  LogCaptureStats get logCaptureStats => logs.pipeline.stats;
 
   /// The shortest and longest time a created report is held.
   static const Duration minCreatedReportTimeToLive = Duration(seconds: 1);

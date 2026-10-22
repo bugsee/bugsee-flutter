@@ -2297,6 +2297,136 @@ public class Messages {
   }
 
   /**
+   * One line of Dart output the log capture (Phase 5d: `print`, `debugPrint`, `Bugsee.forwardLog`)
+   * hands to the SDK. Strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+   *
+   * Native submits it through the wrapper channel with the wrapper's own source (`Custom`, 98: a
+   * constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
+   * has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
+   * the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
+   * Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class LogLineMessage {
+    /** The text, already filtered and cut to the line cap by Dart; never empty. */
+    private @NonNull String message;
+
+    public @NonNull String getMessage() {
+      return message;
+    }
+
+    public void setMessage(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"message\" is null.");
+      }
+      this.message = setterArg;
+    }
+
+    /** The SDK's internal `LogLevel` integer (1 error .. 5 verbose: the same on both SDKs). */
+    private @NonNull Long level;
+
+    public @NonNull Long getLevel() {
+      return level;
+    }
+
+    public void setLevel(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"level\" is null.");
+      }
+      this.level = setterArg;
+    }
+
+    /** Recorded on Android (`log.json` `tag`); iOS has no tag and drops it. Null or empty: none. */
+    private @Nullable String tag;
+
+    public @Nullable String getTag() {
+      return tag;
+    }
+
+    public void setTag(@Nullable String setterArg) {
+      this.tag = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    LogLineMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      LogLineMessage that = (LogLineMessage) o;
+      return pigeonDeepEquals(message, that.message) && pigeonDeepEquals(level, that.level) && pigeonDeepEquals(tag, that.tag);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), message, level, tag};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "LogLineMessage{" + "message=" + message + ", " + "level=" + level + ", " + "tag=" + tag + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable String message;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setMessage(@NonNull String setterArg) {
+        this.message = setterArg;
+        return this;
+      }
+
+      private @Nullable Long level;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setLevel(@NonNull Long setterArg) {
+        this.level = setterArg;
+        return this;
+      }
+
+      private @Nullable String tag;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setTag(@Nullable String setterArg) {
+        this.tag = setterArg;
+        return this;
+      }
+
+      public @NonNull LogLineMessage build() {
+        LogLineMessage pigeonReturn = new LogLineMessage();
+        pigeonReturn.setMessage(message);
+        pigeonReturn.setLevel(level);
+        pigeonReturn.setTag(tag);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(3);
+      toListResult.add(message);
+      toListResult.add(level);
+      toListResult.add(tag);
+      return toListResult;
+    }
+
+    static @NonNull LogLineMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      LogLineMessage pigeonResult = new LogLineMessage();
+      Object message = pigeonVar_list.get(0);
+      pigeonResult.setMessage((String) message);
+      Object level = pigeonVar_list.get(1);
+      pigeonResult.setLevel((Long) level);
+      Object tag = pigeonVar_list.get(2);
+      pigeonResult.setTag((String) tag);
+      return pigeonResult;
+    }
+  }
+
+  /**
    * One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
    * vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
    *
@@ -2782,6 +2912,8 @@ public class Messages {
         case (byte) 140:
           return BreadcrumbMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 141:
+          return LogLineMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 142:
           return NetworkEventMessage.fromList((ArrayList<Object>) readValue(buffer));
         default:
           return super.readValueOfType(type, buffer);
@@ -2826,8 +2958,11 @@ public class Messages {
       } else if (value instanceof BreadcrumbMessage) {
         stream.write(140);
         writeValue(stream, ((BreadcrumbMessage) value).toList());
-      } else if (value instanceof NetworkEventMessage) {
+      } else if (value instanceof LogLineMessage) {
         stream.write(141);
+        writeValue(stream, ((LogLineMessage) value).toList());
+      } else if (value instanceof NetworkEventMessage) {
+        stream.write(142);
         writeValue(stream, ((NetworkEventMessage) value).toList());
       } else {
         super.writeValue(stream, value);
@@ -3091,6 +3226,18 @@ public class Messages {
      */
     @NonNull 
     Long addNetworkEvents(@NonNull List<NetworkEventMessage> events);
+    /**
+     * Hands a batch of captured Dart output lines to the SDK through the wrapper channel, in order,
+     * attributed to the wrapper (`Custom`). Returns how many lines the SDK was handed: native drops
+     * the rest without error (the SDK is neither launching nor launched, `capture.logs` is off, the
+     * plugin has no channel yet, a malformed line). Never throws for a single bad line.
+     *
+     * Runs on a serial BACKGROUND thread of the plugin: the app's native log filter, if it set one,
+     * runs on the calling thread (documented for the channel), and an exception it throws must not
+     * reach the platform thread.
+     */
+    @NonNull 
+    Long addLogLines(@NonNull List<LogLineMessage> lines);
     /**
      * Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
      * exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
@@ -4434,6 +4581,29 @@ public class Messages {
                 List<NetworkEventMessage> eventsArg = (List<NetworkEventMessage>) args.get(0);
                 try {
                   Long output = api.addNetworkEvents(eventsArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addLogLines" + messageChannelSuffix, getCodec(), taskQueue);
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                List<LogLineMessage> linesArg = (List<LogLineMessage>) args.get(0);
+                try {
+                  Long output = api.addLogLines(linesArg);
                   wrapped.add(0, output);
                 }
  catch (Throwable exception) {

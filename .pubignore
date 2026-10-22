@@ -43,3 +43,6 @@ migrate_working_dir/
 /pigeons/
 # The sibling feedback package is published by itself, from its own directory.
 /packages/
+# The device verification harness (PLAN.md Phase 7) and the app it drives: dev tooling, never published.
+/scripts/device/
+/example/lib/verify_main.dart

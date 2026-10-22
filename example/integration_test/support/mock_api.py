@@ -8,8 +8,18 @@
 #                       upload is handed to the system) can still check what the SDK sent
 #   anything else    -> 200 {}
 #
+# The device verification harness (scripts/device/) also uses, on the same loopback server:
+#   POST /__cmd      -> queue one command line for the app (scripts/device's verify_main.dart polls it)
+#   GET  /__cmd      -> pop the next command (200, text) or 204
+#   POST /__event    -> the app reports what it saw (one JSON line); GET /__events lists them
+#   POST /__mode?upload=503|200&issue=0|1 -> change the answers at run time
+#   POST /__reset    -> forget bundles, events and commands (the stored bundle files are removed too)
+#   GET  /__plain?file=NAME -> a stored bundle re-written with deflate (an iOS bundle compresses with zstd
+#                       (zip method 93), which dart:io cannot inflate; Python 3.14 reads it)
+#
 #   ISSUE_OK=1 UPLOAD_STATUS=503 DUMP_DIR=/tmp/bundles python3 mock_api.py 8196 /tmp/mock.log
-import glob, hashlib, json, sys, tempfile, time, os, zipfile
+import glob, hashlib, io, json, sys, tempfile, time, os, zipfile
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOG = sys.argv[2]
@@ -19,6 +29,7 @@ ISSUE_OK = os.environ.get('ISSUE_OK') == '1'
 DUMP = os.environ.get('DUMP_DIR') or tempfile.mkdtemp(prefix='bugsee-mock-bundles-')
 os.makedirs(DUMP, exist_ok=True)
 count = [0]
+commands, events = [], []
 
 def bundles():
     out = []
@@ -42,13 +53,55 @@ def bundles():
 class H(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     def _do(self):
-        n = int(self.headers.get('content-length') or 0)
-        body = self.rfile.read(n) if n else b''
+        if (self.headers.get('transfer-encoding') or '').lower() == 'chunked':
+            body = b''
+            while True:
+                size = int(self.rfile.readline().split(b';')[0].strip() or b'0', 16)
+                if size == 0:
+                    self.rfile.readline()
+                    break
+                body += self.rfile.read(size)
+                self.rfile.readline()
+        else:
+            n = int(self.headers.get('content-length') or 0)
+            body = self.rfile.read(n) if n else b''
         path = self.path.split('?')[0]
         with open(LOG, 'a') as f:
             f.write(f"{time.strftime('%H:%M:%S')} {self.command} {path} len={len(body)}\n")
         status, out = 200, {}
-        if self.command == 'GET' and path == '/__bundles':
+        raw = None
+        if path == '/__cmd' and self.command == 'POST':
+            commands.append(body.decode())
+        elif path == '/__cmd' and self.command == 'GET':
+            if commands:
+                raw = commands.pop(0).encode()
+            else:
+                status = 204
+        elif path == '/__event' and self.command == 'POST':
+            events.append(body.decode())
+        elif path == '/__plain' and self.command == 'GET':
+            name = os.path.basename((parse_qs(urlparse(self.path).query).get('file') or [''])[0])
+            full = os.path.join(DUMP, name)
+            if name and os.path.isfile(full):
+                src = zipfile.ZipFile(full)
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as out:
+                    for i in src.infolist():
+                        out.writestr(i.filename, src.read(i))
+                raw = buf.getvalue()
+            else:
+                status = 404
+        elif path == '/__events':
+            out = [json.loads(e) if e.startswith('{') else e for e in events]
+        elif path == '/__mode' and self.command == 'POST':
+            q = dict(kv.split('=') for kv in (self.path.split('?') + [''])[1].split('&') if '=' in kv)
+            global UPLOAD_STATUS, ISSUE_OK
+            if 'upload' in q: UPLOAD_STATUS = int(q['upload'])
+            if 'issue' in q: ISSUE_OK = q['issue'] == '1'
+        elif path == '/__reset' and self.command == 'POST':
+            commands.clear(); events.clear()
+            for f in glob.glob(os.path.join(DUMP, '*.zip')): os.remove(f)
+        elif self.command == 'GET' and path == '/__bundles':
             out = bundles()
         elif self.command == 'POST' and path.endswith('/v2/issues'):
             if ISSUE_OK:
@@ -61,9 +114,9 @@ class H(BaseHTTPRequestHandler):
             with open(os.path.join(DUMP, f"{int(time.time()*1000)}-{self.command}-{path.strip('/').replace('/', '_')}.zip"), 'wb') as f:
                 f.write(body)
             status = UPLOAD_STATUS
-        data = json.dumps(out).encode()
+        data = raw if raw is not None else (b'' if status == 204 else json.dumps(out).encode())
         self.send_response(status)
-        self.send_header('content-type', 'application/json')
+        self.send_header('content-type', 'application/zip' if path == '/__plain' and status == 200 else 'application/json')
         self.send_header('content-length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)

@@ -70,10 +70,10 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   `ReportProxy` (internal, `lib/src/report`; Phase 4 exposes it). The SDK's completion runs EXACTLY ONCE on every path; the
   pipeline NEVER WAITS (the SDK already waits on its own timer; a native wait for Dart's reply deadlocks when the handler runs
   on the platform thread, which iOS's live path does). `isTerminating` never reaches Dart and the report is not even read.
-  No Dart handler registered, or Dart not attached: complete at once. The window is the SDK's budget LESS A MARGIN (a third, at most 10 s), from SDK source (numbers extracted into `test/fixtures/report_enums.json`): Android 7.4.2 waits `ReportHandlerCallbackTimeout` (30 s, option) per handler on thread `BugseeReportHandlerThread`, ours 20 s; its recovery/terminating paths run on other threads, wait 3 s for the handler to RETURN and never for the completion, so Android completes at once there. iOS (nextgen = beta7 headers): live = MAIN thread, 30 s per handler, ours 20 s; recovery = worker thread, 3 s cap, a late completion re-persists the report, ours 2 s. Honest limit: the SDK's per-handler timer starts when it QUEUES the handler, ours at handler entry, and the wait in between (another report's slow handler holding the shared Android dispatch thread, a busy iOS main thread) is NOT observable; the margin absorbs it, and a handler queued behind more than the margin can still overrun, with an edit accepted although the SDK has moved on. What is observable (the hop to the platform thread after entry) is deducted: Dart is told what is LEFT, and a window already over is completed, not offered. An accepted edit is guaranteed to have landed before the completion ran (per-handle lock across check-and-apply). A new isolate (hot restart) completes the previous one's outstanding deliveries. A Dart handler that overruns its budget is reported even if it makes no further edit. The path is told apart by thread
+  No Dart handler registered, or Dart not attached: complete at once. The window is the SDK's budget LESS A MARGIN (a third, at most 10 s), from SDK source (numbers extracted into `test/fixtures/report_enums.json`): Android 7.4.2 waits `ReportHandlerCallbackTimeout` (30 s, option) per handler on thread `BugseeReportHandlerThread`, ours 20 s; its terminating and EARLY-CRASH recovery paths run on other threads, wait 3 s for the handler to RETURN and never for the completion, so Android completes at once there. Measured in Phase 7 (`doc/verification.md` scenario 3): a native-crash report recovered on the next launch after a normal session is NOT an early-crash recovery: it runs on `BugseeReportHandlerThread` with `isTerminating` false, gets the live window, Dart runs and its edits land in the recovered bundle. iOS (nextgen = beta7 headers): live = MAIN thread, 30 s per handler, ours 20 s; recovery = worker thread, 3 s cap, a late completion re-persists the report, ours 2 s. Honest limit: the SDK's per-handler timer starts when it QUEUES the handler, ours at handler entry, and the wait in between (another report's slow handler holding the shared Android dispatch thread, a busy iOS main thread) is NOT observable; the margin absorbs it, and a handler queued behind more than the margin can still overrun, with an edit accepted although the SDK has moved on. What is observable (the hop to the platform thread after entry) is deducted: Dart is told what is LEFT, and a window already over is completed, not offered. An accepted edit is guaranteed to have landed before the completion ran (per-handle lock across check-and-apply). A new isolate (hot restart) completes the previous one's outstanding deliveries. A Dart handler that overruns its budget is reported even if it makes no further edit. The path is told apart by thread
   (Android: name, iOS: main or not) for the time budget ONLY, never passed to Dart, never "this is a recovered crash" (7.2.3).
-  The workbook's table says Android recovery runs on main and is waited for; 7.4.2 source says a spawned thread, not awaited
-  (inline on the launching thread only when no thread can be started): source wins, spec gap to report.
+  The workbook's table says Android recovery runs on main and is waited for; 7.4.2 source says the EARLY-crash recovery is a spawned thread, not awaited
+  (inline on the launching thread only when no thread can be started), and the device shows a normal native-crash recovery is on `BugseeReportHandlerThread`, waited for (neither main): source and device win, spec gap to report.
   Dart: edits are operations keyed by a handle; a late edit throws `ReportClosedError` (a `StateError`) and native ignores it.
   `onAfter` is at-least-once: each delivery carries a stable `deliveryId` (`before|after:<reportId>`) and Dart skips a repeat
   within the isolate (128 remembered). Enums cross by value (the bridge has none; severity is the SDK integer; Dart
@@ -326,12 +326,36 @@ Design, data flow, the SDK rules with source refs, the privacy model, limits and
   `onBefore` at-most-once, `onAfter` idempotent; deadline is the SDK's; no recovery inference.
 - Recovered-report identity (`identity_source`) passes through untouched.
 
-## 7. Phase 7 — Device verification (Part 9)
+## 7. Phase 7 — Device verification (Part 9) (done; Android emulator API 30, iOS 27.0 simulator)
 
-Harness-level assertions (build SHA banner, SDK launched, precondition took, event happened).
-Recipes: native `SIGSEGV` (4 distinct `libbugsee*.so`, report produced), airplane-mode bundle
-retention + `request.json` read, crash across update, Dart exception, secure-rect redaction on a
-3× device, relaunch-after-crash with handlers, release-build/obfuscation symbolication.
+A repeatable, asserting harness (`scripts/device/`, driving `example/lib/verify_main.dart` through the loopback mock API) and its
+write-up with the evidence: `doc/verification.md`. Not run in CI (it needs a device); its parsers, assertions and 9.1 guards
+are tested in `test/device_harness_test.dart` (in `flutter test`), with drift guards for what it repeats.
+
+- **Guards by default (9.1)**: every launch asserts the SDK banner's VERSION AND BUILD against `native-versions.json`
+  (`android.sdkBuild`, `ios.sdkBuild`), the wrapper identity in the log, the artefact set (NDK artefact, Gradle plugin 4.0.8 alone,
+  four `libbugsee*.so` in the APK, the provider kept at `initOrder` 200; iOS: SwiftPM resolved the pinned tag and revision) and that
+  the SDK launched; every crash asserts the signal-11 death (logcat plus `ApplicationExitInfo`; launchd on iOS); staged preconditions
+  are read back; every "nothing arrived" has a positive control; each scenario ends by restoring the device and asserting an
+  unchanged `git status`.
+- **Android (all eight PASS)**: native `SIGSEGV` (debug with `run-as`, release as root) with the airplane-mode retained bundle;
+  `sdk.wrapper` AND `identity_source: session` on the recovered report; four libraries (the workbook's logcat grep saw 1 to 2 on a
+  correct build here: `avc` audit lines are rate-limited, so the harness counts mapped + extracted libraries and the minidump);
+  the Dart handler runs on a recovered report and its attribute, label and file land in the bundle; handled / unhandled / async
+  exceptions in debug and in an R8 `--obfuscate` release (carrier kept, symbolized with the exact build's symbols, refused with
+  another's); view hierarchy, network, logs, attachments, `createReport` and the secure region in release and profile; crash
+  across an update (N and N+1 on each half of the recovered report); secure rectangles in physical pixels at 440, 320 and 560 dpi;
+  hot restart.
+- **iOS simulator**: registration, the debug battery, the secure region at 3x and hot restart PASS; the device release link was
+  built and inspected statically (**the add-on's `+load` registrars survive the release link with dead stripping on**). NOT POSSIBLE,
+  each with a measured cause: a recovered crash (the SDK's simulator slice has no crash reporter), exception bundles (the SDK files no
+  logged exception on a simulator), crash across an update, release/profile runs (the Flutter tool refuses; `aot_assembly_release` only
+  builds for devices) and a run-time density change.
+- **Found**: a native-crash report recovered after a normal Android session is dispatched on `BugseeReportHandlerThread` with the
+  live window, so the Dart handler runs and its edits land (3c's "completes at once" is the early-crash path only: corrected above and
+  in `.claude/CLAUDE.md`); the Android report screenshot is all black on the emulator (the video frame is right): follow-up.
+- Pre-existing and worked around: `flutter build ios --simulator` fails on Flutter 3.41 / Xcode 27.1 (order-sensitive architecture check);
+  the harness builds with `flutter build ios --config-only` plus `xcodebuild` for one simulator and `ARCHS=arm64`.
 
 ## 8. Phase 8 — Feedback package, docs, release
 
@@ -354,7 +378,7 @@ retention + `request.json` read, crash across update, Dart exception, secure-rec
   iOS `+load` shim). The package adds no provider (guarded), registers on Android only as a safety net, and on iOS has its
   own `+load` registrar that the plugin references, because the add-on's shim can be dead-stripped from a static link.
   Measured: with the plugin's `+load`/register removed the add-on's own shim still registered it in a debug simulator build (and in the XCTest
-  host), so the dead-strip risk the add-on's header describes was NOT reproduced there; a release (archive) build was not tried. Android default
+  host), so the dead-strip risk the add-on's header describes was NOT reproduced there; a release (archive) build was not tried then. Phase 7 (`doc/verification.md` scenario 5): the device RELEASE link (`DEAD_CODE_STRIPPING = YES`) keeps the SDK shim's, this plugin's and the core's `+load` registrars, present in the binary and listed in `__objc_nlclslist`; static evidence only (a device build cannot run on a simulator). Android default
   (Gradle plugin 4.0.8, extension consolidation on): the AAR's provider is absent from the installed app and the SDK registered the module
   (logcat `feedback module registered by the SDK`); the chat opened (`FeedbackActivity`, email screen) and the core's lifecycle stream carried
   `BeforeFeedbackShown`/`AfterFeedbackShown`. Not verified: `optimizeExtensionsLoading=false`, the Android safety-net path, a real token (sending/receiving).

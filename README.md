@@ -310,4 +310,6 @@ tasks.matching { it.name.startsWith("injectBugsee") && it.name.endsWith("BuildId
 The example app (`example/`) has a launch screen, a data screen that calls every method above and a
 network screen; `example/integration_test/launch_test.dart`, `facade_test.dart`, `network_test.dart` and `logs_test.dart`
 run them against the real SDKs on a device or simulator.
+`scripts/device/` is a device verification harness (an Android emulator and an iOS simulator; not run in CI): what it asserts,
+the environment it ran in and the evidence are in [doc/verification.md](doc/verification.md).
 See [PLAN.md](PLAN.md) for the implementation plan and `.github/CI.md` for the checks.

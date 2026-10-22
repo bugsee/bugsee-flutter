@@ -29,10 +29,29 @@ Concurrency: PR runs of the same ref cancel superseded (running or pending) runs
 push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or replaced. Every job has a `timeout-minutes`. Flutter SDK and pub cache use
 `subosito/flutter-action`'s `cache: true`; no build outputs are cached or uploaded.
 
+## Device verification harness (not in CI)
+
+`scripts/device/` (Dart; PLAN.md Phase 7, `doc/verification.md`) builds the verification app (`example/lib/verify_main.dart`),
+drives it on an Android emulator and an iOS simulator through the loopback mock API, and asserts the workbook Part 9 recipes
+(native `SIGSEGV`, airplane-mode retention, crash across an update, obfuscated builds, secure regions at other densities,
+hot restart). It needs a device and builds, so no workflow runs it; what CI runs is its pure core: the parsers, the
+assertions and the 9.1 guards are tested in `test/device_harness_test.dart` (part of `flutter test`), together with drift guards
+for everything the harness repeats (application id, bundle id, build flags, commands, mock endpoints, the pins it
+reads from `native-versions.json`). The harness and its app are in `.pubignore` and in the archive check
+(`scripts/check_pub_archive.sh`). Usage and the guards it applies by default are in `doc/verification.md`:
+
+```bash
+export VERIFY_GRADLE_HOME=<private gradle home>   # JDK 17/21; the default is build/device-verify/gradle-home
+dart scripts/device/verify.dart build android      # debug, release (R8, --obfuscate), a second release, profile
+dart scripts/device/verify.dart android --serial emulator-5554 --reuse
+dart scripts/device/verify.dart build ios --udid <simulator>
+dart scripts/device/verify.dart ios --udid <simulator> --reuse
+```
+
 ## Device tests (not in CI)
 
 `example/integration_test/{launch,cold_start,facade,exceptions,attachments,view_hierarchy,network,logs}_test.dart` (`network_test.dart` and `logs_test.dart` also need the stand-in API: `ISSUE_OK=1 UPLOAD_STATUS=503 python3 example/integration_test/support/mock_api.py 8196 /tmp/mock.log &` and `--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:8196`, or `http://localhost:8196` for iOS; it listens on 127.0.0.1 only) need the real SDKs and a device, so they run by hand
-(Phase 7 owns a device harness): `cd example && flutter test integration_test/facade_test.dart -d <emulator or simulator>`.
+(the Phase 7 harness above drives the verification app, not these): `cd example && flutter test integration_test/facade_test.dart -d <emulator or simulator>`.
 `network_test.dart` needs a stand-in for the Bugsee API as the SDK's endpoint (`--dart-define=BUGSEE_ENDPOINT=http://<host>:<port>`; an Android debug build needs cleartext traffic allowed for that, which the example does not do: see `doc/network.md`) and `--dart-define=NET_HOLD=<seconds>` to keep the app alive while its bundle is read with `adb shell run-as`.
 `logs_test.dart` needs the same stand-in (`mock_api.py` keeps the uploaded bundle, whose `log.json` is the readback; see `doc/logs.md`) and `--dart-define=LOGS_HOLD=<seconds>`. A plain `flutter test` run does NOT show the SDK's console echo of `print` (its zone sends `print` to the test reporter); use a plain app run for that. They use a placeholder token; iOS's SDK stops itself after the first refused upload, which `facade_test` accounts for (see
 `.claude/CLAUDE.md`). `view_hierarchy_test.dart` needs no server: it picks a closed local port as the endpoint itself: on Android the SDK keeps the report bundle and the test reads its `viewtree.json` from the app's own files directory; on iOS it reads the SDK's capture buffer. The facade's own JUnit (`FacadeOpsTest`) and XCTest (`BGSFlutterFacadeOpsTests`) run in the `build-android` and `test` jobs.

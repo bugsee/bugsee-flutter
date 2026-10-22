@@ -41,6 +41,14 @@
 
 * `bugseeFlutterVersion`: the package's own version, public so that `bugsee_flutter_feedback` can check it runs with the core it was released with.
 
+* Device verification harness (development only, not published): `scripts/device/` builds a verification app
+  (`example/lib/verify_main.dart`) and asserts on an Android emulator and an iOS simulator what workbook Part 9
+  asks (native `SIGSEGV` and the recovered report's identity, airplane-mode retention, crash across an update,
+  obfuscated release builds and their symbolization, secure rectangles at other densities, hot restart), with the
+  build, launch, precondition and event guards on by default. Results and evidence: `doc/verification.md`.
+  `native-versions.json` gained `android.sdkBuild`, `ios.sdkBuild`, `ios.spmRevision` and `ios.feedbackSpmRevision`
+  (what the harness matches the SDK banners and SwiftPM's resolution against).
+
 ## 0.0.1
 
 * TODO: Describe initial release.

@@ -4,6 +4,20 @@
 # sources) and the pigeon code generator.
 # test/feedback_package_drift_test.dart (repository root) asserts the .gitignore rules are all here.
 .DS_Store
+*.class
+*.log
+*.pyc
+*.swp
+*.iml
+*.ipr
+*.iws
+.idea/
+.history
+.svn/
+migrate_working_dir/
+/android/local.properties
+/android/.gradle/
+/android/build/
 .build/
 .swiftpm/
 .dart_tool/

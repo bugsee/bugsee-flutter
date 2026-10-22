@@ -109,6 +109,10 @@ protocol FeedbackHostApi {
   /// this engine (a hot restart) left installed, and answers whether the SDK has the feedback
   /// module registered right now.
   func attach() throws -> Bool
+  /// Whether this plugin had to register the feedback module with the SDK itself (the SDK's own
+  /// registration, its init provider or the Gradle plugin's injected call, had not happened). A
+  /// diagnostic for tests of an app's setup: with a healthy setup it is false.
+  func registeredBySafetyNet() throws -> Bool
   /// Presents the chat.
   func show() throws
   /// The greeting an empty conversation opens with; null clears it.
@@ -138,6 +142,22 @@ class FeedbackHostApiSetup {
       }
     } else {
       attachChannel.setMessageHandler(nil)
+    }
+    /// Whether this plugin had to register the feedback module with the SDK itself (the SDK's own
+    /// registration, its init provider or the Gradle plugin's injected call, had not happened). A
+    /// diagnostic for tests of an app's setup: with a healthy setup it is false.
+    let registeredBySafetyNetChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter_feedback.FeedbackHostApi.registeredBySafetyNet\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      registeredBySafetyNetChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.registeredBySafetyNet()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      registeredBySafetyNetChannel.setMessageHandler(nil)
     }
     /// Presents the chat.
     let showChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter_feedback.FeedbackHostApi.show\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)

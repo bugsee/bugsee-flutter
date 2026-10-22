@@ -7,20 +7,21 @@ import com.bugsee.library.contracts.feedback.FeedbackListener;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 
 /**
  * What the Dart facade asks of the feedback module, with the SDK behind {@link FeedbackSdk} so
  * the decisions are unit-tested. One instance per Flutter engine.
  *
- * <p>The SDK has ONE listener slot for the process. An instance installs its own listener and
- * clears the slot only while the slot still holds it, so a newer engine's listener (a second
- * engine, or a hot restart that attached before the old one detached) is never silenced by an
- * older one's detach. The most recently enabled engine wins.
+ * <p>The SDK has ONE listener slot for the process. Every engine that listens gets its own
+ * {@link Relay}; a single process-wide listener ({@link #FANOUT}) is installed in the slot while at
+ * least one relay exists and hands every event to all of them, so a second engine listening, or
+ * detaching, never silences the first.
  *
  * <p>The SDK calls the listener on a worker thread; events are handed to {@code mainThread} before
  * they reach Dart (the platform thread is the only one a Flutter messenger may be used from), and
- * dropped when the instance has been disabled in the meantime.
+ * dropped when the relay has been removed in the meantime.
  */
 final class FeedbackOps {
 
@@ -37,20 +38,75 @@ final class FeedbackOps {
 
     private static final Object SLOT_LOCK = new Object();
 
-    /** The listener the process's SDK slot holds, if one of ours. */
-    @Nullable
-    private static FeedbackListener installed;
+    /** Every engine's relay, in the order they were enabled; guarded by {@link #SLOT_LOCK}. */
+    private static final List<Relay> RELAYS = new CopyOnWriteArrayList<>();
+
+    /** The one listener the SDK's slot holds while {@link #RELAYS} is not empty. */
+    private static final FeedbackListener FANOUT = new FeedbackListener() {
+        @Override
+        public void onNewMessagesReceived(@Nullable final List<String> newMessages) {
+            final List<String> copy = nonNull(newMessages);
+            if (copy.isEmpty()) {
+                return;
+            }
+            for (final Relay relay : RELAYS) {
+                relay.received(copy);
+            }
+        }
+
+        @Override
+        public void onNewMessageSent(@Nullable final String message) {
+            if (message == null) {
+                return;
+            }
+            for (final Relay relay : RELAYS) {
+                relay.sent(message);
+            }
+        }
+    };
+
+    /** One engine's way into the fan-out. */
+    private static final class Relay {
+        private final Executor mainThread;
+        private final Sink sink;
+        /** False after a removal, so a callback already queued drops. */
+        private volatile boolean accepting = true;
+
+        Relay(@NonNull final Executor mainThread, @NonNull final Sink sink) {
+            this.mainThread = mainThread;
+            this.sink = sink;
+        }
+
+        void received(@NonNull final List<String> messages) {
+            if (!accepting) {
+                return;
+            }
+            mainThread.execute(() -> {
+                if (accepting) {
+                    sink.messagesReceived(messages);
+                }
+            });
+        }
+
+        void sent(@NonNull final String message) {
+            if (!accepting) {
+                return;
+            }
+            mainThread.execute(() -> {
+                if (accepting) {
+                    sink.messageSent(message);
+                }
+            });
+        }
+    }
 
     private final FeedbackSdk sdk;
     private final Executor mainThread;
     private final Sink sink;
 
-    /** The listener this instance installed; guarded by {@link #SLOT_LOCK}. */
+    /** The relay this instance enabled; guarded by {@link #SLOT_LOCK}. */
     @Nullable
-    private FeedbackListener mine;
-
-    /** False after a disable or detach, so a callback already queued drops. */
-    private volatile boolean accepting;
+    private Relay mine;
 
     FeedbackOps(
             @NonNull final FeedbackSdk sdk,
@@ -80,63 +136,44 @@ final class FeedbackOps {
             clearMine();
             return;
         }
-        final FeedbackListener listener = new FeedbackListener() {
-            @Override
-            public void onNewMessagesReceived(@Nullable final List<String> newMessages) {
-                if (!accepting) {
-                    return;
-                }
-                final List<String> copy = nonNull(newMessages);
-                if (copy.isEmpty()) {
-                    return;
-                }
-                mainThread.execute(() -> {
-                    if (accepting) {
-                        sink.messagesReceived(copy);
-                    }
-                });
-            }
-
-            @Override
-            public void onNewMessageSent(@Nullable final String message) {
-                if (!accepting || message == null) {
-                    return;
-                }
-                mainThread.execute(() -> {
-                    if (accepting) {
-                        sink.messageSent(message);
-                    }
-                });
-            }
-        };
         synchronized (SLOT_LOCK) {
-            // Dropped first: a failed install must not leave this instance accepting events.
-            accepting = false;
-            call(() -> sdk.setListener(listener));
-            mine = listener;
-            installed = listener;
-            accepting = true;
+            // The previous relay of this engine goes first: a failed install must not leave it
+            // listening.
+            if (mine != null) {
+                mine.accepting = false;
+                RELAYS.remove(mine);
+                mine = null;
+            }
+            final Relay relay = new Relay(mainThread, sink);
+            if (RELAYS.isEmpty()) {
+                // Installs the fan-out (again: harmless if the slot still holds it).
+                call(() -> sdk.setListener(FANOUT));
+            }
+            RELAYS.add(relay);
+            mine = relay;
         }
     }
 
-    /** The engine is gone: stop emitting and release the SDK slot if it is still ours. */
+    /** The engine is gone: stop emitting; the SDK slot is released when no engine listens. */
     void detach() {
         clearMine();
     }
 
     private void clearMine() {
         synchronized (SLOT_LOCK) {
-            accepting = false;
-            final FeedbackListener ours = mine;
+            final Relay ours = mine;
             mine = null;
-            if (ours == null || installed != ours) {
+            if (ours == null) {
                 return;
             }
-            installed = null;
-            try {
-                sdk.setListener(null);
-            } catch (final RuntimeException ignored) {
-                // Nothing left to clear: the module is not there.
+            ours.accepting = false;
+            RELAYS.remove(ours);
+            if (RELAYS.isEmpty()) {
+                try {
+                    sdk.setListener(null);
+                } catch (final RuntimeException ignored) {
+                    // Nothing left to clear: the module is not there.
+                }
             }
         }
     }
@@ -166,10 +203,13 @@ final class FeedbackOps {
         }
     }
 
-    /** For tests: forget the process-wide slot. */
+    /** For tests: forget every relay (the process-wide state). */
     static void resetSlotForTesting() {
         synchronized (SLOT_LOCK) {
-            installed = null;
+            for (final Relay relay : RELAYS) {
+                relay.accepting = false;
+            }
+            RELAYS.clear();
         }
     }
 }

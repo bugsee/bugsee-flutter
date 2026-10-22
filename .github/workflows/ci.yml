@@ -32,7 +32,7 @@ jobs:
           flutter-version: '3.41.0'
           cache: true
       - run: flutter config --enable-swift-package-manager
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons packages
 
   # The committed Dart/Java/Swift bridge files must be what pigeons/bridge.dart generates
@@ -107,7 +107,8 @@ jobs:
           cache: true
       # The plugin is SwiftPM-only (Bugsee publishes no pod); older Flutter needs it enabled.
       - run: flutter config --enable-swift-package-manager
-      - run: flutter pub get
+      # The committed lock file (floor legs: it must be exactly what resolves).
+      - run: flutter pub get ${{ matrix.channel == 'floor' && '--enforce-lockfile' || '' }}
       - run: flutter analyze
       - run: flutter test
       # The feedback package (a member of the same pub workspace): its own analysis and tests.
@@ -163,7 +164,8 @@ jobs:
           flutter-version: ${{ matrix.flutter-version }}
           cache: true
       - run: flutter config --enable-swift-package-manager
-      - run: flutter pub get
+      # The committed lock file (floor legs: it must be exactly what resolves).
+      - run: flutter pub get ${{ matrix.channel == 'floor' && '--enforce-lockfile' || '' }}
       # The example app uses both packages: the APK carries the feedback module next to the core.
       - run: cd example && flutter build apk --debug
       # JUnit tests of the wrapper and its init provider (android/src/test) and of the feedback
@@ -186,15 +188,13 @@ jobs:
           flutter-version: '3.41.0'
           cache: true
       - run: flutter config --enable-swift-package-manager
-      - run: flutter pub get
-      # The core must not ship its sibling (the root .pubignore drops /packages/).
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter pub publish --dry-run
+      # The core's archive must not carry its sibling, the dev trees or local files (the list of
+      # what must never be published is in the script).
       - run: |
-          set -o pipefail
-          flutter pub publish --dry-run 2>&1 | tee "$RUNNER_TEMP/root-publish.txt"
-          if grep -q bugsee_flutter_feedback "$RUNNER_TEMP/root-publish.txt"; then
-            echo "::error::the core package would ship packages/bugsee_flutter_feedback"
-            exit 1
-          fi
+          flutter pub publish --to-archive="$RUNNER_TEMP/core.tar.gz"
+          scripts/check_pub_archive.sh "$RUNNER_TEMP/core.tar.gz"
       # The sibling package, published separately (the core first: it depends on it). From a copy
       # outside git: see the script for why it cannot be published from its own directory here.
       - run: scripts/publish_feedback.sh

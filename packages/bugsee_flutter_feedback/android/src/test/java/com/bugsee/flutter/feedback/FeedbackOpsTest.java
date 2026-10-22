@@ -215,21 +215,54 @@ public class FeedbackOpsTest {
     }
 
     @Test
-    public void aNewerEnginesListenerIsNotSilencedByTheOlderOnesDetach() {
-        final FakeSdk shared = sdk;
+    public void everyListeningEngineGetsTheEventsAndOneDetachingSilencesNoOther() {
         final Recorder sinkB = new Recorder();
-        final FeedbackOps b = new FeedbackOps(shared, main, sinkB);
+        final FeedbackOps b = new FeedbackOps(sdk, main, sinkB);
         ops.setListenerEnabled(true);
         b.setListenerEnabled(true);
-        final FeedbackListener bs = shared.listener;
-        ops.detach();
-        assertSame("the older engine must not clear the newer one's listener", bs, shared.listener);
-        bs.onNewMessageSent("x");
+        final FeedbackListener shared = sdk.listener;
+        shared.onNewMessageSent("one");
+        shared.onNewMessagesReceived(Collections.singletonList("in"));
         main.drain();
-        assertEquals(Collections.singletonList("x"), sinkB.sent);
-        assertTrue(sink.sent.isEmpty());
+        assertEquals(Collections.singletonList("one"), sink.sent);
+        assertEquals(Collections.singletonList("one"), sinkB.sent);
+        assertEquals(1, sink.received.size());
+        assertEquals(1, sinkB.received.size());
+
+        // The older engine goes: the newer keeps receiving, and the SDK slot is not released.
+        ops.detach();
+        assertSame("the slot still holds the fan-out", shared, sdk.listener);
+        shared.onNewMessageSent("two");
+        main.drain();
+        assertEquals(Collections.singletonList("one"), sink.sent);
+        assertEquals(Arrays.asList("one", "two"), sinkB.sent);
+
+        // The newer engine goes too: nobody listens, so the slot is released.
         b.detach();
-        assertNull(shared.listener);
+        assertNull(sdk.listener);
+    }
+
+    @Test
+    public void theNewerEngineDetachingDoesNotSilenceTheOlder() {
+        final Recorder sinkB = new Recorder();
+        final FeedbackOps b = new FeedbackOps(sdk, main, sinkB);
+        ops.setListenerEnabled(true);
+        b.setListenerEnabled(true);
+        b.detach();
+        assertNotNull("the older engine still listens", sdk.listener);
+        sdk.listener.onNewMessageSent("x");
+        main.drain();
+        assertEquals(Collections.singletonList("x"), sink.sent);
+        assertTrue(sinkB.sent.isEmpty());
+    }
+
+    @Test
+    public void enablingAgainReplacesThisEnginesRelayWithoutADuplicate() {
+        ops.setListenerEnabled(true);
+        ops.setListenerEnabled(true);
+        sdk.listener.onNewMessageSent("once");
+        main.drain();
+        assertEquals(Collections.singletonList("once"), sink.sent);
     }
 
     @Test

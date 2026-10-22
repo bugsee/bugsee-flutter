@@ -1,5 +1,5 @@
-// The wrapper identity, in one place on the Dart side. Not exported from
-// package:bugsee_flutter; Phase 4 decides what is public.
+// The wrapper identity, in one place on the Dart side. Only `bugseeFlutterVersion` is public (the
+// feedback package reads it to check it was released with this core).
 //
 // Both values are also repeated natively, because the native side registers
 // the wrapper before any Dart exists (workbook 2.4): Android in
@@ -14,3 +14,10 @@ const String wrapperType = 'flutter';
 
 /// Must equal `version:` in pubspec.yaml.
 const String wrapperVersion = '10.0.0-dev.1';
+
+/// The version of this package (the same string as `version:` in its pubspec).
+///
+/// Public so that the add-on packages released with it (`bugsee_flutter_feedback`) can check, at
+/// run time, that the core they run against is the version they were released with, without
+/// reaching into `lib/src`.
+const String bugseeFlutterVersion = wrapperVersion;

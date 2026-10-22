@@ -288,7 +288,7 @@ void main() {
       'enables SwiftPM before pub get in the same job (the plugin has no podspec)',
       () {
         final enable = RegExp(
-          r'^\s*- run: flutter config --enable-swift-package-manager\s*$\n(?:.*\n)*?\s*- run: flutter pub get\s*$',
+          r'^\s*- run: flutter config --enable-swift-package-manager\s*$\n(?:.*\n)*?\s*- run: flutter pub get[^\n]*$',
           multiLine: true,
         );
         // Every job that runs pub get must enable SwiftPM first.
@@ -459,7 +459,12 @@ void main() {
       for (final f in files) {
         for (final l in liveOf(read(f.path)).split('\n')) {
           if (RegExp(r'(flutter|dart) pub publish').hasMatch(l)) {
-            expect(l, contains('--dry-run'), reason: '${f.path}: $l');
+            // `--to-archive` only writes the tarball: it never uploads.
+            expect(
+              l.contains('--dry-run') || l.contains('--to-archive='),
+              isTrue,
+              reason: '${f.path}: $l',
+            );
           }
         }
       }

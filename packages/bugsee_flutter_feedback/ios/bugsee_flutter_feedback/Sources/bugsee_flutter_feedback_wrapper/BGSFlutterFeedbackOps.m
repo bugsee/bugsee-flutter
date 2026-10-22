@@ -8,10 +8,9 @@ static NSString *const kSdkError = @"sdk-error";
 
 #pragma mark - The real add-on
 
-/// `BugseeFeedbackListener` -> this package's protocol. A separate object: the SDK's slot is weak,
-/// `BGSFlutterRealFeedback` holds this one.
+/// `BugseeFeedbackListener` -> this package's protocol. The SDK holds it weakly: the slot keeps it.
 @interface BGSFlutterFeedbackAdapter : NSObject <BugseeFeedbackListener>
-@property(nonatomic, strong) id<BGSFlutterFeedbackListener> target;
+@property(atomic, strong, nullable) id<BGSFlutterFeedbackListener> target;
 @end
 
 @implementation BGSFlutterFeedbackAdapter
@@ -23,8 +22,53 @@ static NSString *const kSdkError = @"sdk-error";
 }
 @end
 
-@implementation BGSFlutterRealFeedback {
+@implementation BGSFlutterFeedbackAdapterSlot {
   BGSFlutterFeedbackAdapter *_adapter;
+  void (^_install)(id);
+  BOOL _installed;
+}
+
+- (instancetype)initWithInstaller:(void (^)(id))install {
+  if (self = [super init]) {
+    _adapter = [BGSFlutterFeedbackAdapter new];
+    _install = [install copy];
+  }
+  return self;
+}
+
+- (id)adapter {
+  return _adapter;
+}
+
+- (void)installListener:(id<BGSFlutterFeedbackListener>)listener {
+  @synchronized(self) {
+    if (listener != nil && !_installed) {
+      _installed = YES;
+      _install(_adapter);
+    }
+    _adapter.target = listener;
+  }
+}
+
+@end
+
+static id<BGSFlutterFeedbackListenerSlot> gSlotOverride;
+
+static id<BGSFlutterFeedbackListenerSlot> RealSlot(void) {
+  static BGSFlutterFeedbackAdapterSlot *slot;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    slot = [[BGSFlutterFeedbackAdapterSlot alloc] initWithInstaller:^(id adapter) {
+      [[BugseeFeedback shared] setListener:adapter];
+    }];
+  });
+  return slot;
+}
+
+@implementation BGSFlutterRealFeedback
+
++ (void)useListenerSlotForTesting:(id<BGSFlutterFeedbackListenerSlot>)slot {
+  gSlotOverride = slot;
 }
 
 - (BOOL)isRegistered {
@@ -55,15 +99,7 @@ static NSString *const kSdkError = @"sdk-error";
 }
 
 - (void)setListener:(id<BGSFlutterFeedbackListener>)listener {
-  if (listener == nil) {
-    [[BugseeFeedback shared] setListener:nil];
-    _adapter = nil;
-    return;
-  }
-  BGSFlutterFeedbackAdapter *adapter = [BGSFlutterFeedbackAdapter new];
-  adapter.target = listener;
-  [[BugseeFeedback shared] setListener:adapter];
-  _adapter = adapter;
+  [(gSlotOverride ?: RealSlot()) installListener:listener];
 }
 
 @end
@@ -100,11 +136,11 @@ static dispatch_once_t gOnce;
 
 #pragma mark - Ops
 
-/// The listener one ops instance installs.
-@interface BGSFlutterFeedbackRelay : NSObject <BGSFlutterFeedbackListener>
+/// One engine's way into the fan-out.
+@interface BGSFlutterFeedbackRelay : NSObject
 @property(nonatomic, copy) BGSFlutterFeedbackReceivedBlock received;
 @property(nonatomic, copy) BGSFlutterFeedbackSentBlock sent;
-/// NO after a disable or detach, so a callback already queued drops.
+/// NO after a removal, so a callback already queued drops.
 @property(atomic) BOOL accepting;
 @end
 
@@ -118,20 +154,15 @@ static void OnMain(dispatch_block_t block) {
 
 @implementation BGSFlutterFeedbackRelay
 
-- (void)onNewMessagesReceived:(NSArray<NSString *> *)messages {
-  if (!self.accepting || ![messages isKindOfClass:[NSArray class]]) return;
-  NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:messages.count];
-  for (id m in messages) {
-    if ([m isKindOfClass:[NSString class]]) [texts addObject:m];
-  }
-  if (texts.count == 0) return;
+- (void)deliverReceived:(NSArray<NSString *> *)texts {
+  if (!self.accepting) return;
   OnMain(^{
     if (self.accepting) self.received(texts);
   });
 }
 
-- (void)onNewMessageSent:(NSString *)message {
-  if (!self.accepting || ![message isKindOfClass:[NSString class]]) return;
+- (void)deliverSent:(NSString *)message {
+  if (!self.accepting) return;
   OnMain(^{
     if (self.accepting) self.sent(message);
   });
@@ -139,8 +170,16 @@ static void OnMain(dispatch_block_t block) {
 
 @end
 
-/// The process's SDK slot, if one of ours holds it. Weak, like the SDK's own reference.
-static __weak BGSFlutterFeedbackRelay *gInstalled;
+/// Every engine's relay, in the order they were enabled; guarded by SlotLock().
+static NSMutableArray<BGSFlutterFeedbackRelay *> *Relays(void) {
+  static NSMutableArray *relays;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    relays = [NSMutableArray array];
+  });
+  return relays;
+}
+
 static NSObject *SlotLock(void) {
   static NSObject *lock;
   static dispatch_once_t once;
@@ -148,6 +187,44 @@ static NSObject *SlotLock(void) {
     lock = [NSObject new];
   });
   return lock;
+}
+
+/// The one listener handed to the SDK while a relay exists; passes every event to all of them.
+@interface BGSFlutterFeedbackFanout : NSObject <BGSFlutterFeedbackListener>
+@end
+
+@implementation BGSFlutterFeedbackFanout
+
+- (NSArray<BGSFlutterFeedbackRelay *> *)snapshot {
+  @synchronized(SlotLock()) {
+    return [Relays() copy];
+  }
+}
+
+- (void)onNewMessagesReceived:(NSArray<NSString *> *)messages {
+  if (![messages isKindOfClass:[NSArray class]]) return;
+  NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:messages.count];
+  for (id m in messages) {
+    if ([m isKindOfClass:[NSString class]]) [texts addObject:m];
+  }
+  if (texts.count == 0) return;
+  for (BGSFlutterFeedbackRelay *relay in [self snapshot]) [relay deliverReceived:texts];
+}
+
+- (void)onNewMessageSent:(NSString *)message {
+  if (![message isKindOfClass:[NSString class]]) return;
+  for (BGSFlutterFeedbackRelay *relay in [self snapshot]) [relay deliverSent:message];
+}
+
+@end
+
+static BGSFlutterFeedbackFanout *Fanout(void) {
+  static BGSFlutterFeedbackFanout *fanout;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    fanout = [BGSFlutterFeedbackFanout new];
+  });
+  return fanout;
 }
 
 @implementation BGSFlutterFeedbackOps {
@@ -166,7 +243,8 @@ static NSObject *SlotLock(void) {
 
 + (void)resetSlotForTesting {
   @synchronized(SlotLock()) {
-    gInstalled = nil;
+    for (BGSFlutterFeedbackRelay *relay in Relays()) relay.accepting = NO;
+    [Relays() removeAllObjects];
   }
 }
 
@@ -203,19 +281,27 @@ static NSObject *SlotLock(void) {
     [self clearMine];
     return [BGSFlutterFeedbackResult new];
   }
-  BGSFlutterFeedbackRelay *relay = [BGSFlutterFeedbackRelay new];
-  relay.received = _received;
-  relay.sent = _sent;
   @synchronized(SlotLock()) {
-    // Dropped first: a failed install must not leave this instance accepting events.
-    _mine.accepting = NO;
-    BGSFlutterFeedbackResult *result = [self call:^{
-      [self->_sdk setListener:relay];
-    }];
-    if (result.failed) return result;
+    // The previous relay of this engine goes first: a failed install must not leave it listening.
+    if (_mine != nil) {
+      _mine.accepting = NO;
+      [Relays() removeObject:_mine];
+      _mine = nil;
+    }
+    BGSFlutterFeedbackResult *result = [BGSFlutterFeedbackResult new];
+    if (Relays().count == 0) {
+      // Hands the fan-out to the SDK (again: harmless if it already holds it).
+      result = [self call:^{
+        [self->_sdk setListener:Fanout()];
+      }];
+      if (result.failed) return result;
+    }
+    BGSFlutterFeedbackRelay *relay = [BGSFlutterFeedbackRelay new];
+    relay.received = _received;
+    relay.sent = _sent;
     relay.accepting = YES;
+    [Relays() addObject:relay];
     _mine = relay;
-    gInstalled = relay;
     return result;
   }
 }
@@ -228,12 +314,14 @@ static NSObject *SlotLock(void) {
   @synchronized(SlotLock()) {
     BGSFlutterFeedbackRelay *ours = _mine;
     _mine = nil;
+    if (ours == nil) return;
     ours.accepting = NO;
-    if (ours == nil || gInstalled != ours) return;
-    gInstalled = nil;
-    [self call:^{
-      [self->_sdk setListener:nil];
-    }];
+    [Relays() removeObject:ours];
+    if (Relays().count == 0) {
+      [self call:^{
+        [self->_sdk setListener:nil];
+      }];
+    }
   }
 }
 

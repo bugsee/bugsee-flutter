@@ -12,7 +12,7 @@ as `bugsee/bugsee-ios` `feedback/`); the Bugsee Gradle plugin `bugsee-android-gr
 |---|---|---|---|
 | show the chat | `showFeedbackActivity()` (`BugseeFeedback.kt:120`, returns at once when the SDK is not launched) | `showFeedbackUI()` (`BugseeFeedback.swift:145`, no launch check; presents over the topmost view controller of the key window) | **expose** `BugseeFeedback.show()` |
 | greeting | `setDefaultFeedbackGreeting(String?)` (stored in preferences, survives restarts; a dashboard greeting wins: `FeedbackPreferences.getEffectiveGreeting`) | `setGreeting(String?)` (in memory) | **expose** `setGreeting`, difference documented |
-| listener | `setOnNewFeedbackListener(FeedbackListener?)`: `onNewMessagesReceived(List<String>)` on a worker thread, `onNewMessageSent(String)` | `setListener(BugseeFeedbackListener?)` (held WEAKLY by the SDK), same two callbacks on the main thread | **expose** as two streams, native listener installed while any is listened to |
+| listener | `setOnNewFeedbackListener(FeedbackListener?)`: `onNewMessagesReceived(List<String>)` on a worker thread, `onNewMessageSent(String)` | `setListener(BugseeFeedbackListener?)` (held WEAKLY by the SDK), same two callbacks on the main thread | **expose** as two streams, native listener installed while any is listened to. Fires only while the chat is on screen: both SDKs poll only then (Android `ChatManager.kt` `onChatOpened`/`onChatClosed`, iOS `ChatManager.swift` `isChatVisible`), so it is no unread/notification signal |
 | unread count, notification settings | none | none | not invented |
 | option keys | none: the published options manifests (`test/fixtures/option_manifests`) list modules `bugsee-android`, `bugsee-android-leak`, `bugsee-android-ndk` only | none | nothing to type |
 | user identity | reads `Bugsee.setUserIdentifier`: a value containing `@` pre-fills the e-mail and skips the e-mail screen (`BugseeFeedback.prefillEmailFromUserIdentifier`) | same (`FeedbackEmailPreferences.prefill(fromUserIdentifier:)`) | documented; `Bugsee.setUserIdentifier` is the core's |
@@ -42,6 +42,15 @@ The package is therefore thin: three operations and one listener, no invented AP
   says that a static link without `-ObjC` may dead-strip it. This package does not rely on it: its own
   `BGSFlutterFeedbackRegistrar` has the same `+load` and is referenced by the Swift plugin class (`register(with:)`), so the
   translation unit is kept; `dispatch_once` makes it idempotent with the shim.
+
+## The listener slot
+
+Each SDK has one listener slot per process. The wrapper hands the SDK a single process-wide fan-out listener while any engine
+listens, and passes every event to every listening engine, so a second engine listening or detaching silences nobody. On iOS the
+add-on's `setListener` hands each change to its own unstructured `Task` with no ordering (`BugseeFeedback.swift`, `setListener`), so
+a `setListener(nil)` followed at once by `setListener(adapter)` can finish in the other order and leave the adapter with cleared
+handlers (events lost). The wrapper therefore tells the add-on once, with one adapter that lives for the process, and never with nil;
+"nobody listens" is a change of the adapter's own target (`BGSFlutterFeedbackAdapterSlot`). Worth fixing in the add-on itself.
 
 ## Versions and publishing
 

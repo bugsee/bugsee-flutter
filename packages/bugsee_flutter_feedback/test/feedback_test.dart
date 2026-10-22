@@ -40,6 +40,15 @@ class FakeNative extends FeedbackHostApi {
     return registered;
   }
 
+  bool safetyNet = false;
+
+  @override
+  Future<bool> registeredBySafetyNet() async {
+    _missing();
+    calls.add('safetyNet');
+    return safetyNet;
+  }
+
   @override
   Future<void> show() async {
     _missing();
@@ -179,6 +188,20 @@ void main() {
       expect(native.calls, ['attach', 'attach', 'show']);
       expect(native.attachCalls, 2);
     });
+
+    test(
+      'registeredBySafetyNet is what native answered, after attaching',
+      () async {
+        final native = FakeNative();
+        final runtime = runtimeOn(native);
+        expect(await runtime.registeredBySafetyNet(), isFalse);
+        native.safetyNet = true;
+        expect(await runtime.registeredBySafetyNet(), isTrue);
+        expect(native.calls, ['attach', 'safetyNet', 'safetyNet']);
+        final desktop = runtimeOn(FakeNative(), platform: null);
+        expect(await desktop.registeredBySafetyNet(), isFalse);
+      },
+    );
 
     test('desktop and web do nothing, with one warning', () async {
       final native = FakeNative();

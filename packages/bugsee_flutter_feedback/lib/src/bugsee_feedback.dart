@@ -75,11 +75,17 @@ abstract final class BugseeFeedback {
   /// New messages from the dashboard, oldest first, delivered in the order the SDK received them
   /// (text only). Never an empty list.
   ///
+  /// **Only while the chat is on screen.** Both SDKs poll the backend only between the chat opening
+  /// and closing (Android `ChatManager.onChatOpened`/`onChatClosed`, iOS `isChatVisible`), so a reply
+  /// that arrives while the chat is closed is delivered, if at all, the next time it is opened. This
+  /// is not a signal for an unread badge or a notification: neither SDK offers one.
+  ///
   /// A broadcast stream: the native listener is installed when the first listener (of this or of
   /// [messageSent]) subscribes and removed when the last cancels. There is no replay: messages
   /// that arrived while nobody listened are not delivered, they are in the chat. If the listener
   /// cannot be installed (the module is not registered) the subscribers get a
-  /// [BugseeFeedbackException] as an error event.
+  /// [BugseeFeedbackException] as an error event. Several engines (a second Flutter engine in the
+  /// same process) can listen at once; each gets every event.
   ///
   /// Android calls the SDK's listener on a worker thread and iOS on the main thread; the stream
   /// always delivers on the platform thread (the one Dart runs on).

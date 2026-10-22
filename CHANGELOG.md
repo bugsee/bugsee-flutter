@@ -28,6 +28,8 @@
   (`ReportAttachmentException`). `Bugsee.createReport({timeToLive})` returns a `CreatedReport` to fill in and `upload()`
   (one at a time, released at its time to live). See `doc/attachments.md` for what differs on iOS.
 
+* `bugseeFlutterVersion`: the package's own version, public so that `bugsee_flutter_feedback` can check it runs with the core it was released with.
+
 ## 0.0.1
 
 * TODO: Describe initial release.

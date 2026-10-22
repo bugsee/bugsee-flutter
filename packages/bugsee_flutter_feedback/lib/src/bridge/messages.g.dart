@@ -111,6 +111,28 @@ class FeedbackHostApi {
     return pigeonVar_replyValue! as bool;
   }
 
+  /// Whether this plugin had to register the feedback module with the SDK itself (the SDK's own
+  /// registration, its init provider or the Gradle plugin's injected call, had not happened). A
+  /// diagnostic for tests of an app's setup: with a healthy setup it is false.
+  Future<bool> registeredBySafetyNet() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter_feedback.FeedbackHostApi.registeredBySafetyNet$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
   /// Presents the chat.
   Future<void> show() async {
     final pigeonVar_channelName =

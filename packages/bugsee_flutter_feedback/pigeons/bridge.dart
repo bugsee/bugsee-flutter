@@ -32,6 +32,11 @@ abstract class FeedbackHostApi {
   /// module registered right now.
   bool attach();
 
+  /// Whether this plugin had to register the feedback module with the SDK itself (the SDK's own
+  /// registration, its init provider or the Gradle plugin's injected call, had not happened). A
+  /// diagnostic for tests of an app's setup: with a healthy setup it is false.
+  bool registeredBySafetyNet();
+
   /// Presents the chat.
   void show();
 

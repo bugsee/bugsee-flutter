@@ -22,8 +22,34 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setListener:(nullable id<BGSFlutterFeedbackListener>)listener;
 @end
 
+/// Where the add-on's listener is installed (the seam for the adapter slot below).
+@protocol BGSFlutterFeedbackListenerSlot <NSObject>
+/// `nil` means "nobody listens"; see `BGSFlutterFeedbackAdapterSlot` for what that does.
+- (void)installListener:(nullable id<BGSFlutterFeedbackListener>)listener;
+@end
+
+/// The one object the add-on's listener slot ever holds, and the one place that talks to it.
+///
+/// The add-on (`BugseeFeedback.setListener`) hands every change to its own unstructured `Task`,
+/// with no ordering between two changes. A `setListener(nil)` followed at once by a
+/// `setListener(adapter)` (a hot restart, or a listen/cancel/listen) can therefore finish in the
+/// other order and leave the adapter installed with its handlers cleared: events silently lost. So
+/// the add-on is told exactly ONCE, with this adapter, and never with nil; "nobody listens" and
+/// "somebody listens" are changes of the adapter's own target, which is ordered. The add-on holds
+/// its listener weakly: this slot keeps the adapter alive.
+@interface BGSFlutterFeedbackAdapterSlot : NSObject <BGSFlutterFeedbackListenerSlot>
+/// `install` receives the adapter (an `id<BugseeFeedbackListener>`) the first time a listener is
+/// given, and only then.
+- (instancetype)initWithInstaller:(void (^)(id adapter))install NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
+/// The adapter, for tests.
+@property(nonatomic, readonly) id adapter;
+@end
+
 /// The real add-on.
 @interface BGSFlutterRealFeedback : NSObject <BGSFlutterFeedbackSDK>
+/// For tests: replaces the slot all instances share; `nil` restores the real one.
++ (void)useListenerSlotForTesting:(nullable id<BGSFlutterFeedbackListenerSlot>)slot;
 @end
 
 /// Registers the add-on with the SDK at image load and on demand. The add-on's own Objective-C
@@ -49,9 +75,9 @@ typedef void (^BGSFlutterFeedbackSentBlock)(NSString *message);
 /// What the Dart facade asks of the feedback module, with the SDK behind `BGSFlutterFeedbackSDK`.
 /// One per Flutter engine.
 ///
-/// The SDK has ONE listener slot per process. An instance installs its own listener and clears the
-/// slot only while the slot still holds it, so a newer engine's listener is never silenced by an
-/// older one's detach (the most recently enabled engine wins).
+/// The SDK has ONE listener slot per process. Every engine that listens gets its own relay; a single
+/// process-wide fan-out listener is handed to the SDK while at least one relay exists and passes
+/// every event to all of them, so one engine listening, or detaching, never silences another.
 @interface BGSFlutterFeedbackOps : NSObject
 - (instancetype)initWithSdk:(id<BGSFlutterFeedbackSDK>)sdk
                    received:(BGSFlutterFeedbackReceivedBlock)received
@@ -70,7 +96,7 @@ typedef void (^BGSFlutterFeedbackSentBlock)(NSString *message);
 + (NSString *)notRegisteredCode;
 + (NSString *)sdkErrorCode;
 
-/// For tests: forget the process-wide slot.
+/// For tests: forget every relay (the process-wide state).
 + (void)resetSlotForTesting;
 @end
 

@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The Dart <-> native bridge of the feedback package. Registration of the feedback module with
@@ -22,13 +23,18 @@ public class BugseeFlutterFeedbackPlugin implements FlutterPlugin, Messages.Feed
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
+    /** Set once any engine found the SDK without the module and registered it itself. */
+    private static final AtomicBoolean SAFETY_NET_USED = new AtomicBoolean(false);
+
     private FeedbackOps ops;
     private Messages.FeedbackFlutterApi dart;
 
     @Override
     public void onAttachedToEngine(@NonNull final FlutterPluginBinding binding) {
         final BugseeFeedbackSdk sdk = new BugseeFeedbackSdk();
-        sdk.registerIfMissing();
+        if (sdk.registerIfMissing()) {
+            SAFETY_NET_USED.set(true);
+        }
         dart = new Messages.FeedbackFlutterApi(binding.getBinaryMessenger());
         ops = new FeedbackOps(sdk, MAIN::post, new FeedbackOps.Sink() {
             @Override
@@ -72,6 +78,12 @@ public class BugseeFlutterFeedbackPlugin implements FlutterPlugin, Messages.Feed
     @Override
     public Boolean attach() {
         return run(() -> ops.attach());
+    }
+
+    @NonNull
+    @Override
+    public Boolean registeredBySafetyNet() {
+        return SAFETY_NET_USED.get();
     }
 
     @Override

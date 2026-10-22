@@ -72,6 +72,9 @@ final received = BugseeFeedback.messagesReceived.listen((messages) { /* from the
 final sent = BugseeFeedback.messageSent.listen((message) { /* the user sent one */ });
 ```
 
+The streams fire **only while the chat is on screen** (both SDKs poll the backend only then), so they are not a source of
+unread-badge or notification signals; neither SDK has one.
+
 That is the whole API, because it is all both SDKs have: show the chat, the greeting, and the listener. Neither
 SDK has an unread count, a notification setting, an option key for the chat, or a separate user name or e-mail
 (the chat asks the user for an e-mail address itself, and skips that screen when the identifier you set with

@@ -539,7 +539,7 @@ void main() {
           code(
             '$pkg/android/src/main/java/com/bugsee/flutter/feedback/BugseeFlutterFeedbackPlugin.java',
           ),
-          contains('sdk.registerIfMissing();'),
+          contains('if (sdk.registerIfMissing()) {'),
         );
       },
     );
@@ -775,8 +775,11 @@ void main() {
         final feedback = publish.indexOf('scripts/publish_feedback.sh');
         expect(core, isNonNegative);
         expect(feedback, greaterThan(core));
-        expect(publish, contains('grep -q bugsee_flutter_feedback'));
-        expect(publish, contains('set -o pipefail'));
+        expect(publish, contains('flutter pub publish --to-archive='));
+        expect(
+          publish,
+          contains('scripts/check_pub_archive.sh "\$RUNNER_TEMP/core.tar.gz"'),
+        );
       },
     );
 
@@ -786,7 +789,14 @@ void main() {
         final script = read('scripts/publish_feedback.sh');
         expect(script, contains('mode=(--dry-run)'));
         expect(script, contains('--publish) mode=() ;;'));
-        expect(script, contains('--exclude .git '));
+        expect(
+          script,
+          contains(
+            'git -C "\$root" ls-files -z | rsync -a --from0 --files-from=-',
+          ),
+        );
+        expect(script, contains('git -C "\$root" status --porcelain'));
+        expect(script, contains('check_pub_archive.sh'));
         expect(script, contains('cd packages/bugsee_flutter_feedback'));
         expect(script, contains('flutter pub publish'));
         expect(
@@ -825,6 +835,194 @@ void main() {
         ).firstMatch(dep)!;
         expect(gradle.group(0), contains('dependency-name: "com.bugsee*"'));
         expect(gradle.group(0), contains('target-branch: nextgen'));
+      },
+    );
+  });
+
+  group('publishing the sibling: what ends up in the archive', () {
+    final junk = [
+      '$pkg/android/local.properties',
+      '$pkg/android/x.iml',
+      '$pkg/lib/debug.log',
+      'scratch-untracked.log',
+    ];
+
+    void removeJunk() {
+      for (final f in junk) {
+        final file = File(f);
+        if (file.existsSync()) file.deleteSync();
+      }
+    }
+
+    setUp(removeJunk);
+    tearDown(removeJunk);
+
+    test(
+      'the copy is made from tracked files only: untracked junk never reaches it',
+      () {
+        for (final f in junk) {
+          File(
+            f,
+          ).writeAsStringSync('sdk.dir=/Users/someone/Library/Android/sdk\n');
+        }
+        final stage = Directory.systemTemp.createTempSync('stage');
+        addTearDown(() => stage.deleteSync(recursive: true));
+        final r = Process.runSync('bash', [
+          'scripts/publish_feedback.sh',
+          '--stage',
+          stage.path,
+        ]);
+        expect(r.exitCode, 0, reason: '${r.stderr}');
+        for (final f in junk) {
+          expect(
+            File('${stage.path}/$f').existsSync(),
+            isFalse,
+            reason: '$f was copied',
+          );
+        }
+        // What is tracked is there, symlinks included (the iOS test package's Sources).
+        expect(File('${stage.path}/$pkg/pubspec.yaml').existsSync(), isTrue);
+        expect(File('${stage.path}/pubspec.yaml').existsSync(), isTrue);
+        expect(
+          Link(
+            '${stage.path}/$pkg/ios/feedback_wrapper_tests/Sources/BugseeFlutterFeedbackWrapper',
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
+
+    test('a real publish refuses a dirty tree before touching pub', () {
+      File('scratch-untracked.log').writeAsStringSync('x');
+      final r = Process.runSync('bash', [
+        'scripts/publish_feedback.sh',
+        '--publish',
+      ]);
+      expect(r.exitCode, 1);
+      expect('${r.stderr}', contains('dirty working tree'));
+      expect(
+        '${r.stdout}${r.stderr}',
+        isNot(contains('Resolving dependencies')),
+      );
+    });
+
+    test(
+      'the archive check rejects every kind of leak and accepts a clean archive',
+      () {
+        Future<int> check(List<String> files) async {
+          final dir = Directory.systemTemp.createTempSync('archive');
+          addTearDown(() => dir.deleteSync(recursive: true));
+          for (final f in files) {
+            File('${dir.path}/src/$f')
+              ..createSync(recursive: true)
+              ..writeAsStringSync('x');
+          }
+          final tar = '${dir.path}/a.tar.gz';
+          final made = Process.runSync('tar', [
+            'czf',
+            tar,
+            '-C',
+            '${dir.path}/src',
+            '.',
+          ]);
+          expect(made.exitCode, 0);
+          // tar lists "./name": the script must cope with it.
+          return Process.runSync('bash', [
+            'scripts/check_pub_archive.sh',
+            tar,
+          ]).exitCode;
+        }
+
+        expect(
+          check([
+            'pubspec.yaml',
+            'lib/a.dart',
+            'android/build.gradle',
+            'ios/x/Package.swift',
+            'CHANGELOG.md',
+          ]),
+          completion(0),
+        );
+        for (final leak in [
+          'packages/bugsee_flutter_feedback/pubspec.yaml',
+          'pigeons/bridge.dart',
+          'ios/wrapper_tests/Package.swift',
+          'ios/feedback_wrapper_tests/Package.swift',
+          '.git/config',
+          '.dart_tool/package_config.json',
+          'build/x',
+          'android/build/x',
+          'android/.gradle/x',
+          'ios/.build/x',
+          'android/local.properties',
+          'android/x.iml',
+          'lib/debug.log',
+          'Foo.class',
+          '.idea/workspace.xml',
+          'pubspec.lock',
+          '.DS_Store',
+        ]) {
+          expect(check(['pubspec.yaml', leak]), completion(1), reason: leak);
+        }
+      },
+    );
+
+    test(
+      'the package .gitignore and .pubignore carry the rules for local machine files',
+      () {
+        for (final f in ['$pkg/.gitignore', '$pkg/.pubignore']) {
+          final text = read(f);
+          for (final rule in [
+            '*.iml',
+            '*.log',
+            '*.class',
+            '.idea/',
+            '/android/local.properties',
+            '/android/.gradle/',
+            '/android/build/',
+          ]) {
+            expect(text, contains('\n$rule\n'), reason: '$f lacks $rule');
+          }
+        }
+      },
+    );
+  });
+
+  group('the workspace lock file is committed and used', () {
+    test('tracked, not ignored, not published, built for the floor', () {
+      final tracked = Process.runSync('git', [
+        'ls-files',
+        'pubspec.lock',
+      ]).stdout.toString().trim();
+      expect(tracked, 'pubspec.lock');
+      expect(
+        read('.gitignore').split('\n').map((l) => l.trim()),
+        isNot(contains('/pubspec.lock')),
+      );
+      expect(read('.pubignore'), contains('\n/pubspec.lock\n'));
+      final lock = read('pubspec.lock');
+      expect(lock, contains('dart: ">=${flutterPin['dart']} <4.0.0"'));
+      expect(lock, contains('flutter: ">=${flutterPin['min']}"'));
+    });
+
+    test(
+      'every pub get in CI enforces it (the floor legs of the matrices; the stable legs may move)',
+      () {
+        final ci = liveOf(read('.github/workflows/ci.yml'));
+        final lines = RegExp(
+          r'^\s*- run: (flutter pub get.*)$',
+          multiLine: true,
+        ).allMatches(ci).map((m) => m.group(1)!).toList();
+        expect(lines, hasLength(4));
+        for (final l in lines) {
+          expect(
+            l == 'flutter pub get --enforce-lockfile' ||
+                l ==
+                    "flutter pub get \${{ matrix.channel == 'floor' && '--enforce-lockfile' || '' }}",
+            isTrue,
+            reason: l,
+          );
+        }
       },
     );
   });

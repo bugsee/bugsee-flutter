@@ -42,6 +42,25 @@
 }
 @end
 
+/// A listener that records the sent messages.
+@interface FeedbackCollector : NSObject <BGSFlutterFeedbackListener>
+- (instancetype)initInto:(NSMutableArray *)into;
+@end
+
+@implementation FeedbackCollector {
+  NSMutableArray *_into;
+}
+- (instancetype)initInto:(NSMutableArray *)into {
+  if (self = [super init]) _into = into;
+  return self;
+}
+- (void)onNewMessagesReceived:(NSArray<NSString *> *)messages {
+}
+- (void)onNewMessageSent:(NSString *)message {
+  [_into addObject:message];
+}
+@end
+
 @interface BGSFlutterFeedbackOpsTests : XCTestCase
 @property(nonatomic, strong) FakeFeedbackSdk *sdk;
 @property(nonatomic, strong) NSMutableArray<NSArray<NSString *> *> *received;
@@ -193,20 +212,48 @@
   XCTAssertEqual(self.received.count, 0u);
 }
 
-- (void)testANewerEnginesListenerIsNotSilencedByTheOlderOnesDetach {
+- (void)testEveryListeningEngineGetsTheEventsAndOneDetachingSilencesNoOther {
   NSMutableArray *receivedB = [NSMutableArray array];
   NSMutableArray *sentB = [NSMutableArray array];
   BGSFlutterFeedbackOps *b = [self opsOn:self.sdk received:receivedB sent:sentB];
   [self.ops setListenerEnabled:YES];
   [b setListenerEnabled:YES];
-  id<BGSFlutterFeedbackListener> bs = self.sdk.installed;
+  id<BGSFlutterFeedbackListener> shared = self.sdk.installed;
+  [shared onNewMessageSent:@"one"];
+  [shared onNewMessagesReceived:@[ @"in" ]];
+  XCTAssertEqualObjects(self.sent, @[ @"one" ]);
+  XCTAssertEqualObjects(sentB, @[ @"one" ]);
+  XCTAssertEqual(self.received.count, 1u);
+  XCTAssertEqual(receivedB.count, 1u);
+  // The older engine goes: the newer keeps receiving, and the SDK slot is not released.
   [self.ops detach];
-  XCTAssertTrue(self.sdk.installed == bs, @"the older engine must not clear the newer one's listener");
-  [bs onNewMessageSent:@"x"];
-  XCTAssertEqualObjects(sentB, @[ @"x" ]);
-  XCTAssertEqual(self.sent.count, 0u);
+  XCTAssertTrue(self.sdk.installed == shared, @"the slot still holds the fan-out");
+  [shared onNewMessageSent:@"two"];
+  XCTAssertEqualObjects(self.sent, @[ @"one" ]);
+  XCTAssertEqualObjects((sentB), (@[ @"one", @"two" ]));
+  // The newer goes too: nobody listens, so the slot is released.
   [b detach];
   XCTAssertNil(self.sdk.installed);
+}
+
+- (void)testTheNewerEngineDetachingDoesNotSilenceTheOlder {
+  NSMutableArray *receivedB = [NSMutableArray array];
+  NSMutableArray *sentB = [NSMutableArray array];
+  BGSFlutterFeedbackOps *b = [self opsOn:self.sdk received:receivedB sent:sentB];
+  [self.ops setListenerEnabled:YES];
+  [b setListenerEnabled:YES];
+  [b detach];
+  XCTAssertNotNil(self.sdk.installed);
+  [self.sdk.installed onNewMessageSent:@"x"];
+  XCTAssertEqualObjects(self.sent, @[ @"x" ]);
+  XCTAssertEqual(sentB.count, 0u);
+}
+
+- (void)testEnablingAgainReplacesThisEnginesRelayWithoutADuplicate {
+  [self.ops setListenerEnabled:YES];
+  [self.ops setListenerEnabled:YES];
+  [self.sdk.installed onNewMessageSent:@"once"];
+  XCTAssertEqualObjects(self.sent, @[ @"once" ]);
 }
 
 - (void)testAttachForgetsAListenerAPreviousIsolateLeft {
@@ -231,6 +278,39 @@
   self.sdk.registered = NO;
   XCTAssertTrue([self.ops setListenerEnabled:YES].failed);
   XCTAssertNil(self.sdk.installed);
+}
+
+// ---- the add-on's listener slot ----
+
+- (void)testTheAdapterSlotTellsTheSdkOnceAndNeverWithNil {
+  NSMutableArray *installs = [NSMutableArray array];
+  BGSFlutterFeedbackAdapterSlot *slot = [[BGSFlutterFeedbackAdapterSlot alloc]
+      initWithInstaller:^(id adapter) {
+        [installs addObject:adapter ?: [NSNull null]];
+      }];
+  NSMutableArray *first = [NSMutableArray array];
+  NSMutableArray *second = [NSMutableArray array];
+  [slot installListener:nil];
+  XCTAssertEqual(installs.count, 0u, @"nobody listens: the add-on is not told anything");
+  // A quick on, off, on: the add-on orders two changes it is given no better than a coin flip.
+  id<BGSFlutterFeedbackListener> one = (id<BGSFlutterFeedbackListener>)[self collectorInto:first];
+  id<BGSFlutterFeedbackListener> two = (id<BGSFlutterFeedbackListener>)[self collectorInto:second];
+  [slot installListener:one];
+  [slot installListener:nil];
+  [slot installListener:two];
+  XCTAssertEqual(installs.count, 1u, @"once, with the adapter, never with nil");
+  XCTAssertTrue(installs[0] == slot.adapter);
+  [(id<BGSFlutterFeedbackListener>)slot.adapter onNewMessageSent:@"x"];
+  XCTAssertEqual(first.count, 0u);
+  XCTAssertEqualObjects(second, @[ @"x" ]);
+  [slot installListener:nil];
+  [(id<BGSFlutterFeedbackListener>)slot.adapter onNewMessageSent:@"y"];
+  XCTAssertEqualObjects(second, @[ @"x" ], @"nobody listens: dropped");
+  XCTAssertEqual(installs.count, 1u);
+}
+
+- (id)collectorInto:(NSMutableArray *)into {
+  return [[FeedbackCollector alloc] initInto:into];
 }
 
 // ---- the real add-on ----

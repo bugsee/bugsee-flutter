@@ -272,6 +272,13 @@ public class Messages {
      */
     @NonNull 
     Boolean attach();
+    /**
+     * Whether this plugin had to register the feedback module with the SDK itself (the SDK's own
+     * registration, its init provider or the Gradle plugin's injected call, had not happened). A
+     * diagnostic for tests of an app's setup: with a healthy setup it is false.
+     */
+    @NonNull 
+    Boolean registeredBySafetyNet();
     /** Presents the chat. */
     void show();
     /** The greeting an empty conversation opens with; null clears it. */
@@ -299,6 +306,27 @@ public class Messages {
                 ArrayList<Object> wrapped = new ArrayList<>();
                 try {
                   Boolean output = api.attach();
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter_feedback.FeedbackHostApi.registeredBySafetyNet" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                try {
+                  Boolean output = api.registeredBySafetyNet();
                   wrapped.add(0, output);
                 }
  catch (Throwable exception) {

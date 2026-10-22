@@ -7,11 +7,8 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/services.dart'
     show BinaryMessenger, MissingPluginException, PlatformException;
 import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
-// The core's own version constant, to detect a core this package was not released with. Both
-// packages live in one repository and are released together (feedback_version.dart); the file is
-// pinned by the core's wrapper identity test.
-// ignore: implementation_imports
-import 'package:bugsee_flutter/src/wrapper_identity.dart' as core;
+// The core's public version constant, to detect a core this package was not released with.
+import 'package:bugsee_flutter/bugsee_flutter.dart' show bugseeFlutterVersion;
 
 import 'bridge/messages.g.dart';
 import 'errors.dart';
@@ -39,7 +36,7 @@ final class FeedbackRuntime implements FeedbackFlutterApi {
        _warn = warn ?? _debugWarn,
        _ensureBinding =
            ensureBinding ?? WidgetsFlutterBinding.ensureInitialized,
-       _coreVersion = coreVersion ?? core.wrapperVersion,
+       _coreVersion = coreVersion ?? bugseeFlutterVersion,
        _ownVersion = ownVersion ?? feedbackVersion {
     _received = StreamController<List<String>>.broadcast(
       onListen: _listenersChanged,
@@ -128,6 +125,13 @@ final class FeedbackRuntime implements FeedbackFlutterApi {
   Future<bool> isAvailable() async {
     if (!_supported) return false;
     return _attach();
+  }
+
+  /// Whether the plugin had to register the module itself (a broken setup); see the bridge.
+  Future<bool> registeredBySafetyNet() async {
+    if (!_supported) return false;
+    await _attach();
+    return _native('registeredBySafetyNet', host.registeredBySafetyNet);
   }
 
   Future<void> show() async {

@@ -10,6 +10,8 @@ import Flutter
 /// Internal: the public API is `lib/bugsee_flutter_feedback.dart`; this is its native end.
 public class BugseeFlutterFeedbackPlugin: NSObject, FlutterPlugin, FeedbackHostApi {
   private let ops: BGSFlutterFeedbackOps
+  /// Set when this plugin had to register the add-on itself (see `registeredBySafetyNet`).
+  private static var safetyNetUsed = false
 
   init(messenger: FlutterBinaryMessenger) {
     let dart = FeedbackFlutterApi(binaryMessenger: messenger)
@@ -30,7 +32,9 @@ public class BugseeFlutterFeedbackPlugin: NSObject, FlutterPlugin, FeedbackHostA
     // Idempotent. Also references the wrapper target so the linker keeps its `+load`.
     BGSFlutterFeedbackRegistrar.ensureRegistered()
     // Says in the log which path registered it, and covers a failed `+load` registration.
-    _ = BGSFlutterRealFeedback().registerIfMissing()
+    if BGSFlutterRealFeedback().registerIfMissing() {
+      safetyNetUsed = true
+    }
 
     let instance = BugseeFlutterFeedbackPlugin(messenger: registrar.messenger())
     FeedbackHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: instance)
@@ -47,6 +51,10 @@ public class BugseeFlutterFeedbackPlugin: NSObject, FlutterPlugin, FeedbackHostA
 
   func attach() throws -> Bool {
     ops.attach()
+  }
+
+  func registeredBySafetyNet() throws -> Bool {
+    BugseeFlutterFeedbackPlugin.safetyNetUsed
   }
 
   func show() throws {

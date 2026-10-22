@@ -10,11 +10,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 typedef Json = Map<String, Object?>;
 
+/// A clock that never advances: the 12 ms walk budget cannot expire on a loaded machine, so the
+/// node counts a test asserts do not depend on how fast the runner is. Only the test of the time
+/// cut supplies a clock that moves.
+Duration frozenClock() => Duration.zero;
+
 HierarchySnapshot snapshot({
   HierarchyLimits limits = const HierarchyLimits(),
   Duration Function()? clock,
 }) {
-  final s = buildViewHierarchy(limits: limits, clock: clock);
+  final s = buildViewHierarchy(limits: limits, clock: clock ?? frozenClock);
   expect(s, isNotNull, reason: 'a snapshot was expected');
   return s!;
 }
@@ -137,15 +142,21 @@ void main() {
 
     testWidgets('nothing to describe: no snapshot', (tester) async {
       // No view in the tree at all.
-      expect(buildViewHierarchy(root: _EmptyElement(const Marker())), isNull);
+      expect(
+        buildViewHierarchy(
+          root: _EmptyElement(const Marker()),
+          clock: frozenClock,
+        ),
+        isNull,
+      );
     });
 
     testWidgets('a view id that is not in the tree has no snapshot', (
       tester,
     ) async {
       await tester.pumpWidget(host(const Marker()));
-      expect(buildViewHierarchy(viewId: 99), isNull);
-      expect(buildViewHierarchy(viewId: 0), isNotNull);
+      expect(buildViewHierarchy(viewId: 99, clock: frozenClock), isNull);
+      expect(buildViewHierarchy(viewId: 0, clock: frozenClock), isNotNull);
     });
   });
 
@@ -517,7 +528,7 @@ void main() {
 
     testWidgets('an obfuscated build says so', (tester) async {
       await tester.pumpWidget(host(const Marker()));
-      final s = buildViewHierarchy(obfuscated: true)!;
+      final s = buildViewHierarchy(obfuscated: true, clock: frozenClock)!;
       expect(optionsOf(payload(s))!['obfuscated'], isTrue);
       expect(
         optionsOf(payload(snapshot()))!.containsKey('obfuscated'),
@@ -1172,6 +1183,16 @@ void main() {
       expect(named(payload(whole), 'Marker'), hasLength(1));
     });
 
+    test(
+      'the production walk budget stays 12 ms (the tests freeze the clock)',
+      () {
+        expect(
+          const HierarchyLimits().budget,
+          const Duration(milliseconds: 12),
+        );
+      },
+    );
+
     testWidgets(
       'over the time budget the rest is cut and the answer stays valid',
       (tester) async {
@@ -1193,7 +1214,10 @@ void main() {
     ) async {
       await tester.pumpWidget(wide(100));
       expect(
-        buildViewHierarchy(limits: const HierarchyLimits(maxBytes: 100)),
+        buildViewHierarchy(
+          limits: const HierarchyLimits(maxBytes: 100),
+          clock: frozenClock,
+        ),
         isNull,
       );
     });
@@ -1226,7 +1250,7 @@ void main() {
           ),
         ),
       );
-      expect(buildViewHierarchy(), isNull);
+      expect(buildViewHierarchy(clock: frozenClock), isNull);
     });
 
     testWidgets('a box that is not finite is left out, never written', (

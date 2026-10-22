@@ -39,6 +39,20 @@ void main() {
   late ErrorCallback? savedPlatform;
   late bool enabled;
   late ErrorCapture capture;
+
+  /// Waits until everything sent to the isolate listener so far has been handled: a port delivers
+  /// in order, so a sentinel sent last is reported last. No fixed sleep to out-wait the delivery.
+  Future<void> drainIsolatePort() async {
+    capture.debugIsolateSendPort!.send(['Bad state: drain sentinel', '']);
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    bool seen() => reports.any((r) => r.reason == 'Bad state: drain sentinel');
+    while (!seen() && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    expect(seen(), isTrue, reason: 'the isolate listener never answered');
+    reports.removeWhere((r) => r.reason == 'Bad state: drain sentinel');
+  }
+
   late List<String> warnings;
   Future<void> Function(ExceptionPayload payload, {required bool handled})?
   reporterOverride;
@@ -557,7 +571,7 @@ void main() {
           error.toString(),
           '${FlutterError.demangleStackTrace(stack)}',
         ]);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await drainIsolatePort();
         expect(reports, hasLength(1));
         expect(reports.single.reason, 'A summary line');
         expect(capture.suppressedCount, 0);
@@ -767,7 +781,7 @@ void main() {
           'Bad state: no element',
           '#0      f (package:app/a.dart:1:1)\n',
         ]);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await drainIsolatePort();
         expect(reports, hasLength(1));
         expect(reports.single.name, 'StateError');
         expect(reports.single.reason, 'Bad state: no element');
@@ -781,7 +795,7 @@ void main() {
       port.send('not a list');
       port.send([1]);
       port.send(['text only', null]);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await drainIsolatePort();
       expect(
         reports,
         hasLength(1),
@@ -799,7 +813,7 @@ void main() {
           'Bad state: same one',
           '${FlutterError.demangleStackTrace(stack)}',
         ]);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await drainIsolatePort();
         expect(reports, hasLength(1));
       },
     );

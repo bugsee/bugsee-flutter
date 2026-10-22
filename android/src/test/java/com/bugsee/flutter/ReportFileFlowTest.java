@@ -415,7 +415,7 @@ public class ReportFileFlowTest {
         final String handle = create(new Replies<>());
         createdWorker.accept = false;
         flow.upload(handle, new Replies<>());
-        final long deadline = System.currentTimeMillis() + 5000;
+        final long deadline = System.currentTimeMillis() + 30_000;
         while (sdk.uploaded.isEmpty() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }
@@ -623,7 +623,7 @@ public class ReportFileFlowTest {
         final Thread[] ranOn = new Thread[1];
         createdState.onClear = () -> ranOn[0] = Thread.currentThread();
         flow.discard(handle);
-        final long deadline = System.currentTimeMillis() + 5000;
+        final long deadline = System.currentTimeMillis() + 30_000;
         while (ranOn[0] == null && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }

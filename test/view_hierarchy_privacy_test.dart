@@ -44,6 +44,9 @@ const Map<String, String> secrets = {
   'TextSpan semanticsLabel': 'SPANLABEL-spoken',
 };
 
+/// A clock that never advances: the 12 ms walk budget cannot truncate the tree on a slow runner.
+Duration frozenClock() => Duration.zero;
+
 const String tinyPng =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
@@ -204,7 +207,7 @@ void main() {
       // The test is only meaningful if the strings are really on screen.
       expect(find.text(secrets['Text']!), findsOneWidget);
       expect(find.text(secrets['ListTile']!), findsNWidgets(2));
-      final s = buildViewHierarchy()!;
+      final s = buildViewHierarchy(clock: frozenClock)!;
       expect(s.nodeCount, greaterThan(50), reason: 'a real tree was walked');
       expectNoSecret(everything(s));
     });
@@ -218,7 +221,7 @@ void main() {
         tester.getSemantics(find.text(secrets['Text']!)).label,
         contains(secrets['Text']!),
       );
-      expectNoSecret(everything(buildViewHierarchy()!));
+      expectNoSecret(everything(buildViewHierarchy(clock: frozenClock)!));
       handle.dispose();
     });
 
@@ -243,7 +246,7 @@ void main() {
             ),
           ),
         );
-        final s = buildViewHierarchy()!;
+        final s = buildViewHierarchy(clock: frozenClock)!;
         expectNoSecret(everything(s));
         final root = jsonDecode(s.render()) as Map<String, Object?>;
         Iterable<Map<String, Object?>> walk(Map<String, Object?> n) sync* {
@@ -268,7 +271,7 @@ void main() {
       );
       await tester.pump();
       expect(find.text('TYPED-user-input-12345'), findsOneWidget);
-      final text = everything(buildViewHierarchy()!);
+      final text = everything(buildViewHierarchy(clock: frozenClock)!);
       expect(text.contains('TYPED'), isFalse);
       expect(text.contains('12345'), isFalse);
     });
@@ -298,7 +301,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text(secrets['SnackBar']!), findsOneWidget);
-      final s = buildViewHierarchy()!;
+      final s = buildViewHierarchy(clock: frozenClock)!;
       expectNoSecret(everything(s));
       expect(s.render().contains('AlertDialog'), isTrue);
     });
@@ -311,7 +314,8 @@ void main() {
         await tester.pumpWidget(app());
         await tester.pump();
         final root =
-            jsonDecode(buildViewHierarchy()!.render()) as Map<String, Object?>;
+            jsonDecode(buildViewHierarchy(clock: frozenClock)!.render())
+                as Map<String, Object?>;
         final identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
         const keys = {
           'id',
@@ -381,7 +385,7 @@ void main() {
             ),
           ),
         );
-        final text = buildViewHierarchy()!.render();
+        final text = buildViewHierarchy(clock: frozenClock)!.render();
         expect(text.contains('<'), isFalse);
         expect(text.contains('ValueListenableBuilder'), isTrue);
       },
@@ -395,7 +399,7 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pump();
       // They are in the payload as types, so the test would notice if they were skipped.
-      final text = buildViewHierarchy()!.render();
+      final text = buildViewHierarchy(clock: frozenClock)!.render();
       expect(text.contains('"base_class_name":"RenderParagraph"'), isTrue);
       expect(text.contains('"base_class_name":"RenderEditable"'), isTrue);
       expectNoSecret(text);

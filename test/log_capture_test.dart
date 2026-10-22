@@ -1031,6 +1031,29 @@ void main() {
     });
   });
 
+  group('the echo match needs a boundary on both sides', () {
+    test('a suffix of a word is not a piece', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('internationalization matters');
+      rig.inCaptureZone(() => print('nternationalization'));
+      await rig.drain();
+      expect(rig.texts, [
+        'internationalization matters',
+        'nternationalization',
+      ]);
+    });
+
+    test('a prefix of a word is not a piece', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('internationalization matters');
+      rig.inCaptureZone(() => print('internationaliza'));
+      await rig.drain();
+      expect(rig.texts, ['internationalization matters', 'internationaliza']);
+    });
+  });
+
   group('the echo window', () {
     test(
       'a line that matches an old debugPrint after the window is recorded',

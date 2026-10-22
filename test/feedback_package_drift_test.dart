@@ -844,7 +844,7 @@ void main() {
       '$pkg/android/local.properties',
       '$pkg/android/x.iml',
       '$pkg/lib/debug.log',
-      'scratch-untracked.log',
+      'scratch-untracked.txt',
     ];
 
     void removeJunk() {
@@ -892,19 +892,75 @@ void main() {
       },
     );
 
+    /// A `flutter` that only records how it was called (and writes the archive it is asked for), so
+    /// nothing here can reach pub.dev whatever the script does.
+    Map<String, String> fakeFlutter(String log) {
+      final bin = Directory.systemTemp.createTempSync('fakebin');
+      addTearDown(() => bin.deleteSync(recursive: true));
+      File('${bin.path}/flutter')
+        ..writeAsStringSync('''#!/bin/sh
+echo "\$PWD: \$*" >> "$log"
+case "\$*" in
+  *--to-archive=*)
+    f="\${*##*--to-archive=}"
+    t="\$(mktemp -d)"
+    echo x > "\$t/pubspec.yaml"
+    tar czf "\$f" -C "\$t" .
+    ;;
+esac
+exit 0
+''')
+        ..createSync();
+      Process.runSync('chmod', ['+x', '${bin.path}/flutter']);
+      return {'PATH': '${bin.path}:${Platform.environment['PATH']}'};
+    }
+
+    String newLog() =>
+        '${Directory.systemTemp.createTempSync('log').path}/calls';
+
     test('a real publish refuses a dirty tree before touching pub', () {
-      File('scratch-untracked.log').writeAsStringSync('x');
+      // Not *.log: the root .gitignore ignores those, and an ignored file is not a dirty tree.
+      File('scratch-untracked.txt').writeAsStringSync('x');
+      addTearDown(() {
+        final f = File('scratch-untracked.txt');
+        if (f.existsSync()) f.deleteSync();
+      });
+      final log = newLog();
       final r = Process.runSync('bash', [
         'scripts/publish_feedback.sh',
         '--publish',
-      ]);
+      ], environment: fakeFlutter(log));
       expect(r.exitCode, 1);
       expect('${r.stderr}', contains('dirty working tree'));
-      expect(
-        '${r.stdout}${r.stderr}',
-        isNot(contains('Resolving dependencies')),
-      );
+      expect(File(log).existsSync(), isFalse, reason: 'flutter was called');
     });
+
+    test(
+      'the default run only dry-runs, from the package in the copy, then checks its archive',
+      () {
+        final log = newLog();
+        final r = Process.runSync('bash', [
+          'scripts/publish_feedback.sh',
+        ], environment: fakeFlutter(log));
+        expect(r.exitCode, 0, reason: '${r.stderr}');
+        final calls = File(log).readAsLinesSync();
+        expect(calls, hasLength(3));
+        expect(calls[0], endsWith(': pub get'));
+        expect(
+          calls[1],
+          matches(
+            RegExp(
+              r'/packages/bugsee_flutter_feedback: pub publish --dry-run$',
+            ),
+          ),
+        );
+        expect(calls[2], contains('pub publish --to-archive='));
+        expect(
+          calls.where((c) => RegExp(r'pub publish$').hasMatch(c)),
+          isEmpty,
+        );
+      },
+    );
 
     test(
       'the archive check rejects every kind of leak and accepts a clean archive',

@@ -186,7 +186,8 @@ void main() {
       await settle();
       expect(host.sent, isEmpty);
       await Bugsee.launch('token');
-      await runtime.logs.refreshPolicy();
+      // launch refreshes the policy by itself (nothing here asks for it)
+      await Future<void>.delayed(const Duration(milliseconds: 30));
       Bugsee.runWithLogCapture(() => print('launched again'));
       await settle();
       expect(host.sent.map((m) => m.message), ['launched again']);
@@ -263,6 +264,14 @@ void main() {
   });
 
   group('forwardLog', () {
+    test('records at info by default', () async {
+      await install();
+      Bugsee.forwardLog('plain');
+      await settle();
+      expect(host.sent.single.level, LogLevel.info.value);
+      expect(host.sent.single.tag, isNull);
+    });
+
     test('is refused before install, taken after', () async {
       expect(Bugsee.forwardLog('x'), isFalse);
       await install();

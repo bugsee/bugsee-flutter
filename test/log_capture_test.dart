@@ -22,9 +22,11 @@ class Rig {
       },
       loadPolicy: () async {
         reads++;
+        // What the SDK said when it was asked, not when the answer arrived.
+        final asked = policy;
         await gate?.future;
         if (readThrows) throw StateError('cannot read');
-        return policy;
+        return asked;
       },
       ensureAttached: () => attached++,
       statuses: () => statuses.stream,

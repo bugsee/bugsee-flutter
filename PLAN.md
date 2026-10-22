@@ -256,6 +256,38 @@ Design and data flow: `doc/network.md` (the privacy model, the options, the limi
   anyway), removing the `StateError` for a wrong filter return type (a failing cast is caught and drops the event the same way),
   `_passedOn` in `redirect()` (dart:io drains that response itself; the line was dead and was removed).
 
+### 5d record — log capture
+
+Design, data flow, the SDK rules with source refs, the privacy model, limits and device evidence: `doc/logs.md`. Decisions worth keeping:
+
+- **Source attribution is the point**: lines go through the wrapper channel with source `Custom` (98) ONLY. Both SDKs accept five wrapper
+  sources (Custom, WebView, StdOut, StdErr, Unknown) and record every other value as Custom; claiming only Custom never relies on the
+  coercion, never triggers its once-per-process notice and never takes `Bugsee` (4), the app's own `Bugsee.log`, which would also skip the
+  filter on Android's default rule. `Bugsee.log` is unchanged (source 4: verified side by side in one bundle on both platforms).
+- **`print` needs a zone, `debugPrint` a chained global**: `Zone.root` cannot be replaced, so `runWithLogCapture` / `runGuarded` / the app's own
+  `runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)`. Original output first and unchanged; nested hooks record once; the
+  `debugPrint` closure is per install (an app that wraps ours and installs again must not recurse); forwards run in a zone the capture ignores
+  (a throttled `debugPrint` prints from a timer), as does a Dart filter (a filter that prints cannot loop).
+- **`FlutterError.presentError` is not the hook**: `FlutterError.onError` defaults to `dumpErrorToConsole` itself, so chaining `presentError` would
+  catch nothing; the diagnostics dump is ONE `debugPrint` headed `══╡`, recognised and never recorded (the tree carries widget text).
+- **Findings that shaped the docs**: (1) neither SDK has a log sanitizer (an unfiltered `password=hunter2` is recorded verbatim); (2) the channel
+  takes no timestamp (stamped on receipt; bugsee-android#299 / bugsee-cocoa#265), so no `ageMs`; (3) Android's provider does not apply
+  `capture.logs.level` to channel lines, iOS does: Dart applies it on both; (4) iOS drops the tag; (5) **Android's own logcat capture records the
+  same `print` again as source 3 / tag `flutter`, raw, and records root-zone prints the hook never sees: the Dart filter does not govern it** (a
+  native log filter does); iOS recorded no echo on the simulator; (6) under `flutter test` the zone sends `print` to the reporter, so an echo is
+  only visible in a plain app run.
+- **Gates mirrored**: launching|launched + `capture.logs` (+ level) in Dart and native; before launch lines are dropped, not buffered (a buffer would
+  stamp them at flush time).
+- **Not built, with reasons**: `dart:developer` `log` (cannot be intercepted; VM service only), `stdout`/`stderr` (would need `IOOverrides` and the
+  source claim would be false), a `package:logging` adapter (no dependency: `forwardLog` + `logLevelForLoggingValue`), an echo-dropping native filter
+  (the SDK filter slot is the app's).
+- **Runtime evidence**: `example/integration_test/logs_test.dart` on the Android emulator API 30 arm64 and the iOS 26.5 simulator against
+  `support/mock_api.py`: the tables in `doc/logs.md`.
+- **Not verified**: a physical device, release/obfuscated builds, iOS echo on a device, a native log filter set by the app (the Android exception
+  path is unit-tested only), tvOS/visionOS, hot restart on a device, the production backend.
+- **Tests**: Dart `log_pipeline_test`, `log_capture_test`, `logs_facade_test`, `logs_drift_test`, public API pins; JUnit `LogOpsTest`, `LogWireParityTest`;
+  XCTest `BGSFlutterLogOpsTests`. Mutations: MUT_COUNTS.
+
 ## 6. Phase 6 — Reports (Part 7, report-contract)
 
 - `Report` proxy (opaque handle + operations), not flattened; path-first attachments

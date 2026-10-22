@@ -988,6 +988,31 @@ void main() {
     );
   });
 
+  group('the feedback package uses the core only through its public API', () {
+    test(
+      'no import of package:bugsee_flutter/src, and the version it checks is the public constant',
+      () {
+        for (final f in filesUnder('$pkg/lib', ['.dart'])) {
+          expect(
+            code(f.path),
+            isNot(contains('package:bugsee_flutter/src/')),
+            reason: f.path,
+          );
+        }
+        expect(
+          code('$pkg/lib/src/feedback_runtime.dart'),
+          contains(
+            "import 'package:bugsee_flutter/bugsee_flutter.dart' show bugseeFlutterVersion;",
+          ),
+        );
+        expect(
+          read('lib/src/wrapper_identity.dart'),
+          contains('const String bugseeFlutterVersion = wrapperVersion;'),
+        );
+      },
+    );
+  });
+
   group('the workspace lock file is committed and used', () {
     test('tracked, not ignored, not published, built for the floor', () {
       final tracked = Process.runSync('git', [

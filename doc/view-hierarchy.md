@@ -93,11 +93,11 @@ While active the publisher (`publisher.dart`):
   of a burst is not lost;
 * sends **only when the payload changed**; a failed send is retried with a doubling backoff (never given up, 30 s cap), and
   a clear that failed is retried until it lands;
-* cuts the walk by a **12 ms budget**, **2000 nodes**, **256 KiB**, **256 element levels**: over a cap the tree is cut
+* cuts the walk by a **12 ms budget**, **2000 nodes**, **256 KiB**, **512 element levels** (a provider of data, an `InheritedElement`, is not a level: a Material app has dozens): over a cap the tree is cut
   and the cut nodes carry `"truncated": true` (and the root's `options.truncated`), the answer stays valid; a template over
   the byte cap is dropped, not trimmed.
 
-Measured (debug build, JIT, so a ceiling): a screen with a list, a text field, a secure view and a button is 316 nodes /
+Measured: a stock Material screen (app bar with tabs, a `TabBarView`, a list of 40 `Card(ListTile(Icon, Text, Checkbox))`) is **771 nodes / 81 KB** (~105 bytes a node) and is not cut at the limits (a regression test builds it with and without caps and compares); the small example screen is 316 nodes / 30.8 KB, and one walk of it took 2.7 ms on the Android emulator and 1.8 ms on the iOS simulator (debug build, JIT, so a ceiling). The walk's byte estimate is the real size within a few percent and stops 1/16 short of the cap; the exact check at the end drops a template that is still over.
 30.8 KB on the Android emulator (`integration_test/view_hierarchy_test.dart` prints the cost of one walk).
 
 ### What the answer is, and when it is null
@@ -121,8 +121,7 @@ itself (a report made within ~300 ms of a change can carry the screen before it)
 
 The SDK **does not know the age**: it stamps the entry with the time of the reply. So the payload carries it: the root's
 `options.age_ms` is `now - the moment native received the snapshot`, computed at every answer (so an old snapshot says it is
-old). `Bugsee.captureViewHierarchy()` flushes the publisher first, so a capture asked for explicitly is as fresh as a
-walk.
+old). `Bugsee.captureViewHierarchy()` flushes the publisher first: if a frame is already scheduled (a route just pushed, a `setState` not drawn yet) the flush waits for it, up to 3 frames and 400 ms (a new route is built off stage in one frame and shown by the next; a screen that never draws, or animates forever, never hangs it), then builds at once, ignoring the throttle. So a capture asked for explicitly is as fresh as a walk, except that the wait is bounded.
 
 ## Payload
 
@@ -133,7 +132,7 @@ item 2, not ours to fix).
 | key | type | presence | meaning |
 |---|---|---|---|
 | `id` | string | always | The node's position in document order within this snapshot (`"0"`, `"1"`, ...). Not stable across snapshots, not derived from anything the app wrote. |
-| `class_name` | string | always | The widget's `runtimeType` without generic arguments (`Scaffold`, `Text`, `_LoginState`...), at most 80 characters; the root is `FlutterView`, a secure view is `BugseeSecureView`. Always an identifier (`[A-Za-z_$][A-Za-z0-9_$]*`). Under `--obfuscate` these are minified: the root says so (`options.obfuscated`). |
+| `class_name` | string | always | The widget's `runtimeType` without generic arguments (`Scaffold`, `Text`, `_LoginState`...), at most 80 characters; the root is `FlutterView`, a secure view is `BugseeSecureView`. Always an identifier (`[A-Za-z_$][A-Za-z0-9_$]*`), **enforced**: a name that is not one (an overridden `runtimeType` whose `toString` says anything) becomes `Widget` (and `RenderObject` for `base_class_name`). Under `--obfuscate` these are minified: the root says so (`options.obfuscated`). |
 | `base_class_name` | string | for widgets that own a render object | The render object's type (`RenderPadding`). |
 | `bounds` | number[4] | always | `[x, y, width, height]` in **screen coordinates in the unit of the platform's native tree**: physical pixels in the space of `View.getLocationOnScreen` on Android, points in the screen's coordinate space on iOS. Whole numbers, rounded outward. |
 | `options` | object | only when something is set | `secure: true` (a secure view), `clickable: true` (something can be tapped: a gesture detector or a `Semantics` tap/long-press action; only that a callback exists is read), `alpha` (an `Opacity`'s value), `content_kind` (`image` for a `RenderImage`, `surface` for a platform view: says pixels exist, nothing about them). The root's: `age_ms`, `device_pixel_ratio`, `obfuscated`, `truncated`. |
@@ -152,7 +151,7 @@ What is in the tree: **only what is on stage and painted**. Not emitted: an `Off
 zero `Opacity`, an `IndexedStack`'s other children, a route an opaque route covers (the `Overlay` keeps those off stage; a
 dialog is a transparent route and the page below stays), a node wholly outside the screen or outside a clip an ancestor
 applies (a list item scrolled out of its viewport, found with `RenderObject.describeApproximatePaintClip`), a node that was
-never laid out or has no area. Inherited elements (`Theme`, `MediaQuery`, ...) have no box and are not nodes. The soft keyboard
+never laid out or has no area. A node whose own box is off screen is not emitted, but what it paints below is still walked unless it clips its children to that box (a `Transform` or `FractionalTranslation` can move a child onto the screen); a secure region is never walked into. A node whose render parent is not its element parent (an `OverlayPortal` child lives in the overlay's theater: `MenuAnchor`, `DropdownMenu`, autocomplete options, tooltips) is placed and clipped by its REAL render ancestors, and listed last among its host's children (on top). Known gap: an `OverlayPortal` under an `Offstage` is not walked at all (the element walk does not enter an `Offstage`), so what the overlay paints for a hidden anchor is not described: a gap in the description, never a leak. Inherited elements (`Theme`, `MediaQuery`, ...) have no box and are not nodes. The soft keyboard
 and any native window are not Flutter's: the native tree has them. Only the implicit view (id 0) is described on mobile.
 
 ## Privacy
@@ -221,10 +220,35 @@ publishing is on) and asks the SDK for a pass, which the cache answers. A no-op 
   assembled on a simulator. The device test reads the SDK's capture buffer instead (the view-hierarchy entries with the
   payload byte for byte); that the entry reaches an uploaded bundle is shown on Android only.
 * A Flutter view that is **not at the screen origin** on a device (add-to-app, split screen): JUnit/XCTest only.
-* Several displays: the request carries no display, so the one snapshot of the Flutter view is served for whichever display
-  asks (mobile Flutter has one view).
-* Multi-engine: the newest snapshot is served, only if it can be placed.
+* Several displays (Android: presentation, DeX): the SDK sends one request per display, skips a blanked one, and the request
+  does not say which display is asking, so the one snapshot of the Flutter view is served to whichever asks. To keep that from
+  leaking a screen the SDK blanks, Android answers `null` when the Flutter view's window has `FLAG_SECURE` (the SDK's
+  `isActivityFlagSecureBlackOut`, default on through `captureRespectFlagSecure`), when `Bugsee.isBlackout()` is true, or when it
+  cannot tell (`ViewHierarchyStore.BlackoutGate`; JUnit only, not exercised on a device). The tree of a Flutter display is still
+  served for another display's pass when nothing blanks it: a duplicate entry with the Flutter view's own coordinates. iOS has
+  one display.
+* Multi-engine: the newest snapshot that can be rendered is served (newest first; a newer one whose view is hidden does not
+  hide an older one that is shown).
 * `--obfuscate` release builds: names are minified and flagged, not decoded.
 * A hot-restarted isolate that publishes nothing leaves the old isolate's snapshot until the engine detaches (debug only).
 * The Dart walk is synchronous on the UI isolate and bounded by 12 ms / 2000 nodes, not preemptible: a huge tree is cut, not
   skipped.
+
+## Mutation checks and the mutants that were not killed
+
+Every test of this phase was mutation-checked: the behaviour broken, the test seen failing, the code restored (Dart about 80
+mutants, Java 23, Objective-C 23). Twelve Dart mutants survived the first round and led to stronger tests (clip, zero-size
+nodes, providers, the obfuscation flag, the trailing build, a stale option read, the lifecycle observer, attach-once,
+capture-flush ordering). Left, with the reasoning:
+
+* **Non-finite boxes kept** (`_finite` removed): equivalent. A NaN or infinite box already fails the on-screen test
+  (`_touches` is false for it), so the guard is defence in depth that no input can reach alone.
+* **Another view's tree walked into** (`ro is RenderView` branch removed): not testable here. `flutter_test` cannot create a
+  second `FlutterView` under the first, and mobile has one view. The branch is a guard for add-to-app multi-view.
+* **Frame callback builds while inactive** (`_onFrame` without the `_active` check): equivalent. `_consider()` refuses when
+  inactive, so the extra callback does nothing.
+* **Walking into an off-screen clipping parent** (`_clipsChildren` always false): equivalent in output. What such a parent
+  clips is excluded by the clip carried down anyway; the check only saves walking nodes that cannot show.
+* **The portal child's real ancestors not asked whether they paint it** (`paintsChild` removed in the fallback placement):
+  equivalent today. A render ancestor that does not paint the child is also not painted in the element walk, which stops at the
+  first such node before the fallback is reached; the check is there for a framework that separates the two.

@@ -322,7 +322,7 @@ public class ViewHierarchyStoreTest {
     }
 
     @Test
-    public void withSeveralEnginesTheNewestSnapshotIsServedAndOnlyIfItCanBePlaced() {
+    public void withSeveralEnginesTheNewestSnapshotThatCanBeShownIsServed() {
         placement.setPlacement(1, 0, Placement.known(0, 0, 0));
         placement.setPlacement(2, 0, Placement.known(0, 0, 0));
         assertTrue(store.publish(1, 1, 1, 0, 3, Arrays.asList("one", "B", "C", "D"),
@@ -331,10 +331,50 @@ public class ViewHierarchyStoreTest {
         assertTrue(store.publish(2, 1, 1, 0, 3, Arrays.asList("two", "B", "C", "D"),
                 new double[] {0, 0, 1, 1, 0, 0, 1, 1}));
         assertEquals("two", store.answer().substring(0, 3));
-        // The newest cannot be placed: nothing is served, not the other engine's older tree.
+        // The newest cannot be placed (hidden): the older one that can is served, not nothing.
         placement.setPlacement(2, 0, Placement.UNKNOWN);
+        assertEquals("one", store.answer().substring(0, 3));
+        // Neither can: nothing.
+        placement.setPlacement(1, 0, Placement.ABSENT);
         assertNull(store.answer());
+        placement.setPlacement(1, 0, Placement.known(0, 0, 0));
         store.dropOwner(2);
+        assertEquals("one", store.answer().substring(0, 3));
+    }
+
+    // ---- a display the SDK blanks ------------------------------------------------------
+
+    @Test
+    public void aBlankedFlutterDisplayServesNothingToAnyAsker() {
+        publishPlaced(0, 0, 0, 0, 10, 10, 0, 0, 5, 5);
+        final Set<Long> blanked = ConcurrentHashMap.newKeySet();
+        store.setBlackoutGate(blanked::contains);
+        assertNotNull(store.answer());
+        blanked.add(OWNER); // a FLAG_SECURE window, or a complete blackout
+        assertNull(store.answer());
+        blanked.clear();
+        assertNotNull(store.answer());
+    }
+
+    @Test
+    public void aGateThatCannotAnswerFailsClosed() {
+        publishPlaced(0, 0, 0, 0, 10, 10, 0, 0, 5, 5);
+        store.setBlackoutGate(owner -> {
+            throw new IllegalStateException("window gone");
+        });
+        assertNull(store.answer());
+    }
+
+    @Test
+    public void aBlankedEnginesSnapshotDoesNotHideAnotherEnginesThatIsShown() {
+        placement.setPlacement(1, 0, Placement.known(0, 0, 0));
+        placement.setPlacement(2, 0, Placement.known(0, 0, 0));
+        assertTrue(store.publish(1, 1, 1, 0, 3, Arrays.asList("one", "B", "C", "D"),
+                new double[] {0, 0, 1, 1, 0, 0, 1, 1}));
+        now.addAndGet(10);
+        assertTrue(store.publish(2, 1, 1, 0, 3, Arrays.asList("two", "B", "C", "D"),
+                new double[] {0, 0, 1, 1, 0, 0, 1, 1}));
+        store.setBlackoutGate(owner -> owner == 2);
         assertEquals("one", store.answer().substring(0, 3));
     }
 

@@ -43,6 +43,7 @@ class ViewHierarchyPublisher {
     this.minInterval = const Duration(milliseconds: 300),
     this.maxInterval = const Duration(seconds: 5),
     this.limits = const HierarchyLimits(),
+    this.frameWait = const Duration(milliseconds: 400),
     Duration Function()? clock,
     ViewHierarchyBuilder? builder,
   }) : epoch = epoch ?? newIsolateEpoch(),
@@ -75,6 +76,10 @@ class ViewHierarchyPublisher {
   /// The most the cost-based spacing (and a failing channel's backoff) can reach.
   final Duration maxInterval;
   final HierarchyLimits limits;
+
+  /// The longest [flush] waits for a frame that is already scheduled (a screen change that has
+  /// not been drawn yet), so the snapshot is of the screen as it will be, not as it was.
+  final Duration frameWait;
   final Duration Function() _now;
   final ViewHierarchyBuilder _builder;
 
@@ -130,8 +135,29 @@ class ViewHierarchyPublisher {
   /// not active. For `Bugsee.captureViewHierarchy`: the SDK's pass then sees the screen as it is.
   Future<void> flush() async {
     if (!_active) return;
+    await _awaitScheduledFrame();
+    if (!_active) return;
     _dirty = false;
     await _buildAndSend();
+  }
+
+  /// A change is on its way to the screen: wait for its frame (a new route needs two: it is built
+  /// off stage first and shown by the next), so the walk sees the new tree and not the old one.
+  /// Bounded in frames (3) and in time ([frameWait]): a screen that never draws, or one that
+  /// animates forever, must not hang the caller.
+  Future<void> _awaitScheduledFrame() async {
+    try {
+      final SchedulerBinding binding = SchedulerBinding.instance;
+      Future<void> frames() async {
+        for (var i = 0; i < 3 && binding.hasScheduledFrame; i++) {
+          await binding.endOfFrame;
+        }
+      }
+
+      await frames().timeout(frameWait, onTimeout: () {});
+    } catch (_) {
+      // Build from what there is.
+    }
   }
 
   void _armFrame() {

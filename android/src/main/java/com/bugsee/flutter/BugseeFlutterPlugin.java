@@ -67,6 +67,27 @@ public class BugseeFlutterPlugin
         }
     }
 
+    /**
+     * Whether the SDK blanks the display this engine's view is on: a {@code FLAG_SECURE} window or
+     * a complete blackout (the cases its own view-hierarchy pass skips a display for). Not known:
+     * blanked.
+     */
+    private static boolean flutterDisplayBlanked(final long owner) {
+        try {
+            if (com.bugsee.library.Bugsee.isBlackout()) {
+                return true;
+            }
+        } catch (Throwable t) {
+            return true;
+        }
+        for (final SecurePlacement placement : PLACEMENTS) {
+            if (placement.owner() == owner) {
+                return placement.windowIsFlagSecure();
+            }
+        }
+        return true;
+    }
+
     private static void refreshPlacements() {
         try {
             for (final SecurePlacement placement : PLACEMENTS) {
@@ -110,6 +131,7 @@ public class BugseeFlutterPlugin
         // The SDK asks for `vh` on the main thread: re-read the placements right there (a post
         // from the main thread would only be seen by the NEXT request).
         ViewHierarchyStore.shared().setRefresher(BugseeFlutterPlugin::refreshForViewHierarchy);
+        ViewHierarchyStore.shared().setBlackoutGate(BugseeFlutterPlugin::flutterDisplayBlanked);
         ReportHandlerPipeline.shared().attach(reportOwner, this::sendReportRequest);
         // No activity yet: where the view is is not known, so cover rather than guess.
         store.setPlacement(owner, SecurePlacement.IMPLICIT_VIEW_ID,

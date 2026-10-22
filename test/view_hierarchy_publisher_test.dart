@@ -6,6 +6,7 @@ import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/publisher.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -25,6 +26,7 @@ class Rig {
     this.tester, {
     Duration minInterval = const Duration(milliseconds: 300),
     Duration maxInterval = const Duration(seconds: 5),
+    Duration frameWait = const Duration(milliseconds: 400),
   }) {
     _start = tester.binding.clock.now();
     publisher = ViewHierarchyPublisher(
@@ -32,6 +34,7 @@ class Rig {
       epoch: 7,
       minInterval: minInterval,
       maxInterval: maxInterval,
+      frameWait: frameWait,
       clock: () => tester.binding.clock.now().difference(_start) + _cost,
       builder: (limits, now) {
         builds++;
@@ -75,10 +78,14 @@ class Rig {
 }
 
 /// A test with a rig; the publisher is shut down at the end (a pending timer fails a widget test).
-void rigTest(String name, Future<void> Function(WidgetTester, Rig) body) {
+void rigTest(
+  String name,
+  Future<void> Function(WidgetTester, Rig) body, {
+  Duration frameWait = const Duration(milliseconds: 400),
+}) {
   testWidgets(name, (tester) async {
     await tester.pumpWidget(const SizedBox());
-    final r = Rig(tester);
+    final r = Rig(tester, frameWait: frameWait);
     await body(tester, r);
     await r.publisher.deactivate();
     r.publisher.dispose();
@@ -441,6 +448,87 @@ void main() {
     });
   });
 
+  group('flush and a screen change that is not drawn yet', () {
+    rigTest('waits for the frame that is already scheduled, then builds', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      final before = r.builds;
+      tester.binding.scheduleFrame(); // a change on its way to the screen
+      var done = false;
+      final flushed = r.publisher.flush().then((_) => done = true);
+      await tester.idle(); // microtasks only, no frame
+      expect(r.builds, before, reason: 'nothing built before the frame');
+      expect(done, isFalse);
+      await tester.pump(); // the frame
+      await flushed;
+      expect(done, isTrue);
+      expect(r.builds, greaterThan(before));
+      expect(r.phases.last, SchedulerPhase.idle);
+    });
+
+    rigTest('does not wait when no frame is scheduled', (tester, r) async {
+      r.publisher.activate();
+      await r.frame();
+      final before = r.builds;
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await r.publisher.flush();
+      expect(r.builds, before + 1);
+    });
+
+    rigTest(
+      'never hangs on a frame that does not come',
+      (tester, r) async {
+        r.publisher.activate();
+        await r.frame();
+        final before = r.builds;
+        tester.binding.scheduleFrame();
+        // Real time: the frame is never pumped, the wait gives up after frameWait.
+        await tester.runAsync(() => r.publisher.flush());
+        expect(r.builds, before + 1);
+      },
+      frameWait: const Duration(milliseconds: 60),
+    );
+
+    testWidgets(
+      'a pushed route is in the capture asked for right after the push',
+      (tester) async {
+        final sent = <String>[];
+        final publisher = ViewHierarchyPublisher(
+          send: (m) async {
+            sent.add(m.segments.join());
+            return true;
+          },
+          epoch: 1,
+          minInterval: const Duration(hours: 1),
+        );
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(navigatorKey: navigator, home: const SizedBox()),
+        );
+        publisher.activate();
+        await tester.pump();
+        expect(sent, hasLength(1));
+        expect(sent.last, isNot(contains('SecondPageMarker')));
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const SecondPageMarker()),
+        );
+        final flushed = publisher.flush();
+        // The route is built off stage in the first frame and shown by the next: frames 16 ms apart.
+        for (var i = 0; i < 4; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await flushed;
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(sent.last, contains('SecondPageMarker'));
+        await publisher.deactivate();
+        publisher.dispose();
+      },
+    );
+  });
+
   group('flush', () {
     rigTest('builds now, inside the throttle, and completes when sent', (
       tester,
@@ -461,4 +549,10 @@ void main() {
       expect(r.sent, isEmpty);
     });
   });
+}
+
+class SecondPageMarker extends StatelessWidget {
+  const SecondPageMarker({super.key});
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 50, height: 50);
 }

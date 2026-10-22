@@ -195,16 +195,21 @@ static const double kLimit = 268435456.0;  // 2^28
         // A placement that could not be refreshed is judged by the store.
       }
     }
-    int64_t newestOwner = 0;
-    BGSFlutterVHSnapshot *newest = nil;
+    // Newest first, and the first that can be rendered wins: a newer snapshot that cannot be
+    // placed (its view is hidden) must not hide an older one that can.
+    NSMutableArray<NSNumber *> *ordered = [NSMutableArray array];
     for (NSNumber *owner in owners) {
-      BGSFlutterVHSnapshot *s = owners[owner].snapshot;
-      if (s != nil && (newest == nil || s.received > newest.received)) {
-        newest = s;
-        newestOwner = owner.longLongValue;
-      }
+      if (owners[owner].snapshot != nil) [ordered addObject:owner];
     }
-    return newest == nil ? nil : [self renderOwner:newestOwner snapshot:newest];
+    [ordered sortUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
+      NSTimeInterval ta = owners[a].snapshot.received, tb = owners[b].snapshot.received;
+      return ta > tb ? NSOrderedAscending : (ta < tb ? NSOrderedDescending : NSOrderedSame);
+    }];
+    for (NSNumber *owner in ordered) {
+      NSString *rendered = [self renderOwner:owner.longLongValue snapshot:owners[owner].snapshot];
+      if (rendered != nil) return rendered;
+    }
+    return nil;
   } @catch (id exception) {
     return nil;
   }

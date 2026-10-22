@@ -47,7 +47,7 @@ import '../secure/secure_region.dart';
 class HierarchyLimits {
   const HierarchyLimits({
     this.maxNodes = 2000,
-    this.maxDepth = 256,
+    this.maxDepth = 512,
     this.maxBytes = 256 * 1024,
     this.budget = const Duration(milliseconds: 12),
   });
@@ -55,7 +55,9 @@ class HierarchyLimits {
   /// Most nodes emitted.
   final int maxNodes;
 
-  /// Deepest element level visited (counted in elements, not emitted nodes).
+  /// Deepest element level visited. Counted in elements, but a provider of data (an
+  /// `InheritedElement`: `Theme`, `MediaQuery`, ... a Material app has dozens) is not a level:
+  /// it has no node and is not walked into as one.
   final int maxDepth;
 
   /// Most UTF-8 bytes of the JSON template (an estimate while walking, exact at the end: a
@@ -140,13 +142,23 @@ class _ObfuscationProbe {}
 bool get typeNamesAreObfuscated =>
     _ObfuscationProbe().runtimeType.toString() != '_ObfuscationProbe';
 
-/// A type's name without generic arguments and bounded in length.
-String _typeName(Object object) {
+final RegExp _identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
+
+/// A type's name without generic arguments, bounded in length and ALWAYS an identifier: a name
+/// that is not one (an overridden `runtimeType` whose `toString` says anything at all) is
+/// replaced by [fallback], so the payload cannot carry free text through a type name.
+String _typeName(Object object, String fallback) {
   final String s = object.runtimeType.toString();
   final int generic = s.indexOf('<');
   final String bare = generic < 0 ? s : s.substring(0, generic);
-  return bare.length > 80 ? bare.substring(0, 80) : bare;
+  final String bounded = bare.length > 80 ? bare.substring(0, 80) : bare;
+  return _identifier.hasMatch(bounded) ? bounded : fallback;
 }
+
+/// [_typeName] for a widget or render object, for tests.
+@visibleForTesting
+String debugTypeName(Object object, {String fallback = 'Widget'}) =>
+    _typeName(object, fallback);
 
 class _Node {
   _Node(this.className);
@@ -157,6 +169,11 @@ class _Node {
   bool secure = false;
   bool clickable = false;
   bool truncated = false;
+
+  /// Nodes that paint inside this one's render object but live elsewhere in the element tree
+  /// (an `OverlayPortal` child): appended last, on top, when this node's children are done.
+  final List<_Node> late = <_Node>[];
+  bool open = false;
   double? alpha;
   String? contentKind;
 }
@@ -243,6 +260,8 @@ class _Walker {
   final HierarchyLimits limits;
   final Duration Function() now;
   final Duration _start;
+  late Rect _screen;
+  final Map<RenderObject, _Node> _byRender = <RenderObject, _Node>{};
   int _nodes = 0;
   int _bytes = 0;
   int _steps = 0;
@@ -258,6 +277,7 @@ class _Walker {
       return null;
     }
     final Rect screen = Offset.zero & size;
+    _screen = screen;
     final rootNode = _Node(viewNodeClassName)..rect = screen;
     _nodes = 1;
     _children(
@@ -297,7 +317,7 @@ class _Walker {
     }
     if (_stopped ||
         _nodes >= limits.maxNodes ||
-        _bytes >= limits.maxBytes ~/ 2 ||
+        _bytes >= limits.maxBytes - limits.maxBytes ~/ 16 ||
         depth > limits.maxDepth) {
       _truncated = true;
       parent.truncated = true;
@@ -315,7 +335,7 @@ class _Walker {
   void _visit(Element e, _Context ctx, _Node into, int depth) {
     // A provider of data: no box of its own, no name worth a node.
     if (e is InheritedElement) {
-      _children(e, ctx, into, depth + 1);
+      _children(e, ctx, into, depth);
       return;
     }
     if (_capped(into, depth)) return;
@@ -325,7 +345,7 @@ class _Walker {
     }
     // A composite (StatelessWidget, StatefulWidget, ...): named, no geometry of its own; its box
     // is its painted children's, and it is absent when none of them is painted.
-    final node = _Node(_typeName(e.widget));
+    final node = _Node(_typeName(e.widget, 'Widget'));
     _reserve(node); // before its children, so the caps see it
     _children(e, ctx, node, depth + 1);
     Rect? box;
@@ -345,8 +365,12 @@ class _Walker {
     into.children.add(node);
   }
 
+  /// About what the node costs in the final text: the fixed JSON around it and a box
+  /// (`[1080,2088,1080,2088]`) come to ~90 bytes plus the names; measured on real screens at
+  /// ~105 bytes a node. Under by a little, never by much: the walk stops 1/16 short of the cap and
+  /// the exact check at the end backs it up.
   int _estimate(_Node node) =>
-      150 + node.className.length * 2 + (node.baseClassName?.length ?? 0);
+      90 + node.className.length + ((node.baseClassName?.length ?? -20) + 20);
 
   void _reserve(_Node node) {
     _nodes++;
@@ -384,13 +408,29 @@ class _Walker {
         clip = clip.intersect(MatrixUtils.transformRect(ctx.toView, applied));
       }
     } else {
-      toView = ro.getTransformTo(null);
+      // Its render parent is not the nearest render ancestor in the element tree (an
+      // `OverlayPortal` child lives in the overlay's theater): the real chain decides what is
+      // painted and what clips it, not the anchor's.
+      final _Placed? placed = _placeViaRenderAncestors(ro);
+      if (placed == null) return;
+      toView = placed.toView;
+      clip = placed.clip;
     }
     final Rect box = MatrixUtils.transformRect(toView, local);
-    if (!_finite(box) || box.isEmpty || !_touches(box, clip)) return;
+    if (!_finite(box)) return;
+    if (box.isEmpty || !_touches(box, clip)) {
+      // Not on screen by its own box. What it paints below can still be (a `Transform` or
+      // `FractionalTranslation` moves its child while the box stays), unless it clips them to
+      // that box. A secure region is never walked into.
+      if ((ro is RenderSecureRegion && ro.enabled) || _clipsChildren(ro)) {
+        return;
+      }
+      _children(e, _Context(ro, toView, clip), into, depth + 1);
+      return;
+    }
 
-    final node = _Node(_typeName(e.widget))
-      ..baseClassName = _typeName(ro)
+    final node = _Node(_typeName(e.widget, 'Widget'))
+      ..baseClassName = _typeName(ro, 'RenderObject')
       ..rect = box;
     if (ro is RenderSecureRegion && ro.enabled) {
       // Redacted whole: this node, and nothing below it. Its box is the one the secure
@@ -425,9 +465,62 @@ class _Walker {
       node.contentKind = 'surface';
     }
     _reserve(node);
+    _byRender[ro] = node;
+    node.open = true;
     _children(e, _Context(ro, toView, clip), node, depth + 1);
-    into.children.add(node);
+    node.open = false;
+    node.children.addAll(node.late);
+    node.late.clear();
+    final RenderObject? render = ro.parent;
+    final _Node? host = render == null ? null : _byRender[render];
+    if (parent != null &&
+        !identical(render, parent) &&
+        host != null &&
+        host.open) {
+      host.late.add(
+        node,
+      ); // painted by a render object elsewhere: on top of what is there
+    } else {
+      into.children.add(node);
+    }
   }
+
+  /// Whether [ro] clips everything below it to its own box (so a box off screen hides it all).
+  bool _clipsChildren(RenderObject ro) {
+    var clips = false;
+    ro.visitChildren((RenderObject child) {
+      if (ro.describeApproximatePaintClip(child) != null) clips = true;
+    });
+    return clips;
+  }
+
+  /// [ro]'s transform to the view and the clip that applies to it, from its REAL render
+  /// ancestors; `null` when one of them does not paint it.
+  _Placed? _placeViaRenderAncestors(RenderObject ro) {
+    final chain = <RenderObject>[];
+    for (RenderObject? r = ro; r != null; r = r.parent) {
+      chain.add(r);
+    }
+    var toView = Matrix4.identity();
+    var clip = _screen;
+    for (var i = chain.length - 1; i > 0; i--) {
+      final RenderObject parent = chain[i];
+      final RenderObject child = chain[i - 1];
+      if (!parent.paintsChild(child)) return null;
+      final Rect? applied = parent.describeApproximatePaintClip(child);
+      if (applied != null) {
+        clip = clip.intersect(MatrixUtils.transformRect(toView, applied));
+      }
+      if (parent is! RenderView) parent.applyPaintTransform(child, toView);
+    }
+    return _Placed(toView, clip);
+  }
+}
+
+class _Placed {
+  const _Placed(this.toView, this.clip);
+  final Matrix4 toView;
+  final Rect clip;
 }
 
 /// Serialises the node tree into a template: JSON text cut at the age and at every box.

@@ -304,6 +304,8 @@ void main() {
         'onLongPress',
         'properties',
         'opacity',
+        'visitChildren',
+        'describeApproximatePaintClip',
       };
       expect(
         reads.difference(structural),
@@ -374,9 +376,9 @@ void main() {
       // The widget is only ever asked for its type.
       expect(
         RegExp(r'\.widget\b').allMatches(src).map((m) {
-          return src.substring(m.start - 11, m.end + 1);
+          return src.substring(m.start - 11, m.end + 8);
         }),
-        everyElement(contains('_typeName(e.widget)')),
+        everyElement(contains('_typeName(e.widget,')),
       );
     });
 

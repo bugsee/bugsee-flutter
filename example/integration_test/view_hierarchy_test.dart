@@ -14,7 +14,7 @@
 //    stop, so no report bundle is assembled on a simulator; what is stored is what a report would
 //    carry.
 //
-// What is asserted: the entry is in the report that was made (the Android async-reply trap), the
+// What is asserted: the entry is in the report that was made, the
 // payload has no text, the secure view is one node with only its box, and the boxes are in the
 // unit of the native tree (physical pixels on Android, points on iOS) at the device's density.
 import 'dart:convert';
@@ -98,6 +98,15 @@ List<String> managedObjectsIn(String text) {
 
 typedef Json = Map<String, Object?>;
 
+/// A port nothing listens on: asked of the OS, bound and released, so the endpoint is closed
+/// whatever else runs on the host.
+Future<int> closedPort() async {
+  final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+  final port = server.port;
+  await server.close();
+  return port;
+}
+
 Iterable<Json> walk(Json n) sync* {
   yield n;
   for (final c in (n['subitems'] as List<Object?>?) ?? const <Object?>[]) {
@@ -136,11 +145,14 @@ void main() {
       final ratio = tester.view.devicePixelRatio;
       say('device pixel ratio $ratio, physical ${tester.view.physicalSize}');
 
+      final port = await closedPort();
       final result = await Bugsee.launch(
         defaultToken,
         options: BugseeOptions(
           // A closed port: the upload fails and the SDK keeps the report on disk.
-          endpoint: android ? 'http://10.0.2.2:8099' : 'http://localhost:8099',
+          endpoint: android
+              ? 'http://10.0.2.2:$port'
+              : 'http://localhost:$port',
         ),
       );
       say('launch -> $result');
@@ -391,9 +403,13 @@ void main() {
     },
   );
 
-  // The trap on Android: the SDK records a report's view hierarchy only once the wrapper has
-  // answered, and an answer that arrives after the snapshot closed lands in the NEXT report. A report
-  // made with no capture call of ours must carry the managed half on its own.
+  // A report made with no capture call of ours must carry the managed half on its own. NOTE what
+  // this does and does not prove: `Bugsee.upload` makes its snapshot OFF the main thread, where the
+  // SDK (7.4.2, bugsee-android PR #120) waits for a late reply, so an asynchronous answer would pass
+  // this test too (measured with a temporary 50 ms asynchronous reply). The main-thread case, where a
+  // late reply lands in the NEXT report, is what the SYNCHRONOUS answer exists for; it is guarded by
+  // FlutterWrapperTest.vhIsAnsweredFromTheCacheSynchronouslyOnTheCallingThread (JUnit) and
+  // BGSFlutterWrapperTests (XCTest), not by this device test.
   testWidgets(
     'a report made on its own carries the Flutter tree (nothing asked for it)',
     (tester) async {

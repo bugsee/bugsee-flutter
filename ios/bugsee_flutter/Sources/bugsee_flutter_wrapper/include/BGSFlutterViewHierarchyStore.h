@@ -32,7 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Ownership. Process-wide and outside the wrapper object (which is replaced when Dart refines
 /// the identity), like the secure rectangles. Snapshots are per Dart isolate (owner = engine);
 /// an engine's detach drops its snapshot (a detached engine serves nothing, never a stale
-/// tree). With several engines the NEWEST snapshot is served, and only if it can be placed.
+/// tree). With several engines the newest snapshot that can be rendered is served (a newer one whose view is hidden does not hide an older one that can be shown).
 /// State is immutable and swapped whole under a write lock.
 ///
 /// Staleness. A snapshot is as of the last frame that changed the tree (plus Dart's throttle,

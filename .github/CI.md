@@ -31,11 +31,11 @@ push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or re
 
 ## Device tests (not in CI)
 
-`example/integration_test/{launch,cold_start,facade,exceptions,attachments,network,view_hierarchy}_test.dart` (the last also needs the stand-in API: `ISSUE_OK=1 UPLOAD_STATUS=503 python3 example/integration_test/support/mock_api.py 8196 /tmp/mock.log &` and `--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:8196`, or `http://localhost:8196` for iOS; it listens on 127.0.0.1 only) need the real SDKs and a device, so they run by hand
+`example/integration_test/{launch,cold_start,facade,exceptions,attachments,view_hierarchy,network}_test.dart` (the last, `network_test.dart`, also needs the stand-in API: `ISSUE_OK=1 UPLOAD_STATUS=503 python3 example/integration_test/support/mock_api.py 8196 /tmp/mock.log &` and `--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:8196`, or `http://localhost:8196` for iOS; it listens on 127.0.0.1 only) need the real SDKs and a device, so they run by hand
 (Phase 7 owns a device harness): `cd example && flutter test integration_test/facade_test.dart -d <emulator or simulator>`.
 `network_test.dart` needs a stand-in for the Bugsee API as the SDK's endpoint (`--dart-define=BUGSEE_ENDPOINT=http://<host>:<port>`; an Android debug build needs cleartext traffic allowed for that, which the example does not do: see `doc/network.md`) and `--dart-define=NET_HOLD=<seconds>` to keep the app alive while its bundle is read with `adb shell run-as`.
 They use a placeholder token; iOS's SDK stops itself after the first refused upload, which `facade_test` accounts for (see
-`.claude/CLAUDE.md`). `view_hierarchy_test.dart` needs a closed local port as the endpoint (no server): on Android the SDK keeps the report bundle and the test reads its `viewtree.json` from the app's own files directory; on iOS it reads the SDK's capture buffer. The facade's own JUnit (`FacadeOpsTest`) and XCTest (`BGSFlutterFacadeOpsTests`) run in the `build-android` and `test` jobs.
+`.claude/CLAUDE.md`). `view_hierarchy_test.dart` needs no server: it picks a closed local port as the endpoint itself: on Android the SDK keeps the report bundle and the test reads its `viewtree.json` from the app's own files directory; on iOS it reads the SDK's capture buffer. The facade's own JUnit (`FacadeOpsTest`) and XCTest (`BGSFlutterFacadeOpsTests`) run in the `build-android` and `test` jobs.
 
 ## Option registry
 

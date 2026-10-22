@@ -209,7 +209,7 @@ Design, payload schema, privacy rules, staleness, SDK facts and spec gaps: **`do
   place in physical pixels) in BOTH entries made for the report, and a report made by `Bugsee.upload` alone carries it (a temporary 50 ms asynchronous reply also
   arrived, because that snapshot is made off the main thread). iPhone 17 Pro simulator (iOS 26.5): the SDK's capture buffer holds the payload (307 nodes) in points
   (`[0,0,402,874]`), same assertions. Not verified: an iOS report bundle (the placeholder token stops the SDK), a view off the screen origin on a device.
-- **Tests** (each mutation-checked: Dart 70+ mutants, Java 23, ObjC 23, all killed, equivalent or untestable ones listed in the report): Dart builder (45), privacy (8), publisher (26), gate/runtime (23), drift (23); JUnit `ViewHierarchyStoreTest` (27)
+- **Tests** (each mutation-checked: Dart 70+ mutants, Java 23, ObjC 23, all killed except three equivalent or untestable ones, listed with their reasoning in `doc/view-hierarchy.md`): Dart builder (45), privacy (8), publisher (26), gate/runtime (23), drift (23); JUnit `ViewHierarchyStoreTest` (27)
   and the wrapper's; XCTest `BGSFlutterViewHierarchyStoreTests` (23) and the wrapper's.
 
 

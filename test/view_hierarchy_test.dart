@@ -526,6 +526,326 @@ void main() {
     });
   });
 
+  group('what a real screen costs', () {
+    Widget stockScreen() => MaterialApp(
+      home: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Inbox'),
+            bottom: const TabBar(
+              tabs: [
+                Tab(text: 'One'),
+                Tab(text: 'Two'),
+              ],
+            ),
+          ),
+          body: TabBarView(
+            children: [
+              ListView(
+                children: [
+                  for (var i = 0; i < 40; i++)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.mail),
+                        title: Text('Message $i'),
+                        trailing: Checkbox(value: false, onChanged: (_) {}),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('a stock Material screen is not cut at the documented limits', (
+      tester,
+    ) async {
+      await tester.pumpWidget(stockScreen());
+      final s = snapshot();
+      final whole = snapshot(
+        limits: const HierarchyLimits(
+          maxNodes: 1 << 20,
+          maxDepth: 1 << 20,
+          maxBytes: 1 << 30,
+          budget: Duration(minutes: 1),
+        ),
+      );
+      debugPrint(
+        'stock screen: ${s.nodeCount} nodes, ${s.render().length} bytes',
+      );
+      expect(s.truncated, isFalse);
+      expect(s.nodeCount, whole.nodeCount);
+      expect(s.nodeCount, greaterThan(300));
+      // The documented limits are 2000 nodes / 256 KiB: this screen is nowhere near them.
+      expect(s.nodeCount, lessThan(const HierarchyLimits().maxNodes ~/ 2));
+      expect(
+        s.render().length,
+        lessThan(const HierarchyLimits().maxBytes ~/ 2),
+      );
+    });
+
+    testWidgets('providers of data do not count as levels, real levels do', (
+      tester,
+    ) async {
+      Widget deep = const Marker(width: 5, height: 5);
+      for (var i = 0; i < 400; i++) {
+        deep = Directionality(textDirection: TextDirection.ltr, child: deep);
+      }
+      await tester.pumpWidget(host(deep));
+      final s = snapshot(limits: const HierarchyLimits(maxDepth: 20));
+      expect(s.truncated, isFalse, reason: '400 providers are not 400 levels');
+      expect(named(payload(s), 'Marker'), hasLength(1));
+      Widget paddings = const Marker(width: 5, height: 5);
+      for (var i = 0; i < 60; i++) {
+        paddings = Padding(padding: const EdgeInsets.all(0.1), child: paddings);
+      }
+      await tester.pumpWidget(host(paddings));
+      expect(
+        snapshot(limits: const HierarchyLimits(maxDepth: 20)).truncated,
+        isTrue,
+      );
+    });
+
+    testWidgets(
+      'the byte cap is reached near the real size, not at half of it',
+      (tester) async {
+        await tester.pumpWidget(
+          host(
+            Stack(
+              children: [
+                for (var i = 0; i < 3000; i++)
+                  Positioned(
+                    left: (i % 700).toDouble(),
+                    top: (i ~/ 700) * 10.0,
+                    child: const Marker(width: 1, height: 1),
+                  ),
+              ],
+            ),
+          ),
+        );
+        const limits = HierarchyLimits(maxNodes: 1 << 20, maxBytes: 100 * 1024);
+        final s = snapshot(limits: limits);
+        expect(s.truncated, isTrue);
+        final size = s.render().length;
+        // Cut by the byte cap, close to it: not at half, not over.
+        expect(size, lessThanOrEqualTo(limits.maxBytes));
+        expect(size, greaterThan(limits.maxBytes * 7 ~/ 10));
+      },
+    );
+  });
+
+  group('a render parent that is not the element parent', () {
+    testWidgets(
+      'an OverlayPortal child under a small clip is not clipped by its anchor',
+      (tester) async {
+        final controller = OverlayPortalController();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 100,
+                height: 20,
+                child: ClipRect(
+                  child: OverlayPortal(
+                    controller: controller,
+                    overlayChildBuilder: (_) => const Align(
+                      alignment: Alignment.topLeft,
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 400),
+                        child: Marker(width: 61, height: 10),
+                      ),
+                    ),
+                    child: const Align(
+                      alignment: Alignment.topLeft,
+                      child: Marker(width: 62, height: 10),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        controller.show();
+        await tester.pump();
+        final markers = named(payload(snapshot()), 'Marker');
+        final widths = markers.map((n) => boxOf(n)[2]).toList();
+        expect(widths, containsAll([61, 62]));
+        expect(
+          boxOf(markers.firstWhere((n) => boxOf(n)[2] == 61))[1],
+          400,
+          reason: 'where it paints, on the screen',
+        );
+        expect(
+          widths.indexOf(61),
+          greaterThan(widths.indexOf(62)),
+          reason: 'above its anchor',
+        );
+      },
+    );
+
+    testWidgets(
+      'an OverlayPortal child is listed after everything else in its overlay',
+      (tester) async {
+        final controller = OverlayPortalController();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Stack(
+              children: [
+                OverlayPortal(
+                  controller: controller,
+                  overlayChildBuilder: (_) => const Align(
+                    alignment: Alignment.topLeft,
+                    child: Marker(width: 61, height: 10),
+                  ),
+                  child: const SizedBox(),
+                ),
+                const Align(
+                  alignment: Alignment.topLeft,
+                  child: Marker(width: 64, height: 10),
+                ),
+              ],
+            ),
+          ),
+        );
+        controller.show();
+        await tester.pump();
+        final widths = [
+          for (final n in named(payload(snapshot()), 'Marker')) boxOf(n)[2],
+        ];
+        // The anchor comes first in the element tree, but its overlay child paints in the theater,
+        // on top of what the theater holds: it is last.
+        expect(widths, [64, 61]);
+      },
+    );
+
+    testWidgets('an OverlayPortal child of a hidden anchor is not walked', (
+      tester,
+    ) async {
+      final controller = OverlayPortalController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Offstage(
+            child: OverlayPortal(
+              controller: controller,
+              overlayChildBuilder: (_) => const Marker(width: 63, height: 10),
+              child: const SizedBox(),
+            ),
+          ),
+        ),
+      );
+      controller.show();
+      await tester.pump();
+      final widths = [
+        for (final n in named(payload(snapshot()), 'Marker')) boxOf(n)[2],
+      ];
+      // The element walk does not enter an Offstage, so what the overlay paints for a hidden anchor
+      // is not described either (a gap in the description, never a leak).
+      expect(widths, isEmpty);
+    });
+
+    testWidgets(
+      'a child translated onto the screen from a parent off it is kept',
+      (tester) async {
+        await tester.pumpWidget(
+          host(
+            const Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 900,
+                  top: 10,
+                  child: FractionalTranslation(
+                    translation: Offset(-1.5, 0),
+                    child: Marker(width: 100, height: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        final marker = named(payload(snapshot()), 'Marker').single;
+        expect(boxOf(marker)[0], 750);
+      },
+    );
+
+    testWidgets(
+      'what a clip hides stays hidden even when its box is off screen',
+      (tester) async {
+        await tester.pumpWidget(
+          host(
+            const Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 900,
+                  top: 10,
+                  child: SizedBox(
+                    width: 100,
+                    height: 100,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        maxWidth: 1000,
+                        alignment: Alignment.centerRight,
+                        child: Marker(width: 1000, height: 10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        expect(named(payload(snapshot()), 'Marker'), isEmpty);
+      },
+    );
+
+    testWidgets('a secure view off screen is never walked into', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          const Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 900,
+                top: 10,
+                child: BugseeSecureView(
+                  child: FractionalTranslation(
+                    translation: Offset(-1.5, 0),
+                    child: Marker(width: 100, height: 10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final names = [
+        for (final n in walk(payload(snapshot()))) n['class_name'],
+      ];
+      expect(names, isNot(contains('Marker')));
+      expect(names, isNot(contains('FractionalTranslation')));
+    });
+  });
+
+  group('type names are identifiers whatever runtimeType says', () {
+    test('a name that is not an identifier is replaced', () {
+      expect(debugTypeName(_FreeText()), 'Widget');
+      expect(
+        debugTypeName(_FreeText(), fallback: 'RenderObject'),
+        'RenderObject',
+      );
+      expect(debugTypeName(const Marker()), 'Marker');
+      expect(debugTypeName(ValueNotifier<int>(1)), 'ValueNotifier');
+    });
+  });
+
   group('order, flags and kinds', () {
     testWidgets('subitems are in paint order, back to front', (tester) async {
       await tester.pumpWidget(
@@ -948,4 +1268,14 @@ class _RenderExploding extends RenderProxyBox {
 
 class _EmptyElement extends StatelessElement {
   _EmptyElement(super.widget);
+}
+
+class _FreeText {
+  @override
+  Type get runtimeType => _FreeTextType();
+}
+
+class _FreeTextType implements Type {
+  @override
+  String toString() => 'alice@example.com and a card 4242';
 }

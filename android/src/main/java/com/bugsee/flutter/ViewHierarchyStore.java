@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +48,15 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Process-wide and outside the wrapper object (which is replaced when Dart refines the
  * identity), like the secure rectangles. Snapshots are per Dart isolate (owner = engine); an
  * engine's detach drops its snapshot ({@link #dropOwner}: a detached engine serves nothing, it is
- * never stale-served). With several engines the NEWEST snapshot is served and only if it can be
- * placed. State is immutable and swapped whole under a write lock; reads take no lock.
+ * never stale-served). With several engines the newest snapshot that can be rendered is served (a
+ * newer one whose view is hidden does not hide an older one that can be shown). State is immutable and swapped whole under a write lock; reads take no lock.
+ *
+ * <h2>Displays</h2>
+ *
+ * <p>The SDK sends one request per display (none for a blanked one) and the request does not say
+ * which display is asking, so the one snapshot of the Flutter view is served to whichever asks. The
+ * dangerous case is a Flutter display the SDK blanks ({@code FLAG_SECURE} window, complete
+ * blackout) while another display is asked: {@link BlackoutGate} answers {@code null} for it.
  *
  * <h2>Staleness</h2>
  *
@@ -134,6 +142,17 @@ final class ViewHierarchyStore {
     private final Object writeLock = new Object();
     private volatile Map<Long, Entry> owners = new HashMap<>();
     private final AtomicReference<Runnable> refresher = new AtomicReference<>();
+    private final AtomicReference<BlackoutGate> blackoutGate = new AtomicReference<>();
+
+    /**
+     * Whether the display {@code owner}'s Flutter view is on is one the SDK blanks (a
+     * {@code FLAG_SECURE} window, a complete blackout). The SDK asks per display and the request
+     * does not say which display is asking, so a tree is never served for such a display: asked
+     * by another display's pass it would be the blanked display's screen.
+     */
+    interface BlackoutGate {
+        boolean blackedOut(long owner);
+    }
 
     ViewHierarchyStore(@NonNull final SecureRectangleStore placement, @NonNull final Clock clock) {
         this.placement = placement;
@@ -147,6 +166,11 @@ final class ViewHierarchyStore {
      */
     void setRefresher(@Nullable final Runnable refresh) {
         refresher.set(refresh);
+    }
+
+    /** Installs the blackout check ({@link BlackoutGate}); none means nothing is known to be blanked. */
+    void setBlackoutGate(@Nullable final BlackoutGate gate) {
+        blackoutGate.set(gate);
     }
 
     /**
@@ -247,16 +271,23 @@ final class ViewHierarchyStore {
                     // A placement that could not be refreshed is judged by the store.
                 }
             }
-            long newestOwner = 0;
-            Snapshot newest = null;
+            // Newest first, and the first that can be rendered wins: a newer snapshot that cannot be
+            // placed (its view is hidden) must not hide an older one that can.
+            final List<Map.Entry<Long, Entry>> candidates = new ArrayList<>();
             for (final Map.Entry<Long, Entry> e : owners.entrySet()) {
-                final Snapshot s = e.getValue().snapshot;
-                if (s != null && (newest == null || s.receivedMs > newest.receivedMs)) {
-                    newest = s;
-                    newestOwner = e.getKey();
+                if (e.getValue().snapshot != null) {
+                    candidates.add(e);
                 }
             }
-            return newest == null ? null : render(newestOwner, newest);
+            Collections.sort(candidates, (a, b) -> Long.compare(
+                    b.getValue().snapshot.receivedMs, a.getValue().snapshot.receivedMs));
+            for (final Map.Entry<Long, Entry> e : candidates) {
+                final String rendered = render(e.getKey(), e.getValue().snapshot);
+                if (rendered != null) {
+                    return rendered;
+                }
+            }
+            return null;
         } catch (Throwable t) {
             return null;
         }
@@ -264,6 +295,18 @@ final class ViewHierarchyStore {
 
     @Nullable
     private String render(final long owner, @NonNull final Snapshot s) {
+        final BlackoutGate gate = blackoutGate.get();
+        if (gate != null) {
+            boolean blanked = true; // a gate that cannot answer fails closed
+            try {
+                blanked = gate.blackedOut(owner);
+            } catch (final Throwable ignored) {
+                // stays true
+            }
+            if (blanked) {
+                return null;
+            }
+        }
         final SecureRectangleStore.Mapper mapper = placement.mapperFor(owner, s.viewId, s.ratio);
         if (mapper == null) {
             return null;
@@ -309,5 +352,6 @@ final class ViewHierarchyStore {
             owners = new HashMap<>();
         }
         refresher.set(null);
+        blackoutGate.set(null);
     }
 }

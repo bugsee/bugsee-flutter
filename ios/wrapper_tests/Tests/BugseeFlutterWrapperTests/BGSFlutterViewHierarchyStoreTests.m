@@ -335,7 +335,7 @@ static const int64_t kOwner = 1;
   XCTAssertNil([_store answer]);
 }
 
-- (void)testWithSeveralEnginesTheNewestSnapshotIsServedAndOnlyIfItCanBePlaced {
+- (void)testWithSeveralEnginesTheNewestSnapshotThatCanBeShownIsServed {
   [self place:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] owner:1];
   [self place:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] owner:2];
   XCTAssertTrue([self publishOwner:1 epoch:1 sequence:1 ratio:3 segments:(@[ @"one", @"B", @"C", @"D" ])
@@ -344,9 +344,13 @@ static const int64_t kOwner = 1;
   XCTAssertTrue([self publishOwner:2 epoch:1 sequence:1 ratio:3 segments:(@[ @"two", @"B", @"C", @"D" ])
                             bounds:BOUNDS(0, 0, 1, 1, 0, 0, 1, 1)]);
   XCTAssertTrue([[_store answer] hasPrefix:@"two"]);
-  // The newest cannot be placed: nothing is served, not the other engine's older tree.
+  // The newest cannot be placed (hidden): the older one that can is served, not nothing.
   [self place:[BGSFlutterSecurePlacement unknown] owner:2];
+  XCTAssertTrue([[_store answer] hasPrefix:@"one"]);
+  // Neither can: nothing.
+  [self place:[BGSFlutterSecurePlacement absent] owner:1];
   XCTAssertNil([_store answer]);
+  [self place:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] owner:1];
   [_store dropOwner:2];
   XCTAssertTrue([[_store answer] hasPrefix:@"one"]);
 }

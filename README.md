@@ -315,6 +315,7 @@ Jetpack Compose on Android). Add it next to this one, at the same version; there
 ```dart
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
+import 'package:flutter/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -324,7 +325,7 @@ Future<void> main() async {
 
 // For example from a "Contact support" button.
 Future<void> contactSupport() async {
-  if (await Bugsee.waitUntilLaunched()) {   // settles `alreadyRunning` and `deferred` launches too
+  if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {   // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too
     await BugseeFeedback.show();
   }
 }

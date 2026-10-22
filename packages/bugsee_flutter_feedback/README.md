@@ -59,6 +59,7 @@ support" button); a call that needs it throws a `BugseeFeedbackException` with r
 ```dart
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
+import 'package:flutter/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,7 +77,8 @@ Future<void> main() async {
 
 // Wherever you offer it, for example a "Contact support" button: present the chat.
 Future<void> onContactSupport() async {
-  if (await Bugsee.waitUntilLaunched()) {   // settles `alreadyRunning` and `deferred` launches too
+  // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too; `isAvailable` is false when the module is not registered.
+  if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {
     await BugseeFeedback.show();
   }
 }

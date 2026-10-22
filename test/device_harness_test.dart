@@ -1110,6 +1110,12 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
           true,
         ).countOf(const Rect(-9, 36, 79, 104), const Rgb(0, 0, 0));
         expect(c.total, (79 - 0) * (104 - 36));
+        expect(
+          edge(
+            true,
+          ).countOf(const Rect(190, 190, 230, 230), const Rgb(0, 0, 0)).total,
+          100,
+        );
       },
     );
 

@@ -905,6 +905,7 @@ case "\$*" in
     f="\${*##*--to-archive=}"
     t="\$(mktemp -d)"
     echo x > "\$t/pubspec.yaml"
+    if [ -n "\$FAKE_LEAK" ]; then mkdir -p "\$t/android"; echo sdk.dir=/x > "\$t/android/local.properties"; fi
     tar czf "\$f" -C "\$t" .
     ;;
 esac
@@ -961,6 +962,16 @@ exit 0
         );
       },
     );
+
+    test('a leak in the sibling archive fails the script', () {
+      final r = Process.runSync(
+        'bash',
+        ['scripts/publish_feedback.sh'],
+        environment: {...fakeFlutter(newLog()), 'FAKE_LEAK': '1'},
+      );
+      expect(r.exitCode, isNot(0));
+      expect('${r.stderr}', contains('android/local.properties'));
+    });
 
     test(
       'the archive check rejects every kind of leak and accepts a clean archive',

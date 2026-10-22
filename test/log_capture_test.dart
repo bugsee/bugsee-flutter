@@ -946,6 +946,91 @@ void main() {
     });
   });
 
+  group('the echo match is narrow', () {
+    test(
+      'a short print that is a substring of a recent debugPrint is recorded',
+      () async {
+        final rig = Rig();
+        await rig.install();
+        debugPrint('Loaded 12 items from the cache');
+        rig.inCaptureZone(() {
+          print('12');
+          print('items');
+          print('}');
+        });
+        await rig.drain();
+        expect(rig.texts, [
+          'Loaded 12 items from the cache',
+          '12',
+          'items',
+          '}',
+        ]);
+        expect(rig.service.pipeline.stats.droppedEchoes, 0);
+      },
+    );
+
+    test(
+      'a piece is used up: the same text printed again is a new line',
+      () async {
+        final rig = Rig();
+        await rig.install();
+        debugPrint('the quick brown fox jumps');
+        rig.inCaptureZone(() {
+          print('the quick brown fox jumps'); // the throttle's output of it
+          print('the quick brown fox jumps'); // the app printing it again
+        });
+        await rig.drain();
+        expect(rig.texts, [
+          'the quick brown fox jumps',
+          'the quick brown fox jumps',
+        ]);
+        expect(rig.sent.map((m) => m.tag), ['debugPrint', 'print']);
+        expect(rig.service.pipeline.stats.droppedEchoes, 1);
+      },
+    );
+
+    test('wrapped pieces of a long message are each recognised once', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('alpha bravo charlie delta echo foxtrot golf hotel india');
+      rig.inCaptureZone(() {
+        print('alpha bravo charlie delta');
+        print('  echo foxtrot golf hotel india');
+      });
+      await rig.drain();
+      expect(rig.sent.map((m) => m.tag), ['debugPrint']);
+      expect(rig.service.pipeline.stats.droppedEchoes, 2);
+    });
+
+    test('a piece must sit at word boundaries', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('internationalization matters');
+      rig.inCaptureZone(() => print('ternationaliza'));
+      await rig.drain();
+      expect(rig.texts, ['internationalization matters', 'ternationaliza']);
+    });
+
+    test('a whole short line of the message is an echo', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('ok');
+      rig.inCaptureZone(() => print('ok'));
+      await rig.drain();
+      expect(rig.texts, ['ok']);
+    });
+
+    test('the remembered text is capped like a recorded line', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('x' * 100000);
+      rig.inCaptureZone(() => print('after the megabyte'));
+      await rig.drain();
+      expect(rig.texts.last, 'after the megabyte');
+      expect(rig.service.rememberedEchoChars, lessThan(4100));
+    });
+  });
+
   group('the echo window', () {
     test(
       'a line that matches an old debugPrint after the window is recorded',

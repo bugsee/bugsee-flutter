@@ -325,22 +325,63 @@ final class LogCaptureService {
     }
   }
 
+  /// How many characters of `debugPrint` text are remembered (for a test).
+  int get rememberedEchoChars => _echoes.fold(0, (n, e) => n + e.$1.length);
+
   void _noteEcho(String text) {
     final now = monotonicMicros();
     _echoes.removeWhere((e) => e.$2 < now);
     if (_echoes.length >= _maxEchoes) _echoes.removeAt(0);
-    _echoes.add((text, now + _echoWindowMicros));
+    // The capped text, like the recorded line: bounded, and what a piece can be a piece of.
+    _echoes.add((capLine(text), now + _echoWindowMicros));
   }
 
-  /// Whether [line] is a piece of a `debugPrint` message that was recorded a moment ago.
+  /// A piece shorter than this is only an echo when it is a whole line of the message: a wrapped
+  /// piece of a long message is longer, and a short `print` of the app ('12', '}') is its own line.
+  static const int _minEchoPiece = 12;
+
+  /// Whether [line] is a piece of a `debugPrint` message that was recorded a moment ago, at word
+  /// boundaries. A match uses the piece up (one print per piece), so the same text printed again is a
+  /// new line. Counted in the stats.
   bool _isEcho(String line) {
     if (_echoes.isEmpty) return false;
     final now = monotonicMicros();
     _echoes.removeWhere((e) => e.$2 < now);
     final piece = line.trim();
     if (piece.isEmpty) return false;
-    return _echoes.any((e) => e.$1.contains(piece));
+    for (var i = 0; i < _echoes.length; i++) {
+      final (text, until) = _echoes[i];
+      var from = 0;
+      while (true) {
+        final at = text.indexOf(piece, from);
+        if (at < 0) break;
+        final end = at + piece.length;
+        final startsAtBoundary = at == 0 || _isSpace(text.codeUnitAt(at - 1));
+        final endsAtBoundary =
+            end == text.length || _isSpace(text.codeUnitAt(end));
+        final wholeLine =
+            (at == 0 || text.codeUnitAt(at - 1) == 0x0A) &&
+            (end == text.length || text.codeUnitAt(end) == 0x0A);
+        if (startsAtBoundary &&
+            endsAtBoundary &&
+            (piece.length >= _minEchoPiece || wholeLine)) {
+          final rest = text.substring(0, at) + text.substring(end);
+          if (rest.trim().isEmpty) {
+            _echoes.removeAt(i);
+          } else {
+            _echoes[i] = (rest, until);
+          }
+          pipeline.noteEchoDrop();
+          return true;
+        }
+        from = at + 1;
+      }
+    }
+    return false;
   }
+
+  static bool _isSpace(int unit) =>
+      unit == 0x20 || unit == 0x0A || unit == 0x09 || unit == 0x0D;
 
   /// A line from the app's own logging (`Bugsee.forwardLog`). Whether it was taken.
   bool forward(String message, LogLevel level, String? tag) {

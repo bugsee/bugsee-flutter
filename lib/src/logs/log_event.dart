@@ -77,6 +77,7 @@ final class LogCaptureStats {
     this.droppedNotAccepting = 0,
     this.droppedBelowLevel = 0,
     this.droppedErrorDumps = 0,
+    this.droppedEchoes = 0,
     this.droppedByFilter = 0,
     this.filterFailures = 0,
     this.droppedFilterCoolDown = 0,
@@ -112,6 +113,10 @@ final class LogCaptureStats {
   /// `FlutterError` diagnostics dumps that were not recorded (they carry widget trees).
   final int droppedErrorDumps;
 
+  /// `print` lines that were the later output of a `debugPrint` already recorded (Flutter's throttle
+  /// prints it from a timer that may predate the install): not recorded twice.
+  final int droppedEchoes;
+
   /// Lines the filter answered `null` or an empty message for.
   final int droppedByFilter;
 
@@ -134,7 +139,7 @@ final class LogCaptureStats {
       'LogCaptureStats(captured $captured, submittedToSdk $submittedToSdk, truncated $truncated, '
       'droppedQueueFull $droppedQueueFull, droppedRateLimited $droppedRateLimited, '
       'droppedNotAccepting $droppedNotAccepting, droppedBelowLevel $droppedBelowLevel, '
-      'droppedErrorDumps $droppedErrorDumps, droppedByFilter $droppedByFilter, '
+      'droppedErrorDumps $droppedErrorDumps, droppedEchoes $droppedEchoes, droppedByFilter $droppedByFilter, '
       'filterFailures $filterFailures, droppedFilterCoolDown $droppedFilterCoolDown, refusedByNative $refusedByNative, '
       'sendFailures $sendFailures)';
 }

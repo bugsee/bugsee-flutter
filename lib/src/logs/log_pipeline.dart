@@ -167,6 +167,7 @@ final class LogPipeline {
   int _droppedNotAccepting = 0;
   int _droppedBelowLevel = 0;
   int _droppedErrorDumps = 0;
+  int _droppedEchoes = 0;
   int _droppedByFilter = 0;
   int _filterFailures = 0;
   int _droppedCoolDown = 0;
@@ -182,6 +183,7 @@ final class LogPipeline {
     droppedNotAccepting: _droppedNotAccepting,
     droppedBelowLevel: _droppedBelowLevel,
     droppedErrorDumps: _droppedErrorDumps,
+    droppedEchoes: _droppedEchoes,
     droppedByFilter: _droppedByFilter,
     filterFailures: _filterFailures,
     droppedFilterCoolDown: _droppedCoolDown,
@@ -194,6 +196,9 @@ final class LogPipeline {
 
   /// Counts a `FlutterError` dump that the capture refused to record.
   void noteErrorDump() => _droppedErrorDumps++;
+
+  /// Counts a `print` line that was the later output of a `debugPrint` already recorded.
+  void noteEchoDrop() => _droppedEchoes++;
 
   /// Called by the capture for every line. Never throws, never waits.
   void submit(String message, LogLevel level, String? tag) {

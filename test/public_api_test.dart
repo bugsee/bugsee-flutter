@@ -579,6 +579,7 @@ void main() {
           'droppedNotAccepting',
           'droppedBelowLevel',
           'droppedErrorDumps',
+          'droppedEchoes',
           'droppedByFilter',
           'filterFailures',
           'droppedFilterCoolDown',

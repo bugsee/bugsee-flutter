@@ -1,6 +1,12 @@
 // A proxy of the SDK's report, for the report handlers (workbook Part 7). Public: exported from
 // package:bugsee_flutter (the types a handler receives); only its constructor is internal.
+import 'dart:typed_data' show Uint8List;
+
+import 'package:flutter/services.dart' show PlatformException;
+
 import '../bridge/messages.g.dart';
+import '../errors.dart';
+import 'attachments.dart';
 import 'report_enums.dart';
 
 /// An edit was attempted on a report the SDK has already taken back.
@@ -16,6 +22,9 @@ class ReportClosedError extends StateError {
         'finished or the SDK deadline passed, so this change would be lost. '
         'Await every edit before the handler returns, and do slow work first.',
       );
+
+  /// For a subclass with its own wording (a created report that was uploaded or discarded).
+  ReportClosedError.because(super.message);
 }
 
 /// A read of the report at one moment. A value, not live: later edits do not change it.
@@ -29,6 +38,8 @@ final class ReportSnapshot {
     required this.severity,
     required this.labels,
     required this.attributes,
+    this.attachments = const [],
+    this.screenshots = const [],
   });
 
   final String id;
@@ -48,6 +59,13 @@ final class ReportSnapshot {
 
   /// Strings, bools and numbers only: what both SDKs carry.
   final Map<String, Object> attributes;
+
+  /// The attachments the report holds now (added by the SDK, an earlier handler or this one), in
+  /// order. Metadata only.
+  final List<ReportAttachment> attachments;
+
+  /// The screenshots the report holds, ascending by display id.
+  final List<ReportScreenshot> screenshots;
 }
 
 /// The live report behind one report-handler delivery: an opaque handle plus the
@@ -62,10 +80,15 @@ final class ReportSnapshot {
 /// carries part of the first run's contribution: set attributes and labels rather
 /// than append, and do no one-shot work.
 ///
-/// Attachments and screenshots are not here yet (the report handler's public API documents that).
-/// // TODO(phase-6): path-first
-/// attachments (`addAttachment(path, name, mimeType, move)`): native does the file
-/// work and no bytes or streams cross the bridge (workbook 7.3.3).
+/// **Attachments and screenshots are path-first** (workbook 7.3.3): [addAttachment] and
+/// [setScreenshot] take a file PATH, and native copies, moves or decodes it; the file never crosses
+/// the bridge. [addAttachmentBytes] is the convenience for a small payload (at most
+/// [maxAttachmentBytes]). A refused file is a [ReportAttachmentException] and changes nothing, the
+/// source file included; a late call is a [ReportClosedError] like any edit.
+///
+/// A file operation runs natively on a background thread, and the SDK's completion waits for one that
+/// started while the report was live (so awaiting it before the handler returns is what makes it
+/// count).
 final class ReportProxy {
   ReportProxy._({
     required this.id,
@@ -128,6 +151,18 @@ final class ReportProxy {
       severity: ReportSeverity.fromValue(m.severity),
       labels: List.unmodifiable(m.labels),
       attributes: Map.unmodifiable(m.attributes),
+      attachments: List.unmodifiable([
+        for (final a in m.attachments)
+          ReportAttachment(
+            name: a.name,
+            mimeType: a.mimeType,
+            fileName: a.fileName,
+          ),
+      ]),
+      screenshots: List.unmodifiable([
+        for (final s in m.screenshots)
+          ReportScreenshot(displayId: s.displayId, annotated: s.annotated),
+      ]),
     );
   }
 
@@ -177,6 +212,140 @@ final class ReportProxy {
 
   Future<void> clearAttributes() =>
       _apply(() => _host.reportClearAttributes(_handle));
+
+  /// Adds the file at [path] to the report. [name] is its display name in the report (the bundle
+  /// manifest entry's `name`), [mimeType] its type (`type/subtype`, or `null` for unknown).
+  ///
+  /// With [move] false (the default) the file is copied and stays where it is; with [move] true it
+  /// is renamed into the report's storage (or copied and then deleted when that is not possible),
+  /// which consumes the source: use it for a temporary file the app was about to delete. A move that
+  /// is refused never consumes the file. A symbolic link is always copied (its target's content),
+  /// and with [move] only the link itself is removed.
+  ///
+  /// [path] must be an absolute file system path (`File.path`), not a URL, and must name a readable
+  /// regular file: Android 10+ scoped storage and both platforms' sandboxes decide which files that
+  /// is (the app's own directories always are). A file may be at most [maxAttachmentFileBytes]
+  /// (otherwise [ReportAttachmentFailure.tooLarge]); the copy is a native file copy and is not read
+  /// into memory. The SDK takes at most 1000 attachments per report.
+  ///
+  /// Throws [BugseeArgumentException] for a path, name or type that is malformed (nothing was
+  /// sent), [ReportAttachmentException] when the SDK or the file system refused it, and
+  /// [ReportClosedError] once the report is not live.
+  Future<void> addAttachment(
+    String path, {
+    required String name,
+    String? mimeType,
+    bool move = false,
+  }) async {
+    final checkedPath = checkAttachmentPath(path);
+    final checkedName = checkAttachmentName(name);
+    final checkedMime = checkMimeType(mimeType);
+    await _applyFile(
+      'addAttachment',
+      () => _host.reportAddAttachment(
+        _handle,
+        checkedPath,
+        checkedName,
+        checkedMime,
+        move,
+      ),
+    );
+  }
+
+  /// Adds [bytes] (at most [maxAttachmentBytes]) as an attachment named [name]; for anything
+  /// larger write a file and use [addAttachment]. Empty data is valid and makes an empty file.
+  /// Same errors as [addAttachment].
+  Future<void> addAttachmentBytes(
+    Uint8List bytes, {
+    required String name,
+    String? mimeType,
+  }) async {
+    final checkedName = checkAttachmentName(name);
+    final checkedMime = checkMimeType(mimeType);
+    if (bytes.length > maxAttachmentBytes) {
+      throw BugseeArgumentException(
+        'bytes',
+        'at most $maxAttachmentBytes bytes can be attached as bytes; '
+            'write a file and attach its path',
+      );
+    }
+    await _applyFile(
+      'addAttachmentBytes',
+      () => _host.reportAddAttachmentBytes(
+        _handle,
+        bytes,
+        checkedName,
+        checkedMime,
+      ),
+    );
+  }
+
+  /// Removes every attachment from the report, including ones the SDK or an earlier handler added,
+  /// and deletes their files.
+  Future<void> clearAttachments() => _applyFile(
+    'clearAttachments',
+    () => _host.reportClearAttachments(_handle),
+  );
+
+  /// Sets the screenshot of [displayId] from the image file at [path] (PNG or JPEG; whatever the
+  /// platform decodes), replacing the one the report holds. The image is decoded natively. Set
+  /// [annotated] when the picture carries a drawing: it reaches the bundle as the screenshot entry's
+  /// `annotated` attribute, and the viewer shows an annotated screenshot over the video. Without it
+  /// the screenshot is stored as not annotated, which on a report with a video the viewer does not
+  /// offer (report-contract, "Annotated screenshots").
+  ///
+  /// The image may have at most [maxScreenshotPixels] pixels. Same errors as [addAttachment].
+  Future<void> setScreenshot(
+    String path, {
+    int displayId = 0,
+    bool annotated = false,
+  }) async {
+    final checkedPath = checkAttachmentPath(path);
+    final checkedDisplay = checkDisplayId(displayId);
+    await _applyFile(
+      'setScreenshot',
+      () => _host.reportSetScreenshot(
+        _handle,
+        checkedPath,
+        checkedDisplay,
+        annotated,
+      ),
+    );
+  }
+
+  /// Removes the screenshot of [displayId] (nothing happens when there is none).
+  Future<void> removeScreenshot({int displayId = 0}) async {
+    final checkedDisplay = checkDisplayId(displayId);
+    await _applyFile(
+      'removeScreenshot',
+      () => _host.reportRemoveScreenshot(_handle, checkedDisplay),
+    );
+  }
+
+  /// Sends one file operation: the reply is `null` (done), `not-live`, or a failure code.
+  Future<void> _applyFile(String what, Future<String?> Function() send) async {
+    _ensureLive();
+    final String? code;
+    try {
+      code = await send();
+    } on PlatformException catch (e) {
+      // Dart validated already; native defends again and says so with this code.
+      if (e.code == FacadeWire.invalidArgument) {
+        throw BugseeArgumentException(
+          'argument',
+          '$what: ${e.message ?? e.code}',
+          cause: e,
+        );
+      }
+      rethrow;
+    }
+    if (code == null) return;
+    if (code == ReportWire.notLive) {
+      _live = false;
+      throw ReportClosedError(id);
+    }
+    throw attachmentFailure(what, code);
+  }
 
   /// The value types an attribute may have (what both SDKs carry).
   static bool isAllowedAttributeValue(Object? value) {

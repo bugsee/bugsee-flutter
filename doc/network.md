@@ -234,7 +234,9 @@ options are read again. A failure to read leaves nothing accepted.
   over it, it stays in the chain and records nothing. It never touches overrides it did not install. An exchange in flight at the uninstall
   stops recording at once (no `complete`/`abort`/`error` for it). Events captured before
   it (already through the filter) are still submitted: the app asked to stop recording, not to lose what it recorded; the
-  SDK's own gate drops them if it is no longer launched.
+  SDK's own gate drops them if it is no longer launched. A reinstall accepts nothing until the SDK's status and options
+  have been read again (the policy may be stale after an uninstall), so a request opened in that few-millisecond window is
+  simply not recorded rather than recorded and refused.
 * Called inside a zone that scopes its own overrides (`HttpOverrides.runZoned`), `installNetworkCapture` throws a
   `BugseeException` instead of making that scope global; call it from `main`. A repeated call probes whether the capture is
   still in effect (a real client is created and closed through the app's overrides) once per set of overrides in effect.

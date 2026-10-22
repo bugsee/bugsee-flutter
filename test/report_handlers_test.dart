@@ -2,9 +2,12 @@
 // channels: a fake native end answers on the pigeon channels with the real codec,
 // and pushes deliveries the way native does, so the wire shape is exercised too.
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:bugsee_flutter/src/bridge/bridge.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
+import 'package:bugsee_flutter/src/errors.dart';
+import 'package:bugsee_flutter/src/report/attachments.dart';
 import 'package:bugsee_flutter/src/report/report_enums.dart';
 import 'package:bugsee_flutter/src/report/report_proxy.dart';
 import 'package:flutter/foundation.dart' show FlutterError, FlutterErrorDetails;
@@ -49,6 +52,11 @@ class FakeNative {
     'reportSetAttribute',
     'reportRemoveAttribute',
     'reportClearAttributes',
+    'reportAddAttachment',
+    'reportAddAttachmentBytes',
+    'reportClearAttachments',
+    'reportSetScreenshot',
+    'reportRemoveScreenshot',
   ];
 
   final TestDefaultBinaryMessenger messenger;
@@ -60,6 +68,11 @@ class FakeNative {
   final Map<String, int> severityOf = {};
   final Map<String, List<String>> labelsOf = {};
   final Map<String, Map<String, Object>> attributesOf = {};
+
+  /// What the file operations answer per handle, when it is live (null: applied).
+  final Map<String, String> fileFailure = {};
+  final Map<String, List<ReportAttachmentMessage>> attachmentsOf = {};
+  final Map<String, List<ReportScreenshotMessage>> screenshotsOf = {};
   bool before = false;
   bool after = false;
   int completions = 0;
@@ -68,7 +81,10 @@ class FakeNative {
   void closeNow(String handle) => closed.add(handle);
 
   Object? _handle(String method, List<Object?> args) {
-    calls.add('$method(${args.join(', ')})');
+    // Bytes would flood the log: record their length.
+    calls.add(
+      '$method(${args.map((a) => a is Uint8List ? 'bytes:${a.length}' : a).join(', ')})',
+    );
     if (method == 'resetReportHandlers') {
       before = after = false;
       return null;
@@ -95,7 +111,17 @@ class FakeNative {
           severity: severityOf[handle],
           labels: labelsOf[handle] ?? [],
           attributes: attributesOf[handle] ?? {},
+          attachments: attachmentsOf[handle] ?? [],
+          screenshots: screenshotsOf[handle] ?? [],
         );
+      case 'reportAddAttachment':
+      case 'reportAddAttachmentBytes':
+      case 'reportClearAttachments':
+      case 'reportSetScreenshot':
+      case 'reportRemoveScreenshot':
+        // A file operation answers a code, not a bool: null is "applied".
+        if (!live) return 'not-live';
+        return fileFailure[handle];
       case 'reportSetSeverity':
         final v = args[1]! as int;
         if (v < 1 || v > 5) {
@@ -430,6 +456,7 @@ void main() {
 
     test('Dart closes the proxy itself when the deadline passes', () async {
       final gate = Completer<void>();
+      final attempted = Completer<void>();
       Object? caught;
       int? callsWhenClosed;
       await bridge.setReportHandlers(
@@ -441,11 +468,13 @@ void main() {
           } catch (e) {
             caught = e;
           }
+          attempted.complete();
           await gate.future;
         },
       );
       await native.deliver(handle: 'h1', deadlineMs: 30);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      // Not a fixed sleep: a loaded runner may take longer than any number picked here.
+      await attempted.future.timeout(const Duration(seconds: 10));
       expect(caught, isA<ReportClosedError>());
       expect(
         native.calls.length,
@@ -624,6 +653,355 @@ void main() {
       await native.deliver(handle: 'x2', after: true, reportId: 'r0');
       await settle();
       expect(runs, n + 2);
+    });
+  });
+
+  group('attachments and screenshots (Phase 6): path-first, over the real codec', () {
+    /// Runs [body] as the onBefore handler of a delivery and waits for it.
+    Future<void> inHandler(
+      Future<void> Function(ReportProxy r) body, {
+      String handle = 'h1',
+    }) async {
+      await bridge.setReportHandlers(onBefore: body);
+      await native.deliver(handle: handle);
+      await settle();
+    }
+
+    test(
+      'a file crosses as its PATH with name, type and move; never bytes',
+      () async {
+        await inHandler((r) async {
+          await r.addAttachment(
+            '/data/app/log.txt',
+            name: 'log',
+            mimeType: 'text/plain',
+          );
+          await r.addAttachment('/data/app/tmp.db', name: 'db', move: true);
+        });
+        expect(
+          native.calls.where((c) => c.startsWith('reportAddAttachment')),
+          [
+            'reportAddAttachment(h1, /data/app/log.txt, log, text/plain, false)',
+            'reportAddAttachment(h1, /data/app/tmp.db, db, null, true)',
+          ],
+          reason:
+              'copy is the default; move is opt-in; the mime type is optional',
+        );
+      },
+    );
+
+    test('bytes cross as a Uint8List and only up to the cap', () async {
+      Object? tooBig;
+      await inHandler((r) async {
+        await r.addAttachmentBytes(
+          Uint8List.fromList([1, 2, 3]),
+          name: 'n.bin',
+          mimeType: 'application/octet-stream',
+        );
+        await r.addAttachmentBytes(Uint8List(0), name: 'empty');
+        await r.addAttachmentBytes(Uint8List(maxAttachmentBytes), name: 'max');
+        try {
+          await r.addAttachmentBytes(
+            Uint8List(maxAttachmentBytes + 1),
+            name: 'over',
+          );
+        } catch (e) {
+          tooBig = e;
+        }
+      });
+      expect(
+        native.calls.where((c) => c.startsWith('reportAddAttachmentBytes')),
+        [
+          'reportAddAttachmentBytes(h1, bytes:3, n.bin, application/octet-stream)',
+          'reportAddAttachmentBytes(h1, bytes:0, empty, null)',
+          'reportAddAttachmentBytes(h1, bytes:$maxAttachmentBytes, max, null)',
+        ],
+        reason: 'one byte over the cap never reaches native',
+      );
+      expect(
+        tooBig,
+        isA<BugseeArgumentException>().having(
+          (e) => e.argument,
+          'argument',
+          'bytes',
+        ),
+      );
+    });
+
+    test(
+      'malformed arguments are refused in Dart, before anything crosses',
+      () async {
+        final failures = <String>[];
+        await inHandler((r) async {
+          Future<void> bad(String what, Future<void> Function() call) async {
+            try {
+              await call();
+              failures.add('$what was accepted');
+            } on BugseeArgumentException catch (e) {
+              if (e.argument.isEmpty) failures.add('$what: no argument named');
+            }
+          }
+
+          await bad('empty path', () => r.addAttachment('', name: 'n'));
+          await bad(
+            'relative path',
+            () => r.addAttachment('a/b.txt', name: 'n'),
+          );
+          await bad(
+            'file URL',
+            () => r.addAttachment('file:///a/b.txt', name: 'n'),
+          );
+          await bad(
+            'content URI',
+            () => r.addAttachment('content://x/y', name: 'n'),
+          );
+          await bad(
+            'NUL in path',
+            () => r.addAttachment('/a\u0000b', name: 'n'),
+          );
+          await bad(
+            'long path',
+            () =>
+                r.addAttachment('/${'a' * maxAttachmentPathLength}', name: 'n'),
+          );
+          await bad('empty name', () => r.addAttachment('/a', name: ''));
+          for (final blank in [
+            '\u00a0',
+            '\u0085',
+            '\u3000',
+            '\u2003',
+            ' \u00a0 ',
+            '\t',
+          ]) {
+            await bad(
+              'blank name U+${blank.codeUnitAt(0).toRadixString(16)}',
+              () => r.addAttachment('/a', name: blank),
+            );
+          }
+          await bad('blank name', () => r.addAttachment('/a', name: '   '));
+          await bad('slash in name', () => r.addAttachment('/a', name: '../x'));
+          await bad(
+            'backslash in name',
+            () => r.addAttachment('/a', name: r'a\b'),
+          );
+          await bad(
+            'newline in name',
+            () => r.addAttachment('/a', name: 'a\nb'),
+          );
+          await bad(
+            'long name',
+            () => r.addAttachment(
+              '/a',
+              name: 'n' * (maxAttachmentNameLength + 1),
+            ),
+          );
+          await bad(
+            'mime without slash',
+            () => r.addAttachment('/a', name: 'n', mimeType: 'text'),
+          );
+          await bad(
+            'mime with parameter',
+            () => r.addAttachment(
+              '/a',
+              name: 'n',
+              mimeType: 'text/plain; charset=utf-8',
+            ),
+          );
+          await bad(
+            'mime with a space',
+            () => r.addAttachment('/a', name: 'n', mimeType: 'text /plain'),
+          );
+          await bad(
+            'empty mime',
+            () => r.addAttachment('/a', name: 'n', mimeType: ''),
+          );
+          await bad('screenshot path', () => r.setScreenshot('x.png'));
+          await bad(
+            'negative display',
+            () => r.setScreenshot('/x.png', displayId: -1),
+          );
+          await bad(
+            'negative display (remove)',
+            () => r.removeScreenshot(displayId: -1),
+          );
+        });
+        expect(failures, isEmpty);
+        expect(
+          native.calls.where(
+            (c) => c.startsWith('reportAdd') || c.contains('Screenshot'),
+          ),
+          isEmpty,
+          reason: 'nothing malformed crossed',
+        );
+      },
+    );
+
+    test('well-formed names, types and paths are accepted', () async {
+      await inHandler((r) async {
+        await r.addAttachment(
+          '/a/b c/é.txt',
+          name: 'My log (1).txt',
+          mimeType: 'application/vnd.api+json',
+        );
+        await r.addAttachment('/a', name: 'n', mimeType: 'image/svg+xml');
+        await r.addAttachment('/a', name: 'n' * maxAttachmentNameLength);
+        // Not blank in any of the three languages' shared definition.
+        await r.addAttachment('/a', name: '\u200bx');
+        await r.addAttachment('/a', name: 'x\u00a0');
+        await r.addAttachment('/a', name: '\ufeff');
+      });
+      expect(
+        native.calls.where((c) => c.startsWith('reportAddAttachment(')).length,
+        6,
+      );
+    });
+
+    test(
+      'a refusal maps to a typed exception per code and leaves the report live',
+      () async {
+        final seen = <String, ReportAttachmentFailure>{};
+        late ReportProxy kept;
+        await inHandler((r) async {
+          kept = r;
+          for (final entry in ReportWire.failures.entries) {
+            native.fileFailure['h1'] = entry.key;
+            try {
+              await r.addAttachment('/a', name: 'n');
+            } on ReportAttachmentException catch (e) {
+              seen[entry.key] = e.reason;
+            }
+          }
+          native.fileFailure['h1'] = 'a-code-from-a-newer-native';
+          try {
+            await r.addAttachment('/a', name: 'n');
+          } on ReportAttachmentException catch (e) {
+            seen['unknown'] = e.reason;
+          }
+          native.fileFailure.remove('h1');
+          await r.setSummary('still live');
+        });
+        expect(seen, {
+          for (final e in ReportWire.failures.entries) e.key: e.value,
+          'unknown': ReportAttachmentFailure.rejected,
+        });
+        expect(native.summaryOf['h1'], 'still live');
+        expect(kept.isLive, isFalse, reason: 'closed by the handler returning');
+      },
+    );
+
+    test(
+      'a handle native reports as not live throws ReportClosedError for every file operation',
+      () async {
+        final ops = <String, Future<void> Function(ReportProxy)>{
+          'addAttachment': (r) => r.addAttachment('/a', name: 'n'),
+          'addAttachment (move)': (r) =>
+              r.addAttachment('/a', name: 'n', move: true),
+          'addAttachmentBytes': (r) =>
+              r.addAttachmentBytes(Uint8List(1), name: 'n'),
+          'clearAttachments': (r) => r.clearAttachments(),
+          'setScreenshot': (r) => r.setScreenshot('/a.png'),
+          'removeScreenshot': (r) => r.removeScreenshot(),
+        };
+        final outcome = <String, Object?>{};
+        var n = 0;
+        for (final entry in ops.entries) {
+          final handle = 'late${n++}';
+          await bridge.setReportHandlers(
+            onBefore: (r) async {
+              // Native completed first (its deadline): the next call is told "not live".
+              native.closeNow(handle);
+              try {
+                await entry.value(r);
+                outcome[entry.key] = 'accepted';
+              } catch (e) {
+                outcome[entry.key] = '${e.runtimeType}, live: ${r.isLive}';
+              }
+            },
+          );
+          await native.deliver(handle: handle, reportId: 'r$n');
+          await settle();
+        }
+        expect(outcome, {
+          for (final k in ops.keys) k: 'ReportClosedError, live: false',
+        });
+      },
+    );
+
+    test(
+      'after the handler returns every file operation fails loudly without reaching native',
+      () async {
+        late ReportProxy kept;
+        await inHandler((r) async => kept = r);
+        final before = native.calls.length;
+        for (final call in <Future<void> Function()>[
+          () => kept.addAttachment('/a', name: 'n', move: true),
+          () => kept.addAttachmentBytes(Uint8List(1), name: 'n'),
+          () => kept.clearAttachments(),
+          () => kept.setScreenshot('/a.png', annotated: true),
+          () => kept.removeScreenshot(),
+        ]) {
+          await expectLater(call(), throwsA(isA<ReportClosedError>()));
+        }
+        expect(native.calls.length, before);
+      },
+    );
+
+    test(
+      'screenshots cross as a path with the display id and the annotated flag',
+      () async {
+        await inHandler((r) async {
+          await r.setScreenshot('/a/shot.png');
+          await r.setScreenshot('/a/edited.png', displayId: 2, annotated: true);
+          await r.removeScreenshot(displayId: 2);
+          await r.clearAttachments();
+        });
+        expect(
+          native.calls.where(
+            (c) => c.contains('Screenshot') || c.contains('Attachments'),
+          ),
+          [
+            'reportSetScreenshot(h1, /a/shot.png, 0, false)',
+            'reportSetScreenshot(h1, /a/edited.png, 2, true)',
+            'reportRemoveScreenshot(h1, 2)',
+            'reportClearAttachments(h1)',
+          ],
+        );
+      },
+    );
+
+    test('read lists attachments and screenshots as values', () async {
+      native.attachmentsOf['h1'] = [
+        ReportAttachmentMessage(
+          name: 'log',
+          mimeType: 'text/plain',
+          fileName: 'app.log',
+        ),
+        ReportAttachmentMessage(name: 'raw'),
+      ];
+      native.screenshotsOf['h1'] = [
+        ReportScreenshotMessage(displayId: 0, annotated: true),
+        ReportScreenshotMessage(displayId: 3, annotated: false),
+      ];
+      ReportSnapshot? snap;
+      await inHandler((r) async => snap = await r.read());
+      expect(snap!.attachments.map((a) => (a.name, a.mimeType, a.fileName)), [
+        ('log', 'text/plain', 'app.log'),
+        ('raw', null, null),
+      ]);
+      expect(snap!.screenshots.map((s) => (s.displayId, s.annotated)), [
+        (0, true),
+        (3, false),
+      ]);
+      expect(
+        () => snap!.attachments.add(const ReportAttachment()),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => snap!.screenshots.add(
+          const ReportScreenshot(displayId: 1, annotated: false),
+        ),
+        throwsUnsupportedError,
+      );
     });
   });
 }

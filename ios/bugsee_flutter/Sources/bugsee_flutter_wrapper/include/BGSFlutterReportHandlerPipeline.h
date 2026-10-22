@@ -82,6 +82,20 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportEditResult) {
   BGSFlutterReportEditRefused,
 };
 
+/// A claim on a live report for an operation that must not run under the handle's lock (a file copy
+/// takes as long as the disk does). While it is held the report stays valid for the operation even if
+/// the handle completes, and the SDK's completion waits for `-end`: nothing here blocks a thread for it.
+@interface BGSFlutterReportLease : NSObject
+@property(nonatomic, strong, readonly) id report;
+/// Whether the handler's window (the SDK's budget less our margin, measured from the handler's entry) has
+/// passed. The SDK's own timer moves on regardless of this claim: work that has not started must not
+/// start. (iOS's `BGSReport` re-checks under its lock and hands a refused move back, so unlike Android
+/// nothing needs undoing afterwards.)
+- (BOOL)windowClosed;
+/// Idempotent. Runs the SDK's completion if the handle completed meanwhile and this was the last claim.
+- (void)end;
+@end
+
 /// Routes the SDK's report-handler callbacks to Dart and back (workbook Part 7), through a
 /// table of opaque handles.
 ///
@@ -152,6 +166,9 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportEditResult) {
 - (BOOL)completeHandle:(NSString *)handle;
 /// The live report behind `handle`, or nil once it is completed or unknown.
 - (nullable id)reportForHandle:(nullable NSString *)handle;
+/// Claims the live report behind `handle` for a long operation, or nil (nothing claimed) when it is
+/// not live (7.3.4).
+- (nullable BGSFlutterReportLease *)acquireHandle:(nullable NSString *)handle;
 - (BGSFlutterReportEditResult)editHandle:(nullable NSString *)handle
                                     edit:(BGSFlutterReportEdit)edit
                                    error:(NSError *_Nullable *_Nullable)error;

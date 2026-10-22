@@ -24,6 +24,7 @@ import 'network/network_service.dart';
 import 'options/bugsee_options.g.dart';
 import 'options/launch_options.dart';
 import 'options/option_registry.dart';
+import 'report/created_report.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
@@ -564,6 +565,57 @@ final class BugseeRuntime {
   BugseeNetworkFilter? get networkFilter => network.pipeline.filter;
 
   NetworkCaptureStats get networkCaptureStats => network.pipeline.stats;
+
+  /// The shortest and longest time a created report is held.
+  static const Duration minCreatedReportTimeToLive = Duration(seconds: 1);
+  static const Duration maxCreatedReportTimeToLive = Duration(hours: 1);
+
+  Future<CreatedReport?> createReport({required Duration timeToLive}) async {
+    if (timeToLive < minCreatedReportTimeToLive ||
+        timeToLive > maxCreatedReportTimeToLive) {
+      throw BugseeArgumentException(
+        'timeToLive',
+        'must be between ${minCreatedReportTimeToLive.inSeconds} second and '
+            '${maxCreatedReportTimeToLive.inHours} hour',
+      );
+    }
+    final handle = await _call<String?>('createReport', null, () async {
+      try {
+        return await host.createReport(timeToLive.inMilliseconds);
+      } on PlatformException catch (e) {
+        throw createReportFailure(e) ?? e;
+      }
+    });
+    if (handle == null) return null;
+    final CreatedReportSnapshotMessage? first;
+    try {
+      first = await host.createdReportRead(handle);
+    } on PlatformException catch (e) {
+      // Native holds the report under a handle nobody will ever receive: release it now, or the one
+      // process-wide slot stays taken until its time to live (up to an hour).
+      await _discardQuietly(handle);
+      throw mapFacadeError('createReport', e);
+    }
+    if (first == null) {
+      await _discardQuietly(handle);
+      return null;
+    }
+    return createCreatedReport(
+      reportId: first.reportId.isEmpty ? null : first.reportId,
+      typeName: first.type,
+      handle: handle,
+      host: host,
+      timeToLive: timeToLive,
+    );
+  }
+
+  Future<void> _discardQuietly(String handle) async {
+    try {
+      await host.createdReportDiscard(handle);
+    } on Object {
+      // Native then releases it at its time to live.
+    }
+  }
 
   // ---- Report handler and lifecycle events ------------------------------------------------------
 

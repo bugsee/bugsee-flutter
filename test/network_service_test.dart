@@ -256,6 +256,31 @@ void main() {
       },
     );
 
+    test(
+      'a reinstall accepts nothing until the policy is read again',
+      () async {
+        final rig = Rig();
+        rig.service.install();
+        await rig.settle();
+        expect(rig.service.policy.accepting, isTrue);
+        rig.service.uninstall();
+        rig.policy = NetworkPolicy.off; // the SDK stopped meanwhile
+        rig.loadGate = Completer<void>();
+        rig.service.install();
+        expect(rig.service.policy.accepting, isFalse);
+        rig.loadGate!.complete();
+        await rig.settle();
+        expect(
+          rig.service.policy.accepting,
+          isFalse,
+          reason: 'the read said stopped',
+        );
+        rig.policy = const NetworkPolicy(accepting: true);
+        await rig.service.refreshPolicy();
+        expect(rig.service.policy.accepting, isTrue);
+      },
+    );
+
     test('can be installed again afterwards', () async {
       final rig = Rig();
       rig.service.install();

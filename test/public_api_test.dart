@@ -57,6 +57,22 @@ void main() {
       'VideoMode',
       'VideoQuality',
     ],
+    'src/report/attachments.dart': [
+      'ReportAttachment',
+      'ReportAttachmentException',
+      'ReportAttachmentFailure',
+      'ReportScreenshot',
+      'maxAttachmentBytes',
+      'maxAttachmentFileBytes',
+      'maxScreenshotPixels',
+    ],
+    'src/report/created_report.dart': [
+      'CreateReportException',
+      'CreateReportFailure',
+      'CreatedReport',
+      'CreatedReportClosedError',
+      'CreatedReportSnapshot',
+    ],
     'src/report/report_enums.dart': ['ReportSeverity', 'ReportType'],
     'src/report/report_handler.dart': ['BugseeReportHandler', 'ReportHandler'],
     'src/report/report_proxy.dart': [
@@ -118,6 +134,12 @@ void main() {
       'ReportHandlerRequestMessage',
       'BreadcrumbMessage',
       'ReportSnapshotMessage',
+      'CreatedReportPatchMessage',
+      'ReportWire',
+      'createCreatedReport',
+      'createReportFailure',
+      'checkAttachmentPath',
+      'attachmentFailure',
       'WrapperIdentity',
       'RuntimeFacts',
       'OptionPlatform',
@@ -190,6 +212,7 @@ void main() {
         'isBlackout',
         'showReportDialog',
         'upload',
+        'createReport',
         'reportHandler',
         'setReportHandler',
         'lifecycleEvents',
@@ -308,6 +331,11 @@ void main() {
           'setAttribute',
           'removeAttribute',
           'clearAttributes',
+          'addAttachment',
+          'addAttachmentBytes',
+          'clearAttachments',
+          'setScreenshot',
+          'removeScreenshot',
           'isAllowedAttributeValue',
         },
       ),
@@ -324,11 +352,90 @@ void main() {
           'severity',
           'labels',
           'attributes',
+          'attachments',
+          'screenshots',
         },
       ),
       'ReportClosedError': (
         'src/report/report_proxy.dart',
         {'ReportClosedError'},
+      ),
+      'CreatedReport': (
+        'src/report/created_report.dart',
+        {
+          'reportId',
+          'type',
+          'isLive',
+          'read',
+          'setSummary',
+          'setDescription',
+          'setSeverity',
+          'replaceLabels',
+          'setAttribute',
+          'removeAttribute',
+          'clearAttributes',
+          'addAttachment',
+          'addAttachmentBytes',
+          'clearAttachments',
+          'setScreenshot',
+          'upload',
+          'discard',
+        },
+      ),
+      'CreatedReportSnapshot': (
+        'src/report/created_report.dart',
+        {
+          'CreatedReportSnapshot',
+          'reportId',
+          'typeName',
+          'type',
+          'summary',
+          'description',
+          'severity',
+          'labels',
+          'attributes',
+          'attachmentNames',
+          'screenshotDisplayIds',
+        },
+      ),
+      'CreatedReportClosedError': (
+        'src/report/created_report.dart',
+        {'CreatedReportClosedError'},
+      ),
+      'CreateReportException': (
+        'src/report/created_report.dart',
+        {'CreateReportException', 'reason'},
+      ),
+      'CreateReportFailure': (
+        'src/report/created_report.dart',
+        {'busy', 'timeout', 'rateLimited', 'uploadTimeout'},
+      ),
+      'ReportAttachment': (
+        'src/report/attachments.dart',
+        {'ReportAttachment', 'name', 'mimeType', 'fileName'},
+      ),
+      'ReportScreenshot': (
+        'src/report/attachments.dart',
+        {'ReportScreenshot', 'displayId', 'annotated'},
+      ),
+      'ReportAttachmentException': (
+        'src/report/attachments.dart',
+        {'ReportAttachmentException', 'reason'},
+      ),
+      'ReportAttachmentFailure': (
+        'src/report/attachments.dart',
+        {
+          'fileNotFound',
+          'notAFile',
+          'unreadable',
+          'tooLarge',
+          'limitReached',
+          'rejected',
+          'busy',
+          'unsupported',
+          'imageUndecodable',
+          'imageTooLarge',
+        },
       ),
       'BugseeBreadcrumb': (
         'src/facade/breadcrumb.dart',
@@ -446,7 +553,10 @@ void main() {
         // Private members (the proxy's private constructor and its `_host`) may name the bridge:
         // an app cannot see them.
         final text = body(read('lib/${e.value.$1}'), e.key)
-            .replaceAll(RegExp(r'ReportProxy\._\([\s\S]*?;\n'), '')
+            .replaceAll(
+              RegExp(r'(?:ReportProxy|CreatedReport)\._\([\s\S]*?;\n'),
+              '',
+            )
             .split('\n')
             .where((l) => !RegExp(r'\b_\w+;').hasMatch(l))
             .join('\n');

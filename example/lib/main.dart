@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/material.dart';
 
+import 'attachments_screen.dart';
 import 'exceptions_screen.dart';
 import 'facade_screen.dart';
 import 'network_screen.dart';
@@ -92,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
         LaunchScreen(),
         FacadeScreen(),
         ExceptionsScreen(),
+        AttachmentsScreen(),
         NetworkScreen(),
       ],
     ),
@@ -113,6 +115,11 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-errors'),
           icon: Icon(Icons.error_outline),
           label: 'Errors',
+        ),
+        NavigationDestination(
+          key: Key('tab-files'),
+          icon: Icon(Icons.attach_file),
+          label: 'Files',
         ),
         NavigationDestination(
           key: Key('tab-network'),

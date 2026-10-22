@@ -98,6 +98,10 @@ final class NetworkCaptureService {
     final overrides = BugseeHttpOverrides(controller, current);
     HttpOverrides.global = overrides;
     _overrides = overrides;
+    // A (re)install believes nothing until the SDK's status and options are read: after an
+    // uninstall the policy may be stale (the SDK stopped meanwhile), and a request opened before
+    // the read completes would be recorded only to be refused by the SDK's own gate.
+    _policy = _policy.notAccepting();
     _statusSubscription ??= _statuses().listen((status) {
       // A stop takes effect at once; a launch is believed only once the options are read.
       if (status != BugseeStatus.launched) _policy = _policy.notAccepting();

@@ -2,9 +2,9 @@
 
 > **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options, `stop`,
 > status, attributes, user identity, events and traces, breadcrumbs, notifications, blackout, the
-> report handler, the lifecycle event stream, the secure-view widget, Dart error reporting and the
-> `dart:io` network capture work on Android and iOS. Not yet: `print` capture, report attachments and
-> `createReport`, APM spans.
+> report handler, the lifecycle event stream, the secure-view widget, Dart error reporting, report
+> attachments and `createReport`, and the `dart:io` network capture work on Android and iOS. Not yet:
+> `print` capture, APM spans.
 > Existing users should stay on the latest published release until the migration guide is available.
 > This API is a clean break from 9.x.
 
@@ -215,7 +215,7 @@ Things worth knowing (each is documented on the method):
 - **No SDK here** (desktop, web): these calls do nothing and return `null`/empty/`false`; only `launch` throws.
 - **Register the report handler before `launch`** to see reports the SDK recovers while launching.
   `onBeforeReportCreated` runs at most once and may be skipped; `onAfterReportCreated` runs at least once, so
-  make it idempotent. Attachments are not part of the report API yet.
+  make it idempotent. Attach files with `report.addAttachment(path, name: ..., mimeType: ..., move: ...)` (path-first: native copies or moves the file), set an annotated screenshot with `report.setScreenshot(path, annotated: true)`, or build a report yourself with `Bugsee.createReport()`; see `doc/attachments.md`.
 - **Left out on purpose**: the 7.x appearance system, `relaunch`, APM transactions and spans, secure
   rectangles and activities, native views (see `doc/api-surface.md`).
 

@@ -13,7 +13,7 @@ Sources read: Android `bugsee/bugsee-android` tag `v7.4.2` (`3b7af6371`):
 
 Phase 4a shipped `launch`, `stop`, status and `BugseeOptions`; the report-handler pipeline (native +
 the `ReportProxy`) and the secure-region widget were built internally in Phase 3 and are made public
-here. Attachments and `createReport` are Phase 6; wrapper-owned log/exception capture is Phase 5 (network capture, 5b, is built: `doc/network.md`).
+here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/attachments.md`); wrapper-owned log/exception capture is Phase 5 (network capture, 5b, is built: `doc/network.md`).
 
 ## Legend
 
@@ -62,11 +62,12 @@ here. Attachments and `createReport` are Phase 6; wrapper-owned log/exception ca
 
 | Capability | Android | iOS | Decision |
 |---|---|---|---|
-| report handler (before / after) | `setReportHandler(ReportHandler)` | via `setWrapper:` (the wrapper's report handler); iOS has no app-level handler class | **expose** `Bugsee.setReportHandler(BugseeReportHandler?)` + `Bugsee.reportHandler` over the Phase 3c pipeline and `ReportProxy`. Attachments are Phase 6 (documented seam) |
+| report handler (before / after) | `setReportHandler(ReportHandler)` | via `setWrapper:` (the wrapper's report handler); iOS has no app-level handler class | **expose** `Bugsee.setReportHandler(BugseeReportHandler?)` + `Bugsee.reportHandler` over the Phase 3c pipeline and `ReportProxy`. Attachments and screenshots: Phase 6, below |
 | lifecycle events | `setLifecycleEventsListener` | `bugseeLifecycleEvent:` (delegate) | **expose** `Bugsee.lifecycleEvents` (`Stream<LifecycleEvent>`, names unknown to this version preserved). The wrapper owns the SDKs' single listener slot; apps get the stream |
 | showReportDialog | x4 | x4 | **expose** `Bugsee.showReportDialog({summary, description, severity, labels})` |
 | upload (no UI) | `upload(summary, description[, severity[, labels]])` | `uploadWithSummary:` x3 | **expose** `Bugsee.upload(summary, description, {severity, labels})` |
-| createReport / upload(Report) | `createReport(listener)`, `upload(Report[, cb])` | `createReportWithCompletion:`, `uploadReport:` x2 | **skip (Phase 6)** |
+| createReport / upload(Report) | `createReport(listener)`, `upload(Report[, cb])` | `createReportWithCompletion:`, `uploadReport:` x2 | **expose (Phase 6)** `Bugsee.createReport({timeToLive})` -> `CreatedReport` (`upload()` / `discard()`), per platform: iOS hands a legacy `BugseeExtendedReport` (3 in-memory attachments of at most 3 MiB, no id, no annotated flag). See `doc/attachments.md` |
+| attachments, annotated screenshot (handler report) | `addAttachment(File/byte[])`, `clearAttachments`, `setScreenshot(.., annotated)`, `isScreenshotAnnotated` | `addAttachmentWith...`, `clearAttachments`, `setScreenshot:...annotated:` | **expose (Phase 6)** `ReportProxy.addAttachment` (path-first, `move`), `addAttachmentBytes` (1 MiB), `clearAttachments`, `setScreenshot(path, {annotated})`, `removeScreenshot`, and `attachments` / `screenshots` on the snapshot. `createAndAddAttachment`/`openStream`, per-attachment setters, single removal, async setters, bitmap reads: **skip** (reasons in `doc/attachments.md`) |
 | logException / logUnhandledException / onUncaughtException / logError | yes | yes | **expose (Phase 5a)** `Bugsee.logException(error, [stack])` / `logUnhandledException(error, [stack])` / `reportException(error, {stackTrace, handled, domain})` over `logException` / `logUnhandledException` (never `onUncaughtException`; `logError(NSError)` has no Dart meaning), plus the opt-in handlers `installErrorHandlers` / `runGuarded` / `listenToIsolateErrors`. `skipFrames` and `includeVideo`/`labels` are skipped (they act on the carrier's native stack / are ignored by the SDKs). Before launch and after stop both are dropped (the wrapper gates the iOS unhandled path, which the SDK does not). See `doc/exceptions.md` |
 | `testCrash` | yes | yes | **skip** (Phase 7 device verification owns crash recipes) |
 
@@ -132,7 +133,8 @@ error you can `await`, not a synchronous throw). A message never contains an att
 | `BugseeArgumentException` (`argument` names the parameter) | an argument no SDK can honour (empty name, a value outside the accepted domain, a cycle, an empty label, a blank notification title); nothing reached the SDK. Native refuses with `invalid-argument` too |
 | `BugseeAttributeException` (`AttributeFailure.invalidName`, `.invalidValue`, `.rejected`), NOT a `BugseeArgumentException` | an attribute call; `invalidName`/`invalidValue` are found before the SDK, `rejected` is the SDK's own refusal found by the read-back above, so `on BugseeArgumentException` keeps meaning "refused before the SDK" |
 | `BugseeException` | the SDK threw (`sdk-error`), the plugin is not attached (`not-attached`), the plugin is missing, or the call came from a background isolate |
-| `ReportClosedError` | a report edit after the handler's report was handed back (Phase 3c) |
+| `ReportClosedError` (`CreatedReportClosedError`) | a report edit after the handler's report was handed back (Phase 3c), or a created report that was uploaded, discarded or expired |
+| `ReportAttachmentException` (`ReportAttachmentFailure`) | a file, bytes or image the SDK or the file system refused (Phase 6); `CreateReportException` (`busy`, `timeout`) for `createReport` |
 
 The status vocabulary is unchanged: launch failures stay `BugseeLaunchException`.
 
@@ -149,8 +151,8 @@ preferences asynchronously). An SDK exception cannot escape: Java and Objective-
 `Bugsee.setReportHandler(BugseeReportHandler(onBeforeReportCreated:, onAfterReportCreated:))`, `null` or an empty handler
 clears; `Bugsee.reportHandler` reads it back. The handler receives a `ReportProxy`: `id`, `type`, `deliveryId`, `isLive`,
 `read()` (a `ReportSnapshot`), `setSummary`, `setDescription`, `setEmail`, `setSeverity`, `replaceLabels`, `addLabels`,
-`clearLabels`, `setAttribute`, `removeAttribute`, `clearAttributes`. **Attachments and screenshots are not there** (Phase 6,
-path-first); the `// TODO(phase-6)` seam in `report_proxy.dart` is where they go. The delivery rules (at-most-once
+`clearLabels`, `setAttribute`, `removeAttribute`, `clearAttributes`. Attachments and screenshots (Phase 6): `addAttachment`, `addAttachmentBytes`,
+`clearAttachments`, `setScreenshot`, `removeScreenshot` (path-first; `doc/attachments.md`). The delivery rules (at-most-once
 `onBefore`, at-least-once idempotent `onAfter`, the budget, what is never delivered) are the Phase 3c pipeline's and are
 documented on `BugseeReportHandler`.
 

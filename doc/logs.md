@@ -106,7 +106,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 | `print` inside a zone with the hook (`runWithLogCapture`, `runGuarded`, your `runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)`) | yes, tag `print` | `Zone.root` cannot be replaced; a zone spec is the only hook Dart offers |
 | `print` in the root zone | **no** | cannot be hooked in Dart |
 | `debugPrint` (incl. the framework's own, `FlutterError`'s) | yes, tag `debugPrint`, wherever it is called | the callback is a global variable (chained) |
-| `FlutterError` diagnostics dump (`══╡ EXCEPTION CAUGHT ...`, `Another exception was thrown: ...`) | **never by this capture** (see the Android echo: on a real Android app the dump ALSO reaches the SDK's logcat capture, raw; `flutter test` routes `print` to the test reporter, not logcat, so the device runs here cannot show it) | the diagnostics tree carries widget trees and property values; the error itself is Phase 5a's. Counted in `droppedErrorDumps`. The release-mode `debugPrintStack` output (message + frames) is ordinary text and is recorded |
+| `FlutterError` diagnostics dump (`══╡ EXCEPTION CAUGHT ...`, `Another exception was thrown: ...`) | **never by this capture** (see the Android echo: on a real Android app the dump ALSO reaches the SDK's logcat capture, raw; `flutter test` routes `print` to the test reporter, not logcat, so the device runs here cannot show it) | the diagnostics tree carries widget trees and property values; the error itself is reported by `Bugsee.reportException` and the installed error handlers ([exceptions.md](exceptions.md)). Counted in `droppedErrorDumps`. The release-mode `debugPrintStack` output (message + frames) is ordinary text and is recorded |
 | the plugin's own `bugsee_flutter: ...` messages | never | a diagnostic that reached the pipeline it is about could meet a failing filter again (the spec's "at most once" rule) |
 | `dart:developer` `log()` | **no**, and cannot be hooked | it goes to the VM service, not the console; use `Bugsee.forwardLog` or `Bugsee.log` |
 | `package:logging` | via `Bugsee.forwardLog` (no dependency added) | `Logger.root.onRecord.listen((r) => Bugsee.forwardLog('${r.loggerName}: ${r.message}', level: logLevelForLoggingValue(r.level.value), tag: r.loggerName))`; SEVERE/SHOUT error, WARNING warning, INFO info, CONFIG/FINE debug, lower verbose |
@@ -197,7 +197,7 @@ effect at once (before the options are read again); a failure to read leaves not
 real throttled `debugPrint`, the real `FlutterError.dumpErrorToConsole`, install/uninstall/restart), `logs_facade_test.dart`
 (the runtime with a fake native side, the SDK's gates), `logs_drift_test.dart` (`test/fixtures/log_wire.json` against Dart, Java
 and Objective-C and the option manifests), JUnit `LogOpsTest` / `LogWireParityTest` (against the real `LogSource` / `LogLevel`),
-XCTest `BGSFlutterLogOpsTests`. Every one was mutation-checked (counts in PLAN.md). Runtime: `example/integration_test/logs_test.dart`.
+XCTest `BGSFlutterLogOpsTests`. Every one was checked with mutation testing (counts in PLAN.md). Runtime: `example/integration_test/logs_test.dart`.
 
 ## Verified on a device
 

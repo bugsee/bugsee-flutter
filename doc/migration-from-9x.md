@@ -32,7 +32,7 @@ arguments for `event` and `trace`); this page follows the code.
 * **Options are one typed class.** `AndroidLaunchOptions` / `IOSLaunchOptions` (setters over legacy flat keys) are replaced by one
   `BugseeOptions` with a typed field per 7.x option (`captureVideo`, `configDuration`, ...), shared by both platforms. A field you leave
   out keeps the SDK's default (9.x wrote its own defaults into every launch).
-* **Every call is stricter.** Argument errors are `BugseeException`s through the `Future`, not silent no-ops.
+* **Every call is stricter.** An invalid argument is a `BugseeException` (`BugseeArgumentException`) through the `Future` of the calls that return one, and thrown at once by the synchronous filter setup calls (`setNetworkFilter`, `setLogFilter`: an invalid `timeout`); `BugseeOptions` problems are an `ArgumentError` from `launch`. 9.x passed most of them on silently.
 * **Nothing is queued before launch.** As in 9.x, `event`, `trace`, `log`, `notify` and `upload` before `launch` are dropped by the
   SDKs; attributes, the user identifier and blackout work before launch.
 * **The report handler is first-class** (`setReportHandler`): it replaces the 9.x attachments callback.

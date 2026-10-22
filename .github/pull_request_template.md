@@ -1,6 +1,6 @@
 ## What and why
 
-<!-- One or two sentences. Link the PLAN.md phase or workbook section. -->
+<!-- One or two sentences. Link the workbook section or the PLAN.md decision it touches. -->
 
 ## Checklist
 

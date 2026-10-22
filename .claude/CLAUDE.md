@@ -46,8 +46,8 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
   source into `test/fixtures/report_enums.json`, not copied from the wrapper); `onBefore` at-most-once, `onAfter` at-least-once with a stable
   `deliveryId`; an Android native-crash report recovered after a normal session is dispatched on `BugseeReportHandlerThread` with the live window
   (device-measured), the early-crash path completes at once; a late edit is `ReportClosedError`. Guard: `test/report_handlers_drift_test.dart`.
-- **View hierarchy** (`vh`): answered SYNCHRONOUSLY from a native cache Dart keeps current; never wait for Dart or post the answer (500 ms budget, main
-  thread). Privacy is ours (the SDK stores the string unread): only `runtimeType` names and structure, never text, controllers, semantics, keys,
+- **View hierarchy** (`vh`): answered SYNCHRONOUSLY from a native cache Dart keeps current; never wait for Dart or post the answer (the SDK calls it on the main
+  thread with a 500 ms budget from the call's return). Privacy is ours (the SDK stores the string unread): only `runtimeType` names and structure, never text, controllers, semantics, keys,
   tags, route names or `toString()`; a `BugseeSecureView` subtree is one node; any error sends nothing. Guard: `test/view_hierarchy_drift_test.dart`
   (allow-list of reads, one place converts units).
 - **Options and launch** (Part 8): the SDKs' published manifests are vendored (`test/fixtures/option_manifests`); `BugseeOptions` and the registry

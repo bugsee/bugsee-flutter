@@ -280,7 +280,7 @@ options are read again. A failure to read leaves nothing accepted.
 `test/http_capture_test.dart` (real `HttpServer`, a differential test against an unwrapped client), `body_capture_test`,
 `network_pipeline_test`, `network_service_test`, `network_facade_test` (the runtime with a fake native side),
 `network_drift_test` (`test/fixtures/network_wire.json` against Dart, Java and Objective-C), JUnit `NetworkOpsTest` and
-`NetworkWireParityTest`, XCTest `BGSFlutterNetworkOpsTests`. Every one of them was mutation-checked (counts in PLAN.md).
+`NetworkWireParityTest`, XCTest `BGSFlutterNetworkOpsTests`. Every one of them was checked with mutation testing (counts in PLAN.md).
 Runtime: `example/integration_test/network_test.dart`.
 
 ## Verified on a device

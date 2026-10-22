@@ -32,6 +32,20 @@ dependencies:
   bugsee_flutter: ^10.0.0-dev.1
 ```
 
+That resolves once the version is published. **Until then**, depend on the repository (checked with Flutter 3.41.0):
+
+```yaml
+dependencies:
+  bugsee_flutter:
+    git:
+      url: https://github.com/bugsee/bugsee-flutter.git
+      ref: nextgen
+```
+
+The feedback package (below) needs its own git entry (`path: packages/bugsee_flutter_feedback`, same `url` and `ref`) **and** a
+`dependency_overrides:` entry for `bugsee_flutter` with the same git source, because its hosted constraint on the core cannot resolve
+while the core is unpublished.
+
 ### Android
 
 1. **Apply the Bugsee Gradle plugin.** It is mandatory for the 7.x SDK and a Flutter plugin cannot apply it for you, so the app
@@ -156,7 +170,11 @@ carry the SDK's internal value, never an ordinal.
 
 ## Features
 
-Every method is a static on `Bugsee` and returns a `Future`. What each call does before `launch`, what is left out and why:
+Calls that talk to the SDK are statics on `Bugsee` that return a `Future`, and report an invalid argument through that `Future`. The setup
+calls for what only Dart can see (`installNetworkCapture`, `installLogCapture`, `installErrorHandlers`, `setNetworkFilter`, `setLogFilter`,
+`forwardLog`, `runGuarded`, `listenToIsolateErrors`) are synchronous, and an invalid argument there (a `setNetworkFilter` or `setLogFilter`
+timeout out of range) throws a `BugseeArgumentException` at once. `BugseeOptions` problems (an unknown key, a wrong type, a bad endpoint)
+are an `ArgumentError`, surfaced by `Bugsee.launch`'s `Future`. What each call does before `launch`, what is left out and why:
 [doc/api-surface.md](doc/api-surface.md). All the pages: [doc/README.md](doc/README.md).
 
 ### Data you add
@@ -177,7 +195,7 @@ await Bugsee.upload('Summary', 'Description', severity: ReportSeverity.high, lab
 await Bugsee.showReportDialog(summary: 'Something broke');
 ```
 
-Argument errors are `BugseeException`s through the `Future` (`BugseeArgumentException`; `BugseeAttributeException` when an SDK refuses
+Argument errors of these calls are `BugseeException`s through the `Future` (`BugseeArgumentException`; `BugseeAttributeException` when an SDK refuses
 an attribute over its size limits). Calls on a platform without an SDK (desktop, web) do nothing; only `launch` throws.
 
 ### Dart errors ([doc/exceptions.md](doc/exceptions.md))
@@ -295,9 +313,13 @@ The chat your users write to you in is a separate package, so apps that never sh
 Jetpack Compose on Android). Add it next to this one, at the same version; there is nothing else to configure:
 
 ```dart
-// import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
-await Bugsee.launch('YOUR_APP_TOKEN');   // first: before the SDK has launched, Android's show() does nothing
-await BugseeFeedback.show();
+import 'package:bugsee_flutter/bugsee_flutter.dart';
+import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
+
+Future<void> contactSupport() async {
+  await Bugsee.launch('YOUR_APP_TOKEN');   // normally once, in main(): before the SDK has launched, Android's show() does nothing
+  await BugseeFeedback.show();
+}
 ```
 
 ## Privacy model

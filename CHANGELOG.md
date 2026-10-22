@@ -28,7 +28,7 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 * The in-app feedback chat is the separate package `bugsee_flutter_feedback`, released in lock-step.
 * The wrapper registers with the SDK before it can launch (an Android content provider at `initOrder` 200; iOS `+load`), so reports recovered
   after a crash carry the wrapper identity.
-* Development only, not published: the device verification harness (`scripts/device/`) and its evidence (`doc/verification.md`).
+* Development only: the device verification harness (`scripts/device/`) and the verification app are not published; its results are in `doc/verification.md`, which ships with the package like the other pages in `doc/`.
 
 ### Breaking changes from 9.x
 

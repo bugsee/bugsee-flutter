@@ -8,7 +8,7 @@ same repository, and the React Native 7.x SDK as the reference design.
 
 Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisions](#open-decisions-for-the-owner) |
 [Known gaps and filed issues](#known-gaps-and-filed-issues) | [Release checklist](#release-checklist) |
-[Phase record](#phase-record) | [Test and mutation record](#test-and-mutation-record)
+[Runtime verification](#runtime-verification-of-launch-and-options) | [Phase record](#phase-record) | [Test and mutation record](#test-and-mutation-record)
 
 ## Status
 
@@ -90,10 +90,11 @@ Other gaps, none with an issue:
 * Secure views do not cover the first frame of a newly appearing region (documented on the widget); iOS verified in portrait only.
 * The Android logcat echo of `print` is not governed by the Dart log filter (needs a native filter; documented).
 * `tvOS`, `visionOS`, the Android leak module, `x86_64` and `armeabi-v7a` ABIs, a second display, rotation and split screen were not covered.
-* Lifecycle delivery limit: guarantees end at the hop into the channel sink. A message sent while the Dart side has no handler is held only by
-  Flutter's channel buffer, which by default keeps ONE message per channel; the hub replays the latest status to each new receiver, flushes
-  report events still in its own buffer and, when the final receiver detaches, puts its in-flight events back in front of it. Consumers
-  must not rely on delivery surviving an isolate restart.
+* **Lifecycle delivery limit**: guarantees end at the hop into the channel sink. A message sent while the Dart side has no handler is held only
+  by Flutter's channel buffer, which by default keeps ONE message per channel: a restarted isolate may see that one after it sets a handler, any
+  older ones are dropped, and the engine reports an error that native only logs. The hub replays the latest status to each new receiver, flushes
+  report events still in its own buffer and, when the final receiver detaches, puts its in-flight events back in front of it; only an event
+  already SENT over the channel while Dart has no handler is not retried. Consumers must not rely on delivery surviving an isolate restart.
 
 ## Release checklist
 
@@ -105,7 +106,7 @@ Nothing in this repository publishes, tags or deploys by itself; a maintainer do
    the private SDK checkouts) and `dart scripts/generate_options.dart`; commit the diff (see `.github/CI.md`, "Option registry"). Re-run the device harness.
 3. **Version.** Set the same version in `pubspec.yaml`, `packages/bugsee_flutter_feedback/pubspec.yaml` (and its `bugsee_flutter` lower bound),
    `lib/src/wrapper_identity.dart`, `ios/bugsee_flutter/Sources/bugsee_flutter_wrapper/BGSFlutterWrapper.m`, and the feedback package's
-   `feedback_version.dart`; add the `## <version>` entry at the top of both `CHANGELOG.md` files (the tests require it to be the pubspec version).
+   `feedback_version.dart` (Android's wrapper version is generated from `pubspec.yaml` into `BuildConfig`); add the `## <version>` entry at the top of both `CHANGELOG.md` files (the tests require it to be the pubspec version).
 4. **Verify on real hardware** at least one Android and one iOS device (the harness: `doc/verification.md`; iOS recovery and exception bundles
    need a device), then update `doc/verification.md`.
 5. **CI green** on the release commit: `format`, codegen checks, `analyze + test` on the floor and stable legs, `build apk`, `pub publish dry-run`, `ci-ok`.
@@ -121,6 +122,17 @@ Nothing in this repository publishes, tags or deploys by itself; a maintainer do
 8. **Tag** the release commit (`v<version>`, the form the 9.x tags use) and write the GitHub release notes from the CHANGELOG.
 9. **After:** check the pub.dev pages (README rendering, scores, the Platforms and SDK tabs), install from pub.dev into a clean app on both platforms,
    and make `main` hold the release (see open decision 5).
+
+## Runtime verification of launch and options
+
+`example/integration_test/launch_test.dart` passes on an Android emulator and an iOS simulator: the status sequence `launching, launched,
+[already running], stopping, stopped, launching, launched, stopping`; the SDK reports our option values back (enums as internal integers); a blank
+token is a typed `invalidToken`. Android auto-init was verified on an emulator: with the manifest token, `Bugsee.launch` answers `alreadyRunning`, the
+manifest's duration 60 applies (not the 20 passed) and the attach replays `launching, launched`; with `com.bugsee.auto-init` false the same call
+launches with duration 20. The endpoint normalisation was observed by hand on both platforms (the SDK reported the version-less base URL) but is
+not asserted by a test: its repeatable evidence is the manifests, the SDK source and `test/endpoint_test.dart`. Not verified at runtime: a launch
+refused while stopping (a race, covered by JUnit, XCTest and Dart with fakes), iOS background deferral, token rejection by the SDK (a placeholder
+token launches), tvOS and visionOS.
 
 ## Phase record
 
@@ -171,6 +183,7 @@ either real gaps (and the test was strengthened) or equivalent mutants, recorded
 
 | Area | Mutants (all killed in the end, except the recorded equivalent ones) |
 |---|---|
+| Foundations (Phase 1, workbook 1.1.3) | `test/native_versions_test.dart` seen failing for a missing NDK artefact, an iOS pin drift and Gradle plugin 4.0.6 and 4.0.9 (the guard was not trusted before) |
 | Facade (4b) | 18 + 2 Dart, 19 Android, 17 iOS, 7 drift, 20 second batch |
 | Exceptions (5a) | 63 Dart/drift, 8 Java, 7 Objective-C; review round 24 Dart, 8 dispatcher, 4 drift |
 | Network (5b) | 110 Dart, 24 Android, 21 iOS |

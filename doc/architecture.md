@@ -46,10 +46,12 @@ flowchart TB
   bridge <--> iplug
   aplug --> sdk
   iplug --> sdk
-  awrap <--> sdk
-  iwrap <--> sdk
-  astores -. "pulled by the SDK: secure rectangles,<br/>data requests (vh), lifecycle events" .-> sdk
-  istores -. "pulled by the SDK" .-> sdk
+  sdk -->|"pushes lifecycle events and report-handler calls"| awrap
+  sdk -->|"pushes lifecycle events and report-handler calls"| iwrap
+  awrap -.->|"serves the SDK's pulls: secure rectangles, vh data requests"| sdk
+  iwrap -.->|"serves the SDK's pulls: secure rectangles, vh data requests"| sdk
+  astores -->|"lifecycle events to Dart"| aplug
+  istores -->|"lifecycle events to Dart"| iplug
 ```
 
 * **Dart facade.** `Bugsee` is a set of statics over `BugseeRuntime`. It validates every argument first (so a bad call
@@ -92,7 +94,7 @@ The same applies to created reports and report-handler state.
 * **No native wait for Dart on the platform thread.** iOS calls a report handler on the main thread and Dart's reply needs it, so a wait is
   a deadlock. The report-handler pipeline never waits (the SDK has its own timer), completes the SDK's callback exactly once, and a
   drift guard greps the report path for blocking primitives. `isTerminating` never reaches Dart.
-* **The `vh` answer is synchronous.** The SDK asks for the view hierarchy on the main thread with a 500 ms budget, so the wrapper answers
+* **The `vh` answer is synchronous.** The SDK asks for the view hierarchy on the main thread with a 500 ms budget (iOS does not ask the wrapper at all for a snapshot made on the main thread), so the wrapper answers
   from a native snapshot cache that Dart keeps current; it never waits for Dart.
 * **Immutable snapshots.** The secure-rectangle buffer and the view-hierarchy snapshot are published as immutable values; the SDK pulls
   them from its own threads.

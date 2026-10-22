@@ -545,6 +545,88 @@ void main() {
     );
   });
 
+  group('the batch byte limit', () {
+    test(
+      'counts UTF-8 bytes: multi-byte bodies fill a batch that characters would not',
+      () async {
+        final rig = Rig(maxBatchBytes: 2500, bodySizeLimit: 100000);
+        // 400 characters, 1200 bytes each.
+        rig.pipeline.setFilter(
+          (e) => e..body = '\u20ac' * 400,
+          const Duration(seconds: 1),
+        );
+        for (var i = 0; i < 3; i++) {
+          rig.pipeline.submit(event('$i'));
+        }
+        await rig.pipeline.flush();
+        expect(rig.batches.map((b) => b.length), [1, 1, 1]);
+      },
+    );
+
+    test(
+      'a message that would overflow the batch starts the next one, in order',
+      () async {
+        final rig = Rig(maxBatchBytes: 2500, bodySizeLimit: 100000);
+        rig.pipeline.setFilter(
+          (e) => e..body = 'x' * 1000,
+          const Duration(seconds: 1),
+        );
+        for (var i = 0; i < 4; i++) {
+          rig.pipeline.submit(event('$i'));
+        }
+        await rig.pipeline.flush();
+        expect(rig.sent.map((m) => m.id), ['0', '1', '2', '3']);
+        for (final b in rig.batches) {
+          expect(
+            b.length,
+            lessThanOrEqualTo(1),
+            reason: 'each message weighs about 1.6 KB: two do not fit 2500',
+          );
+        }
+      },
+    );
+
+    test('one message over the limit still goes, alone', () async {
+      final rig = Rig(maxBatchBytes: 100, bodySizeLimit: 100000);
+      rig.pipeline.setFilter(
+        (e) => e..body = 'x' * 1000,
+        const Duration(seconds: 1),
+      );
+      rig.pipeline.submit(event('a'));
+      rig.pipeline.submit(event('b'));
+      await rig.pipeline.flush();
+      expect(rig.batches.map((b) => b.length), [1, 1]);
+    });
+  });
+
+  group('re-redaction after the filter', () {
+    test(
+      'headers and error texts a filter rebuilt are scrubbed on the way out',
+      () async {
+        final rig = Rig();
+        rig.pipeline.setFilter(
+          (e) => e
+            ..headers['location'] = 'http://u:p@h/x?token=abc#frag'
+            ..headers['x-note'] = 'http://u:p@h/x?token=abc'
+            ..error = 'failed uri = http://u:p@h/x?token=abc'
+            ..errorDescription = 'long http://u:p@h/y?k=v',
+          const Duration(seconds: 1),
+        );
+        rig.pipeline.submit(event('a'));
+        await rig.pipeline.flush();
+        final m = rig.sent.single;
+        expect(m.headers!['location'], 'http://h/x?token=<redacted>');
+        expect(
+          m.headers!['x-note'],
+          'http://u:p@h/x?token=abc',
+          reason: 'not URL-valued by name',
+        );
+        expect(m.errorShortMessage, 'failed uri = http://h/x?<redacted>');
+        expect(m.errorDescription, 'long http://h/y?<redacted>');
+      },
+    );
+  });
+
   group('what a filter is handed', () {
     test(
       'a copy keeps when the stage happened, not when it was copied',

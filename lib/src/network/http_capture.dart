@@ -132,13 +132,7 @@ String _errorLong(Object error) {
   return text.length > 2000 ? '${text.substring(0, 2000)}...' : text;
 }
 
-final RegExp _urlQuery = RegExp(r'''(https?://[^\s?#'"]+)[?#][^\s'"]*''');
-
-/// An error text can carry the URL of the request (`HttpException`'s `uri = ...`): userinfo and
-/// query go. The SDK's sanitizer redacts a URL field, not the middle of a message.
-String _scrub(String text) => stripUserInfo(
-  text,
-).replaceAllMapped(_urlQuery, (m) => '${m[1]}?<redacted>');
+String _scrub(String text) => scrubErrorText(text);
 
 Map<String, String> _headersOf(HttpHeaders headers) {
   final map = <String, String>{};

@@ -128,6 +128,8 @@ final class NetworkPipeline {
   final Queue<_Queued> _queue = Queue<_Queued>();
   int _queuedBytes = 0;
   bool _scheduled = false;
+  NetworkEventMessage? _carry;
+  int _carryOrigin = 0;
   bool _draining = false;
   bool _warnedFull = false;
   bool _warnedFilter = false;
@@ -159,15 +161,19 @@ final class NetworkPipeline {
   /// A rough size of an event for the queue's byte budget: what it carries, plus a fixed
   /// allowance for its fields.
   static int estimateBytes(BugseeNetworkEvent event) {
-    var bytes = 512 + event.url.length + (event.body?.length ?? 0);
-    event.headers.forEach((k, v) => bytes += k.length + v.length);
+    var bytes =
+        512 +
+        utf8Length(event.url) +
+        (event.body == null ? 0 : utf8Length(event.body!));
+    event.headers.forEach((k, v) => bytes += utf8Length(k) + utf8Length(v));
     return bytes;
   }
 
   /// What a message weighs for a batch (the filter may have changed what the event carried).
   static int _messageBytes(NetworkEventMessage m) {
-    var bytes = 512 + m.url.length + (m.body?.length ?? 0);
-    m.headers?.forEach((k, v) => bytes += k.length + v.length);
+    var bytes =
+        512 + utf8Length(m.url) + (m.body == null ? 0 : utf8Length(m.body!));
+    m.headers?.forEach((k, v) => bytes += utf8Length(k) + utf8Length(v));
     return bytes;
   }
 
@@ -228,12 +234,20 @@ final class NetworkPipeline {
     if (_draining) return;
     _draining = true;
     try {
-      while (_queue.isNotEmpty) {
+      while (_queue.isNotEmpty || _carry != null) {
         final batch = <NetworkEventMessage>[];
         // When each message's event happened, to stamp its age just before the batch is sent: a
         // slow filter or a long batch must not make the first events look older than they are.
         final origins = <int>[];
         var batchBytes = 0;
+        // A message that did not fit the previous batch opens this one.
+        final carried = _carry;
+        if (carried != null) {
+          _carry = null;
+          batch.add(carried);
+          origins.add(_carryOrigin);
+          batchBytes += _messageBytes(carried);
+        }
         final slice = Stopwatch()..start();
         while (_queue.isNotEmpty &&
             batch.length < maxBatchEvents &&
@@ -242,9 +256,17 @@ final class NetworkPipeline {
           _queuedBytes -= estimateBytes(queued.event);
           final message = await _prepare(queued);
           if (message != null) {
+            final weight = _messageBytes(message);
+            if (batch.isNotEmpty && batchBytes + weight > maxBatchBytes) {
+              // It would push the batch past its byte limit: it starts the next one (a single
+              // message over the limit goes alone).
+              _carry = message;
+              _carryOrigin = queued.event.monotonicUs;
+              break;
+            }
             batch.add(message);
             origins.add(queued.event.monotonicUs);
-            batchBytes += _messageBytes(message);
+            batchBytes += weight;
           }
           // Yield between events once the slice is used up, so a long queue (or a slow filter)
           // never holds the isolate for long at a time.
@@ -345,13 +367,22 @@ final class NetworkPipeline {
       ageMs: 0, // stamped by `_send`
       size: original.size,
       statusCode: original.statusCode,
-      headers: <String, String>{...filtered.headers},
+      // The captured values were scrubbed already; a filter that rebuilt one from something
+      // unsanitised gets the same treatment on the way out.
+      headers: <String, String>{
+        for (final e in filtered.headers.entries)
+          e.key: redactHeaderValue(e.key, e.value),
+      },
       body: body,
       // A body and a reason about its absence are exclusive.
       noBodyReason: body == null ? reason?.wire : null,
       statusText: filtered.statusText,
-      errorShortMessage: filtered.error,
-      errorDescription: filtered.errorDescription,
+      errorShortMessage: filtered.error == null
+          ? null
+          : scrubErrorText(filtered.error!),
+      errorDescription: filtered.errorDescription == null
+          ? null
+          : scrubErrorText(filtered.errorDescription!),
       redirectedFromUrl: filtered.redirectedFrom == null
           ? null
           : stripFragment(stripUserInfo(filtered.redirectedFrom!)),

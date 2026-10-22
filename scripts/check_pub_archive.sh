@@ -8,7 +8,7 @@
 #   scripts/check_pub_archive.sh ARCHIVE...
 set -euo pipefail
 
-forbidden='^(\./)?(packages/|pigeons/|ios/wrapper_tests/|ios/feedback_wrapper_tests/|scripts/device/|example/lib/verify_main\.dart|\.git/|\.dart_tool/|\.idea/|migrate_working_dir/|build/|android/build/)|(^|/)(\.build|\.gradle|\.swiftpm)/|(^|/)(local\.properties|pubspec\.lock|\.DS_Store)$|\.(iml|ipr|iws|log|class|swp|pyc)$'
+forbidden='^(\./)?(packages/|pigeons/|ios/wrapper_tests/|ios/feedback_wrapper_tests/|scripts/device/|test/device_harness_test\.dart|example/lib/verify_main\.dart|\.git/|\.dart_tool/|\.idea/|migrate_working_dir/|build/|android/build/)|(^|/)(\.build|\.gradle|\.swiftpm)/|(^|/)(local\.properties|pubspec\.lock|\.DS_Store)$|\.(iml|ipr|iws|log|class|swp|pyc)$'
 
 status=0
 for archive in "$@"; do

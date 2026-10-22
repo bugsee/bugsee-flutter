@@ -98,6 +98,7 @@ class AndroidSession {
     Duration timeout = const Duration(seconds: 90),
     bool freshLog = true,
     bool restart = true,
+    List<String> extras = const [],
   }) async {
     final exp = await expectation(build.mode);
     run.guard(
@@ -109,7 +110,7 @@ class AndroidSession {
     // `restart: false` observes a process someone else started (a `flutter run` session).
     if (restart) {
       await dev.forceStop();
-      await dev.start();
+      await dev.start(extras: extras);
     }
     final pid = await dev.waitForPid(timeout: const Duration(seconds: 30));
     if (pid == null) {

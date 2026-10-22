@@ -163,6 +163,31 @@ Rect? checkRedaction(Run run, String label, RawImage on, RawImage off) {
     blackInside > 0.97 && magentaInside < 0.01,
     'box $region in a ${on.width}x${on.height} frame: black ${(blackInside * 100).toStringAsFixed(1)}%, magenta ${(magentaInside * 100).toStringAsFixed(1)}%',
   );
+  // Redaction is local: a frame blacked out whole (the wrapper's fail-closed cover stuck on, a broken SDK)
+  // would pass the box test. Outside the box (and a ring that may be over-covered) the secured frame
+  // must still be the real screen, and the ring must not be mostly black.
+  const ring = 14;
+  final outer = region.grow(ring + 6);
+  final agree = on.agreementOutside(off, outer);
+  run.expect(
+    '[$label] outside the box the secured frame is the real screen (not blacked out whole)',
+    agree >= 0.95,
+    '${(agree * 100).toStringAsFixed(1)}% of the pixels outside the box grown by ${ring + 6} px equal the unsecured frame',
+  );
+  final ringBox = region.grow(ring);
+  final ringArea =
+      ringBox.width * ringBox.height - region.width * region.height;
+  final ringBlack =
+      (on.fractionOf(ringBox, black, tolerance: 24) *
+              ringBox.width *
+              ringBox.height -
+          blackInside * region.width * region.height) /
+      ringArea;
+  run.expect(
+    '[$label] the redaction over-covers only a little: the $ring px ring around the box is not mostly black',
+    ringBlack <= 0.5,
+    'ring black ${(ringBlack * 100).toStringAsFixed(1)}% of the ring',
+  );
   return region;
 }
 
@@ -230,23 +255,36 @@ Future<void> checkScreenshotRedaction(
   String label,
   Bundle on,
   Bundle off,
-  String workDir,
-) async {
+  String workDir, {
+  required bool expectContent,
+}) async {
   final a = await screenshotOf(on, workDir);
   final b = await screenshotOf(off, workDir);
   if (a == null || b == null) {
+    if (expectContent) {
+      run.expect(
+        '[$label] the report screenshot decodes',
+        false,
+        'entries: ${on.entries.map((e) => e['type']).toList()}',
+      );
+    } else {
+      run.note('[$label] report screenshot: not decoded (no screenshot entry)');
+    }
+    return;
+  }
+  final flat = a.isUniform() && b.isUniform();
+  if (flat && !expectContent) {
     run.note(
-      '[$label] report screenshot: not decoded (no screenshot entry, or ffmpeg is not available)',
+      '[$label] report screenshot: ${a.width}x${a.height}, ONE FLAT COLOUR with the region secured and unsecured alike (${a.at(0, 0)}): it cannot show the redaction either way (known gap: scenario 9); the video frame is the evidence',
     );
     return;
   }
-  if (a.isUniform() && b.isUniform()) {
-    run.note(
-      '[$label] report screenshot: ${a.width}x${a.height}, ONE FLAT COLOUR with the region secured and unsecured alike (${a.at(0, 0)}): it cannot show the redaction either way; the video frame is the evidence',
-    );
-    return;
-  }
-  checkRedaction(run, '$label screenshot', a, b);
+  run.expect(
+    '[$label] the report screenshot has content (not one flat colour)',
+    !flat,
+    '${a.width}x${a.height}',
+  );
+  if (!flat) checkRedaction(run, '$label screenshot', a, b);
 }
 
 /// The last frame of a bundle's video as raw RGB (ffmpeg), or `null` when ffmpeg is absent or there is
@@ -389,4 +427,45 @@ void checkRegionPlacement(
 List<VerifyEvent> afterLastMain(List<VerifyEvent> events) {
   final i = events.lastIndexWhere((e) => e.kind == 'main');
   return i < 0 ? events : events.sublist(i + 1);
+}
+
+/// The last video frame of [b], with both failure modes RECORDED: a bundle with no video, or a video
+/// ffmpeg cannot read, is a failed check (never a skipped one). ffmpeg itself is checked at start-up.
+Future<RawImage?> requireVideoFrame(
+  Run run,
+  String label,
+  Bundle b,
+  String workDir,
+  String tag,
+) async {
+  final has = b.entriesOfType('video').isNotEmpty;
+  run.expect(
+    '[$label] the report has a video entry',
+    has,
+    'entries: ${b.entries.map((e) => e['type']).toList()}',
+  );
+  if (!has) return null;
+  final frame = await lastVideoFrame(b, workDir, tag);
+  run.expect(
+    '[$label] the last video frame decodes',
+    frame != null,
+    frame == null
+        ? 'ffmpeg could not read the video'
+        : '${frame.width}x${frame.height}',
+  );
+  return frame;
+}
+
+/// ffmpeg and ffprobe are needed for every pixel check: fail before any scenario runs, not inside one.
+Future<String?> missingImageTools() async {
+  for (final t in ['ffmpeg', 'ffprobe']) {
+    final r = await sh([
+      t,
+      '-version',
+    ]).catchError((Object _) => Out(127, '', 'not found'));
+    if (!r.ok) {
+      return '$t is not installed (brew install ffmpeg): every redaction check needs it';
+    }
+  }
+  return null;
 }

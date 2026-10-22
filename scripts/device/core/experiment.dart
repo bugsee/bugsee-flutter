@@ -4,11 +4,17 @@
 // you forget exactly when you are moving fast.
 import 'dart:convert';
 
-enum Status { pass, fail, invalid, notPossible, notCovered }
+enum Status { pass, knownGap, fail, invalid, notPossible, notCovered }
 
 /// One asserted fact, with the evidence it was read from.
 class Check {
-  Check(this.name, this.ok, this.evidence, {this.guard = false});
+  Check(
+    this.name,
+    this.ok,
+    this.evidence, {
+    this.guard = false,
+    this.knownGap = false,
+  });
   final String name;
   final bool ok;
   final String evidence;
@@ -16,10 +22,15 @@ class Check {
   /// A 9.1 guard (about the experiment) rather than a result (about the product).
   final bool guard;
 
+  /// A known gap in the product (an SDK limitation recorded on purpose): not ok does not fail the
+  /// scenario, it makes it KNOWN-GAP, and a fix flips it to a pass.
+  final bool knownGap;
+
   Map<String, Object?> toJson() => {
     'name': name,
     'ok': ok,
     'guard': guard,
+    'knownGap': knownGap,
     'evidence': evidence,
   };
 }
@@ -57,8 +68,8 @@ class ScenarioResult {
   };
 
   String get summaryLine {
-    final failed = checks.where((c) => !c.ok).length;
-    return '${status.name.toUpperCase().padRight(12)} #$id $title'
+    final failed = checks.where((c) => !c.ok && !c.knownGap).length;
+    return '${(status == Status.knownGap ? 'KNOWN-GAP' : status.name.toUpperCase()).padRight(12)} #$id $title'
         ' (${checks.length - failed}/${checks.length} checks${reason == null ? '' : '; $reason'})';
   }
 }
@@ -77,6 +88,16 @@ class Run {
       '  ${ok ? 'ok  ' : 'FAIL'} $name${evidence.isEmpty ? '' : ' -- $evidence'}',
     );
     return ok;
+  }
+
+  /// A known gap in the product (not the experiment): [closed] is true once the product does what is
+  /// expected. While it is false the scenario ends as KNOWN-GAP, visibly, instead of failing.
+  bool knownGap(String name, bool closed, String evidence) {
+    result.checks.add(Check(name, closed, evidence, knownGap: true));
+    say(
+      '  ${closed ? 'ok  ' : 'KNOWN-GAP'} $name${evidence.isEmpty ? '' : ' -- $evidence'}',
+    );
+    return closed;
   }
 
   /// A guard (9.1): about the experiment. A failure ends the scenario as invalid.
@@ -115,7 +136,11 @@ Future<ScenarioResult> runScenario(
   say('== scenario $id: $title');
   try {
     await body(Run(result, say));
-    result.status = result.checks.any((c) => !c.ok) ? Status.fail : Status.pass;
+    result.status = result.checks.any((c) => !c.ok && !c.knownGap)
+        ? Status.fail
+        : result.checks.any((c) => !c.ok)
+        ? Status.knownGap
+        : Status.pass;
     if (result.checks.isEmpty) {
       result.status = Status.fail;
       result.reason = 'the scenario asserted nothing';

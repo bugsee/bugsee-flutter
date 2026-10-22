@@ -85,12 +85,13 @@ Set<String> distinctBugseeLibs(String text) => {
 
 /// A library mapped from inside an APK (stored uncompressed): `/proc/<pid>/maps` shows `base.apk` and
 /// the file offset, not the library's name. Resolves each mapped offset against [apkEntries] and returns
-/// the names of the `libbugsee*.so` that are mapped.
+/// the names of the `libbugsee*.so` that are mapped. Only lines mapping [apkPath] (`pm path`) count.
 Set<String> mappedBugseeLibs(
   String maps,
   List<ZipEntry> apkEntries,
-  String abi,
-) {
+  String abi, {
+  required String apkPath,
+}) {
   final libs = [
     for (final e in apkEntries)
       if (e.isStored &&
@@ -102,9 +103,11 @@ Set<String> mappedBugseeLibs(
   for (final line in const LineSplitter().convert(maps)) {
     // 76c83c5000-76c8583000 r-xp 023f8000 fd:04 40963  /data/app/.../base.apk
     final m = RegExp(
-      r'^[0-9a-f]+-[0-9a-f]+\s+\S+\s+([0-9a-f]+)\s+\S+\s+\d+\s+.*\.apk\s*$',
+      r'^[0-9a-f]+-[0-9a-f]+\s+\S+\s+([0-9a-f]+)\s+\S+\s+\d+\s+(\S.*?)\s*$',
     ).firstMatch(line);
-    if (m == null) continue;
+    // Only the package's own APK: another one (framework-res.apk, a split) has offsets of its own
+    // that can fall inside this APK's library ranges.
+    if (m == null || m.group(2) != apkPath) continue;
     final offset = int.parse(m.group(1)!, radix: 16);
     for (final lib in libs) {
       if (lib.contains(offset)) found.add(lib.name.split('/').last);

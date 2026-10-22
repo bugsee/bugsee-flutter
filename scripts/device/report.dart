@@ -5,12 +5,20 @@ import 'dart:io';
 import 'core/experiment.dart';
 
 class Reporter {
-  Reporter(this.platform, this.workDir, this.environment, {this.tag = ''})
-    : started = DateTime.now();
+  Reporter(
+    this.platform,
+    this.workDir,
+    this.environment, {
+    this.tag = '',
+    this.allowNotPossible = false,
+  }) : started = DateTime.now();
   final String platform;
 
   /// Appended to the report file names: a run of some scenarios must not overwrite the full run's.
   final String tag;
+
+  /// Without this a NOT POSSIBLE scenario makes the run exit 2: a skipped run must not read as a pass.
+  final bool allowNotPossible;
   final String workDir;
   final Map<String, String> environment;
   final DateTime started;
@@ -24,7 +32,8 @@ class Reporter {
 
   void add(ScenarioResult r) => results.add(r);
 
-  /// Prints the summary; 0 when every scenario passed or was declared not possible, 1 otherwise.
+  /// Prints the summary; 0 when every scenario passed (or is a recorded KNOWN-GAP, or NOT POSSIBLE with
+  /// `allowNotPossible`), 1 when one failed or was invalid, 2 when one was NOT POSSIBLE.
   int finish() {
     say('');
     say(
@@ -50,6 +59,14 @@ class Reporter {
     final bad = results.any(
       (r) => r.status == Status.fail || r.status == Status.invalid,
     );
-    return bad ? 1 : 0;
+    if (bad) return 1;
+    final skipped = results.any((r) => r.status == Status.notPossible);
+    if (skipped && !allowNotPossible) {
+      say(
+        'exit 2: scenarios were NOT POSSIBLE here (pass --allow-not-possible if that is expected, e.g. the iOS simulator)',
+      );
+      return 2;
+    }
+    return 0;
   }
 }

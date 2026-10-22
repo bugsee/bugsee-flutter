@@ -25,6 +25,8 @@ Future<int> runIos(
   required int port,
   Set<int>? wanted,
   bool reuse = false,
+  bool allowNotPossible = false,
+  bool allowDirty = false,
 }) async {
   if (udid.isEmpty) {
     stderr.writeln(
@@ -47,10 +49,30 @@ Future<int> runIos(
     'ios',
     tc.workDir,
     env,
+    allowNotPossible: allowNotPossible,
     tag: wanted == null ? '' : '-${(wanted.toList()..sort()).join('')}',
   );
   final say = reporter.say;
   say('environment: $env');
+  // Before anything runs: the tools every pixel check needs, and a clean tree (a scenario asserts it is
+  // clean again at its end; --allow-dirty snapshots the dirty tree instead, and says so).
+  final missing = await missingImageTools();
+  if (missing != null) {
+    stderr.writeln(missing);
+    return 1;
+  }
+  final gitStart = (await sh([
+    'git',
+    'status',
+    '--porcelain',
+    '--untracked-files=all',
+  ], cwd: tc.repoRoot)).text;
+  if (gitStart.isNotEmpty && !allowDirty) {
+    stderr.writeln(
+      'the working tree is not clean (a run asserts it is clean at the end of every scenario; commit or stash, or pass --allow-dirty):\n$gitStart',
+    );
+    return 1;
+  }
   final mock = await Mock.start(tc.repoRoot, tc.workDir, port);
   final pins = (await tc.expectation('debug')).pins;
   final builds = <String, IosBuild>{};
@@ -80,6 +102,7 @@ Future<int> runIos(
   }
 
   final ctx = IosCtx(tc, dev, mock, pins, build, say);
+  ctx._gitBaseline = gitStart;
   final scenarios = <int, Future<ScenarioResult> Function()>{
     1: ctx.registration,
     2: ctx.nativeCrash,
@@ -153,17 +176,16 @@ class IosCtx {
       '--porcelain',
       '--untracked-files=all',
     ], cwd: tc.repoRoot);
-    _gitBaseline ??= git.text;
     if (git.text != _gitBaseline) {
       problems.add(
-        'git status changed during the scenario:\n${git.text}\nbaseline:\n$_gitBaseline',
+        'git status is ${_gitBaseline!.isEmpty ? 'not clean' : 'not what it was at the start'}:\n${git.text}',
       );
     }
     final c = Check(
-      'cleanup: simulator restored, git status unchanged',
+      'cleanup: simulator restored, git status clean',
       problems.isEmpty,
       problems.isEmpty
-          ? 'app uninstalled, git status identical to the start of the run'
+          ? 'app uninstalled, git status ${_gitBaseline!.isEmpty ? 'clean' : 'identical to the (dirty, --allow-dirty) start'}'
           : problems.join('; '),
       guard: true,
     );
@@ -325,6 +347,24 @@ class IosCtx {
     return b!;
   }
 
+  /// A report that IS the feature under test: its absence is a failed result, not an invalid experiment.
+  Future<Bundle?> product(
+    Run run,
+    String command, {
+    bool Function(Bundle)? where,
+  }) async {
+    await mock.command(command);
+    final b = await newBundle(where: where);
+    run.expect(
+      'a report was produced for "$command"',
+      b != null,
+      b == null
+          ? 'no new bundle reached the mock API in 90 s'
+          : '${b.type} "${b.summary}" ${b.source}',
+    );
+    return b;
+  }
+
   /// SIGSEGV to the app and proof it died of it (9.1.4): launchd's own account of the exit.
   Future<void> crash(Run run, int pid) async {
     run.guard(
@@ -426,71 +466,107 @@ class IosCtx {
 
   // ---- 2 --------------------------------------------------------------------------------------
 
-  Future<ScenarioResult> nativeCrash() => runScenario(
-    2,
-    'Native crash (SIGSEGV), retained bundle, recovered identity',
-    say,
-    (run) async {
-      final b = await build('debug');
-      await install(run, b);
-      final l = await launch(run, b);
-      await delay(5);
-      // The positive control (9.2): the same setup CAN produce a report.
-      final control = await report(run, 'upload control');
-      run.expect(
-        'control: a live report reaches the mock API in this setup',
-        control.summary == 'verify upload control',
-        '${control.type} ${control.source}',
-      );
-      await crash(run, l.pid);
-      final l2 = await launch(run, b);
-      await delay(20);
-      final crashBundle = await newBundle(
-        where: (x) => x.type == 'crash',
-        timeout: const Duration(seconds: 60),
-      );
-      final events = await dev.events(since: l2.since);
-      run.expect(
-        'no crash report is recovered on the simulator (nothing at the mock API after the relaunch)',
-        crashBundle == null,
-        crashBundle == null
-            ? 'none within 80 s'
-            : '${crashBundle.type} ${crashBundle.source}',
-      );
-      run.expect(
-        'no RelaunchedAfterCrash lifecycle event either',
-        !events.any(
-          (e) =>
-              e.kind == 'lifecycle' &&
-              '${e['event']}'.contains('RelaunchedAfterCrash'),
-        ),
-        'lifecycle events: ${events.where((e) => e.kind == 'lifecycle').map((e) => e['event']).toList()}',
-      );
-      // Why: the simulator slice of the SDK has no crash reporter; the device slice does (the control).
-      final xc = await _xcframework();
-      final simStrings = await sh([
-        'bash',
-        '-c',
-        "strings '$xc/ios-arm64_x86_64-simulator/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
-      ]);
-      final devStrings = await sh([
-        'bash',
-        '-c',
-        "strings '$xc/ios-arm64/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
-      ]);
-      run.expect(
-        'the reason: the simulator slice of the SDK carries no crash reporter symbols, the device slice does',
-        simStrings.text == '0' && int.parse(devStrings.text) > 0,
-        'ios-arm64_x86_64-simulator: ${simStrings.text} matching strings; ios-arm64: ${devStrings.text}',
-      );
-      run.result.notCovered.addAll([
-        'everything about a RECOVERED iOS crash report: the retained bundle, request.json identity and identity_source on the recovered report, the recovered-report handler dispatch (off-main, bounded cap, late completion re-persist). They need a physical iPhone.',
-      ]);
-      throw NotPossible(
-        'the iOS SDK\'s simulator slice has no crash reporter (measured: a SIGSEGV was proven, the relaunch recovered nothing while a live report arrived; the device slice has the symbols); a physical iPhone is required. airplane mode does not exist on the simulator either (the mock API refusing the upload with 503 is its stand-in)',
-      );
-    },
-  );
+  Future<ScenarioResult>
+  nativeCrash() => runScenario(2, 'Native crash (SIGSEGV), retained bundle, recovered identity', say, (
+    run,
+  ) async {
+    final b = await build('debug');
+    await install(run, b);
+    final l = await launch(run, b);
+    await delay(5);
+    // The positive control (9.2): the same setup CAN produce a report.
+    final control = await report(run, 'upload control');
+    run.expect(
+      'control: a live report reaches the mock API in this setup',
+      control.summary == 'verify upload control',
+      '${control.type} ${control.source}',
+    );
+    await crash(run, l.pid);
+    final l2 = await launch(run, b);
+    await delay(20);
+    final crashBundle = await newBundle(
+      where: (x) => x.type == 'crash',
+      timeout: const Duration(seconds: 60),
+    );
+    final events = await dev.events(since: l2.since);
+    // The positive control AFTER the window, from the relaunched process: it CAN upload, so the absence
+    // above is the SDK's, not a relaunched process that could not reach the mock (9.2).
+    final after = await report(run, 'upload control-after');
+    run.expect(
+      'control after the window: the RELAUNCHED process uploads a live report',
+      after.summary == 'verify upload control-after',
+      '${after.type} ${after.source}',
+    );
+    // And nothing retained on the device side: the simulator container's files.
+    final container = await dev.dataContainer();
+    final retained = container == null
+        ? ''
+        : (await sh([
+            'find',
+            container,
+            '-type',
+            'f',
+            '(',
+            '-iname',
+            '*.bundle.zip',
+            '-o',
+            '-iname',
+            '*.dmp',
+            '-o',
+            '-iname',
+            '*.plcrash',
+            '-o',
+            '-iname',
+            '*crash*report*',
+            ')',
+          ])).text;
+    run.expect(
+      'no crash bundle or crash file is retained in the simulator container',
+      container != null && retained.isEmpty,
+      retained.isEmpty
+          ? 'searched $container for *.bundle.zip, *.dmp, *.plcrash, *crash*report*'
+          : retained,
+    );
+    run.expect(
+      'no crash report is recovered on the simulator (nothing at the mock API after the relaunch)',
+      crashBundle == null,
+      crashBundle == null
+          ? 'none within 80 s'
+          : '${crashBundle.type} ${crashBundle.source}',
+    );
+    run.expect(
+      'no RelaunchedAfterCrash lifecycle event either',
+      !events.any(
+        (e) =>
+            e.kind == 'lifecycle' &&
+            '${e['event']}'.contains('RelaunchedAfterCrash'),
+      ),
+      'lifecycle events: ${events.where((e) => e.kind == 'lifecycle').map((e) => e['event']).toList()}',
+    );
+    // Why: the simulator slice of the SDK has no crash reporter; the device slice does (the control).
+    final xc = await _xcframework();
+    final simStrings = await sh([
+      'bash',
+      '-c',
+      "strings '$xc/ios-arm64_x86_64-simulator/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
+    ]);
+    final devStrings = await sh([
+      'bash',
+      '-c',
+      "strings '$xc/ios-arm64/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
+    ]);
+    run.expect(
+      'the reason: the simulator slice of the SDK carries no crash reporter symbols, the device slice does',
+      simStrings.text == '0' && int.parse(devStrings.text) > 0,
+      'ios-arm64_x86_64-simulator: ${simStrings.text} matching strings; ios-arm64: ${devStrings.text}',
+    );
+    run.result.notCovered.addAll([
+      'everything about a RECOVERED iOS crash report: the retained bundle, request.json identity and identity_source on the recovered report, the recovered-report handler dispatch (off-main, bounded cap, late completion re-persist). They need a physical iPhone.',
+    ]);
+    throw NotPossible(
+      'the iOS SDK\'s simulator slice has no crash reporter (measured: a SIGSEGV was proven, the relaunch recovered nothing while a live report arrived; the device slice has the symbols); a physical iPhone is required. airplane mode does not exist on the simulator either (the mock API refusing the upload with 503 is its stand-in)',
+    );
+  });
 
   Future<String> _xcframework() async {
     final r = await sh([
@@ -654,33 +730,34 @@ class IosCtx {
       checkViewHierarchy(run, 'debug', plain, obfuscated: false);
       checkLogs(run, 'debug', plain, 's5');
       checkNetwork(run, 'debug', plain, 's5');
-      final withFile = await report(
+      final withFile = await product(
         run,
         'upload-with-file f5',
         where: (x) => x.summary == 'verify upload-with-file f5',
       );
-      final fileEntry = withFile
-          .entriesOfType('attachment')
-          .where((e) => e['name'] == 'from-command');
-      run.expect(
-        'attachment from the handler: the file is in the bundle with its content',
-        fileEntry.isNotEmpty &&
-            utf8.decode(withFile.content(fileEntry.first)) ==
-                'attached by a command f5',
-        fileEntry.isEmpty
-            ? 'absent: ${withFile.entriesOfType('attachment').map((e) => e['name']).toList()}'
-            : 'content ok',
-      );
-      final created = await report(
-        run,
-        'create-report c5',
-        where: (x) => x.summary == 'verify created c5',
-      );
-      run.expect(
-        'createReport: a created report was uploaded with the summary set',
-        created.summary == 'verify created c5',
-        '${created.type} "${created.summary}"',
-      );
+      if (withFile != null) {
+        final fileEntry = withFile
+            .entriesOfType('attachment')
+            .where((e) => e['name'] == 'from-command');
+        run.expect(
+          'attachment from the handler: the file is in the bundle with its content',
+          fileEntry.isNotEmpty &&
+              utf8.decode(withFile.content(fileEntry.first)) ==
+                  'attached by a command f5',
+          fileEntry.isEmpty
+              ? 'absent: ${withFile.entriesOfType('attachment').map((e) => e['name']).toList()}'
+              : 'content ok',
+        );
+      }
+      // No filter on the summary: the summary is what is being checked.
+      final created = await product(run, 'create-report c5');
+      if (created != null) {
+        run.expect(
+          'createReport: the created report was uploaded with the summary set',
+          created.summary == 'verify created c5',
+          '${created.type} "${created.summary}"',
+        );
+      }
       await _deviceRelease(run);
       run.result.notCovered.addAll([
         'release and profile Dart behaviour on iOS (view hierarchy walk, HttpOverrides, log capture, secure regions in an AOT build): the Flutter tool refuses release/profile for a simulator ("Release mode is not supported for simulators") and xcodebuild with -sdk iphonesimulator reaches `aot_assembly_release`, which throws "release/profile builds are only supported for physical devices"; no physical iPhone was available. The Dart code paths are platform-independent and were run in release on Android (scenario 5, Android section)',
@@ -827,13 +904,21 @@ class IosCtx {
         'upload off-ios',
         where: (x) => x.summary == 'verify upload off-ios',
       );
-      final onFrame = await lastVideoFrame(on, tc.workDir, 'ios-on');
-      final offFrame = await lastVideoFrame(off, tc.workDir, 'ios-off');
-      if (onFrame == null || offFrame == null) {
-        run.note(
-          'the bundle has no video, or ffmpeg is not available: the pixel check was NOT run (entries: ${on.entries.map((e) => e['type']).toList()})',
-        );
-      } else {
+      final onFrame = await requireVideoFrame(
+        run,
+        'ios @3x',
+        on,
+        tc.workDir,
+        'ios-on',
+      );
+      final offFrame = await requireVideoFrame(
+        run,
+        'ios @3x',
+        off,
+        tc.workDir,
+        'ios-off',
+      );
+      if (onFrame != null && offFrame != null) {
         final region = checkRedaction(run, 'ios @3x', onFrame, offFrame);
         final layout = videoLayout(off);
         if (region != null && geo != null && layout != null) {
@@ -852,7 +937,14 @@ class IosCtx {
           );
         }
       }
-      await checkScreenshotRedaction(run, 'ios @3x', on, off, tc.workDir);
+      await checkScreenshotRedaction(
+        run,
+        'ios @3x',
+        on,
+        off,
+        tc.workDir,
+        expectContent: true,
+      );
       run.result.notCovered.addAll([
         'a density change at run time: a simulator\'s scale is fixed by the device model (`wm density` has no iOS equivalent), so the claim that rectangles follow a density change without a republish cannot be exercised here; only the 3x state is measured',
         'an iPhone with a different scale (2x) was not booted',

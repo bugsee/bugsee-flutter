@@ -98,6 +98,32 @@ class RawImage {
     return total == 0 ? 0 : hit / total;
   }
 
+  /// The fraction of the pixels OUTSIDE [hole] that are within [tolerance] (per channel) of the same
+  /// pixel of [other] (same size). A frame blacked out entirely agrees with the real one nowhere
+  /// outside the box.
+  double agreementOutside(RawImage other, Rect hole, {int tolerance = 40}) {
+    if (other.width != width || other.height != height) return 0;
+    var same = 0, total = 0;
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        if (x >= hole.left &&
+            x < hole.right &&
+            y >= hole.top &&
+            y < hole.bottom) {
+          continue;
+        }
+        total++;
+        final a = at(x, y), b = other.at(x, y);
+        if ((a.r - b.r).abs() <= tolerance &&
+            (a.g - b.g).abs() <= tolerance &&
+            (a.b - b.b).abs() <= tolerance) {
+          same++;
+        }
+      }
+    }
+    return total == 0 ? 0 : same / total;
+  }
+
   /// Whether the whole image is (nearly) one colour.
   bool isUniform({int tolerance = 8}) {
     final first = at(0, 0);
@@ -113,6 +139,10 @@ class RawImage {
 }
 
 /// How two boxes of the same region compare: the redaction must cover the region and not much more.
+extension RectGrow on Rect {
+  Rect grow(int by) => Rect(left - by, top - by, right + by, bottom + by);
+}
+
 class Coverage {
   const Coverage(this.region, this.redaction);
   final Rect region;

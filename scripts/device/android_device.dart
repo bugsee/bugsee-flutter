@@ -81,9 +81,15 @@ class AndroidDevice {
   Future<void> forceStop() async => adb(['shell', 'am', 'force-stop', pkg]);
 
   /// Starts the launcher activity.
-  Future<void> start() async {
-    await adb(['shell', 'am', 'start', '-n', '$pkg/.MainActivity']);
+  Future<void> start({List<String> extras = const []}) async {
+    await adb(['shell', 'am', 'start', '-n', '$pkg/.MainActivity', ...extras]);
   }
+
+  /// `true` when the app's window composes a `SurfaceView` layer (Flutter's default render mode), `false`
+  /// for a `TextureView` (the `transparent` background mode): from SurfaceFlinger's layer list.
+  Future<bool> hasSurfaceViewLayer() async => (await shell(
+    'dumpsys SurfaceFlinger --list',
+  )).contains('SurfaceView - $pkg');
 
   Future<int?> pid() async {
     final out = (await shell('pidof $pkg')).trim();
@@ -222,6 +228,14 @@ class AndroidDevice {
       code: RegExp(r'versionCode=(\d+)').firstMatch(out)?.group(1),
       name: RegExp(r'versionName=(\S+)').firstMatch(out)?.group(1),
     );
+  }
+
+  /// The package's own base APK on the device (`pm path`), as `/proc/PID/maps` prints it.
+  Future<String> apkPath() async {
+    final out = (await shell('pm path $pkg')).trim();
+    final m = RegExp(r'package:(\S*base\.apk)').firstMatch(out);
+    if (m == null) throw StateError('no base.apk in `pm path $pkg`: $out');
+    return m.group(1)!;
   }
 
   Future<String> abi() async => (await prop('ro.product.cpu.abi'));

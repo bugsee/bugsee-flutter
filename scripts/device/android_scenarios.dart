@@ -13,7 +13,6 @@ import 'checks.dart';
 import 'core/bundle.dart';
 import 'core/experiment.dart';
 import 'core/expectations.dart';
-import 'core/image.dart';
 import 'core/log_parsers.dart';
 import 'core/symbols.dart';
 import 'mock.dart';
@@ -29,6 +28,8 @@ Future<int> runAndroid(
   required int port,
   Set<int>? wanted,
   bool reuse = false,
+  bool allowNotPossible = false,
+  bool allowDirty = false,
 }) async {
   if (serial.isEmpty) {
     stderr.writeln(
@@ -57,10 +58,30 @@ Future<int> runAndroid(
     'android',
     tc.workDir,
     env,
+    allowNotPossible: allowNotPossible,
     tag: wanted == null ? '' : '-${(wanted.toList()..sort()).join('')}',
   );
   final say = reporter.say;
   say('environment: $env');
+  // Before anything runs: the tools every pixel check needs, and a clean tree (a scenario asserts it is
+  // clean again at its end; --allow-dirty snapshots the dirty tree instead, and says so).
+  final missing = await missingImageTools();
+  if (missing != null) {
+    stderr.writeln(missing);
+    return 1;
+  }
+  final gitStart = (await sh([
+    'git',
+    'status',
+    '--porcelain',
+    '--untracked-files=all',
+  ], cwd: tc.repoRoot)).text;
+  if (gitStart.isNotEmpty && !allowDirty) {
+    stderr.writeln(
+      'the working tree is not clean (a run asserts it is clean at the end of every scenario; commit or stash, or pass --allow-dirty):\n$gitStart',
+    );
+    return 1;
+  }
 
   final mock = await Mock.start(tc.repoRoot, tc.workDir, port);
   if (!await dev.reverse(port)) {
@@ -102,6 +123,7 @@ Future<int> runAndroid(
   }
 
   final ctx = AndroidCtx(tc, dev, mock, s, build, say, reporter);
+  ctx._gitBaseline = gitStart;
   final scenarios = <int, Future<ScenarioResult> Function()>{
     1: () => ctx.registration(),
     2: () => ctx.nativeCrash(),
@@ -111,6 +133,7 @@ Future<int> runAndroid(
     6: () => ctx.crashAcrossUpdate(),
     7: () => ctx.secureDensity(),
     8: () => ctx.hotRestart(),
+    9: () => ctx.screenshotGap(),
   };
   try {
     for (final e in scenarios.entries) {
@@ -171,17 +194,16 @@ class AndroidCtx {
       '--porcelain',
       '--untracked-files=all',
     ], cwd: tc.repoRoot);
-    _gitBaseline ??= git.text;
     if (git.text != _gitBaseline) {
       problems.add(
-        'git status changed during the scenario:\n${git.text}\nbaseline:\n$_gitBaseline',
+        'git status is ${_gitBaseline!.isEmpty ? 'not clean' : 'not what it was at the start'}:\n${git.text}',
       );
     }
     final c = Check(
-      'cleanup: device restored, git status unchanged',
+      'cleanup: device restored, git status clean',
       problems.isEmpty,
       problems.isEmpty
-          ? 'airplane off, app uninstalled, git status identical to the start of the run'
+          ? 'airplane off, app uninstalled, git status ${_gitBaseline!.isEmpty ? 'clean' : 'identical to the (dirty, --allow-dirty) start'}'
           : problems.join('; '),
       guard: true,
     );
@@ -203,6 +225,26 @@ class AndroidCtx {
       b == null ? '' : '${b.type} "${b.summary}" ${b.source}',
     );
     return b!;
+  }
+
+  /// A report that IS the feature under test (an exception report, a created report, a file attached
+  /// from the handler): its absence is a failed result, not an invalid experiment.
+  Future<Bundle?> _product(
+    Run run,
+    String label,
+    String command, {
+    bool Function(Bundle)? where,
+  }) async {
+    await s.command(command);
+    final b = await s.newBundle(where: where);
+    run.expect(
+      '[$label] a report was produced for "$command"',
+      b != null,
+      b == null
+          ? 'no new bundle appeared in 60 s'
+          : '${b.type} "${b.summary}" ${b.source}',
+    );
+    return b;
   }
 
   // ---- 1 --------------------------------------------------------------------------------------
@@ -250,7 +292,12 @@ class AndroidCtx {
       await delay(32);
       final log = await dev.logcat();
       final plain = distinctBugseeLibs(log);
-      final mapped = mappedBugseeLibs(await dev.maps(l.pid), b.entries, s.abi);
+      final mapped = mappedBugseeLibs(
+        await dev.maps(l.pid),
+        b.entries,
+        s.abi,
+        apkPath: await dev.apkPath(),
+      );
       final union = {...plain, ...mapped};
       run.note(
         '[$name] workbook measure (logcat grep, >=30 s): ${plain.length} distinct $plain',
@@ -315,7 +362,12 @@ class AndroidCtx {
       'files/bugsee_data/bundles is empty (via ${dev.via})',
     );
     final coldLog = await dev.logcat();
-    final mapped = mappedBugseeLibs(await dev.maps(l.pid), b.entries, s.abi);
+    final mapped = mappedBugseeLibs(
+      await dev.maps(l.pid),
+      b.entries,
+      s.abi,
+      apkPath: await dev.apkPath(),
+    );
     // The crashpad handler is a separate process (not in this process's maps): the SDK extracts the
     // trampoline and the handler into the app's no_backup directory and execs the trampoline.
     final extractedDir = dev.useRunAs
@@ -561,21 +613,24 @@ class AndroidCtx {
         await s.install(run, b);
         await s.launch(run, b);
         await delay(4);
-        final handled = await _report(
+        final handled = await _product(
           run,
+          name,
           'log-handled h4',
           where: (x) => x.crash != null && x.type == 'error',
         );
-        final unhandled = await _report(
+        final unhandled = await _product(
           run,
+          name,
           'log-unhandled u4',
           where: (x) =>
               x.crash != null &&
               x.type == 'crash' &&
               x.crash?['handled'] == false,
         );
-        final asyncErr = await _report(
+        final asyncErr = await _product(
           run,
+          name,
           'throw-async a4',
           where: (x) =>
               x.crash != null &&
@@ -587,17 +642,22 @@ class AndroidCtx {
           'unhandled': unhandled,
           'async': asyncErr,
         }.entries) {
+          if (e.value == null) continue;
           checkExceptionReport(
             run,
             '$name/${e.key}',
-            e.value,
+            e.value!,
             carrierName: 'com.bugsee.flutter.FlutterManagedException',
             unhandled: e.key == 'unhandled',
           );
-          final crash = e.value.crash!;
+          final crash = e.value!.crash!;
           run.note(
             '[$name/${e.key}] crash.json obfuscated=${crash['obfuscated']}; exception.frames[0]=${((crash['exception'] as Map)['frames'] as List?)?.first is Map ? (((crash['exception'] as Map)['frames'] as List).first as Map)['trace'] : null}',
           );
+        }
+        if (unhandled == null) {
+          await dev.uninstall();
+          continue;
         }
         if (b.obfuscated) {
           symbolsOf[name] = b.symbolsDir!;
@@ -748,33 +808,35 @@ class AndroidCtx {
         // Secure regions: the video frame, secure on then off.
         await _secureComparison(run, name, b, plain);
         // Attachments from the handler path and createReport.
-        final withFile = await _report(
+        final withFile = await _product(
           run,
+          name,
           'upload-with-file f5',
           where: (x) => x.summary == 'verify upload-with-file f5',
         );
-        final fileEntry = withFile
-            .entriesOfType('attachment')
-            .where((e) => e['name'] == 'from-command');
-        run.expect(
-          '[$name] attachment from the handler: the file is in the bundle with its content',
-          fileEntry.isNotEmpty &&
-              utf8.decode(withFile.content(fileEntry.first)) ==
-                  'attached by a command f5',
-          fileEntry.isEmpty
-              ? 'absent: ${withFile.entriesOfType('attachment').map((e) => e['name']).toList()}'
-              : 'content ok',
-        );
-        final created = await _report(
-          run,
-          'create-report c5',
-          where: (x) => x.summary == 'verify created c5',
-        );
-        run.expect(
-          '[$name] createReport: a created report was uploaded with the summary set',
-          created.summary == 'verify created c5',
-          '${created.type} "${created.summary}"',
-        );
+        if (withFile != null) {
+          final fileEntry = withFile
+              .entriesOfType('attachment')
+              .where((e) => e['name'] == 'from-command');
+          run.expect(
+            '[$name] attachment from the handler: the file is in the bundle with its content',
+            fileEntry.isNotEmpty &&
+                utf8.decode(withFile.content(fileEntry.first)) ==
+                    'attached by a command f5',
+            fileEntry.isEmpty
+                ? 'absent: ${withFile.entriesOfType('attachment').map((e) => e['name']).toList()}'
+                : 'content ok',
+          );
+        }
+        // No filter on the summary: the summary is what is being checked.
+        final created = await _product(run, name, 'create-report c5');
+        if (created != null) {
+          run.expect(
+            '[$name] createReport: the created report was uploaded with the summary set',
+            created.summary == 'verify created c5',
+            '${created.type} "${created.summary}"',
+          );
+        }
         await dev.uninstall();
       }
       run.result.notCovered.addAll([
@@ -791,18 +853,28 @@ class AndroidCtx {
     AndroidBuild b,
     Bundle onBundle,
   ) async {
-    final on = await lastVideoFrame(onBundle, tc.workDir, 'on-$name');
-    if (on == null) {
-      run.note(
-        '[$name] ffmpeg is not available: the redaction pixel check was NOT run',
-      );
-      return;
-    }
+    final on = await requireVideoFrame(
+      run,
+      name,
+      onBundle,
+      tc.workDir,
+      'on-$name',
+    );
     await s.command('secure off');
     await delay(4);
-    final off = await _report(run, 'upload plain-off-$name');
-    final offFrame = await lastVideoFrame(off, tc.workDir, 'off-$name');
-    if (offFrame != null) checkRedaction(run, name, on, offFrame);
+    final off = await _report(
+      run,
+      'upload plain-off-$name',
+      where: (x) => x.summary == 'verify upload plain-off-$name',
+    );
+    final offFrame = await requireVideoFrame(
+      run,
+      name,
+      off,
+      tc.workDir,
+      'off-$name',
+    );
+    if (on != null && offFrame != null) checkRedaction(run, name, on, offFrame);
     await s.command('secure on');
     await delay(3);
   }
@@ -872,10 +944,8 @@ class AndroidCtx {
         recovered.identitySource == 'session',
         '${recovered.identitySource}',
       );
-      run.expect(
-        'crash.json uuid is the Gradle build id of the crashed build',
-        recovered.crash?['uuid'] == a.buildUuid,
-        '${recovered.crash?['uuid']} (N ${a.buildUuid}, N+1 ${bb.buildUuid})',
+      run.note(
+        'crash.json uuid ${recovered.crash?['uuid']} (N ${a.buildUuid}, N+1 ${bb.buildUuid}): the two builds share it, so it cannot discriminate here; app.build does',
       );
       final wp = (await s.expectation(
         'release',
@@ -956,7 +1026,13 @@ class AndroidCtx {
           'upload on-$name-$dpi',
           where: (x) => x.summary == 'verify upload on-$name-$dpi',
         );
-        final onFrame = await lastVideoFrame(on, tc.workDir, 'd-on-$name-$dpi');
+        final onFrame = await requireVideoFrame(
+          run,
+          '$name @${dpi}dpi',
+          on,
+          tc.workDir,
+          'd-on-$name-$dpi',
+        );
         await s.command('secure off');
         await delay(4);
         final off = await _report(
@@ -964,15 +1040,14 @@ class AndroidCtx {
           'upload off-$name-$dpi',
           where: (x) => x.summary == 'verify upload off-$name-$dpi',
         );
-        final offFrame = await lastVideoFrame(
+        final offFrame = await requireVideoFrame(
+          run,
+          '$name @${dpi}dpi',
           off,
           tc.workDir,
           'd-off-$name-$dpi',
         );
         if (onFrame == null || offFrame == null) {
-          run.note(
-            '[$name @$dpi] ffmpeg is not available: the pixel check was NOT run',
-          );
           await s.command('secure on');
           continue;
         }
@@ -993,29 +1068,6 @@ class AndroidCtx {
             (geo['secureLogical'] as Map).cast<String, num>(),
             dpi / 160.0,
           );
-          // Just outside the box must NOT be redacted much (the rectangle is not much larger than the region).
-          final grown = Rect(
-            region.left - 14,
-            region.top - 14,
-            region.right + 14,
-            region.bottom + 14,
-          );
-          final outerBlack = onFrame.fractionOf(
-            grown,
-            const Rgb(0, 0, 0),
-            tolerance: 24,
-          );
-          final area = region.width * region.height;
-          final black = onFrame.fractionOf(
-            region,
-            const Rgb(0, 0, 0),
-            tolerance: 24,
-          );
-          final excess =
-              (outerBlack * grown.width * grown.height - area * black) / area;
-          run.note(
-            '[$name @$dpi] redaction in the 14 px ring around the box: ${(excess * 100).toStringAsFixed(1)}% of the box area (it over-covers, never under)',
-          );
         } else if (region != null) {
           run.note(
             '[$name @$dpi] the video carries no layout (video.aux): placement not checked',
@@ -1027,6 +1079,7 @@ class AndroidCtx {
           on,
           off,
           tc.workDir,
+          expectContent: false,
         );
         await s.command('secure on');
       }
@@ -1038,6 +1091,108 @@ class AndroidCtx {
       'a second display, rotation, split screen',
     ]);
   });
+
+  // ---- 9 --------------------------------------------------------------------------------------
+
+  /// The report screenshot by Flutter render mode. In the default SurfaceView mode the SDK's screenshot
+  /// is all black (a KNOWN-GAP: the SDK skips SurfaceViews for screenshots, `ScreenCaptureScreenshot` /
+  /// `ScreenCapturePixelCopyShared`, v7.4.2); in TextureView mode (`background_mode: transparent`) it has
+  /// the content, and the redaction works in it. A fix in the SDK flips the first arm to a pass.
+  Future<ScenarioResult> screenshotGap() => runScenario(
+    9,
+    'Report screenshot content by render mode (KNOWN-GAP in the default SurfaceView mode)',
+    say,
+    (run) async {
+      final b = await build('debug');
+      await s.install(run, b);
+      for (final texture in [false, true]) {
+        final mode = texture ? 'texture' : 'surface';
+        run.note('--- render mode: $mode');
+        await s.launch(
+          run,
+          b,
+          extras: texture
+              ? const ['--es', 'background_mode', 'transparent']
+              : const [],
+        );
+        await delay(4);
+        final hasSurface = await dev.hasSurfaceViewLayer();
+        run.guard(
+          'precondition: the app renders in $mode mode',
+          hasSurface == !texture
+              ? []
+              : [
+                  'SurfaceFlinger ${hasSurface ? 'has' : 'has no'} a SurfaceView layer for the app',
+                ],
+          'SurfaceView layer present: $hasSurface',
+        );
+        // The device's own screen has content (the screenshot cannot be black because the screen is).
+        final cap = await decodeStill(await dev.screencap(), tc.workDir, 'png');
+        run.guard(
+          'precondition: the display itself is not flat (adb screencap)',
+          cap != null && !cap.isUniform()
+              ? []
+              : ['screencap is flat or undecodable'],
+          cap == null ? '' : '${cap.width}x${cap.height}',
+        );
+        final on = await _report(run, 'upload on-$mode');
+        await s.command('secure off');
+        await delay(4);
+        final off = await _report(
+          run,
+          'upload off-$mode',
+          where: (x) => x.summary == 'verify upload off-$mode',
+        );
+        final a = await screenshotOf(on, tc.workDir);
+        final c = await screenshotOf(off, tc.workDir);
+        run.expect(
+          '[$mode] the report has a screenshot that decodes',
+          a != null && c != null,
+          'entries: ${on.entries.map((e) => e['type']).toList()}',
+        );
+        if (a == null || c == null) continue;
+        final flat = a.isUniform() && c.isUniform();
+        if (!texture) {
+          run.knownGap(
+            '[surface] the report screenshot has content in the default (SurfaceView) render mode',
+            !flat,
+            '${a.width}x${a.height}${flat ? ', ONE FLAT COLOUR ${a.at(0, 0)} with the region secured and unsecured; the display is not flat. SDK v7.4.2 ScreenCaptureScreenshot.captureWithPixelCopy passes null as the SurfaceView capture manager and ScreenCapturePixelCopyShared.fillRenderLayerSurfaceViews skips SurfaceViews then' : ', has content (the gap is closed)'}',
+          );
+        } else {
+          run.expect(
+            '[texture] the report screenshot has content',
+            !flat,
+            '${a.width}x${a.height}',
+          );
+          if (!flat) {
+            checkRedaction(run, 'texture screenshot', a, c);
+          }
+          final onFrame = await requireVideoFrame(
+            run,
+            'texture',
+            on,
+            tc.workDir,
+            'tex-on',
+          );
+          final offFrame = await requireVideoFrame(
+            run,
+            'texture',
+            off,
+            tc.workDir,
+            'tex-off',
+          );
+          if (onFrame != null && offFrame != null) {
+            checkRedaction(run, 'texture video', onFrame, offFrame);
+          }
+        }
+        await s.command('secure on');
+      }
+      run.result.notCovered.addAll([
+        'a physical device: the SurfaceView gap is read from SDK source and reproduced on the emulator only',
+        'platform views and scrolling content in TextureView mode (Flutter documents TextureView as slower to present and with different platform-view compositing); only the verification app\'s static content was captured',
+      ]);
+    },
+  );
 
   // ---- 8 --------------------------------------------------------------------------------------
 
@@ -1076,7 +1231,24 @@ class AndroidCtx {
             : ['flutter run did not reach the key-commands banner: ${run1.output}'],
         'flutter run attached',
       );
-      final l = await s.launch(run, b, freshLog: false, restart: false);
+      // The artefact guard looks at the APK that RUNS (the one `flutter run` installed), pulled from the
+      // device, not at the pre-built one it replaced.
+      final runningApk = '${tc.workDir}/apks/flutter-run.apk';
+      final pulled = await dev.adb(['pull', await dev.apkPath(), runningApk]);
+      run.guard(
+        'precondition: the running APK was pulled from the device',
+        pulled.ok ? [] : ['adb pull failed: $pulled'],
+        'flutter run\'s own install of ${dev.pkg}',
+      );
+      final running = await inspectAndroid(
+        tc,
+        name: 'flutter-run',
+        mode: 'debug',
+        apk: runningApk,
+        buildNumber: b.buildNumber,
+        obfuscated: false,
+      );
+      final l = await s.launch(run, running, freshLog: false, restart: false);
       final mainEvents1 = l.events.where((e) => e.kind == 'main').toList();
       await s.command('upload before-restart');
       await s.newBundle();

@@ -7,7 +7,9 @@
 //   dart scripts/device/verify.dart ios --udid <simulator> [--scenarios 1,2,3|all]
 //
 // Options: --work DIR (default build/device-verify), --port N (default 8731; the apps are built with it),
-// --reuse (use the APKs/apps already in the work dir instead of building).
+// --reuse (use the APKs/apps already in the work dir instead of building), --allow-not-possible (a NOT
+// POSSIBLE scenario exits 2 without it: the iOS simulator run needs it), --allow-dirty (a clean tree is
+// asserted otherwise).
 import 'dart:io';
 
 import 'android_scenarios.dart';
@@ -96,6 +98,8 @@ Future<void> main(List<String> args) async {
         port: port,
         wanted: wanted,
         reuse: args.contains('--reuse'),
+        allowNotPossible: args.contains('--allow-not-possible'),
+        allowDirty: args.contains('--allow-dirty'),
       ),
     );
   }
@@ -107,6 +111,8 @@ Future<void> main(List<String> args) async {
         port: port,
         wanted: wanted,
         reuse: args.contains('--reuse'),
+        allowNotPossible: args.contains('--allow-not-possible'),
+        allowDirty: args.contains('--allow-dirty'),
       ),
     );
   }

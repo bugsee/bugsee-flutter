@@ -17,6 +17,10 @@ FOUNDATION_EXPORT NSErrorDomain const BGSFlutterReportOpsErrorDomain;
 @property(nonatomic, copy) NSArray<NSString *> *labels;
 /// Strings, bools and finite numbers only: what both SDKs carry.
 @property(nonatomic, copy) NSDictionary<NSString *, id> *attributes;
+/// `[name, mimeType, fileName]` per attachment, in order; a missing part is `NSNull`. Metadata only.
+@property(nonatomic, copy) NSArray<NSArray *> *attachments;
+/// `[displayId (NSNumber), annotated (NSNumber bool)]` per screenshot, ascending by display id.
+@property(nonatomic, copy) NSArray<NSArray<NSNumber *> *> *screenshots;
 @end
 
 /// The operations the Dart report proxy performs on the SDK's `BGSReportContract` (workbook
@@ -26,7 +30,8 @@ FOUNDATION_EXPORT NSErrorDomain const BGSFlutterReportOpsErrorDomain;
 /// ignores it and keeps the old one, logging), an attribute value the backend cannot carry, a
 /// label that is not a string.
 ///
-/// Attachments and screenshots are NOT here (Phase 6, path-first, workbook 7.3.3).
+/// Attachments and screenshots are path-first (workbook 7.3.3) and live in `BGSFlutterReportFiles`;
+/// a read lists them (metadata only).
 @interface BGSFlutterReportOps : NSObject
 
 /// The severity range the SDKs accept (`BugseeSeverityLow`..`BugseeSeverityBlocker`). Repeated

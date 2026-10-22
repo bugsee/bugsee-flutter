@@ -11,13 +11,20 @@ import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 import 'bridge/bridge.dart';
 import 'bridge/messages.g.dart';
 import 'errors.dart';
+import 'exceptions/error_capture.dart';
+import 'exceptions/exception_payload.dart';
 import 'facade/breadcrumb.dart';
 import 'facade/validation.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'network/network_event.dart';
+import 'network/network_pipeline.dart';
+import 'network/network_policy.dart';
+import 'network/network_service.dart';
 import 'options/bugsee_options.g.dart';
 import 'options/launch_options.dart';
 import 'options/option_registry.dart';
+import 'report/created_report.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
@@ -158,8 +165,13 @@ final class BugseeRuntime {
       );
     }
 
+    // The capture's policy follows the SDK's status; the lifecycle event may arrive after this
+    // returns, so ask now too.
+    unawaited(network.refreshPolicy());
     switch (outcome.outcome) {
       case LaunchWire.launched:
+        _detectCrash = _detectCrashOf(encoded.values);
+        errorCapture.warnIfReplaced();
         return LaunchResult.launched;
       case LaunchWire.alreadyRunning:
         if (encoded.values.isNotEmpty) {
@@ -172,6 +184,7 @@ final class BugseeRuntime {
         }
         return LaunchResult.alreadyRunning;
       case LaunchWire.deferred:
+        _detectCrash = _detectCrashOf(encoded.values);
         return LaunchResult.deferred;
       case LaunchWire.refused:
         throw switch (outcome.reason) {
@@ -207,6 +220,8 @@ final class BugseeRuntime {
         'the Bugsee SDK threw while stopping: ${e.message ?? e.code}',
         cause: e,
       );
+    } finally {
+      unawaited(network.refreshPolicy());
     }
   }
 
@@ -543,6 +558,99 @@ final class BugseeRuntime {
     );
   }
 
+  // ---- Network capture (Phase 5b) ---------------------------------------------------------------
+
+  /// The capture, the filter and the queue to the SDK; see `lib/src/network`.
+  late final NetworkCaptureService network = NetworkCaptureService(
+    send: (batch) => host.addNetworkEvents(batch),
+    loadPolicy: _loadNetworkPolicy,
+    ensureAttached: ensureStartedInBackground,
+    statuses: () => bridge.statusChanges,
+    supported: () => _platform() != null,
+    // iOS has no redirect stage: the hop entries are not even created there.
+    dropRedirectStage: _platform() == OptionPlatform.ios,
+    warn: _warn,
+  );
+
+  Future<NetworkPolicy> _loadNetworkPolicy() async {
+    final status = await host.status();
+    final options = await host.launchOptions(false);
+    return NetworkPolicy.from(
+      options,
+      launched: status == BugseeStatus.launched.name,
+    );
+  }
+
+  /// Installs the `dart:io` capture (see `Bugsee.installNetworkCapture`). A call from a
+  /// background isolate is a [BugseeException]: it has no platform channels to reach the SDK
+  /// with.
+  bool installNetworkCapture() {
+    _requireBinding();
+    return network.install();
+  }
+
+  void uninstallNetworkCapture() => network.uninstall();
+
+  bool get networkCaptureInstalled => network.installed;
+
+  void setNetworkFilter(BugseeNetworkFilter? filter, Duration timeout) =>
+      network.setFilter(filter, timeout);
+
+  BugseeNetworkFilter? get networkFilter => network.pipeline.filter;
+
+  NetworkCaptureStats get networkCaptureStats => network.pipeline.stats;
+
+  /// The shortest and longest time a created report is held.
+  static const Duration minCreatedReportTimeToLive = Duration(seconds: 1);
+  static const Duration maxCreatedReportTimeToLive = Duration(hours: 1);
+
+  Future<CreatedReport?> createReport({required Duration timeToLive}) async {
+    if (timeToLive < minCreatedReportTimeToLive ||
+        timeToLive > maxCreatedReportTimeToLive) {
+      throw BugseeArgumentException(
+        'timeToLive',
+        'must be between ${minCreatedReportTimeToLive.inSeconds} second and '
+            '${maxCreatedReportTimeToLive.inHours} hour',
+      );
+    }
+    final handle = await _call<String?>('createReport', null, () async {
+      try {
+        return await host.createReport(timeToLive.inMilliseconds);
+      } on PlatformException catch (e) {
+        throw createReportFailure(e) ?? e;
+      }
+    });
+    if (handle == null) return null;
+    final CreatedReportSnapshotMessage? first;
+    try {
+      first = await host.createdReportRead(handle);
+    } on PlatformException catch (e) {
+      // Native holds the report under a handle nobody will ever receive: release it now, or the one
+      // process-wide slot stays taken until its time to live (up to an hour).
+      await _discardQuietly(handle);
+      throw mapFacadeError('createReport', e);
+    }
+    if (first == null) {
+      await _discardQuietly(handle);
+      return null;
+    }
+    return createCreatedReport(
+      reportId: first.reportId.isEmpty ? null : first.reportId,
+      typeName: first.type,
+      handle: handle,
+      host: host,
+      timeToLive: timeToLive,
+    );
+  }
+
+  Future<void> _discardQuietly(String handle) async {
+    try {
+      await host.createdReportDiscard(handle);
+    } on Object {
+      // Native then releases it at its time to live.
+    }
+  }
+
   // ---- Report handler and lifecycle events ------------------------------------------------------
 
   BugseeReportHandler? _reportHandler;
@@ -571,4 +679,62 @@ final class BugseeRuntime {
   }
 
   Stream<LifecycleEvent> get lifecycleEvents => bridge.lifecycleEvents;
+
+  // ---- Dart errors (Phase 5a) -------------------------------------------------------------------
+
+  /// `detect.crash` of the launch this app made through Dart (default true, the SDKs' default). The
+  /// installed handlers report nothing while it is false, like the SDKs' own crash detection; an
+  /// explicit `logException` is not affected. A launch the app made natively is not seen here.
+  bool _detectCrash = true;
+
+  static bool _detectCrashOf(Map<String, Object> values) =>
+      values['com.bugsee.option.detect.crash'] != false;
+
+  /// The installed handlers (FlutterError, PlatformDispatcher, isolate listeners, zone errors).
+  late final ErrorCapture errorCapture = ErrorCapture(
+    report: (payload, {required handled}) async {
+      await _sendException(payload, handled: handled, domain: null);
+    },
+    enabled: () => _detectCrash,
+    warn: _warn,
+  );
+
+  /// Reports [error] to the SDK. Completes with whether the SDK was handed it (`false` before
+  /// launch and after stop: both SDKs drop it there; nothing is queued).
+  Future<bool> logException(
+    Object error,
+    StackTrace? stack, {
+    required bool handled,
+    String? domain,
+    bool stackCaptured = false,
+  }) {
+    if (domain != null &&
+        (domain.isEmpty || domain.length > ExceptionWire.maxDomainLength)) {
+      return Future<bool>.error(
+        const BugseeArgumentException(
+          'domain',
+          'the domain must be 1 to ${ExceptionWire.maxDomainLength} UTF-16 units',
+        ),
+      );
+    }
+    final payload = buildExceptionPayload(
+      error,
+      stack,
+      stackCaptured: stackCaptured,
+    );
+    return _sendException(payload, handled: handled, domain: domain);
+  }
+
+  Future<bool> _sendException(
+    ExceptionPayload payload, {
+    required bool handled,
+    required String? domain,
+  }) => _call<bool>(
+    'logException',
+    false,
+    () => host.logException(payload.json, handled, domain),
+    // Dart checked the domain and built a document under the limit, so a refusal is about the
+    // document: the native message says what (never the domain, which was valid).
+    argument: 'error',
+  );
 }

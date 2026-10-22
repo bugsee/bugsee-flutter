@@ -77,7 +77,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   Dart: edits are operations keyed by a handle; a late edit throws `ReportClosedError` (a `StateError`) and native ignores it.
   `onAfter` is at-least-once: each delivery carries a stable `deliveryId` (`before|after:<reportId>`) and Dart skips a repeat
   within the isolate (128 remembered). Enums cross by value (the bridge has none; severity is the SDK integer; Dart
-  `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (TODO seam in `ReportProxy`).
+  `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (done, below).
 - `requestData` (3c): the stub answered null/nil for every type incl. `vh`, also on the replaced wrapper; `vh` is real since 5c (below), every other type still answers null.
 
 ## 4. Phase 4 — Public API and options (Part 8)
@@ -214,14 +214,71 @@ Design, payload schema, privacy rules, staleness, SDK facts and spec gaps: **`do
 
 
 - Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
-  wrapper, filters chained ahead of app filters) — spec is **Proposed, unimplemented on both
-  SDKs**; build against the interface, gate on SDK support.
-- Dart exceptions: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
-  obfuscation symbolication (debug-info) — port the useful parts of the 9.x `exceptions*`
-  and `symbols.py` approach, as new code.
-- Network: HttpClient/`HttpOverrides` and package interceptors (dio/http).
+  wrapper, filters chained ahead of app filters). The spec still says **Proposed**, but **both pinned SDKs ship the channel**
+  (Android 7.4.2 `BugseeWrapperChannel`, iOS 7.0.0-beta7 `BGSWrapperChannel`; checked in the pinned artifacts' sources and headers):
+  network events use it (5b); logs and breadcrumbs are still to do.
+- **5a — Dart exceptions (done, see below)**: `FlutterError.onError`, `PlatformDispatcher.onError`, isolate errors,
+  obfuscation symbolication (debug-info).
+
+### 5a — Dart exceptions (done)
+
+Contract, SDK behaviour per platform with source refs, handler design, symbols and limits: **`doc/exceptions.md`**.
+
+- **Added**: `Bugsee.logException(error, [stack])`, `logUnhandledException`, `reportException(error, {stackTrace, handled, domain})`, `installErrorHandlers`/`uninstallErrorHandlers`/`errorHandlersInstalled`/`errorHandlersActive`,
+  `runGuarded`, `listenToIsolateErrors` (+ `IsolateErrorListener`); one `@async` bridge call `logException(payload, handled, domain)`; `ExceptionOps.java`
+  + `ExceptionDispatcher` (single thread, bounded queue) + `FlutterManagedException` + `consumer-rules.pro`, `BGSFlutterExceptionOps`; Dart `lib/src/exceptions` (document builder, classifier, `ErrorCapture`, `ReportLimiter`).
+- **Backend contract** (worker `crash/managed/dart.py`): routed on the literal `FlutterManagedException`, document `{internalType, name, reason, signature, frames, originalStackTrace}` (the SDKs hash `signature`: without it every Dart error would share one signature and the server would drop them); build id from `originalStackTrace`; symbols by build id via `dart_symbolize`.
+- **Decisions**: the hooks file ERROR reports by default (`reportAsCrash: false`; crash on request: Dart errors never end the app, RN files only fatal errors as crashes, crash reports count against crash-free sessions and replace iOS's single stored one), chained and restored, install after tools that assign the handlers, once per error (a second route within 1 s is silent), 30 s per equal error / 10 per 60 s on a monotonic clock; both natives gate on Launching/Launched (iOS's unhandled path is not gated by the SDK); no severity and no `skipFrames` (neither SDK takes them for exceptions); symbols are uploaded with the 9.x `symbols.py` protocol (bugsee-cli has no Flutter support), documented and verified offline, not reimplemented.
+- **Runtime evidence**: Android emulator API 29 arm64 against a local mock of the API: the real bundles' crash.json for handled/unhandled/FlutterError/root-zone/guarded-zone/isolate, the flood limited to one; a release `--obfuscate --split-debug-info` stack read from a bundle and symbolized with the worker's `dart_symbolize` (build id in the symbols file); R8 kept the carrier's name. iOS 26.5 simulator: calls reach the SDK, which files nothing there. The worker's real `dart.py` run offline on the captured entries.
+- **Tests** (every one mutation-checked, the behaviour broken, the test seen failing, the code restored): 630 Dart tests in all (payload, signature, classifier, stack formats VM / `stack_trace` / non-symbolic / async gaps, limits, `ErrorCapture`, limiter, facade, drift, worker contract on real captured entries), JUnit (`ExceptionOpsTest`, `ExceptionDispatcherTest`, `ExceptionSignatureTest` against the SDK's own signature code), XCTest (`BGSFlutterExceptionOpsTests`, `BGSFlutterExceptionSignatureTests`). Mutants: first round 63 Dart/drift, 8 Java, 7 Objective-C; review round 24 Dart, 8 dispatcher, 4 drift. Survivors found and fixed each time (path reduction, the line-boundary cut, limiter order, throwing `enabled()`, fingerprint depth, a launch gate that was only "before", a multi-line reason that was never multi-line, identity dedupe hidden by the fingerprint); equivalent mutants left: isolate `removeErrorListener` and the idempotent `cancel` (the closed port makes both unobservable).
+- **Not verified**: an iOS device (next-launch delivery, one slot: source-read), the main-thread cost on a real Android device, the production backend end to end.
+
+- Network: **built in 5b** (`HttpOverrides`; dio's default adapter and `package:http` ride `dart:io`, so no package interceptors).
+  Record below.
 - View hierarchy (`vh`): **done in 5c** (see above and `doc/view-hierarchy.md`): a native snapshot cache answered
   synchronously, so neither the Dart-off-the-platform-thread problem nor `bugsee-android` PR #120 (in 7.4.2, off-main snapshots only) is a blocker.
+
+### 5b record — network capture
+
+Design and data flow: `doc/network.md` (the privacy model, the options, the limits, the SDK source refs). Decisions worth keeping:
+
+- **Channel**: at the pins the SDKs ship the wrapper channel, so events go through it (`FlutterWrapper.onWrapperChannelAvailable`
+  stores the channel in a process-wide holder; the wrapper object is replaced on the identity refinement and the SDK retires the old
+  channel then). No source attribution exists for network events at the pins (only `log`), so `mechanism: dart:io` is the label.
+  iOS 7.0.0-beta7's factory answers nil for `createNetworkEvent`, so iOS builds `BugseeNetworkEvent` directly.
+- **Filtering is always required** (`requiresFiltering = true`; `false` skips the SDK's default sanitizer and the app's native filter),
+  so a Dart filter runs first and does NOT replace the sanitizer; a native filter, if the app set one, runs after it (double filtering,
+  documented). The Dart filter is the privacy boundary: fails closed (throw / wrong type / hang drops the event), cannot change
+  id/stage/method/status/size, and applies to everything captured under it even if it is removed before the queue is drained
+  (found on the first device run: `setNetworkFilter(null)` right after a request let that request's response through).
+- **Gate**: only `launched` + `capture.network` (Android would buffer `launching`, iOS drops it); mirrored in Dart and natively;
+  the SDK's body rules (size limit, content type, `body-without-type`, request vs response order) are applied before anything is copied.
+- **Bounded**: queue 512 events / 8 MiB (the new event is dropped and counted), one batch (<= 32 events / 512 KiB) in flight,
+  filter and bridge off the HTTP path, body copy capped by the SDK limit.
+- **Device findings**: Android HTTP breadcrumbs carry the raw URL (query included; SDK design, same for its own traffic) while iOS
+  sanitizes it; the sanitizers' key lists differ (`x-session` redacted on Android only); iOS has no redirect stage, timings or
+  `statusText`; `dart:io` cancel drains the rest of the body (a server keeps writing), so cancel propagation is tested with a
+  controlled stream, not a socket.
+- **Runtime evidence** (`example/integration_test/network_test.dart`, bundles read from the app: Android emulator API 30 arm64
+  `run-as`, iOS 26.5 simulator container): the table in `doc/network.md` ("Verified on a device").
+- **Threading**: unlike the rest of the facade, `addNetworkEvents` runs on a serial BACKGROUND thread of the plugin (a Pigeon task
+  queue): the SDK's sanitizer and the app's native filter run on the calling thread, up to one body-size limit of text per
+  event, and must not take UI time; the channel is documented as callable from any thread.
+- **Not verified**: a valid token (the stand-in refuses the upload on purpose), the upload's server side, `capture.network` off on a
+  device, a release build with R8/obfuscation, tvOS/visionOS, a hot restart on a device (the isolate-local state is covered by
+  design and by the unit tests, not by a restart), the SDKs' timing of an injected event against one they intercepted.
+- **Tests** (every new test mutation-checked: the behaviour broken in a copy of the code, the test seen failing, the code restored):
+  172 Dart network tests (58 against a real local `HttpServer`
+  incl. a differential test against an unwrapped client and WebSocket handshake, 12 against a controlled response stream
+  for pause/resume/cancel/error, 22 body rules, 29 pipeline/filter, 21 install/uninstall/policy, 19 through the real runtime, 11
+  drift), 10 `public_api_test` pins, 16 JUnit (`NetworkOpsTest`, `NetworkWireParityTest`), 16 XCTest
+  (`BGSFlutterNetworkOpsTests`). Mutations (each applied to a copy, the tests run, the code restored): **110 Dart, 24 Android,
+  21 iOS**. All killed in the end; the survivors of the first pass were real test gaps and were fixed by strengthening tests:
+  an `encoded` body whose bytes were kept (B11), an error through `request.done` (H11b), the recorder-throws swallow beneath the
+  call-site guards (H38), the uninstalled client being unwrapped (S3), a test rig that returned the NEW policy to the OLD read (S5).
+  Three were equivalent and are recorded as such: `BodyTee` limit 0 without the `limit > 0` guard (the first byte overflows
+  anyway), removing the `StateError` for a wrong filter return type (a failing cast is caught and drops the event the same way),
+  `_passedOn` in `redirect()` (dart:io drains that response itself; the line was dead and was removed).
 
 ## 6. Phase 6 — Reports (Part 7, report-contract)
 
@@ -239,7 +296,31 @@ retention + `request.json` read, crash across update, Dart exception, secure-rec
 
 ## 8. Phase 8 — Feedback package, docs, release
 
-`bugsee_flutter_feedback`; README/migration guide (9.x→7.x API, since it is a clean break);
+### 8a - the feedback package (done; verified on the Android emulator API 30 and the iOS 27.0 simulator)
+
+`packages/bugsee_flutter_feedback` (full write-up with SDK references: its `doc/feedback.md`). Decisions:
+
+- **Layout**: a member of a pub **workspace** (root `workspace:` = the feedback package + `example`), published separately
+  (core first). The workspace lets the feedback package depend on `bugsee_flutter` by a hosted constraint that resolves to
+  the sibling locally: no path dependency (unpublishable), no `dependency_overrides`. The root `.pubignore` drops `/packages/`.
+  Cost: `example/pubspec.lock` is gone (one COMMITTED lock at the root, enforced in CI with `--enforce-lockfile`, kept out of the archives by `.pubignore`).
+- **Versions**: lock-step number; the constraint is `>=<core> <next minor>` (pub warns about an exact pin); the Dart side
+  also checks the core's version at run time (`incompatibleCore`). Native pins repeated as literals in the package (a published
+  copy has no `native-versions.json`), compared by `test/feedback_package_drift_test.dart`; `native-versions.json` gained a
+  `feedback` section and the weekly pin check also looks for `bugsee-android-feedback` on Maven.
+- **API** is what both SDKs have: show, greeting, listener (two streams), plus `isAvailable`. No unread count, options,
+  appearance (skipped like the core's), invented nothing. Its own Pigeon bridge; the core's is untouched and a guard keeps
+  feedback out of the core.
+- **Registration**: the SDKs register the module themselves (Android init provider or the Gradle plugin's injected call;
+  iOS `+load` shim). The package adds no provider (guarded), registers on Android only as a safety net, and on iOS has its
+  own `+load` registrar that the plugin references, because the add-on's shim can be dead-stripped from a static link.
+  Measured: with the plugin's `+load`/register removed the add-on's own shim still registered it in a debug simulator build (and in the XCTest
+  host), so the dead-strip risk the add-on's header describes was NOT reproduced there; a release (archive) build was not tried. Android default
+  (Gradle plugin 4.0.8, extension consolidation on): the AAR's provider is absent from the installed app and the SDK registered the module
+  (logcat `feedback module registered by the SDK`); the chat opened (`FeedbackActivity`, email screen) and the core's lifecycle stream carried
+  `BeforeFeedbackShown`/`AfterFeedbackShown`. Not verified: `optimizeExtensionsLoading=false`, the Android safety-net path, a real token (sending/receiving).
+
+README/migration guide (9.x→7.x API, since it is a clean break);
 CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app covering all screens.
 
 ## Risks / open items
@@ -253,3 +334,22 @@ CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app cove
 ## Suggested order
 
 P1 → P2 → P3 (ship a correct MVP, then device-verify) → P4 → P6 → P5 → P7 → P8.
+
+### 6 - attachments, annotated screenshots, `createReport` (done)
+
+Full write-up, tables and evidence: `doc/attachments.md`. Decisions:
+
+- **At the pins** both SDKs have path-first attachments, bytes, clear, lifetime enforcement, a 1000 cap, annotated screenshots
+  and display ids (Android `v7.4.2` via PR #117/#136/#178 on `main`; the spec's `feat/report-contract-parity` is NOT merged
+  into the tag but is not needed; iOS `nextgen@0581aa02c` BGSReport.m). `createReport` exists on both, but iOS hands the
+  legacy `BugseeExtendedReport` (3 in-memory attachments of at most 3 MiB, no id/type/e-mail/annotated flag): exposed with
+  the differences written on `CreatedReport`, not faked.
+- **Native file work off the platform thread** on a one-thread worker, with a lease on the handler's report so the SDK's
+  completion waits for the claim (never a blocked thread). Failure codes cross as strings (no Pigeon enums); limits are
+  repeated in Dart/Java/ObjC and compared by `test/report_attachments_drift_test.dart`; the SDKs' own caps are extracted
+  from source into the fixture.
+- **createReport fails closed**: one at a time, stamped reservation, 45 s SDK budget, time to live (default 10 min), reset on
+  hot restart; Android deletes the app's attachments on release.
+- **Verified** on the Android emulator (API 30) and the iOS simulator (27.0) with a stand-in API; JUnit, XCTest, Dart
+  mocks; every new test mutation-checked (see the PR description). **Not verified**: iOS device, a real token, scoped
+  storage outside the app directory, very large files on a device.

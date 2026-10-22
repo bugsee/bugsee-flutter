@@ -271,10 +271,11 @@ void main() {
 
     test('monitors are allowed only where listed, each with its reason', () {
       int count(String path, String word) => word.allMatches(code(path)).length;
-      // Report pipeline (Java): the per-handle lock, held for "check live + apply" and for
-      // flipping `done` (2 sites), around the report's own setters; never across the SDK's
-      // completion, Dart or the scheduler.
-      expect(count('$java/ReportHandlerPipeline.java', 'synchronized'), 2);
+      // Report pipeline (Java): the per-handle lock, held for "check live + apply", for
+      // flipping `done`, and (Phase 6) for taking and returning a file-operation claim (4 sites), around
+      // the report's own setters and two counters; never across the SDK's completion, Dart or the
+      // scheduler, and never across a file copy (that is what a claim is for).
+      expect(count('$java/ReportHandlerPipeline.java', 'synchronized'), 4);
       // Pre-existing, not on the report path: one-time creation of the shared environment.
       expect(count('$java/BugseeFlutterPlugin.java', 'synchronized'), 1);
       for (final path in [
@@ -341,7 +342,7 @@ void main() {
           blocks++;
           from = end;
         }
-        expect(blocks, 2);
+        expect(blocks, 4);
         // ObjC: the edit lock is unlocked before the completion runs in finish.
         final finish = pipelineObjc.substring(
           pipelineObjc.indexOf('- (BOOL)finish:'),

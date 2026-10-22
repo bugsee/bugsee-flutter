@@ -1195,6 +1195,216 @@ public class Messages {
   }
 
   /**
+   * One attachment of a report, as the SDK lists it: the display name, the MIME type and the
+   * source file's base name. Never the file's content or its place in the SDK's storage.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class ReportAttachmentMessage {
+    private @Nullable String name;
+
+    public @Nullable String getName() {
+      return name;
+    }
+
+    public void setName(@Nullable String setterArg) {
+      this.name = setterArg;
+    }
+
+    private @Nullable String mimeType;
+
+    public @Nullable String getMimeType() {
+      return mimeType;
+    }
+
+    public void setMimeType(@Nullable String setterArg) {
+      this.mimeType = setterArg;
+    }
+
+    private @Nullable String fileName;
+
+    public @Nullable String getFileName() {
+      return fileName;
+    }
+
+    public void setFileName(@Nullable String setterArg) {
+      this.fileName = setterArg;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      ReportAttachmentMessage that = (ReportAttachmentMessage) o;
+      return pigeonDeepEquals(name, that.name) && pigeonDeepEquals(mimeType, that.mimeType) && pigeonDeepEquals(fileName, that.fileName);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), name, mimeType, fileName};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "ReportAttachmentMessage{" + "name=" + name + ", " + "mimeType=" + mimeType + ", " + "fileName=" + fileName + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable String name;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setName(@Nullable String setterArg) {
+        this.name = setterArg;
+        return this;
+      }
+
+      private @Nullable String mimeType;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setMimeType(@Nullable String setterArg) {
+        this.mimeType = setterArg;
+        return this;
+      }
+
+      private @Nullable String fileName;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setFileName(@Nullable String setterArg) {
+        this.fileName = setterArg;
+        return this;
+      }
+
+      public @NonNull ReportAttachmentMessage build() {
+        ReportAttachmentMessage pigeonReturn = new ReportAttachmentMessage();
+        pigeonReturn.setName(name);
+        pigeonReturn.setMimeType(mimeType);
+        pigeonReturn.setFileName(fileName);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(3);
+      toListResult.add(name);
+      toListResult.add(mimeType);
+      toListResult.add(fileName);
+      return toListResult;
+    }
+
+    static @NonNull ReportAttachmentMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      ReportAttachmentMessage pigeonResult = new ReportAttachmentMessage();
+      Object name = pigeonVar_list.get(0);
+      pigeonResult.setName((String) name);
+      Object mimeType = pigeonVar_list.get(1);
+      pigeonResult.setMimeType((String) mimeType);
+      Object fileName = pigeonVar_list.get(2);
+      pigeonResult.setFileName((String) fileName);
+      return pigeonResult;
+    }
+  }
+
+  /**
+   * One screenshot a report holds. [annotated] is whether the user (or the app) drew on it.
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class ReportScreenshotMessage {
+    private @NonNull Long displayId;
+
+    public @NonNull Long getDisplayId() {
+      return displayId;
+    }
+
+    public void setDisplayId(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"displayId\" is null.");
+      }
+      this.displayId = setterArg;
+    }
+
+    private @NonNull Boolean annotated;
+
+    public @NonNull Boolean getAnnotated() {
+      return annotated;
+    }
+
+    public void setAnnotated(@NonNull Boolean setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"annotated\" is null.");
+      }
+      this.annotated = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    ReportScreenshotMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      ReportScreenshotMessage that = (ReportScreenshotMessage) o;
+      return pigeonDeepEquals(displayId, that.displayId) && pigeonDeepEquals(annotated, that.annotated);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), displayId, annotated};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "ReportScreenshotMessage{" + "displayId=" + displayId + ", " + "annotated=" + annotated + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable Long displayId;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setDisplayId(@NonNull Long setterArg) {
+        this.displayId = setterArg;
+        return this;
+      }
+
+      private @Nullable Boolean annotated;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAnnotated(@NonNull Boolean setterArg) {
+        this.annotated = setterArg;
+        return this;
+      }
+
+      public @NonNull ReportScreenshotMessage build() {
+        ReportScreenshotMessage pigeonReturn = new ReportScreenshotMessage();
+        pigeonReturn.setDisplayId(displayId);
+        pigeonReturn.setAnnotated(annotated);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(2);
+      toListResult.add(displayId);
+      toListResult.add(annotated);
+      return toListResult;
+    }
+
+    static @NonNull ReportScreenshotMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      ReportScreenshotMessage pigeonResult = new ReportScreenshotMessage();
+      Object displayId = pigeonVar_list.get(0);
+      pigeonResult.setDisplayId((Long) displayId);
+      Object annotated = pigeonVar_list.get(1);
+      pigeonResult.setAnnotated((Boolean) annotated);
+      return pigeonResult;
+    }
+  }
+
+  /**
    * A read of a live report. [severity] is the SDK's internal integer (1..5), or
    * null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
    *
@@ -1298,6 +1508,34 @@ public class Messages {
       this.attributes = setterArg;
     }
 
+    /** The attachments, in the order they were added; metadata only. */
+    private @NonNull List<ReportAttachmentMessage> attachments;
+
+    public @NonNull List<ReportAttachmentMessage> getAttachments() {
+      return attachments;
+    }
+
+    public void setAttachments(@NonNull List<ReportAttachmentMessage> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"attachments\" is null.");
+      }
+      this.attachments = setterArg;
+    }
+
+    /** The displays that hold a screenshot, ascending by display id. */
+    private @NonNull List<ReportScreenshotMessage> screenshots;
+
+    public @NonNull List<ReportScreenshotMessage> getScreenshots() {
+      return screenshots;
+    }
+
+    public void setScreenshots(@NonNull List<ReportScreenshotMessage> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"screenshots\" is null.");
+      }
+      this.screenshots = setterArg;
+    }
+
     /** Constructor is non-public to enforce null safety; use Builder. */
     ReportSnapshotMessage() {}
 
@@ -1306,18 +1544,18 @@ public class Messages {
       if (this == o) { return true; }
       if (o == null || getClass() != o.getClass()) { return false; }
       ReportSnapshotMessage that = (ReportSnapshotMessage) o;
-      return pigeonDeepEquals(id, that.id) && pigeonDeepEquals(type, that.type) && pigeonDeepEquals(summary, that.summary) && pigeonDeepEquals(reportDescription, that.reportDescription) && pigeonDeepEquals(email, that.email) && pigeonDeepEquals(severity, that.severity) && pigeonDeepEquals(labels, that.labels) && pigeonDeepEquals(attributes, that.attributes);
+      return pigeonDeepEquals(id, that.id) && pigeonDeepEquals(type, that.type) && pigeonDeepEquals(summary, that.summary) && pigeonDeepEquals(reportDescription, that.reportDescription) && pigeonDeepEquals(email, that.email) && pigeonDeepEquals(severity, that.severity) && pigeonDeepEquals(labels, that.labels) && pigeonDeepEquals(attributes, that.attributes) && pigeonDeepEquals(attachments, that.attachments) && pigeonDeepEquals(screenshots, that.screenshots);
     }
 
     @Override
     public int hashCode() {
-      Object[] fields = new Object[] {getClass(), id, type, summary, reportDescription, email, severity, labels, attributes};
+      Object[] fields = new Object[] {getClass(), id, type, summary, reportDescription, email, severity, labels, attributes, attachments, screenshots};
       return pigeonDeepHashCode(fields);
     }
 
     @Override
     public String toString() {
-      return "ReportSnapshotMessage{" + "id=" + id + ", " + "type=" + type + ", " + "summary=" + summary + ", " + "reportDescription=" + reportDescription + ", " + "email=" + email + ", " + "severity=" + severity + ", " + "labels=" + labels + ", " + "attributes=" + attributes + "}";
+      return "ReportSnapshotMessage{" + "id=" + id + ", " + "type=" + type + ", " + "summary=" + summary + ", " + "reportDescription=" + reportDescription + ", " + "email=" + email + ", " + "severity=" + severity + ", " + "labels=" + labels + ", " + "attributes=" + attributes + ", " + "attachments=" + attachments + ", " + "screenshots=" + screenshots + "}";
     }
 
     public static final class Builder {
@@ -1386,6 +1624,22 @@ public class Messages {
         return this;
       }
 
+      private @Nullable List<ReportAttachmentMessage> attachments;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAttachments(@NonNull List<ReportAttachmentMessage> setterArg) {
+        this.attachments = setterArg;
+        return this;
+      }
+
+      private @Nullable List<ReportScreenshotMessage> screenshots;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setScreenshots(@NonNull List<ReportScreenshotMessage> setterArg) {
+        this.screenshots = setterArg;
+        return this;
+      }
+
       public @NonNull ReportSnapshotMessage build() {
         ReportSnapshotMessage pigeonReturn = new ReportSnapshotMessage();
         pigeonReturn.setId(id);
@@ -1396,13 +1650,15 @@ public class Messages {
         pigeonReturn.setSeverity(severity);
         pigeonReturn.setLabels(labels);
         pigeonReturn.setAttributes(attributes);
+        pigeonReturn.setAttachments(attachments);
+        pigeonReturn.setScreenshots(screenshots);
         return pigeonReturn;
       }
     }
 
     @NonNull
     ArrayList<Object> toList() {
-      ArrayList<Object> toListResult = new ArrayList<>(8);
+      ArrayList<Object> toListResult = new ArrayList<>(10);
       toListResult.add(id);
       toListResult.add(type);
       toListResult.add(summary);
@@ -1411,6 +1667,8 @@ public class Messages {
       toListResult.add(severity);
       toListResult.add(labels);
       toListResult.add(attributes);
+      toListResult.add(attachments);
+      toListResult.add(screenshots);
       return toListResult;
     }
 
@@ -1432,6 +1690,538 @@ public class Messages {
       pigeonResult.setLabels((List<String>) labels);
       Object attributes = pigeonVar_list.get(7);
       pigeonResult.setAttributes((Map<String, Object>) attributes);
+      Object attachments = pigeonVar_list.get(8);
+      pigeonResult.setAttachments((List<ReportAttachmentMessage>) attachments);
+      Object screenshots = pigeonVar_list.get(9);
+      pigeonResult.setScreenshots((List<ReportScreenshotMessage>) screenshots);
+      return pigeonResult;
+    }
+  }
+
+  /**
+   * A read of a report made by `createReport` (workbook 7.3 plus the SDKs' own creation APIs). iOS
+   * gives the app a `BugseeExtendedReport`, which has no id, type, e-mail, screenshot flag or
+   * attachment metadata beyond the name: those are absent here ([reportId] and [type] are empty
+   * strings, [attachmentNames] carries only what iOS can list, [screenshotDisplayIds] is `[0]` or
+   * empty there).
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class CreatedReportSnapshotMessage {
+    private @NonNull String reportId;
+
+    public @NonNull String getReportId() {
+      return reportId;
+    }
+
+    public void setReportId(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"reportId\" is null.");
+      }
+      this.reportId = setterArg;
+    }
+
+    private @NonNull String type;
+
+    public @NonNull String getType() {
+      return type;
+    }
+
+    public void setType(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"type\" is null.");
+      }
+      this.type = setterArg;
+    }
+
+    private @Nullable String summary;
+
+    public @Nullable String getSummary() {
+      return summary;
+    }
+
+    public void setSummary(@Nullable String setterArg) {
+      this.summary = setterArg;
+    }
+
+    private @Nullable String reportDescription;
+
+    public @Nullable String getReportDescription() {
+      return reportDescription;
+    }
+
+    public void setReportDescription(@Nullable String setterArg) {
+      this.reportDescription = setterArg;
+    }
+
+    private @Nullable Long severity;
+
+    public @Nullable Long getSeverity() {
+      return severity;
+    }
+
+    public void setSeverity(@Nullable Long setterArg) {
+      this.severity = setterArg;
+    }
+
+    private @NonNull List<String> labels;
+
+    public @NonNull List<String> getLabels() {
+      return labels;
+    }
+
+    public void setLabels(@NonNull List<String> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"labels\" is null.");
+      }
+      this.labels = setterArg;
+    }
+
+    private @NonNull Map<String, Object> attributes;
+
+    public @NonNull Map<String, Object> getAttributes() {
+      return attributes;
+    }
+
+    public void setAttributes(@NonNull Map<String, Object> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"attributes\" is null.");
+      }
+      this.attributes = setterArg;
+    }
+
+    private @NonNull List<String> attachmentNames;
+
+    public @NonNull List<String> getAttachmentNames() {
+      return attachmentNames;
+    }
+
+    public void setAttachmentNames(@NonNull List<String> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"attachmentNames\" is null.");
+      }
+      this.attachmentNames = setterArg;
+    }
+
+    private @NonNull List<Long> screenshotDisplayIds;
+
+    public @NonNull List<Long> getScreenshotDisplayIds() {
+      return screenshotDisplayIds;
+    }
+
+    public void setScreenshotDisplayIds(@NonNull List<Long> setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"screenshotDisplayIds\" is null.");
+      }
+      this.screenshotDisplayIds = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    CreatedReportSnapshotMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      CreatedReportSnapshotMessage that = (CreatedReportSnapshotMessage) o;
+      return pigeonDeepEquals(reportId, that.reportId) && pigeonDeepEquals(type, that.type) && pigeonDeepEquals(summary, that.summary) && pigeonDeepEquals(reportDescription, that.reportDescription) && pigeonDeepEquals(severity, that.severity) && pigeonDeepEquals(labels, that.labels) && pigeonDeepEquals(attributes, that.attributes) && pigeonDeepEquals(attachmentNames, that.attachmentNames) && pigeonDeepEquals(screenshotDisplayIds, that.screenshotDisplayIds);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), reportId, type, summary, reportDescription, severity, labels, attributes, attachmentNames, screenshotDisplayIds};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "CreatedReportSnapshotMessage{" + "reportId=" + reportId + ", " + "type=" + type + ", " + "summary=" + summary + ", " + "reportDescription=" + reportDescription + ", " + "severity=" + severity + ", " + "labels=" + labels + ", " + "attributes=" + attributes + ", " + "attachmentNames=" + attachmentNames + ", " + "screenshotDisplayIds=" + screenshotDisplayIds + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable String reportId;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setReportId(@NonNull String setterArg) {
+        this.reportId = setterArg;
+        return this;
+      }
+
+      private @Nullable String type;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setType(@NonNull String setterArg) {
+        this.type = setterArg;
+        return this;
+      }
+
+      private @Nullable String summary;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSummary(@Nullable String setterArg) {
+        this.summary = setterArg;
+        return this;
+      }
+
+      private @Nullable String reportDescription;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setReportDescription(@Nullable String setterArg) {
+        this.reportDescription = setterArg;
+        return this;
+      }
+
+      private @Nullable Long severity;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSeverity(@Nullable Long setterArg) {
+        this.severity = setterArg;
+        return this;
+      }
+
+      private @Nullable List<String> labels;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setLabels(@NonNull List<String> setterArg) {
+        this.labels = setterArg;
+        return this;
+      }
+
+      private @Nullable Map<String, Object> attributes;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAttributes(@NonNull Map<String, Object> setterArg) {
+        this.attributes = setterArg;
+        return this;
+      }
+
+      private @Nullable List<String> attachmentNames;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAttachmentNames(@NonNull List<String> setterArg) {
+        this.attachmentNames = setterArg;
+        return this;
+      }
+
+      private @Nullable List<Long> screenshotDisplayIds;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setScreenshotDisplayIds(@NonNull List<Long> setterArg) {
+        this.screenshotDisplayIds = setterArg;
+        return this;
+      }
+
+      public @NonNull CreatedReportSnapshotMessage build() {
+        CreatedReportSnapshotMessage pigeonReturn = new CreatedReportSnapshotMessage();
+        pigeonReturn.setReportId(reportId);
+        pigeonReturn.setType(type);
+        pigeonReturn.setSummary(summary);
+        pigeonReturn.setReportDescription(reportDescription);
+        pigeonReturn.setSeverity(severity);
+        pigeonReturn.setLabels(labels);
+        pigeonReturn.setAttributes(attributes);
+        pigeonReturn.setAttachmentNames(attachmentNames);
+        pigeonReturn.setScreenshotDisplayIds(screenshotDisplayIds);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(9);
+      toListResult.add(reportId);
+      toListResult.add(type);
+      toListResult.add(summary);
+      toListResult.add(reportDescription);
+      toListResult.add(severity);
+      toListResult.add(labels);
+      toListResult.add(attributes);
+      toListResult.add(attachmentNames);
+      toListResult.add(screenshotDisplayIds);
+      return toListResult;
+    }
+
+    static @NonNull CreatedReportSnapshotMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      CreatedReportSnapshotMessage pigeonResult = new CreatedReportSnapshotMessage();
+      Object reportId = pigeonVar_list.get(0);
+      pigeonResult.setReportId((String) reportId);
+      Object type = pigeonVar_list.get(1);
+      pigeonResult.setType((String) type);
+      Object summary = pigeonVar_list.get(2);
+      pigeonResult.setSummary((String) summary);
+      Object reportDescription = pigeonVar_list.get(3);
+      pigeonResult.setReportDescription((String) reportDescription);
+      Object severity = pigeonVar_list.get(4);
+      pigeonResult.setSeverity((Long) severity);
+      Object labels = pigeonVar_list.get(5);
+      pigeonResult.setLabels((List<String>) labels);
+      Object attributes = pigeonVar_list.get(6);
+      pigeonResult.setAttributes((Map<String, Object>) attributes);
+      Object attachmentNames = pigeonVar_list.get(7);
+      pigeonResult.setAttachmentNames((List<String>) attachmentNames);
+      Object screenshotDisplayIds = pigeonVar_list.get(8);
+      pigeonResult.setScreenshotDisplayIds((List<Long>) screenshotDisplayIds);
+      return pigeonResult;
+    }
+  }
+
+  /**
+   * Edits to a created report, validated as a WHOLE before any is applied (one bad field changes
+   * nothing). A `set*` flag says the field is part of the patch: that is how a `null` summary
+   * (clear it) differs from an absent one (leave it).
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class CreatedReportPatchMessage {
+    private @NonNull Boolean setSummary;
+
+    public @NonNull Boolean getSetSummary() {
+      return setSummary;
+    }
+
+    public void setSetSummary(@NonNull Boolean setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"setSummary\" is null.");
+      }
+      this.setSummary = setterArg;
+    }
+
+    private @Nullable String summary;
+
+    public @Nullable String getSummary() {
+      return summary;
+    }
+
+    public void setSummary(@Nullable String setterArg) {
+      this.summary = setterArg;
+    }
+
+    private @NonNull Boolean setDescription;
+
+    public @NonNull Boolean getSetDescription() {
+      return setDescription;
+    }
+
+    public void setSetDescription(@NonNull Boolean setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"setDescription\" is null.");
+      }
+      this.setDescription = setterArg;
+    }
+
+    private @Nullable String reportDescription;
+
+    public @Nullable String getReportDescription() {
+      return reportDescription;
+    }
+
+    public void setReportDescription(@Nullable String setterArg) {
+      this.reportDescription = setterArg;
+    }
+
+    /** The SDK's internal integer (1..5), or null to leave it. */
+    private @Nullable Long severity;
+
+    public @Nullable Long getSeverity() {
+      return severity;
+    }
+
+    public void setSeverity(@Nullable Long setterArg) {
+      this.severity = setterArg;
+    }
+
+    /** Replaces the labels when not null. */
+    private @Nullable List<String> labels;
+
+    public @Nullable List<String> getLabels() {
+      return labels;
+    }
+
+    public void setLabels(@Nullable List<String> setterArg) {
+      this.labels = setterArg;
+    }
+
+    /** Applied first, then [attributes], then [removeAttributes]. */
+    private @NonNull Boolean clearAttributes;
+
+    public @NonNull Boolean getClearAttributes() {
+      return clearAttributes;
+    }
+
+    public void setClearAttributes(@NonNull Boolean setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"clearAttributes\" is null.");
+      }
+      this.clearAttributes = setterArg;
+    }
+
+    private @Nullable Map<String, Object> attributes;
+
+    public @Nullable Map<String, Object> getAttributes() {
+      return attributes;
+    }
+
+    public void setAttributes(@Nullable Map<String, Object> setterArg) {
+      this.attributes = setterArg;
+    }
+
+    private @Nullable List<String> removeAttributes;
+
+    public @Nullable List<String> getRemoveAttributes() {
+      return removeAttributes;
+    }
+
+    public void setRemoveAttributes(@Nullable List<String> setterArg) {
+      this.removeAttributes = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    CreatedReportPatchMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      CreatedReportPatchMessage that = (CreatedReportPatchMessage) o;
+      return pigeonDeepEquals(setSummary, that.setSummary) && pigeonDeepEquals(summary, that.summary) && pigeonDeepEquals(setDescription, that.setDescription) && pigeonDeepEquals(reportDescription, that.reportDescription) && pigeonDeepEquals(severity, that.severity) && pigeonDeepEquals(labels, that.labels) && pigeonDeepEquals(clearAttributes, that.clearAttributes) && pigeonDeepEquals(attributes, that.attributes) && pigeonDeepEquals(removeAttributes, that.removeAttributes);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), setSummary, summary, setDescription, reportDescription, severity, labels, clearAttributes, attributes, removeAttributes};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "CreatedReportPatchMessage{" + "setSummary=" + setSummary + ", " + "summary=" + summary + ", " + "setDescription=" + setDescription + ", " + "reportDescription=" + reportDescription + ", " + "severity=" + severity + ", " + "labels=" + labels + ", " + "clearAttributes=" + clearAttributes + ", " + "attributes=" + attributes + ", " + "removeAttributes=" + removeAttributes + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable Boolean setSummary;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSetSummary(@NonNull Boolean setterArg) {
+        this.setSummary = setterArg;
+        return this;
+      }
+
+      private @Nullable String summary;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSummary(@Nullable String setterArg) {
+        this.summary = setterArg;
+        return this;
+      }
+
+      private @Nullable Boolean setDescription;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSetDescription(@NonNull Boolean setterArg) {
+        this.setDescription = setterArg;
+        return this;
+      }
+
+      private @Nullable String reportDescription;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setReportDescription(@Nullable String setterArg) {
+        this.reportDescription = setterArg;
+        return this;
+      }
+
+      private @Nullable Long severity;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSeverity(@Nullable Long setterArg) {
+        this.severity = setterArg;
+        return this;
+      }
+
+      private @Nullable List<String> labels;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setLabels(@Nullable List<String> setterArg) {
+        this.labels = setterArg;
+        return this;
+      }
+
+      private @Nullable Boolean clearAttributes;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setClearAttributes(@NonNull Boolean setterArg) {
+        this.clearAttributes = setterArg;
+        return this;
+      }
+
+      private @Nullable Map<String, Object> attributes;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAttributes(@Nullable Map<String, Object> setterArg) {
+        this.attributes = setterArg;
+        return this;
+      }
+
+      private @Nullable List<String> removeAttributes;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setRemoveAttributes(@Nullable List<String> setterArg) {
+        this.removeAttributes = setterArg;
+        return this;
+      }
+
+      public @NonNull CreatedReportPatchMessage build() {
+        CreatedReportPatchMessage pigeonReturn = new CreatedReportPatchMessage();
+        pigeonReturn.setSetSummary(setSummary);
+        pigeonReturn.setSummary(summary);
+        pigeonReturn.setSetDescription(setDescription);
+        pigeonReturn.setReportDescription(reportDescription);
+        pigeonReturn.setSeverity(severity);
+        pigeonReturn.setLabels(labels);
+        pigeonReturn.setClearAttributes(clearAttributes);
+        pigeonReturn.setAttributes(attributes);
+        pigeonReturn.setRemoveAttributes(removeAttributes);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(9);
+      toListResult.add(setSummary);
+      toListResult.add(summary);
+      toListResult.add(setDescription);
+      toListResult.add(reportDescription);
+      toListResult.add(severity);
+      toListResult.add(labels);
+      toListResult.add(clearAttributes);
+      toListResult.add(attributes);
+      toListResult.add(removeAttributes);
+      return toListResult;
+    }
+
+    static @NonNull CreatedReportPatchMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      CreatedReportPatchMessage pigeonResult = new CreatedReportPatchMessage();
+      Object setSummary = pigeonVar_list.get(0);
+      pigeonResult.setSetSummary((Boolean) setSummary);
+      Object summary = pigeonVar_list.get(1);
+      pigeonResult.setSummary((String) summary);
+      Object setDescription = pigeonVar_list.get(2);
+      pigeonResult.setSetDescription((Boolean) setDescription);
+      Object reportDescription = pigeonVar_list.get(3);
+      pigeonResult.setReportDescription((String) reportDescription);
+      Object severity = pigeonVar_list.get(4);
+      pigeonResult.setSeverity((Long) severity);
+      Object labels = pigeonVar_list.get(5);
+      pigeonResult.setLabels((List<String>) labels);
+      Object clearAttributes = pigeonVar_list.get(6);
+      pigeonResult.setClearAttributes((Boolean) clearAttributes);
+      Object attributes = pigeonVar_list.get(7);
+      pigeonResult.setAttributes((Map<String, Object>) attributes);
+      Object removeAttributes = pigeonVar_list.get(8);
+      pigeonResult.setRemoveAttributes((List<String>) removeAttributes);
       return pigeonResult;
     }
   }
@@ -1720,6 +2510,459 @@ public class Messages {
     }
   }
 
+  /**
+   * One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
+   * vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+   *
+   * Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
+   * iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+   * through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
+   * native filter still apply (doc/network.md).
+   *
+   * Generated class from Pigeon that represents data sent in messages.
+   */
+  public static final class NetworkEventMessage {
+    /** Shared by every stage of one request; never empty. */
+    private @NonNull String id;
+
+    public @NonNull String getId() {
+      return id;
+    }
+
+    public void setId(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"id\" is null.");
+      }
+      this.id = setterArg;
+    }
+
+    /**
+     * `before`, `redirect`, `complete`, `error` or `abort` (the SDK's own stage names; iOS spells
+     * `abort` `cancel` and has no `redirect` stage, which native handles).
+     */
+    private @NonNull String stage;
+
+    public @NonNull String getStage() {
+      return stage;
+    }
+
+    public void setStage(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"stage\" is null.");
+      }
+      this.stage = setterArg;
+    }
+
+    /** The intercepted stack, free-form (`dart:io`). */
+    private @NonNull String mechanism;
+
+    public @NonNull String getMechanism() {
+      return mechanism;
+    }
+
+    public void setMechanism(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"mechanism\" is null.");
+      }
+      this.mechanism = setterArg;
+    }
+
+    private @NonNull String method;
+
+    public @NonNull String getMethod() {
+      return method;
+    }
+
+    public void setMethod(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"method\" is null.");
+      }
+      this.method = setterArg;
+    }
+
+    private @NonNull String url;
+
+    public @NonNull String getUrl() {
+      return url;
+    }
+
+    public void setUrl(@NonNull String setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"url\" is null.");
+      }
+      this.url = setterArg;
+    }
+
+    /**
+     * How long ago the event happened, in milliseconds, measured on Dart's monotonic clock when the
+     * batch was handed to the bridge. Native subtracts it from the SDK's own clock, so the event
+     * is stamped on the clock the SDK validates against (Android: `currentTimestamp()`, which is not
+     * `DateTime.now()` once the device clock has been corrected) and not on one the SDK may drop.
+     */
+    private @NonNull Long ageMs;
+
+    public @NonNull Long getAgeMs() {
+      return ageMs;
+    }
+
+    public void setAgeMs(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"ageMs\" is null.");
+      }
+      this.ageMs = setterArg;
+    }
+
+    /** Body size in bytes, 0 when unknown. */
+    private @NonNull Long size;
+
+    public @NonNull Long getSize() {
+      return size;
+    }
+
+    public void setSize(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"size\" is null.");
+      }
+      this.size = setterArg;
+    }
+
+    /** HTTP status, 0 for a stage with none. */
+    private @NonNull Long statusCode;
+
+    public @NonNull Long getStatusCode() {
+      return statusCode;
+    }
+
+    public void setStatusCode(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"statusCode\" is null.");
+      }
+      this.statusCode = setterArg;
+    }
+
+    /** Header names are lower-case (Dart's), repeated values joined by `, `. */
+    private @Nullable Map<String, String> headers;
+
+    public @Nullable Map<String, String> getHeaders() {
+      return headers;
+    }
+
+    public void setHeaders(@Nullable Map<String, String> setterArg) {
+      this.headers = setterArg;
+    }
+
+    /** The body as text, only when Dart captured it (text content, within the SDK's size limit). */
+    private @Nullable String body;
+
+    public @Nullable String getBody() {
+      return body;
+    }
+
+    public void setBody(@Nullable String setterArg) {
+      this.body = setterArg;
+    }
+
+    /**
+     * Why [body] is absent: `no_data`, `size_too_large`, `unsupported_content_type`,
+     * `no_content_type` or `cant_read_data` (the SDKs' wire values).
+     */
+    private @Nullable String noBodyReason;
+
+    public @Nullable String getNoBodyReason() {
+      return noBodyReason;
+    }
+
+    public void setNoBodyReason(@Nullable String setterArg) {
+      this.noBodyReason = setterArg;
+    }
+
+    /** Android stores it, iOS drops it (the iOS bundle writes null). */
+    private @Nullable String statusText;
+
+    public @Nullable String getStatusText() {
+      return statusText;
+    }
+
+    public void setStatusText(@Nullable String setterArg) {
+      this.statusText = setterArg;
+    }
+
+    private @Nullable String errorShortMessage;
+
+    public @Nullable String getErrorShortMessage() {
+      return errorShortMessage;
+    }
+
+    public void setErrorShortMessage(@Nullable String setterArg) {
+      this.errorShortMessage = setterArg;
+    }
+
+    private @Nullable String errorDescription;
+
+    public @Nullable String getErrorDescription() {
+      return errorDescription;
+    }
+
+    public void setErrorDescription(@Nullable String setterArg) {
+      this.errorDescription = setterArg;
+    }
+
+    /** iOS carries a redirect as the original URL on the final event; Android has `redirect` stages. */
+    private @Nullable String redirectedFromUrl;
+
+    public @Nullable String getRedirectedFromUrl() {
+      return redirectedFromUrl;
+    }
+
+    public void setRedirectedFromUrl(@Nullable String setterArg) {
+      this.redirectedFromUrl = setterArg;
+    }
+
+    /** Milliseconds, Android only (iOS has no field for them). */
+    private @Nullable Map<String, Double> timings;
+
+    public @Nullable Map<String, Double> getTimings() {
+      return timings;
+    }
+
+    public void setTimings(@Nullable Map<String, Double> setterArg) {
+      this.timings = setterArg;
+    }
+
+    /** Constructor is non-public to enforce null safety; use Builder. */
+    NetworkEventMessage() {}
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) { return true; }
+      if (o == null || getClass() != o.getClass()) { return false; }
+      NetworkEventMessage that = (NetworkEventMessage) o;
+      return pigeonDeepEquals(id, that.id) && pigeonDeepEquals(stage, that.stage) && pigeonDeepEquals(mechanism, that.mechanism) && pigeonDeepEquals(method, that.method) && pigeonDeepEquals(url, that.url) && pigeonDeepEquals(ageMs, that.ageMs) && pigeonDeepEquals(size, that.size) && pigeonDeepEquals(statusCode, that.statusCode) && pigeonDeepEquals(headers, that.headers) && pigeonDeepEquals(body, that.body) && pigeonDeepEquals(noBodyReason, that.noBodyReason) && pigeonDeepEquals(statusText, that.statusText) && pigeonDeepEquals(errorShortMessage, that.errorShortMessage) && pigeonDeepEquals(errorDescription, that.errorDescription) && pigeonDeepEquals(redirectedFromUrl, that.redirectedFromUrl) && pigeonDeepEquals(timings, that.timings);
+    }
+
+    @Override
+    public int hashCode() {
+      Object[] fields = new Object[] {getClass(), id, stage, mechanism, method, url, ageMs, size, statusCode, headers, body, noBodyReason, statusText, errorShortMessage, errorDescription, redirectedFromUrl, timings};
+      return pigeonDeepHashCode(fields);
+    }
+
+    @Override
+    public String toString() {
+      return "NetworkEventMessage{" + "id=" + id + ", " + "stage=" + stage + ", " + "mechanism=" + mechanism + ", " + "method=" + method + ", " + "url=" + url + ", " + "ageMs=" + ageMs + ", " + "size=" + size + ", " + "statusCode=" + statusCode + ", " + "headers=" + headers + ", " + "body=" + body + ", " + "noBodyReason=" + noBodyReason + ", " + "statusText=" + statusText + ", " + "errorShortMessage=" + errorShortMessage + ", " + "errorDescription=" + errorDescription + ", " + "redirectedFromUrl=" + redirectedFromUrl + ", " + "timings=" + timings + "}";
+    }
+
+    public static final class Builder {
+
+      private @Nullable String id;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setId(@NonNull String setterArg) {
+        this.id = setterArg;
+        return this;
+      }
+
+      private @Nullable String stage;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setStage(@NonNull String setterArg) {
+        this.stage = setterArg;
+        return this;
+      }
+
+      private @Nullable String mechanism;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setMechanism(@NonNull String setterArg) {
+        this.mechanism = setterArg;
+        return this;
+      }
+
+      private @Nullable String method;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setMethod(@NonNull String setterArg) {
+        this.method = setterArg;
+        return this;
+      }
+
+      private @Nullable String url;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setUrl(@NonNull String setterArg) {
+        this.url = setterArg;
+        return this;
+      }
+
+      private @Nullable Long ageMs;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAgeMs(@NonNull Long setterArg) {
+        this.ageMs = setterArg;
+        return this;
+      }
+
+      private @Nullable Long size;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setSize(@NonNull Long setterArg) {
+        this.size = setterArg;
+        return this;
+      }
+
+      private @Nullable Long statusCode;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setStatusCode(@NonNull Long setterArg) {
+        this.statusCode = setterArg;
+        return this;
+      }
+
+      private @Nullable Map<String, String> headers;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setHeaders(@Nullable Map<String, String> setterArg) {
+        this.headers = setterArg;
+        return this;
+      }
+
+      private @Nullable String body;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setBody(@Nullable String setterArg) {
+        this.body = setterArg;
+        return this;
+      }
+
+      private @Nullable String noBodyReason;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setNoBodyReason(@Nullable String setterArg) {
+        this.noBodyReason = setterArg;
+        return this;
+      }
+
+      private @Nullable String statusText;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setStatusText(@Nullable String setterArg) {
+        this.statusText = setterArg;
+        return this;
+      }
+
+      private @Nullable String errorShortMessage;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setErrorShortMessage(@Nullable String setterArg) {
+        this.errorShortMessage = setterArg;
+        return this;
+      }
+
+      private @Nullable String errorDescription;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setErrorDescription(@Nullable String setterArg) {
+        this.errorDescription = setterArg;
+        return this;
+      }
+
+      private @Nullable String redirectedFromUrl;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setRedirectedFromUrl(@Nullable String setterArg) {
+        this.redirectedFromUrl = setterArg;
+        return this;
+      }
+
+      private @Nullable Map<String, Double> timings;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setTimings(@Nullable Map<String, Double> setterArg) {
+        this.timings = setterArg;
+        return this;
+      }
+
+      public @NonNull NetworkEventMessage build() {
+        NetworkEventMessage pigeonReturn = new NetworkEventMessage();
+        pigeonReturn.setId(id);
+        pigeonReturn.setStage(stage);
+        pigeonReturn.setMechanism(mechanism);
+        pigeonReturn.setMethod(method);
+        pigeonReturn.setUrl(url);
+        pigeonReturn.setAgeMs(ageMs);
+        pigeonReturn.setSize(size);
+        pigeonReturn.setStatusCode(statusCode);
+        pigeonReturn.setHeaders(headers);
+        pigeonReturn.setBody(body);
+        pigeonReturn.setNoBodyReason(noBodyReason);
+        pigeonReturn.setStatusText(statusText);
+        pigeonReturn.setErrorShortMessage(errorShortMessage);
+        pigeonReturn.setErrorDescription(errorDescription);
+        pigeonReturn.setRedirectedFromUrl(redirectedFromUrl);
+        pigeonReturn.setTimings(timings);
+        return pigeonReturn;
+      }
+    }
+
+    @NonNull
+    ArrayList<Object> toList() {
+      ArrayList<Object> toListResult = new ArrayList<>(16);
+      toListResult.add(id);
+      toListResult.add(stage);
+      toListResult.add(mechanism);
+      toListResult.add(method);
+      toListResult.add(url);
+      toListResult.add(ageMs);
+      toListResult.add(size);
+      toListResult.add(statusCode);
+      toListResult.add(headers);
+      toListResult.add(body);
+      toListResult.add(noBodyReason);
+      toListResult.add(statusText);
+      toListResult.add(errorShortMessage);
+      toListResult.add(errorDescription);
+      toListResult.add(redirectedFromUrl);
+      toListResult.add(timings);
+      return toListResult;
+    }
+
+    static @NonNull NetworkEventMessage fromList(@NonNull ArrayList<Object> pigeonVar_list) {
+      NetworkEventMessage pigeonResult = new NetworkEventMessage();
+      Object id = pigeonVar_list.get(0);
+      pigeonResult.setId((String) id);
+      Object stage = pigeonVar_list.get(1);
+      pigeonResult.setStage((String) stage);
+      Object mechanism = pigeonVar_list.get(2);
+      pigeonResult.setMechanism((String) mechanism);
+      Object method = pigeonVar_list.get(3);
+      pigeonResult.setMethod((String) method);
+      Object url = pigeonVar_list.get(4);
+      pigeonResult.setUrl((String) url);
+      Object ageMs = pigeonVar_list.get(5);
+      pigeonResult.setAgeMs((Long) ageMs);
+      Object size = pigeonVar_list.get(6);
+      pigeonResult.setSize((Long) size);
+      Object statusCode = pigeonVar_list.get(7);
+      pigeonResult.setStatusCode((Long) statusCode);
+      Object headers = pigeonVar_list.get(8);
+      pigeonResult.setHeaders((Map<String, String>) headers);
+      Object body = pigeonVar_list.get(9);
+      pigeonResult.setBody((String) body);
+      Object noBodyReason = pigeonVar_list.get(10);
+      pigeonResult.setNoBodyReason((String) noBodyReason);
+      Object statusText = pigeonVar_list.get(11);
+      pigeonResult.setStatusText((String) statusText);
+      Object errorShortMessage = pigeonVar_list.get(12);
+      pigeonResult.setErrorShortMessage((String) errorShortMessage);
+      Object errorDescription = pigeonVar_list.get(13);
+      pigeonResult.setErrorDescription((String) errorDescription);
+      Object redirectedFromUrl = pigeonVar_list.get(14);
+      pigeonResult.setRedirectedFromUrl((String) redirectedFromUrl);
+      Object timings = pigeonVar_list.get(15);
+      pigeonResult.setTimings((Map<String, Double>) timings);
+      return pigeonResult;
+    }
+  }
+
   private static class PigeonCodec extends StandardMessageCodec {
     public static final PigeonCodec INSTANCE = new PigeonCodec();
 
@@ -1741,11 +2984,21 @@ public class Messages {
         case (byte) 134:
           return ReportHandlerRequestMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 135:
-          return ReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ReportAttachmentMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 136:
-          return LaunchOutcomeMessage.fromList((ArrayList<Object>) readValue(buffer));
+          return ReportScreenshotMessage.fromList((ArrayList<Object>) readValue(buffer));
         case (byte) 137:
+          return ReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 138:
+          return CreatedReportSnapshotMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 139:
+          return CreatedReportPatchMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 140:
+          return LaunchOutcomeMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 141:
           return BreadcrumbMessage.fromList((ArrayList<Object>) readValue(buffer));
+        case (byte) 142:
+          return NetworkEventMessage.fromList((ArrayList<Object>) readValue(buffer));
         default:
           return super.readValueOfType(type, buffer);
       }
@@ -1771,15 +3024,30 @@ public class Messages {
       } else if (value instanceof ReportHandlerRequestMessage) {
         stream.write(134);
         writeValue(stream, ((ReportHandlerRequestMessage) value).toList());
-      } else if (value instanceof ReportSnapshotMessage) {
+      } else if (value instanceof ReportAttachmentMessage) {
         stream.write(135);
-        writeValue(stream, ((ReportSnapshotMessage) value).toList());
-      } else if (value instanceof LaunchOutcomeMessage) {
+        writeValue(stream, ((ReportAttachmentMessage) value).toList());
+      } else if (value instanceof ReportScreenshotMessage) {
         stream.write(136);
+        writeValue(stream, ((ReportScreenshotMessage) value).toList());
+      } else if (value instanceof ReportSnapshotMessage) {
+        stream.write(137);
+        writeValue(stream, ((ReportSnapshotMessage) value).toList());
+      } else if (value instanceof CreatedReportSnapshotMessage) {
+        stream.write(138);
+        writeValue(stream, ((CreatedReportSnapshotMessage) value).toList());
+      } else if (value instanceof CreatedReportPatchMessage) {
+        stream.write(139);
+        writeValue(stream, ((CreatedReportPatchMessage) value).toList());
+      } else if (value instanceof LaunchOutcomeMessage) {
+        stream.write(140);
         writeValue(stream, ((LaunchOutcomeMessage) value).toList());
       } else if (value instanceof BreadcrumbMessage) {
-        stream.write(137);
+        stream.write(141);
         writeValue(stream, ((BreadcrumbMessage) value).toList());
+      } else if (value instanceof NetworkEventMessage) {
+        stream.write(142);
+        writeValue(stream, ((NetworkEventMessage) value).toList());
       } else {
         super.writeValue(stream, value);
       }
@@ -1901,6 +3169,61 @@ public class Messages {
 
     @NonNull 
     Boolean reportClearAttributes(@NonNull String handle);
+    /** Copies ([move] false) or moves ([move] true) the file at [path] into the report's storage. */
+    void reportAddAttachment(@NonNull String handle, @NonNull String path, @NonNull String name, @Nullable String mimeType, @NonNull Boolean move, @NonNull NullableResult<String> result);
+    /** Writes [data] (at most `kMaxAttachmentBytes`) into the report's storage. */
+    void reportAddAttachmentBytes(@NonNull String handle, @NonNull byte[] data, @NonNull String name, @Nullable String mimeType, @NonNull NullableResult<String> result);
+    /** Removes every attachment, deleting their files. */
+    void reportClearAttachments(@NonNull String handle, @NonNull NullableResult<String> result);
+    /**
+     * Decodes the image file at [path] natively and stores it as the screenshot of [displayId].
+     * [annotated] says the picture carries the user's drawing (it reaches the bundle as the screenshot
+     * entry's `annotated` attribute).
+     */
+    void reportSetScreenshot(@NonNull String handle, @NonNull String path, @NonNull Long displayId, @NonNull Boolean annotated, @NonNull NullableResult<String> result);
+    /** Removes the screenshot of [displayId] (a no-op when there is none). */
+    void reportRemoveScreenshot(@NonNull String handle, @NonNull Long displayId, @NonNull NullableResult<String> result);
+    /**
+     * Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
+     * (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
+     * does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
+     * SDK did not answer in time.
+     */
+    void createReport(@NonNull Long ttlMs, @NonNull NullableResult<String> result);
+    /** Null when the handle is not live. */
+    @Nullable 
+    CreatedReportSnapshotMessage createdReportRead(@NonNull String handle);
+    /**
+     * Applies [patch] as a whole. False when the handle is not live. An unusable field is a
+     * PlatformException `invalid-argument` and nothing is applied.
+     */
+    @NonNull 
+    Boolean createdReportApply(@NonNull String handle, @NonNull CreatedReportPatchMessage patch);
+    /**
+     * Copies the file at [path] into the report (never moves it). iOS keeps the bytes in memory
+     * until upload and its SDK takes at most 3 files of 3 MiB (see doc/api-surface.md); a refusal
+     * is `limit` / `too-large`.
+     */
+    void createdReportAddAttachment(@NonNull String handle, @NonNull String path, @NonNull String name, @Nullable String mimeType, @NonNull NullableResult<String> result);
+
+    void createdReportAddAttachmentBytes(@NonNull String handle, @NonNull byte[] data, @NonNull String name, @Nullable String mimeType, @NonNull NullableResult<String> result);
+
+    void createdReportClearAttachments(@NonNull String handle, @NonNull NullableResult<String> result);
+    /** [annotated] is Android only: iOS answers `unsupported` for true. */
+    void createdReportSetScreenshot(@NonNull String handle, @NonNull String path, @NonNull Boolean annotated, @NonNull NullableResult<String> result);
+    /**
+     * Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
+     * answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
+     * handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+     * live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
+     */
+    void createdReportUpload(@NonNull String handle, @NonNull Result<Boolean> result);
+    /**
+     * Releases the report without uploading it (deletes the attachments the app added on Android; the
+     * SDK has no way to cancel a created report, so it is simply never sent). A no-op for an unknown
+     * handle.
+     */
+    void createdReportDiscard(@NonNull String handle);
     /**
      * Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
      * the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
@@ -1987,6 +3310,39 @@ public class Messages {
     void showReportDialog(@Nullable String summary, @Nullable String description, @Nullable Long severity, @Nullable List<String> labels);
     /** Creates and uploads a report with no UI. A no-op before the SDK is launched. */
     void upload(@NonNull String summary, @NonNull String description, @Nullable Long severity, @Nullable List<String> labels);
+    /**
+     * Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+     * Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+     * launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+     * throws for a single bad event.
+     *
+     * Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+     * applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+     * one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+     * documented to be callable from any thread; one queue keeps the order.
+     */
+    @NonNull 
+    Long addNetworkEvents(@NonNull List<NetworkEventMessage> events);
+    /**
+     * Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+     * exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+     * an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+     * true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+     * crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+     * [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+     * path: dropped there).
+     *
+     * Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+     * launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+     * handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+     * payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+     *
+     * `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+     * is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+     * of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+     * answers `false`. iOS answers at once on the platform thread.
+     */
+    void logException(@NonNull String payload, @NonNull Boolean handled, @Nullable String domain, @NonNull Result<Boolean> result);
 
     /** The codec used by BugseeBridgeHostApi. */
     static @NonNull MessageCodec<Object> getCodec() {
@@ -1998,6 +3354,7 @@ public class Messages {
     }
     static void setUp(@NonNull BinaryMessenger binaryMessenger, @NonNull String messageChannelSuffix, @Nullable BugseeBridgeHostApi api) {
       messageChannelSuffix = messageChannelSuffix.isEmpty() ? "" : "." + messageChannelSuffix;
+      BinaryMessenger.TaskQueue taskQueue = binaryMessenger.makeBackgroundTaskQueue();
       {
         BasicMessageChannel<Object> channel =
             new BasicMessageChannel<>(
@@ -2408,6 +3765,414 @@ public class Messages {
                 try {
                   Boolean output = api.reportClearAttributes(handleArg);
                   wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddAttachment" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                String pathArg = (String) args.get(1);
+                String nameArg = (String) args.get(2);
+                String mimeTypeArg = (String) args.get(3);
+                Boolean moveArg = (Boolean) args.get(4);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.reportAddAttachment(handleArg, pathArg, nameArg, mimeTypeArg, moveArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddAttachmentBytes" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                byte[] dataArg = (byte[]) args.get(1);
+                String nameArg = (String) args.get(2);
+                String mimeTypeArg = (String) args.get(3);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.reportAddAttachmentBytes(handleArg, dataArg, nameArg, mimeTypeArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearAttachments" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.reportClearAttachments(handleArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetScreenshot" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                String pathArg = (String) args.get(1);
+                Long displayIdArg = (Long) args.get(2);
+                Boolean annotatedArg = (Boolean) args.get(3);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.reportSetScreenshot(handleArg, pathArg, displayIdArg, annotatedArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRemoveScreenshot" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                Long displayIdArg = (Long) args.get(1);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.reportRemoveScreenshot(handleArg, displayIdArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createReport" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                Long ttlMsArg = (Long) args.get(0);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.createReport(ttlMsArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportRead" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                try {
+                  CreatedReportSnapshotMessage output = api.createdReportRead(handleArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportApply" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                CreatedReportPatchMessage patchArg = (CreatedReportPatchMessage) args.get(1);
+                try {
+                  Boolean output = api.createdReportApply(handleArg, patchArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportAddAttachment" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                String pathArg = (String) args.get(1);
+                String nameArg = (String) args.get(2);
+                String mimeTypeArg = (String) args.get(3);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.createdReportAddAttachment(handleArg, pathArg, nameArg, mimeTypeArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportAddAttachmentBytes" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                byte[] dataArg = (byte[]) args.get(1);
+                String nameArg = (String) args.get(2);
+                String mimeTypeArg = (String) args.get(3);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.createdReportAddAttachmentBytes(handleArg, dataArg, nameArg, mimeTypeArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportClearAttachments" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.createdReportClearAttachments(handleArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportSetScreenshot" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                String pathArg = (String) args.get(1);
+                Boolean annotatedArg = (Boolean) args.get(2);
+                NullableResult<String> resultCallback =
+                    new NullableResult<String>() {
+                      public void success(String result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.createdReportSetScreenshot(handleArg, pathArg, annotatedArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportUpload" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                Result<Boolean> resultCallback =
+                    new Result<Boolean>() {
+                      public void success(Boolean result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.createdReportUpload(handleArg, resultCallback);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportDiscard" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String handleArg = (String) args.get(0);
+                try {
+                  api.createdReportDiscard(handleArg);
+                  wrapped.add(0, null);
                 }
  catch (Throwable exception) {
                   wrapped = wrapError(exception);
@@ -2928,6 +4693,60 @@ public class Messages {
                   wrapped = wrapError(exception);
                 }
                 reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents" + messageChannelSuffix, getCodec(), taskQueue);
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                List<NetworkEventMessage> eventsArg = (List<NetworkEventMessage>) args.get(0);
+                try {
+                  Long output = api.addNetworkEvents(eventsArg);
+                  wrapped.add(0, output);
+                }
+ catch (Throwable exception) {
+                  wrapped = wrapError(exception);
+                }
+                reply.reply(wrapped);
+              });
+        } else {
+          channel.setMessageHandler(null);
+        }
+      }
+      {
+        BasicMessageChannel<Object> channel =
+            new BasicMessageChannel<>(
+                binaryMessenger, "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.logException" + messageChannelSuffix, getCodec());
+        if (api != null) {
+          channel.setMessageHandler(
+              (message, reply) -> {
+                ArrayList<Object> wrapped = new ArrayList<>();
+                ArrayList<Object> args = (ArrayList<Object>) message;
+                String payloadArg = (String) args.get(0);
+                Boolean handledArg = (Boolean) args.get(1);
+                String domainArg = (String) args.get(2);
+                Result<Boolean> resultCallback =
+                    new Result<Boolean>() {
+                      public void success(Boolean result) {
+                        wrapped.add(0, result);
+                        reply.reply(wrapped);
+                      }
+
+                      public void error(Throwable error) {
+                        ArrayList<Object> wrappedError = wrapError(error);
+                        reply.reply(wrappedError);
+                      }
+                    };
+
+                api.logException(payloadArg, handledArg, domainArg, resultCallback);
               });
         } else {
           channel.setMessageHandler(null);

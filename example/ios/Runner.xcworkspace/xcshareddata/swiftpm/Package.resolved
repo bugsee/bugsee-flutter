@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "feedback-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/bugsee/feedback-spm",
+      "state" : {
+        "revision" : "40dd3b091ce96beb2faca0ad0df0b5df4e7c60b3",
+        "version" : "7.0.0-beta7"
+      }
+    },
+    {
       "identity" : "spm",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/bugsee/spm",

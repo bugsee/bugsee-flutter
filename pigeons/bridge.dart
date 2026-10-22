@@ -178,6 +178,24 @@ class ReportHandlerRequestMessage {
   int deadlineMs;
 }
 
+/// One attachment of a report, as the SDK lists it: the display name, the MIME type and the
+/// source file's base name. Never the file's content or its place in the SDK's storage.
+class ReportAttachmentMessage {
+  ReportAttachmentMessage({this.name, this.mimeType, this.fileName});
+
+  String? name;
+  String? mimeType;
+  String? fileName;
+}
+
+/// One screenshot a report holds. [annotated] is whether the user (or the app) drew on it.
+class ReportScreenshotMessage {
+  ReportScreenshotMessage({required this.displayId, required this.annotated});
+
+  int displayId;
+  bool annotated;
+}
+
 /// A read of a live report. [severity] is the SDK's internal integer (1..5), or
 /// null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
 class ReportSnapshotMessage {
@@ -190,6 +208,8 @@ class ReportSnapshotMessage {
     this.severity,
     required this.labels,
     required this.attributes,
+    required this.attachments,
+    required this.screenshots,
   });
 
   String id;
@@ -205,6 +225,74 @@ class ReportSnapshotMessage {
   /// Only values both SDKs accept: String, bool, int, double. Anything else the
   /// report holds is left out rather than stringified.
   Map<String, Object> attributes;
+
+  /// The attachments, in the order they were added; metadata only.
+  List<ReportAttachmentMessage> attachments;
+
+  /// The displays that hold a screenshot, ascending by display id.
+  List<ReportScreenshotMessage> screenshots;
+}
+
+/// A read of a report made by `createReport` (workbook 7.3 plus the SDKs' own creation APIs). iOS
+/// gives the app a `BugseeExtendedReport`, which has no id, type, e-mail, screenshot flag or
+/// attachment metadata beyond the name: those are absent here ([reportId] and [type] are empty
+/// strings, [attachmentNames] carries only what iOS can list, [screenshotDisplayIds] is `[0]` or
+/// empty there).
+class CreatedReportSnapshotMessage {
+  CreatedReportSnapshotMessage({
+    required this.reportId,
+    required this.type,
+    this.summary,
+    this.reportDescription,
+    this.severity,
+    required this.labels,
+    required this.attributes,
+    required this.attachmentNames,
+    required this.screenshotDisplayIds,
+  });
+
+  String reportId;
+  String type;
+  String? summary;
+  String? reportDescription;
+  int? severity;
+  List<String> labels;
+  Map<String, Object> attributes;
+  List<String> attachmentNames;
+  List<int> screenshotDisplayIds;
+}
+
+/// Edits to a created report, validated as a WHOLE before any is applied (one bad field changes
+/// nothing). A `set*` flag says the field is part of the patch: that is how a `null` summary
+/// (clear it) differs from an absent one (leave it).
+class CreatedReportPatchMessage {
+  CreatedReportPatchMessage({
+    this.setSummary = false,
+    this.summary,
+    this.setDescription = false,
+    this.reportDescription,
+    this.severity,
+    this.labels,
+    this.clearAttributes = false,
+    this.attributes,
+    this.removeAttributes,
+  });
+
+  bool setSummary;
+  String? summary;
+  bool setDescription;
+  String? reportDescription;
+
+  /// The SDK's internal integer (1..5), or null to leave it.
+  int? severity;
+
+  /// Replaces the labels when not null.
+  List<String>? labels;
+
+  /// Applied first, then [attributes], then [removeAttributes].
+  bool clearAttributes;
+  Map<String, Object>? attributes;
+  List<String>? removeAttributes;
 }
 
 /// What native did with a launch request. Strings, not an enum: Pigeon sends an enum as its
@@ -248,6 +336,79 @@ class BreadcrumbMessage {
   /// Null leaves the crumb without data. Values Dart has checked: null, bool, number, String,
   /// List, Map.
   Map<String, Object?>? data;
+}
+
+/// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
+/// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
+/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+/// through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
+/// native filter still apply (doc/network.md).
+class NetworkEventMessage {
+  NetworkEventMessage({
+    required this.id,
+    required this.stage,
+    required this.mechanism,
+    required this.method,
+    required this.url,
+    required this.ageMs,
+    required this.size,
+    required this.statusCode,
+    this.headers,
+    this.body,
+    this.noBodyReason,
+    this.statusText,
+    this.errorShortMessage,
+    this.errorDescription,
+    this.redirectedFromUrl,
+    this.timings,
+  });
+
+  /// Shared by every stage of one request; never empty.
+  String id;
+
+  /// `before`, `redirect`, `complete`, `error` or `abort` (the SDK's own stage names; iOS spells
+  /// `abort` `cancel` and has no `redirect` stage, which native handles).
+  String stage;
+
+  /// The intercepted stack, free-form (`dart:io`).
+  String mechanism;
+  String method;
+  String url;
+
+  /// How long ago the event happened, in milliseconds, measured on Dart's monotonic clock when the
+  /// batch was handed to the bridge. Native subtracts it from the SDK's own clock, so the event
+  /// is stamped on the clock the SDK validates against (Android: `currentTimestamp()`, which is not
+  /// `DateTime.now()` once the device clock has been corrected) and not on one the SDK may drop.
+  int ageMs;
+
+  /// Body size in bytes, 0 when unknown.
+  int size;
+
+  /// HTTP status, 0 for a stage with none.
+  int statusCode;
+
+  /// Header names are lower-case (Dart's), repeated values joined by `, `.
+  Map<String, String>? headers;
+
+  /// The body as text, only when Dart captured it (text content, within the SDK's size limit).
+  String? body;
+
+  /// Why [body] is absent: `no_data`, `size_too_large`, `unsupported_content_type`,
+  /// `no_content_type` or `cant_read_data` (the SDKs' wire values).
+  String? noBodyReason;
+
+  /// Android stores it, iOS drops it (the iOS bundle writes null).
+  String? statusText;
+  String? errorShortMessage;
+  String? errorDescription;
+
+  /// iOS carries a redirect as the original URL on the final event; Android has `redirect` stages.
+  String? redirectedFromUrl;
+
+  /// Milliseconds, Android only (iOS has no field for them).
+  Map<String, double>? timings;
 }
 
 /// Dart calls native.
@@ -317,6 +478,115 @@ abstract class BugseeBridgeHostApi {
   bool reportRemoveAttribute(String handle, String name);
 
   bool reportClearAttributes(String handle);
+
+  // ---- Attachments and screenshots of a handler's report (Phase 6; workbook 7.3.3, report-contract
+  // "path-first"). The file work is native: a path crosses, never a stream or a bitmap, and bytes
+  // only up to a small cap (see `kMaxAttachmentBytes` in Dart). These run on a background thread (a
+  // copy costs I/O proportional to the file; the SDKs say not to do it on the UI thread) and the reply
+  // is a failure CODE: null when it was applied, `not-live` when the handle is no longer live (Dart
+  // turns it into a ReportClosedError), or one of the codes in `AttachmentWire`. An argument the SDK
+  // cannot take is a PlatformException `invalid-argument`. A handle that is live when the call is made
+  // is kept live until the call has finished (the SDK's completion waits for it, never the other way).
+
+  /// Copies ([move] false) or moves ([move] true) the file at [path] into the report's storage.
+  @async
+  String? reportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+    bool move,
+  );
+
+  /// Writes [data] (at most `kMaxAttachmentBytes`) into the report's storage.
+  @async
+  String? reportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  );
+
+  /// Removes every attachment, deleting their files.
+  @async
+  String? reportClearAttachments(String handle);
+
+  /// Decodes the image file at [path] natively and stores it as the screenshot of [displayId].
+  /// [annotated] says the picture carries the user's drawing (it reaches the bundle as the screenshot
+  /// entry's `annotated` attribute).
+  @async
+  String? reportSetScreenshot(
+    String handle,
+    String path,
+    int displayId,
+    bool annotated,
+  );
+
+  /// Removes the screenshot of [displayId] (a no-op when there is none).
+  @async
+  String? reportRemoveScreenshot(String handle, int displayId);
+
+  // ---- createReport (Phase 6). The SDKs' own way to make a report in code: Android
+  // `Bugsee.createReport(listener)` hands the app a `Report`; iOS `+createReportWithCompletion:` hands
+  // it a `BugseeExtendedReport`, a different and smaller object. One report at a time, held natively
+  // under an opaque handle, released by upload, discard or the time limit; every operation answers
+  // `not-live` once it is gone.
+
+  /// Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
+  /// (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
+  /// does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
+  /// SDK did not answer in time.
+  @async
+  String? createReport(int ttlMs);
+
+  /// Null when the handle is not live.
+  CreatedReportSnapshotMessage? createdReportRead(String handle);
+
+  /// Applies [patch] as a whole. False when the handle is not live. An unusable field is a
+  /// PlatformException `invalid-argument` and nothing is applied.
+  bool createdReportApply(String handle, CreatedReportPatchMessage patch);
+
+  /// Copies the file at [path] into the report (never moves it). iOS keeps the bytes in memory
+  /// until upload and its SDK takes at most 3 files of 3 MiB (see doc/api-surface.md); a refusal
+  /// is `limit` / `too-large`.
+  @async
+  String? createdReportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+  );
+
+  @async
+  String? createdReportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  );
+
+  @async
+  String? createdReportClearAttachments(String handle);
+
+  /// [annotated] is Android only: iOS answers `unsupported` for true.
+  @async
+  String? createdReportSetScreenshot(
+    String handle,
+    String path,
+    bool annotated,
+  );
+
+  /// Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
+  /// answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
+  /// handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+  /// live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
+  @async
+  bool createdReportUpload(String handle);
+
+  /// Releases the report without uploading it (deletes the attachments the app added on Android; the
+  /// SDK has no way to cancel a created report, so it is simply never sent). A no-op for an unknown
+  /// handle.
+  void createdReportDiscard(String handle);
 
   /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
   /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
@@ -423,6 +693,43 @@ abstract class BugseeBridgeHostApi {
     int? severity,
     List<String>? labels,
   );
+
+  // ---- Network capture (Phase 5b). Unlike the rest of the facade this one runs on a background thread.
+
+  /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+  /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+  /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+  /// throws for a single bad event.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+  /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+  /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+  /// documented to be callable from any thread; one queue keeps the order.
+  @TaskQueue(type: TaskQueueType.serialBackgroundThread)
+  int addNetworkEvents(List<NetworkEventMessage> events);
+
+  // ---- Exceptions (Phase 5a). One call on the platform thread, like the facade; failures use the
+  // facade's codes (`invalid-argument`, `sdk-error`, `not-attached`).
+
+  /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+  /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+  /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+  /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+  /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+  /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+  /// path: dropped there).
+  ///
+  /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+  /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+  /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+  /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+  ///
+  /// `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+  /// is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+  /// of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+  /// answers `false`. iOS answers at once on the platform thread.
+  @async
+  bool logException(String payload, bool handled, String? domain);
 }
 
 /// Native calls Dart. Always from the platform (main) thread.

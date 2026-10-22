@@ -31,6 +31,7 @@ void main() {
       'BugseeArgumentException',
       'BugseeAttributeException',
     ],
+    'src/exceptions/error_capture.dart': ['IsolateErrorListener'],
     'src/facade/breadcrumb.dart': ['BreadcrumbLevel', 'BugseeBreadcrumb'],
     'src/launch.dart': [
       'BugseeException',
@@ -39,6 +40,13 @@ void main() {
       'LaunchResult',
     ],
     'src/lifecycle_event.dart': ['LifecycleEvent'],
+    'src/network/network_event.dart': [
+      'BugseeNetworkEvent',
+      'BugseeNetworkFilter',
+      'NetworkStage',
+      'NoBodyReason',
+    ],
+    'src/network/network_pipeline.dart': ['NetworkCaptureStats'],
     'src/options/bugsee_options.g.dart': [
       'BugseeOptions',
       'BugseeStyle',
@@ -49,6 +57,22 @@ void main() {
       'VideoMode',
       'VideoQuality',
     ],
+    'src/report/attachments.dart': [
+      'ReportAttachment',
+      'ReportAttachmentException',
+      'ReportAttachmentFailure',
+      'ReportScreenshot',
+      'maxAttachmentBytes',
+      'maxAttachmentFileBytes',
+      'maxScreenshotPixels',
+    ],
+    'src/report/created_report.dart': [
+      'CreateReportException',
+      'CreateReportFailure',
+      'CreatedReport',
+      'CreatedReportClosedError',
+      'CreatedReportSnapshot',
+    ],
     'src/report/report_enums.dart': ['ReportSeverity', 'ReportType'],
     'src/report/report_handler.dart': ['BugseeReportHandler', 'ReportHandler'],
     'src/report/report_proxy.dart': [
@@ -58,6 +82,7 @@ void main() {
     ],
     'src/secure/bugsee_secure_view.dart': ['BugseeSecureView'],
     'src/status.dart': ['BugseeStatus'],
+    'src/wrapper_identity.dart': ['bugseeFlutterVersion'],
   };
 
   test('the entry point exports exactly these symbols', () {
@@ -110,6 +135,12 @@ void main() {
       'ReportHandlerRequestMessage',
       'BreadcrumbMessage',
       'ReportSnapshotMessage',
+      'CreatedReportPatchMessage',
+      'ReportWire',
+      'createCreatedReport',
+      'createReportFailure',
+      'checkAttachmentPath',
+      'attachmentFailure',
       'WrapperIdentity',
       'RuntimeFacts',
       'OptionPlatform',
@@ -125,6 +156,16 @@ void main() {
       'checkLabels',
       'mapFacadeError',
       'optionRegistry',
+      'ErrorCapture',
+      'ReportLimiter',
+      'ExceptionWire',
+      'ExceptionPayload',
+      'StackDocument',
+      'buildExceptionPayload',
+      'classifyExceptionType',
+      'classifyErrorText',
+      'describeError',
+      'describeStack',
     ];
     final exported = exports.values.expand((n) => n).toSet();
     for (final name in internal) {
@@ -136,7 +177,7 @@ void main() {
     final api = read('lib/src/bugsee.dart');
     final members = {
       for (final m in RegExp(
-        r'^  static (?:[\w<>?, ]+? )?(?:get |set )?(\w+)\s*(?:\(|=>|\{|=|;)',
+        r'^  static (?:[\w<>?, ]+? )?(?:get |set )?(\w+)(?:<[^>]*>)?\s*(?:\(|=>|\{|=|;)',
         multiLine: true,
       ).allMatches(api))
         m.group(1)!,
@@ -173,9 +214,25 @@ void main() {
         'captureViewHierarchy',
         'showReportDialog',
         'upload',
+        'createReport',
         'reportHandler',
         'setReportHandler',
         'lifecycleEvents',
+        'installNetworkCapture',
+        'uninstallNetworkCapture',
+        'networkCaptureInstalled',
+        'setNetworkFilter',
+        'networkFilter',
+        'networkCaptureStats',
+        'logException',
+        'logUnhandledException',
+        'reportException',
+        'installErrorHandlers',
+        'uninstallErrorHandlers',
+        'errorHandlersInstalled',
+        'errorHandlersActive',
+        'runGuarded',
+        'listenToIsolateErrors',
       });
     });
 
@@ -276,6 +333,11 @@ void main() {
           'setAttribute',
           'removeAttribute',
           'clearAttributes',
+          'addAttachment',
+          'addAttachmentBytes',
+          'clearAttachments',
+          'setScreenshot',
+          'removeScreenshot',
           'isAllowedAttributeValue',
         },
       ),
@@ -292,11 +354,90 @@ void main() {
           'severity',
           'labels',
           'attributes',
+          'attachments',
+          'screenshots',
         },
       ),
       'ReportClosedError': (
         'src/report/report_proxy.dart',
         {'ReportClosedError'},
+      ),
+      'CreatedReport': (
+        'src/report/created_report.dart',
+        {
+          'reportId',
+          'type',
+          'isLive',
+          'read',
+          'setSummary',
+          'setDescription',
+          'setSeverity',
+          'replaceLabels',
+          'setAttribute',
+          'removeAttribute',
+          'clearAttributes',
+          'addAttachment',
+          'addAttachmentBytes',
+          'clearAttachments',
+          'setScreenshot',
+          'upload',
+          'discard',
+        },
+      ),
+      'CreatedReportSnapshot': (
+        'src/report/created_report.dart',
+        {
+          'CreatedReportSnapshot',
+          'reportId',
+          'typeName',
+          'type',
+          'summary',
+          'description',
+          'severity',
+          'labels',
+          'attributes',
+          'attachmentNames',
+          'screenshotDisplayIds',
+        },
+      ),
+      'CreatedReportClosedError': (
+        'src/report/created_report.dart',
+        {'CreatedReportClosedError'},
+      ),
+      'CreateReportException': (
+        'src/report/created_report.dart',
+        {'CreateReportException', 'reason'},
+      ),
+      'CreateReportFailure': (
+        'src/report/created_report.dart',
+        {'busy', 'timeout', 'rateLimited', 'uploadTimeout'},
+      ),
+      'ReportAttachment': (
+        'src/report/attachments.dart',
+        {'ReportAttachment', 'name', 'mimeType', 'fileName'},
+      ),
+      'ReportScreenshot': (
+        'src/report/attachments.dart',
+        {'ReportScreenshot', 'displayId', 'annotated'},
+      ),
+      'ReportAttachmentException': (
+        'src/report/attachments.dart',
+        {'ReportAttachmentException', 'reason'},
+      ),
+      'ReportAttachmentFailure': (
+        'src/report/attachments.dart',
+        {
+          'fileNotFound',
+          'notAFile',
+          'unreadable',
+          'tooLarge',
+          'limitReached',
+          'rejected',
+          'busy',
+          'unsupported',
+          'imageUndecodable',
+          'imageTooLarge',
+        },
       ),
       'BugseeBreadcrumb': (
         'src/facade/breadcrumb.dart',
@@ -343,6 +484,60 @@ void main() {
         'src/errors.dart',
         {'invalidName', 'invalidValue', 'rejected'},
       ),
+      'BugseeNetworkEvent': (
+        'src/network/network_event.dart',
+        {
+          'BugseeNetworkEvent',
+          'id',
+          'stage',
+          'method',
+          'statusCode',
+          'size',
+          'time',
+          'url',
+          'headers',
+          'body',
+          'noBodyReason',
+          'statusText',
+          'error',
+          'errorDescription',
+          'redirectedFrom',
+          'timings',
+          'copy',
+          'monotonicUs',
+        },
+      ),
+      'NetworkStage': (
+        'src/network/network_event.dart',
+        {'before', 'redirect', 'complete', 'error', 'abort'},
+      ),
+      'NoBodyReason': (
+        'src/network/network_event.dart',
+        {
+          'NoBodyReason',
+          'noData',
+          'sizeTooLarge',
+          'unsupportedContentType',
+          'noContentType',
+          'cantReadData',
+          'wire',
+        },
+      ),
+      'NetworkCaptureStats': (
+        'src/network/network_pipeline.dart',
+        {
+          'NetworkCaptureStats',
+          'captured',
+          'submittedToSdk',
+          'droppedQueueFull',
+          'droppedNotAccepting',
+          'droppedByFilter',
+          'filterFailures',
+          'refusedByNative',
+          'sendFailures',
+        },
+      ),
+      'IsolateErrorListener': ('src/exceptions/error_capture.dart', {'cancel'}),
       'BugseeStatus': (
         'src/status.dart',
         {'stopped', 'launching', 'launched', 'stopping', 'fromName'},
@@ -360,7 +555,10 @@ void main() {
         // Private members (the proxy's private constructor and its `_host`) may name the bridge:
         // an app cannot see them.
         final text = body(read('lib/${e.value.$1}'), e.key)
-            .replaceAll(RegExp(r'ReportProxy\._\([\s\S]*?;\n'), '')
+            .replaceAll(
+              RegExp(r'(?:ReportProxy|CreatedReport)\._\([\s\S]*?;\n'),
+              '',
+            )
             .split('\n')
             .where((l) => !RegExp(r'\b_\w+;').hasMatch(l))
             .join('\n');

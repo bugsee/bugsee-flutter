@@ -541,6 +541,105 @@ class ReportHandlerRequestMessage {
   }
 }
 
+/// One attachment of a report, as the SDK lists it: the display name, the MIME type and the
+/// source file's base name. Never the file's content or its place in the SDK's storage.
+class ReportAttachmentMessage {
+  ReportAttachmentMessage({this.name, this.mimeType, this.fileName});
+
+  String? name;
+
+  String? mimeType;
+
+  String? fileName;
+
+  List<Object?> _toList() {
+    return <Object?>[name, mimeType, fileName];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static ReportAttachmentMessage decode(Object result) {
+    result as List<Object?>;
+    return ReportAttachmentMessage(
+      name: result[0] as String?,
+      mimeType: result[1] as String?,
+      fileName: result[2] as String?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! ReportAttachmentMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(name, other.name) &&
+        _deepEquals(mimeType, other.mimeType) &&
+        _deepEquals(fileName, other.fileName);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'ReportAttachmentMessage(name: $name, mimeType: $mimeType, fileName: $fileName)';
+  }
+}
+
+/// One screenshot a report holds. [annotated] is whether the user (or the app) drew on it.
+class ReportScreenshotMessage {
+  ReportScreenshotMessage({required this.displayId, required this.annotated});
+
+  int displayId;
+
+  bool annotated;
+
+  List<Object?> _toList() {
+    return <Object?>[displayId, annotated];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static ReportScreenshotMessage decode(Object result) {
+    result as List<Object?>;
+    return ReportScreenshotMessage(
+      displayId: result[0]! as int,
+      annotated: result[1]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! ReportScreenshotMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(displayId, other.displayId) &&
+        _deepEquals(annotated, other.annotated);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'ReportScreenshotMessage(displayId: $displayId, annotated: $annotated)';
+  }
+}
+
 /// A read of a live report. [severity] is the SDK's internal integer (1..5), or
 /// null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
 class ReportSnapshotMessage {
@@ -553,6 +652,8 @@ class ReportSnapshotMessage {
     this.severity,
     required this.labels,
     required this.attributes,
+    required this.attachments,
+    required this.screenshots,
   });
 
   String id;
@@ -574,6 +675,12 @@ class ReportSnapshotMessage {
   /// report holds is left out rather than stringified.
   Map<String, Object> attributes;
 
+  /// The attachments, in the order they were added; metadata only.
+  List<ReportAttachmentMessage> attachments;
+
+  /// The displays that hold a screenshot, ascending by display id.
+  List<ReportScreenshotMessage> screenshots;
+
   List<Object?> _toList() {
     return <Object?>[
       id,
@@ -584,6 +691,8 @@ class ReportSnapshotMessage {
       severity,
       labels,
       attributes,
+      attachments,
+      screenshots,
     ];
   }
 
@@ -602,6 +711,10 @@ class ReportSnapshotMessage {
       severity: result[5] as int?,
       labels: (result[6]! as List<Object?>).cast<String>(),
       attributes: (result[7]! as Map<Object?, Object?>).cast<String, Object>(),
+      attachments: (result[8]! as List<Object?>)
+          .cast<ReportAttachmentMessage>(),
+      screenshots: (result[9]! as List<Object?>)
+          .cast<ReportScreenshotMessage>(),
     );
   }
 
@@ -621,7 +734,9 @@ class ReportSnapshotMessage {
         _deepEquals(email, other.email) &&
         _deepEquals(severity, other.severity) &&
         _deepEquals(labels, other.labels) &&
-        _deepEquals(attributes, other.attributes);
+        _deepEquals(attributes, other.attributes) &&
+        _deepEquals(attachments, other.attachments) &&
+        _deepEquals(screenshots, other.screenshots);
   }
 
   @override
@@ -630,7 +745,208 @@ class ReportSnapshotMessage {
 
   @override
   String toString() {
-    return 'ReportSnapshotMessage(id: $id, type: $type, summary: $summary, reportDescription: $reportDescription, email: $email, severity: $severity, labels: $labels, attributes: $attributes)';
+    return 'ReportSnapshotMessage(id: $id, type: $type, summary: $summary, reportDescription: $reportDescription, email: $email, severity: $severity, labels: $labels, attributes: $attributes, attachments: $attachments, screenshots: $screenshots)';
+  }
+}
+
+/// A read of a report made by `createReport` (workbook 7.3 plus the SDKs' own creation APIs). iOS
+/// gives the app a `BugseeExtendedReport`, which has no id, type, e-mail, screenshot flag or
+/// attachment metadata beyond the name: those are absent here ([reportId] and [type] are empty
+/// strings, [attachmentNames] carries only what iOS can list, [screenshotDisplayIds] is `[0]` or
+/// empty there).
+class CreatedReportSnapshotMessage {
+  CreatedReportSnapshotMessage({
+    required this.reportId,
+    required this.type,
+    this.summary,
+    this.reportDescription,
+    this.severity,
+    required this.labels,
+    required this.attributes,
+    required this.attachmentNames,
+    required this.screenshotDisplayIds,
+  });
+
+  String reportId;
+
+  String type;
+
+  String? summary;
+
+  String? reportDescription;
+
+  int? severity;
+
+  List<String> labels;
+
+  Map<String, Object> attributes;
+
+  List<String> attachmentNames;
+
+  List<int> screenshotDisplayIds;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      reportId,
+      type,
+      summary,
+      reportDescription,
+      severity,
+      labels,
+      attributes,
+      attachmentNames,
+      screenshotDisplayIds,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static CreatedReportSnapshotMessage decode(Object result) {
+    result as List<Object?>;
+    return CreatedReportSnapshotMessage(
+      reportId: result[0]! as String,
+      type: result[1]! as String,
+      summary: result[2] as String?,
+      reportDescription: result[3] as String?,
+      severity: result[4] as int?,
+      labels: (result[5]! as List<Object?>).cast<String>(),
+      attributes: (result[6]! as Map<Object?, Object?>).cast<String, Object>(),
+      attachmentNames: (result[7]! as List<Object?>).cast<String>(),
+      screenshotDisplayIds: (result[8]! as List<Object?>).cast<int>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! CreatedReportSnapshotMessage ||
+        other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(reportId, other.reportId) &&
+        _deepEquals(type, other.type) &&
+        _deepEquals(summary, other.summary) &&
+        _deepEquals(reportDescription, other.reportDescription) &&
+        _deepEquals(severity, other.severity) &&
+        _deepEquals(labels, other.labels) &&
+        _deepEquals(attributes, other.attributes) &&
+        _deepEquals(attachmentNames, other.attachmentNames) &&
+        _deepEquals(screenshotDisplayIds, other.screenshotDisplayIds);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'CreatedReportSnapshotMessage(reportId: $reportId, type: $type, summary: $summary, reportDescription: $reportDescription, severity: $severity, labels: $labels, attributes: $attributes, attachmentNames: $attachmentNames, screenshotDisplayIds: $screenshotDisplayIds)';
+  }
+}
+
+/// Edits to a created report, validated as a WHOLE before any is applied (one bad field changes
+/// nothing). A `set*` flag says the field is part of the patch: that is how a `null` summary
+/// (clear it) differs from an absent one (leave it).
+class CreatedReportPatchMessage {
+  CreatedReportPatchMessage({
+    this.setSummary = false,
+    this.summary,
+    this.setDescription = false,
+    this.reportDescription,
+    this.severity,
+    this.labels,
+    this.clearAttributes = false,
+    this.attributes,
+    this.removeAttributes,
+  });
+
+  bool setSummary;
+
+  String? summary;
+
+  bool setDescription;
+
+  String? reportDescription;
+
+  /// The SDK's internal integer (1..5), or null to leave it.
+  int? severity;
+
+  /// Replaces the labels when not null.
+  List<String>? labels;
+
+  /// Applied first, then [attributes], then [removeAttributes].
+  bool clearAttributes;
+
+  Map<String, Object>? attributes;
+
+  List<String>? removeAttributes;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      setSummary,
+      summary,
+      setDescription,
+      reportDescription,
+      severity,
+      labels,
+      clearAttributes,
+      attributes,
+      removeAttributes,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static CreatedReportPatchMessage decode(Object result) {
+    result as List<Object?>;
+    return CreatedReportPatchMessage(
+      setSummary: result[0]! as bool,
+      summary: result[1] as String?,
+      setDescription: result[2]! as bool,
+      reportDescription: result[3] as String?,
+      severity: result[4] as int?,
+      labels: (result[5] as List<Object?>?)?.cast<String>(),
+      clearAttributes: result[6]! as bool,
+      attributes: (result[7] as Map<Object?, Object?>?)?.cast<String, Object>(),
+      removeAttributes: (result[8] as List<Object?>?)?.cast<String>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! CreatedReportPatchMessage ||
+        other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(setSummary, other.setSummary) &&
+        _deepEquals(summary, other.summary) &&
+        _deepEquals(setDescription, other.setDescription) &&
+        _deepEquals(reportDescription, other.reportDescription) &&
+        _deepEquals(severity, other.severity) &&
+        _deepEquals(labels, other.labels) &&
+        _deepEquals(clearAttributes, other.clearAttributes) &&
+        _deepEquals(attributes, other.attributes) &&
+        _deepEquals(removeAttributes, other.removeAttributes);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'CreatedReportPatchMessage(setSummary: $setSummary, summary: $summary, setDescription: $setDescription, reportDescription: $reportDescription, severity: $severity, labels: $labels, clearAttributes: $clearAttributes, attributes: $attributes, removeAttributes: $removeAttributes)';
   }
 }
 
@@ -763,6 +1079,166 @@ class BreadcrumbMessage {
   }
 }
 
+/// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
+/// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
+/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+/// through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
+/// native filter still apply (doc/network.md).
+class NetworkEventMessage {
+  NetworkEventMessage({
+    required this.id,
+    required this.stage,
+    required this.mechanism,
+    required this.method,
+    required this.url,
+    required this.ageMs,
+    required this.size,
+    required this.statusCode,
+    this.headers,
+    this.body,
+    this.noBodyReason,
+    this.statusText,
+    this.errorShortMessage,
+    this.errorDescription,
+    this.redirectedFromUrl,
+    this.timings,
+  });
+
+  /// Shared by every stage of one request; never empty.
+  String id;
+
+  /// `before`, `redirect`, `complete`, `error` or `abort` (the SDK's own stage names; iOS spells
+  /// `abort` `cancel` and has no `redirect` stage, which native handles).
+  String stage;
+
+  /// The intercepted stack, free-form (`dart:io`).
+  String mechanism;
+
+  String method;
+
+  String url;
+
+  /// How long ago the event happened, in milliseconds, measured on Dart's monotonic clock when the
+  /// batch was handed to the bridge. Native subtracts it from the SDK's own clock, so the event
+  /// is stamped on the clock the SDK validates against (Android: `currentTimestamp()`, which is not
+  /// `DateTime.now()` once the device clock has been corrected) and not on one the SDK may drop.
+  int ageMs;
+
+  /// Body size in bytes, 0 when unknown.
+  int size;
+
+  /// HTTP status, 0 for a stage with none.
+  int statusCode;
+
+  /// Header names are lower-case (Dart's), repeated values joined by `, `.
+  Map<String, String>? headers;
+
+  /// The body as text, only when Dart captured it (text content, within the SDK's size limit).
+  String? body;
+
+  /// Why [body] is absent: `no_data`, `size_too_large`, `unsupported_content_type`,
+  /// `no_content_type` or `cant_read_data` (the SDKs' wire values).
+  String? noBodyReason;
+
+  /// Android stores it, iOS drops it (the iOS bundle writes null).
+  String? statusText;
+
+  String? errorShortMessage;
+
+  String? errorDescription;
+
+  /// iOS carries a redirect as the original URL on the final event; Android has `redirect` stages.
+  String? redirectedFromUrl;
+
+  /// Milliseconds, Android only (iOS has no field for them).
+  Map<String, double>? timings;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      id,
+      stage,
+      mechanism,
+      method,
+      url,
+      ageMs,
+      size,
+      statusCode,
+      headers,
+      body,
+      noBodyReason,
+      statusText,
+      errorShortMessage,
+      errorDescription,
+      redirectedFromUrl,
+      timings,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static NetworkEventMessage decode(Object result) {
+    result as List<Object?>;
+    return NetworkEventMessage(
+      id: result[0]! as String,
+      stage: result[1]! as String,
+      mechanism: result[2]! as String,
+      method: result[3]! as String,
+      url: result[4]! as String,
+      ageMs: result[5]! as int,
+      size: result[6]! as int,
+      statusCode: result[7]! as int,
+      headers: (result[8] as Map<Object?, Object?>?)?.cast<String, String>(),
+      body: result[9] as String?,
+      noBodyReason: result[10] as String?,
+      statusText: result[11] as String?,
+      errorShortMessage: result[12] as String?,
+      errorDescription: result[13] as String?,
+      redirectedFromUrl: result[14] as String?,
+      timings: (result[15] as Map<Object?, Object?>?)?.cast<String, double>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! NetworkEventMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(id, other.id) &&
+        _deepEquals(stage, other.stage) &&
+        _deepEquals(mechanism, other.mechanism) &&
+        _deepEquals(method, other.method) &&
+        _deepEquals(url, other.url) &&
+        _deepEquals(ageMs, other.ageMs) &&
+        _deepEquals(size, other.size) &&
+        _deepEquals(statusCode, other.statusCode) &&
+        _deepEquals(headers, other.headers) &&
+        _deepEquals(body, other.body) &&
+        _deepEquals(noBodyReason, other.noBodyReason) &&
+        _deepEquals(statusText, other.statusText) &&
+        _deepEquals(errorShortMessage, other.errorShortMessage) &&
+        _deepEquals(errorDescription, other.errorDescription) &&
+        _deepEquals(redirectedFromUrl, other.redirectedFromUrl) &&
+        _deepEquals(timings, other.timings);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'NetworkEventMessage(id: $id, stage: $stage, mechanism: $mechanism, method: $method, url: $url, ageMs: $ageMs, size: $size, statusCode: $statusCode, headers: $headers, body: $body, noBodyReason: $noBodyReason, statusText: $statusText, errorShortMessage: $errorShortMessage, errorDescription: $errorDescription, redirectedFromUrl: $redirectedFromUrl, timings: $timings)';
+  }
+}
+
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -788,14 +1264,29 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is ReportHandlerRequestMessage) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    } else if (value is ReportSnapshotMessage) {
+    } else if (value is ReportAttachmentMessage) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    } else if (value is LaunchOutcomeMessage) {
+    } else if (value is ReportScreenshotMessage) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    } else if (value is BreadcrumbMessage) {
+    } else if (value is ReportSnapshotMessage) {
       buffer.putUint8(137);
+      writeValue(buffer, value.encode());
+    } else if (value is CreatedReportSnapshotMessage) {
+      buffer.putUint8(138);
+      writeValue(buffer, value.encode());
+    } else if (value is CreatedReportPatchMessage) {
+      buffer.putUint8(139);
+      writeValue(buffer, value.encode());
+    } else if (value is LaunchOutcomeMessage) {
+      buffer.putUint8(140);
+      writeValue(buffer, value.encode());
+    } else if (value is BreadcrumbMessage) {
+      buffer.putUint8(141);
+      writeValue(buffer, value.encode());
+    } else if (value is NetworkEventMessage) {
+      buffer.putUint8(142);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -818,11 +1309,21 @@ class _PigeonCodec extends StandardMessageCodec {
       case 134:
         return ReportHandlerRequestMessage.decode(readValue(buffer)!);
       case 135:
-        return ReportSnapshotMessage.decode(readValue(buffer)!);
+        return ReportAttachmentMessage.decode(readValue(buffer)!);
       case 136:
-        return LaunchOutcomeMessage.decode(readValue(buffer)!);
+        return ReportScreenshotMessage.decode(readValue(buffer)!);
       case 137:
+        return ReportSnapshotMessage.decode(readValue(buffer)!);
+      case 138:
+        return CreatedReportSnapshotMessage.decode(readValue(buffer)!);
+      case 139:
+        return CreatedReportPatchMessage.decode(readValue(buffer)!);
+      case 140:
+        return LaunchOutcomeMessage.decode(readValue(buffer)!);
+      case 141:
         return BreadcrumbMessage.decode(readValue(buffer)!);
+      case 142:
+        return NetworkEventMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -1247,6 +1748,357 @@ class BugseeBridgeHostApi {
       isNullValid: false,
     );
     return pigeonVar_replyValue! as bool;
+  }
+
+  /// Copies ([move] false) or moves ([move] true) the file at [path] into the report's storage.
+  Future<String?> reportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+    bool move,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddAttachment$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, path, name, mimeType, move],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Writes [data] (at most `kMaxAttachmentBytes`) into the report's storage.
+  Future<String?> reportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddAttachmentBytes$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, data, name, mimeType],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Removes every attachment, deleting their files.
+  Future<String?> reportClearAttachments(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearAttachments$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Decodes the image file at [path] natively and stores it as the screenshot of [displayId].
+  /// [annotated] says the picture carries the user's drawing (it reaches the bundle as the screenshot
+  /// entry's `annotated` attribute).
+  Future<String?> reportSetScreenshot(
+    String handle,
+    String path,
+    int displayId,
+    bool annotated,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetScreenshot$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, path, displayId, annotated],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Removes the screenshot of [displayId] (a no-op when there is none).
+  Future<String?> reportRemoveScreenshot(String handle, int displayId) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRemoveScreenshot$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, displayId],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
+  /// (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
+  /// does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
+  /// SDK did not answer in time.
+  Future<String?> createReport(int ttlMs) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createReport$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[ttlMs],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Null when the handle is not live.
+  Future<CreatedReportSnapshotMessage?> createdReportRead(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportRead$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as CreatedReportSnapshotMessage?;
+  }
+
+  /// Applies [patch] as a whole. False when the handle is not live. An unusable field is a
+  /// PlatformException `invalid-argument` and nothing is applied.
+  Future<bool> createdReportApply(
+    String handle,
+    CreatedReportPatchMessage patch,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportApply$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, patch],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Copies the file at [path] into the report (never moves it). iOS keeps the bytes in memory
+  /// until upload and its SDK takes at most 3 files of 3 MiB (see doc/api-surface.md); a refusal
+  /// is `limit` / `too-large`.
+  Future<String?> createdReportAddAttachment(
+    String handle,
+    String path,
+    String name,
+    String? mimeType,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportAddAttachment$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, path, name, mimeType],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  Future<String?> createdReportAddAttachmentBytes(
+    String handle,
+    Uint8List data,
+    String name,
+    String? mimeType,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportAddAttachmentBytes$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, data, name, mimeType],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  Future<String?> createdReportClearAttachments(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportClearAttachments$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// [annotated] is Android only: iOS answers `unsupported` for true.
+  Future<String?> createdReportSetScreenshot(
+    String handle,
+    String path,
+    bool annotated,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportSetScreenshot$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle, path, annotated],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as String?;
+  }
+
+  /// Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
+  /// answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
+  /// handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+  /// live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
+  Future<bool> createdReportUpload(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportUpload$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Releases the report without uploading it (deletes the attachments the app added on Android; the
+  /// SDK has no way to cancel a created report, so it is simply never sent). A no-op for an unknown
+  /// handle.
+  Future<void> createdReportDiscard(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportDiscard$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[handle],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
@@ -1734,6 +2586,78 @@ class BugseeBridgeHostApi {
       pigeonVar_channelName,
       isNullValid: true,
     );
+  }
+
+  /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+  /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+  /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+  /// throws for a single bad event.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+  /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+  /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+  /// documented to be callable from any thread; one queue keeps the order.
+  Future<int> addNetworkEvents(List<NetworkEventMessage> events) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[events],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as int;
+  }
+
+  /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+  /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+  /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+  /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+  /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+  /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+  /// path: dropped there).
+  ///
+  /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+  /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+  /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+  /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+  ///
+  /// `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+  /// is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+  /// of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+  /// answers `false`. iOS answers at once on the platform thread.
+  Future<bool> logException(
+    String payload,
+    bool handled,
+    String? domain,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.logException$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[payload, handled, domain],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
   }
 }
 

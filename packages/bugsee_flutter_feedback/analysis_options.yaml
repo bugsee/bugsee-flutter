@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    # A separate pure-Dart package (the Pigeon generator) that needs its own `pub get`;
+    # the bridge-codegen CI job analyzes it there.
+    - pigeons/**

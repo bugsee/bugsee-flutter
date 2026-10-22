@@ -79,6 +79,12 @@ int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
 @property(nonatomic, readonly) int64_t enteredAtMs;
 @property(nonatomic, readonly) int64_t deadlineMs;
 @property(nonatomic, strong, nullable) id timer;
+/// Long operations (`BGSFlutterReportLease`) that started while the handle was live and have not
+/// ended. Changed under the `editLock` and the pipeline's lock, like `done`.
+@property(nonatomic) NSInteger leases;
+/// The SDK's completion, kept here when the handle completed while `leases` was not zero: the last
+/// lease to end runs it.
+@property(nonatomic, copy, nullable) dispatch_block_t deferredCompletion;
 @end
 @implementation BGSFlutterReportHandle
 - (instancetype)initWithId:(NSString *)handleId
@@ -98,6 +104,49 @@ int64_t BGSFlutterReportDeadlineMs(BOOL onMainThread) {
     _owner = owner;
   }
   return self;
+}
+@end
+
+@interface BGSFlutterReportLease ()
+- (instancetype)initWithPipeline:(BGSFlutterReportHandlerPipeline *)pipeline
+                          handle:(BGSFlutterReportHandle *)handle
+                          report:(id)report;
+@end
+
+@interface BGSFlutterReportHandlerPipeline ()
+- (void)endLeaseOn:(BGSFlutterReportHandle *)handle;
+- (BOOL)windowClosedOn:(BGSFlutterReportHandle *)handle;
+@end
+
+@implementation BGSFlutterReportLease {
+  BGSFlutterReportHandlerPipeline *_pipeline;
+  BGSFlutterReportHandle *_handle;
+  NSLock *_lock;
+  BOOL _ended;
+}
+- (instancetype)initWithPipeline:(BGSFlutterReportHandlerPipeline *)pipeline
+                          handle:(BGSFlutterReportHandle *)handle
+                          report:(id)report {
+  self = [super init];
+  if (self) {
+    _pipeline = pipeline;
+    _handle = handle;
+    _report = report;
+    _lock = [[NSLock alloc] init];
+  }
+  return self;
+}
+- (BOOL)windowClosed {
+  return [_pipeline windowClosedOn:_handle];
+}
+- (void)end {
+  [_lock lock];
+  const BOOL first = !_ended;
+  _ended = YES;
+  [_lock unlock];
+  if (first) {
+    [_pipeline endLeaseOn:_handle];
+  }
 }
 @end
 
@@ -440,6 +489,49 @@ static NSString *SafeReportId(id report) {
   return report;
 }
 
+- (BGSFlutterReportLease *)acquireHandle:(NSString *)handleId {
+  if (handleId == nil) {
+    return nil;
+  }
+  os_unfair_lock_lock(&_lock);
+  BGSFlutterReportHandle *handle = _handles[handleId];
+  os_unfair_lock_unlock(&_lock);
+  if (handle == nil) {
+    return nil;
+  }
+  [handle.editLock lock];
+  if (handle.done) {
+    [handle.editLock unlock];
+    return nil;
+  }
+  handle.leases += 1;
+  id report = handle.report;
+  [handle.editLock unlock];
+  return [[BGSFlutterReportLease alloc] initWithPipeline:self handle:handle report:report];
+}
+
+- (BOOL)windowClosedOn:(BGSFlutterReportHandle *)handle {
+  return _clock() - handle.enteredAtMs >= handle.deadlineMs;
+}
+
+- (void)endLeaseOn:(BGSFlutterReportHandle *)handle {
+  dispatch_block_t completion = nil;
+  [handle.editLock lock];
+  os_unfair_lock_lock(&_lock);
+  handle.leases -= 1;
+  if (handle.leases == 0 && handle.deferredCompletion != nil) {
+    completion = handle.deferredCompletion;
+    handle.deferredCompletion = nil;
+  }
+  os_unfair_lock_unlock(&_lock);
+  [handle.editLock unlock];
+  if (completion != nil) {
+    _log([NSString stringWithFormat:@"[BugseeFlutter] report handler %@ completion released by its last file operation",
+                                    handle.handleId]);
+    RunQuietly(completion);
+  }
+}
+
 - (BGSFlutterReportEditResult)editHandle:(NSString *)handleId
                                     edit:(BGSFlutterReportEdit)edit
                                    error:(NSError **)error {
@@ -485,6 +577,15 @@ static NSString *SafeReportId(id report) {
   dispatch_block_t completion = handle.completion;
   handle.completion = nil;
   handle.report = nil;
+  // A long operation that started while the handle was live still owns the report: the SDK's
+  // completion runs when the last of them ends (`-endLeaseOn:`), so an operation reported as applied
+  // landed BEFORE the completion, exactly like a short edit.
+  BOOL deferred = NO;
+  if (handle.leases > 0) {
+    handle.deferredCompletion = completion;
+    completion = nil;
+    deferred = YES;
+  }
   os_unfair_lock_unlock(&_lock);
   [handle.editLock unlock];
 
@@ -493,8 +594,8 @@ static NSString *SafeReportId(id report) {
   if (timer != nil) {
     [self cancelQuietly:timer];
   }
-  _log([NSString stringWithFormat:@"[BugseeFlutter] report handler %@ completed by=%@",
-                                  handle.handleId, by]);
+  _log([NSString stringWithFormat:@"[BugseeFlutter] report handler %@ completed by=%@%@", handle.handleId, by,
+                                  deferred ? @" (deferred until its file operation ends)" : @""]);
   RunQuietly(completion);
   return YES;
 }

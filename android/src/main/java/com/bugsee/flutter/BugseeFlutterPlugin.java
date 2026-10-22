@@ -14,6 +14,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
 import io.flutter.plugin.common.BinaryMessenger;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,9 @@ public class BugseeFlutterPlugin
     private LaunchOps.Sdk sdk;
     /** Non-null while attached to an engine, like {@link #sdk}; every facade call needs it. */
     private FacadeOps.Sdk facade;
+    /** Network injection (Phase 5b); non-null while attached, like {@link #facade}. */
+    private volatile NetworkOps.Sdk network;
+    private volatile ExceptionOps.Sdk exceptions;
     private LifecycleHub.Sink sink;
     private SecurePlacement placement;
     /** Identifies this engine's Dart isolate in {@link ReportHandlerPipeline}. */
@@ -92,6 +96,8 @@ public class BugseeFlutterPlugin
         messenger = binding.getBinaryMessenger();
         sdk = new BugseeSdk(binding.getApplicationContext());
         facade = new BugseeFacadeSdk();
+        network = new BugseeNetworkSdk(NetworkChannelHolder.shared());
+        exceptions = new BugseeExceptionSdk();
         Messages.BugseeBridgeHostApi.setUp(messenger, this);
 
         final SecureRectangleStore store = SecureRectangleStore.shared();
@@ -144,6 +150,8 @@ public class BugseeFlutterPlugin
         }
         // Completes what was handed to this engine's Dart: nothing else knows those handles.
         ReportHandlerPipeline.shared().detach(reportOwner);
+        // Its created report, if any, goes with it; another engine's does not.
+        FILES.reset(reportOwner);
         // The engine's UI is gone; there is nothing left of it to hide.
         SecureRectangleStore.shared().dropOwner(owner);
         ViewHierarchyStore.shared().dropOwner(owner);
@@ -155,6 +163,8 @@ public class BugseeFlutterPlugin
         messenger = null;
         sdk = null;
         facade = null;
+        network = null;
+        exceptions = null;
     }
 
     @Override
@@ -264,6 +274,9 @@ public class BugseeFlutterPlugin
     @Override
     public void resetReportHandlers() {
         ReportHandlerPipeline.shared().reset(reportOwner);
+        // A new Dart isolate does not know the old one's created report: release it now, not at its
+        // deadline.
+        FILES.reset(reportOwner);
     }
 
     @Override
@@ -293,7 +306,33 @@ public class BugseeFlutterPlugin
                 .setSeverity(s.severity == null ? null : s.severity.longValue())
                 .setLabels(s.labels)
                 .setAttributes(s.attributes)
+                .setAttachments(attachmentMessages(s.attachments))
+                .setScreenshots(screenshotMessages(s.screenshots))
                 .build();
+    }
+
+    @NonNull
+    private static List<Messages.ReportAttachmentMessage> attachmentMessages(
+            @NonNull final List<String[]> attachments
+    ) {
+        final List<Messages.ReportAttachmentMessage> result = new ArrayList<>();
+        for (final String[] a : attachments) {
+            result.add(new Messages.ReportAttachmentMessage.Builder()
+                    .setName(a[0]).setMimeType(a[1]).setFileName(a[2]).build());
+        }
+        return result;
+    }
+
+    @NonNull
+    private static List<Messages.ReportScreenshotMessage> screenshotMessages(
+            @NonNull final List<int[]> screenshots
+    ) {
+        final List<Messages.ReportScreenshotMessage> result = new ArrayList<>();
+        for (final int[] shot : screenshots) {
+            result.add(new Messages.ReportScreenshotMessage.Builder()
+                    .setDisplayId((long) shot[0]).setAnnotated(shot[1] != 0).build());
+        }
+        return result;
     }
 
     @NonNull
@@ -360,6 +399,200 @@ public class BugseeFlutterPlugin
         return edit(handle, Report::clearAllAttributes);
     }
 
+    // ---- Attachments, screenshots and createReport (Phase 6; see ReportFileFlow) -------------------
+
+    private static final ReportFileFlow FILES = ReportFileFlow.shared();
+
+    /** A pigeon reply as the flow's {@link ReportFileFlow.Reply}; the flow posts it to the platform thread. */
+    @NonNull
+    private static <T> ReportFileFlow.Reply<T> reply(@NonNull final Messages.NullableResult<T> result) {
+        return new ReportFileFlow.Reply<T>() {
+            @Override
+            public void success(@Nullable final T value) {
+                result.success(value);
+            }
+
+            @Override
+            public void error(@NonNull final String code, @NonNull final String message) {
+                result.error(new Messages.FlutterError(code, message, null));
+            }
+        };
+    }
+
+    @NonNull
+    private static <T> ReportFileFlow.Reply<T> reply(@NonNull final Messages.Result<T> result) {
+        return new ReportFileFlow.Reply<T>() {
+            @Override
+            public void success(@Nullable final T value) {
+                result.success(value);
+            }
+
+            @Override
+            public void error(@NonNull final String code, @NonNull final String message) {
+                result.error(new Messages.FlutterError(code, message, null));
+            }
+        };
+    }
+
+    @Override
+    public void reportAddAttachment(
+            @NonNull final String handle,
+            @NonNull final String path,
+            @NonNull final String name,
+            @Nullable final String mimeType,
+            @NonNull final Boolean move,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.handlerOp(handle, (report, window) -> ReportOps.addFile(report, path, name, mimeType, move, window), reply(result));
+    }
+
+    @Override
+    public void reportAddAttachmentBytes(
+            @NonNull final String handle,
+            @NonNull final byte[] data,
+            @NonNull final String name,
+            @Nullable final String mimeType,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.handlerOp(handle, (report, window) -> ReportOps.addBytes(report, data, name, mimeType, window), reply(result));
+    }
+
+    @Override
+    public void reportClearAttachments(
+            @NonNull final String handle,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.handlerOp(handle, (report, window) -> ReportOps.clearAttachments(report), reply(result));
+    }
+
+    @Override
+    public void reportSetScreenshot(
+            @NonNull final String handle,
+            @NonNull final String path,
+            @NonNull final Long displayId,
+            @NonNull final Boolean annotated,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.handlerOp(handle, (report, window) -> FILES.setScreenshot(report, path, displayId, annotated), reply(result));
+    }
+
+    @Override
+    public void reportRemoveScreenshot(
+            @NonNull final String handle,
+            @NonNull final Long displayId,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.handlerOp(handle, (report, window) -> ReportOps.removeScreenshot(report, displayId), reply(result));
+    }
+
+    @Override
+    public void createReport(
+            @NonNull final Long ttlMs,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.create(reportOwner, ttlMs, reply(result));
+    }
+
+    @Nullable
+    @Override
+    public Messages.CreatedReportSnapshotMessage createdReportRead(@NonNull final String handle) {
+        final CreatedReportOps.Snapshot s = FILES.read(handle);
+        if (s == null) {
+            return null;
+        }
+        final List<Long> ids = new ArrayList<>();
+        for (final Integer id : s.screenshotDisplayIds) {
+            ids.add(id.longValue());
+        }
+        return new Messages.CreatedReportSnapshotMessage.Builder()
+                .setReportId(s.id)
+                .setType(s.type)
+                .setSummary(s.summary)
+                .setReportDescription(s.description)
+                .setSeverity(s.severity == null ? null : s.severity.longValue())
+                .setLabels(s.labels)
+                .setAttributes(s.attributes)
+                .setAttachmentNames(s.attachmentNames)
+                .setScreenshotDisplayIds(ids)
+                .build();
+    }
+
+    @NonNull
+    @Override
+    public Boolean createdReportApply(
+            @NonNull final String handle,
+            @NonNull final Messages.CreatedReportPatchMessage patch
+    ) {
+        final CreatedReportOps.Patch p = new CreatedReportOps.Patch();
+        p.setSummary = patch.getSetSummary();
+        p.summary = patch.getSummary();
+        p.setDescription = patch.getSetDescription();
+        p.description = patch.getReportDescription();
+        p.severity = patch.getSeverity();
+        p.labels = patch.getLabels();
+        p.clearAttributes = patch.getClearAttributes();
+        p.attributes = patch.getAttributes();
+        p.removeAttributes = patch.getRemoveAttributes();
+        try {
+            return FILES.apply(handle, p);
+        } catch (final ReportOps.BadArgument e) {
+            throw new Messages.FlutterError(FacadeOps.INVALID_ARGUMENT, e.getMessage(), null);
+        }
+    }
+
+    @Override
+    public void createdReportAddAttachment(
+            @NonNull final String handle,
+            @NonNull final String path,
+            @NonNull final String name,
+            @Nullable final String mimeType,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.createdAddFile(handle, path, name, mimeType, reply(result));
+    }
+
+    @Override
+    public void createdReportAddAttachmentBytes(
+            @NonNull final String handle,
+            @NonNull final byte[] data,
+            @NonNull final String name,
+            @Nullable final String mimeType,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.createdAddBytes(handle, data, name, mimeType, reply(result));
+    }
+
+    @Override
+    public void createdReportClearAttachments(
+            @NonNull final String handle,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.createdOp(handle, (report, window) -> ReportOps.clearAttachments(report), reply(result));
+    }
+
+    @Override
+    public void createdReportSetScreenshot(
+            @NonNull final String handle,
+            @NonNull final String path,
+            @NonNull final Boolean annotated,
+            @NonNull final Messages.NullableResult<String> result
+    ) {
+        FILES.createdOp(handle, (report, window) -> FILES.setScreenshot(report, path, 0L, annotated), reply(result));
+    }
+
+    @Override
+    public void createdReportUpload(
+            @NonNull final String handle,
+            @NonNull final Messages.Result<Boolean> result
+    ) {
+        FILES.upload(handle, reply(result));
+    }
+
+    @Override
+    public void createdReportDiscard(@NonNull final String handle) {
+        FILES.discard(handle);
+    }
+
     // ---- Launch, stop, status (workbook Part 8; see LaunchOps) -------------------------------
 
     @NonNull
@@ -373,6 +606,11 @@ public class BugseeFlutterPlugin
 
     /** The SDK's callbacks may come on any thread; a channel reply goes on the platform thread. */
     private static void onMain(@NonNull final Runnable action) {
+        MAIN.post(action);
+    }
+
+    /** The platform thread, for the report file flow. */
+    static void postToMain(@NonNull final Runnable action) {
         MAIN.post(action);
     }
 
@@ -600,6 +838,51 @@ public class BugseeFlutterPlugin
             FacadeOps.upload(sdk, summary, description, severity, labels);
             return null;
         });
+    }
+
+    // ---- Network capture (Phase 5b; see NetworkOps) ---------------------------------------------
+
+    @NonNull
+    @Override
+    public Long addNetworkEvents(@NonNull final List<Messages.NetworkEventMessage> events) {
+        final NetworkOps.Sdk current = network;
+        if (current == null) {
+            throw new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null);
+        }
+        return (long) NetworkOps.addAll(current, events);
+    }
+
+    // ---- Exceptions (Phase 5a; see ExceptionOps) ----------------------------------------------
+
+    @Override
+    public void logException(
+            @NonNull final String payload,
+            @NonNull final Boolean handled,
+            @Nullable final String domain,
+            @NonNull final Messages.Result<Boolean> result
+    ) {
+        final ExceptionOps.Sdk current = exceptions;
+        if (current == null) {
+            result.error(new Messages.FlutterError(FacadeOps.NOT_ATTACHED,
+                    "the plugin is not attached to an engine", null));
+            return;
+        }
+        // Off the platform thread: the SDK writes an unhandled report on the calling one. The
+        // launch gate is inside ExceptionOps.log, so it runs where and when the SDK call does.
+        ExceptionDispatcher.shared().submit(
+                () -> ExceptionOps.log(current, payload, handled, domain),
+                new ExceptionDispatcher.Done() {
+                    @Override
+                    public void success(final boolean handedToSdk) {
+                        onMain(() -> result.success(handedToSdk));
+                    }
+
+                    @Override
+                    public void failure(@NonNull final String code, @NonNull final String message) {
+                        onMain(() -> result.error(new Messages.FlutterError(code, message, null)));
+                    }
+                });
     }
 
     /** False: the handle is not live, nothing changed. An unusable argument is an error reply. */

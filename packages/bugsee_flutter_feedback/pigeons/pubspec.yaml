@@ -1,0 +1,9 @@
+name: bugsee_flutter_feedback_pigeon
+description: Code generation for the bugsee_flutter_feedback bridge. Not part of the published package.
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dev_dependencies:
+  pigeon: 29.0.7

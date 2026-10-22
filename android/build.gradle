@@ -61,6 +61,9 @@ android {
         // Read by FlutterWrapperInitProvider, which registers the wrapper before
         // Dart exists and so cannot be handed this.
         buildConfigField "String", "WRAPPER_VERSION", "\"${wrapperVersion}\""
+
+        // Keeps the exception carrier's name through R8 (the backend routes on it).
+        consumerProguardFiles "consumer-rules.pro"
     }
 
     buildFeatures {

@@ -1,0 +1,41 @@
+name: bugsee_flutter_feedback
+description: The in-app feedback chat for Bugsee on Flutter. Optional add-on to bugsee_flutter; apps that never show the chat do not need it.
+version: 10.0.0-dev.1
+homepage: https://www.bugsee.com/
+documentation: https://docs.bugsee.com/sdk/flutter/installation/
+repository: https://github.com/bugsee/bugsee-flutter
+issue_tracker: https://github.com/bugsee/bugsee-flutter/issues
+
+# A member of the repository's pub workspace (see the root pubspec.yaml): inside it the
+# `bugsee_flutter` constraint below resolves to the sibling package, outside it (an app, or
+# pub.dev) to the hosted one. No path dependency, no dependency_overrides.
+resolution: workspace
+
+environment:
+  # Same floors as bugsee_flutter (native-versions.json flutter.min / flutter.dart).
+  sdk: ^3.11.0
+  flutter: ">=3.41.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Released in lock-step with the core: the same version number, and a constraint that starts
+  # at that version and stops before the next minor (pub warns about an exact pin, and a caret
+  # would let a new core minor with other native pins in). test/feedback_package_drift_test.dart
+  # asserts the lower bound IS the core's version.
+  bugsee_flutter: ">=10.0.0-dev.1 <10.1.0"
+  meta: ^1.17.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.bugsee.flutter.feedback
+        pluginClass: BugseeFlutterFeedbackPlugin
+      ios:
+        pluginClass: BugseeFlutterFeedbackPlugin

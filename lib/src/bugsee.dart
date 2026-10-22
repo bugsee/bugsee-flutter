@@ -1,12 +1,21 @@
 // The public entry point. Everything behind it is `BugseeRuntime`, which a test can replace.
+import 'dart:async' show runZonedGuarded;
+import 'dart:isolate' show Isolate;
+
+import 'package:flutter/foundation.dart'
+    show ErrorDescription, FlutterError, FlutterErrorDetails;
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'bugsee_runtime.dart';
 import 'errors.dart';
+import 'exceptions/error_capture.dart';
 import 'facade/breadcrumb.dart';
 import 'launch.dart';
 import 'lifecycle_event.dart';
+import 'network/network_event.dart';
+import 'network/network_pipeline.dart' show NetworkCaptureStats;
 import 'options/bugsee_options.g.dart';
+import 'report/created_report.dart';
 import 'report/report_enums.dart';
 import 'report/report_handler.dart';
 import 'status.dart';
@@ -292,8 +301,8 @@ abstract final class Bugsee {
   /// Creates and uploads a bug report at once, without UI, from what the SDK has captured.
   ///
   /// A no-op before [launch]. Without a [severity] the SDK applies its default bug priority. To
-  /// edit a report as it is created, use [setReportHandler]; adding files to it comes with the
-  /// report API (not here yet).
+  /// edit a report as it is created, use [setReportHandler] (`ReportProxy.addAttachment` attaches
+  /// files from there); to fill one in yourself and send it, use [createReport].
   static Future<void> upload(
     String summary,
     String description, {
@@ -301,6 +310,111 @@ abstract final class Bugsee {
     List<String>? labels,
   }) =>
       _runtime.upload(summary, description, severity: severity, labels: labels);
+
+  // ---- Network capture --------------------------------------------------------------------------
+
+  /// Starts recording the app's HTTP traffic from Dart into the report: everything built on
+  /// `dart:io`'s `HttpClient` (`package:http`, `dio`'s default adapter, `Image.network`, the
+  /// WebSocket handshake, ...). The SDKs' own interception cannot see it (Dart does not use the
+  /// platform's networking stack), so this plugin captures it in Dart and hands each event to the
+  /// SDK, which applies its network options and privacy rules exactly as it does to the traffic it
+  /// intercepts itself. Call it **once, early in `main`**, before the app makes a request:
+  ///
+  /// ```dart
+  /// void main() {
+  ///   Bugsee.installNetworkCapture();
+  ///   runApp(const MyApp());
+  /// }
+  /// ```
+  ///
+  /// Installs `HttpOverrides` **in front of** whatever `HttpOverrides` the app has installed: it
+  /// chains to them (clients, certificate callbacks, proxy settings and `findProxy` are theirs and
+  /// untouched). So install it **after** the app sets its own `HttpOverrides.global`; one set
+  /// afterwards without chaining replaces this capture, and calling this again puts it back in
+  /// front. Idempotent: calling it again while it is in effect does nothing. Returns whether
+  /// the capture is in effect, `false` on a platform with no SDK (desktop, web).
+  ///
+  /// Nothing is recorded until the SDK is `launched`, and only while `capture.network` is on
+  /// (`BugseeOptions.captureNetwork`, on by default); a request that began before the launch is
+  /// never recorded. Bodies follow `captureNetworkBodySizeLimit` (20 KiB by default; a longer body
+  /// is dropped, not cut) and `captureNetworkBodyWithoutType`; only text is kept. Requests to
+  /// Bugsee itself are never recorded. See `doc/network.md` for the full list of what is and is
+  /// not captured.
+  ///
+  /// **Limits**: other isolates (their own `HttpOverrides`, and no channel to the SDK), a client
+  /// made before this call by code that keeps it (a static `HttpClient`, the first `WebSocket`),
+  /// an app that replaces `HttpOverrides` without chaining to the current ones, and a zone that
+  /// scopes its own overrides are not captured. Native networking plugins (`cronet_http`,
+  /// `cupertino_http`, a WebView) are captured by the SDK's own interception instead.
+  ///
+  /// Throws a [BugseeException] when called from a background isolate.
+  static bool installNetworkCapture() => _runtime.installNetworkCapture();
+
+  /// Stops recording. Restores the `HttpOverrides` that were in place before when this capture is
+  /// still the one set; if the app chained its own over it, it stays in the chain and forwards
+  /// without recording. Clients already created stop recording too, and so does an exchange in flight (its response is no longer recorded). Events already queued are
+  /// still submitted to the SDK (unless it is no longer launched). [installNetworkCapture] starts it again.
+  static void uninstallNetworkCapture() => _runtime.uninstallNetworkCapture();
+
+  /// Whether [installNetworkCapture] was called and not undone.
+  static bool get networkCaptureInstalled => _runtime.networkCaptureInstalled;
+
+  /// Sets the filter every captured event goes through **before** it is handed to the SDK; `null`
+  /// removes it. Return the event (changed in place or a copy) to record it, `null` to drop it:
+  ///
+  /// ```dart
+  /// Bugsee.setNetworkFilter((event) {
+  ///   if (Uri.parse(event.url).host == 'internal.example.com') return null; // not recorded
+  ///   event.headers.remove('x-session');
+  ///   return event;
+  /// });
+  /// ```
+  ///
+  /// The filter runs in Dart, so it cannot be bypassed: nothing reaches the SDK without passing
+  /// it. It sees the event raw (the SDK's default sanitizer runs after it, on what it returns,
+  /// and so does a filter the app set on the native SDK). It runs on the isolate that made the
+  /// request (normally the UI isolate), one event at a time, in order, **never inside the HTTP
+  /// call**: the request is not held up. A slow synchronous filter still takes UI time: keep it
+  /// fast. It may return a `Future`.
+  ///
+  /// **Fails closed.** A filter that throws, returns something other than a `BugseeNetworkEvent`
+  /// or `null`, or returns a future that does not complete within [timeout] drops that event (and
+  /// a debug warning is printed once; [networkCaptureStats] counts them). A filter that never
+  /// answers therefore drops every event it is given, at one per [timeout] while the queue
+  /// fills and the rest are dropped. [timeout] defaults to 10 seconds, the SDK's own network
+  /// filter timeout, and must be positive and at most 5 minutes (a [BugseeArgumentException]
+  /// otherwise).
+  static void setNetworkFilter(
+    BugseeNetworkFilter? filter, {
+    // The SDK's own network filter timeout; `test/network_drift_test.dart` compares the copies.
+    Duration timeout = const Duration(seconds: 10),
+  }) => _runtime.setNetworkFilter(filter, timeout);
+
+  /// The filter set with [setNetworkFilter], or `null`.
+  static BugseeNetworkFilter? get networkFilter => _runtime.networkFilter;
+
+  /// What happened to the captured events so far (for diagnosis): captured, submitted to the SDK's wrapper channel (not the same as recorded: the SDK still drops on a retired channel or a stopped provider, silently),
+  /// dropped by a full queue, by the filter, or by a failure to deliver.
+  static NetworkCaptureStats get networkCaptureStats =>
+      _runtime.networkCaptureStats;
+
+  /// Asks the SDK for a report to fill in and send yourself: add attachments, a screenshot, labels and
+  /// attributes to the returned [CreatedReport], then [CreatedReport.upload] it. Completes with `null`
+  /// when the SDK made none (it is not launched).
+  ///
+  /// One created report may be outstanding at a time ([CreateReportException] `busy`). The plugin holds
+  /// it natively for [timeToLive] (default ten minutes, between one second and one hour) and then
+  /// discards it, so a report the app forgot never stays in the SDK's hands; every later call on it
+  /// throws a [CreatedReportClosedError]. The SDKs have no way to cancel a created report: a discarded
+  /// one is simply never sent.
+  ///
+  /// Android and iOS hand the app different objects, so [CreatedReport] documents what differs
+  /// (iOS: at most 3 in-memory attachments of at most 3 MiB, no `mimeType`, no id). The report
+  /// handler ([setReportHandler]) runs for it too: Android runs the before phase inside this call and
+  /// the after phase at [CreatedReport.upload]; iOS runs both at upload.
+  static Future<CreatedReport?> createReport({
+    Duration timeToLive = const Duration(minutes: 10),
+  }) => _runtime.createReport(timeToLive: timeToLive);
 
   // ---- Report handler and lifecycle events ------------------------------------------------------
 
@@ -314,7 +428,7 @@ abstract final class Bugsee {
   /// Register it **before [launch]** to see reports the SDK recovers while launching. Read
   /// [BugseeReportHandler] for the delivery rules (`onBeforeReportCreated` at most once,
   /// `onAfterReportCreated` at least once and idempotent), and [ReportProxy] for what a handler can
-  /// change. Attachments are not part of the report API yet.
+  /// change, including its attachments and screenshots.
   static Future<void> setReportHandler(BugseeReportHandler? handler) =>
       _runtime.setReportHandler(handler);
 
@@ -327,4 +441,163 @@ abstract final class Bugsee {
     _runtime.ensureStartedInBackground();
     return _runtime.lifecycleEvents;
   }
+
+  // ---- Dart errors ------------------------------------------------------------------------------
+
+  /// Reports a handled Dart [error] to Bugsee as an **error** report, with the [stackTrace] it was
+  /// caught with: `catch (error, stack) { Bugsee.logException(error, stack); }`. Without a stack the
+  /// current one is taken at this call (it starts where you called). Mirrors the SDKs' and the React
+  /// Native `logException`. For an unhandled error (a crash report) see [logUnhandledException]; for a
+  /// grouping domain, [reportException].
+  ///
+  /// Any object can be thrown in Dart, so any object is accepted: its type (`StateError`,
+  /// `FormatException`, ...) and `toString()` are what is reported. A [FlutterError] contributes its
+  /// summary only. The stack is sent as the VM printed it: in a build with `--obfuscate` or
+  /// `--split-debug-info` the backend symbolicates it from the symbols you upload (see
+  /// doc/exceptions.md, which also has what each SDK does with the call). There is no severity:
+  /// neither SDK takes one for an exception; set it in a report handler ([setReportHandler]).
+  ///
+  /// Completes with whether the SDK was handed the error; `false` before [launch] and after [stop],
+  /// where both SDKs drop it (nothing is queued). Throws a [BugseeException] when native cannot be
+  /// reached; never because of [error].
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
+  static Future<bool> logException(Object error, [StackTrace? stackTrace]) =>
+      _runtime.logException(
+        error,
+        stackTrace ?? StackTrace.current,
+        handled: true,
+        stackCaptured: stackTrace == null,
+      );
+
+  /// Reports an unhandled Dart [error] as a **crash** report (the app lives on: both SDKs file it
+  /// under crashes, for what a Flutter app has no way to terminate over). This is for an error you
+  /// caught at the top of something yourself; the hooks of [installErrorHandlers] do not use it
+  /// unless told to (`reportAsCrash: true`). Like the SDKs' `logUnhandledException`; the same answer and failures as
+  /// [logException]. Android's SDK writes the report on the calling thread (the plugin calls it from its own thread) and iOS delivers it at
+  /// the next launch, one at a time (doc/exceptions.md).
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
+  static Future<bool> logUnhandledException(
+    Object error, [
+    StackTrace? stackTrace,
+  ]) => _runtime.logException(
+    error,
+    stackTrace ?? StackTrace.current,
+    handled: false,
+    stackCaptured: stackTrace == null,
+  );
+
+  /// [logException] / [logUnhandledException] in one call with the options Dart cannot put on those
+  /// two (an optional positional stack and named options do not mix): [handled] (default `true`: an
+  /// error report; `false` a crash report) and the grouping [domain] (1 to 256 characters; the issues
+  /// of one domain group together on the dashboard; on iOS dropped when [handled] is false, where the
+  /// SDK has none). A bad [domain] is a [BugseeArgumentException].
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
+  static Future<bool> reportException(
+    Object error, {
+    StackTrace? stackTrace,
+    bool handled = true,
+    String? domain,
+  }) => _runtime.logException(
+    error,
+    stackTrace ?? StackTrace.current,
+    handled: handled,
+    domain: domain,
+    stackCaptured: stackTrace == null,
+  );
+
+  /// Starts reporting the Dart errors nobody handled, chained to whatever handlers are installed.
+  ///
+  /// Opt-in: nothing is installed until this is called, and launching does not call it. It hooks
+  /// `FlutterError.onError` ([flutterErrors]), `PlatformDispatcher.instance.onError`
+  /// ([platformErrors]) and the root isolate's error listener ([isolateErrors]); errors in a zone
+  /// you create need [runGuarded], and in isolates you spawn [listenToIsolateErrors].
+  ///
+  /// It never replaces or swallows a handler: the one that was installed before (the app's,
+  /// Crashlytics', Sentry's) is still called, and its answer is returned; without one the engine
+  /// reports the error as it would have. **Call it AFTER the tools that assign these handlers**:
+  /// Crashlytics' documented setup (`FlutterError.onError = recordFlutterFatalError`) REPLACES
+  /// the handler, so a Bugsee installed before it is dropped from the chain and reports nothing
+  /// ([errorHandlersActive] tells; a debug build says so at [launch]). A tool that wraps the
+  /// current handler (Sentry's `init`) keeps ours in its chain either way. A second call while
+  /// installed does nothing. Hot restart starts clean (the handlers are Dart statics of the new
+  /// isolate).
+  ///
+  /// An error is reported once (the same object, or the same text, seen twice within a second counts
+  /// as one: a root-zone error reaches both `PlatformDispatcher.onError` and the isolate listener),
+  /// the same error at most once in 30 s and at most 10 reports in 60 s: a build error that repeats
+  /// every frame opens one report, not sixty. `FlutterErrorDetails.silent` errors are not reported.
+  /// Nothing from `FlutterErrorDetails` but the exception and its stack is read (no widget trees, no
+  /// information collector).
+  ///
+  /// By default they are filed as **error** reports ([reportAsCrash] `false`): a Dart error never
+  /// ends the app (neither SDK terminates it), the React Native SDK files only fatal JS errors as
+  /// crashes, and a crash report counts against crash-free sessions and, on iOS, replaces the one
+  /// stored crash report (so ten a minute would still deliver only the last, at the next launch).
+  /// `reportAsCrash: true` files **crash** reports instead (what 9.x did for `FlutterError.onError`);
+  /// an error the previous `PlatformDispatcher` handler says it handled (`true`) is never a crash.
+  /// The simulator files nothing on iOS (doc/exceptions.md). Nothing is reported while `detect.crash`
+  /// was false in the last launch made through [launch].
+  static void installErrorHandlers({
+    bool flutterErrors = true,
+    bool platformErrors = true,
+    bool isolateErrors = true,
+    bool reportAsCrash = false,
+  }) => _runtime.errorCapture.install(
+    flutterErrors: flutterErrors,
+    platformErrors: platformErrors,
+    isolateErrors: isolateErrors,
+    reportAsCrash: reportAsCrash,
+  );
+
+  /// Removes what [installErrorHandlers] installed, putting the previous handlers back when ours
+  /// are still the current ones. If another tool wrapped ours since, they cannot be unlinked: they
+  /// stay in that tool's chain and pass every error on, reporting nothing.
+  static void uninstallErrorHandlers() => _runtime.errorCapture.uninstall();
+
+  /// Whether [installErrorHandlers] was called (and not undone).
+  static bool get errorHandlersInstalled => _runtime.errorCapture.isInstalled;
+
+  /// Whether [installErrorHandlers] is in effect AND its handlers are still the current
+  /// `FlutterError.onError` / `PlatformDispatcher.onError`. `false` after another tool replaced them
+  /// (install after it); also `false` when a tool wrapped them, in which case Bugsee still reports
+  /// whenever that tool calls the handler it wrapped, which cannot be told from here.
+  static bool get errorHandlersActive => _runtime.errorCapture.isActive;
+
+  /// `runZonedGuarded` that reports what escapes [body] (errors from timers, futures and microtasks
+  /// started in it) and then calls [onError]; without [onError] the error goes to
+  /// `FlutterError.reportError`, so it is still printed and still reaches the app's handlers.
+  /// Reported like the installed handlers report: an error report, or a crash report when
+  /// [installErrorHandlers] was told `reportAsCrash: true`.
+  static R? runGuarded<R>(
+    R Function() body, {
+    void Function(Object error, StackTrace stack)? onError,
+  }) {
+    return runZonedGuarded<R>(body, (error, stack) {
+      _runtime.errorCapture.captureZoneError(error, stack);
+      if (onError != null) {
+        onError(error, stack);
+      } else {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stack,
+            library: 'bugsee_flutter',
+            context: ErrorDescription('in a zone guarded by Bugsee.runGuarded'),
+          ),
+        );
+      }
+    });
+  }
+
+  /// Reports the errors that [isolate] (one you spawned) does not catch, until you call `cancel` on
+  /// the result. Start the isolate paused, add the listener, then resume it: an isolate that exits
+  /// first is missed. Works whether or not [installErrorHandlers] was called.
+  static IsolateErrorListener listenToIsolateErrors(Isolate isolate) =>
+      _runtime.errorCapture.listenTo(isolate);
 }

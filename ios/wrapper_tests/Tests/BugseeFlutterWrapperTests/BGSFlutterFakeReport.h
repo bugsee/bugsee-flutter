@@ -30,6 +30,27 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) dispatch_block_t onSummarySet;
 /// How many times `reportId` / `type` were read.
 @property(nonatomic) NSUInteger reads;
+
+// ---- Attachments and screenshots: a model of what the SDK does (nextgen `BGSReport.m`) ----------
+/// The attachments the report holds (`BGSFlutterFakeAttachment`s).
+@property(nonatomic, readonly) NSMutableArray<id<BGSAttachmentContract>> *fakeAttachments;
+/// What each add received: `@{@"path"/@"data", @"name", @"mimeType", @"move"}`.
+@property(nonatomic, readonly) NSMutableArray<NSDictionary *> *adds;
+/// The SDK declines every add (nil), as it does for a report that is no longer live.
+@property(nonatomic) BOOL refuseAdds;
+/// Where the model stores what it was given (a copy; a move also deletes the source).
+@property(nonatomic, copy, nullable) NSString *storagePath;
+/// displayId -> `@[UIImage, @(annotated)]`.
+@property(nonatomic, readonly) NSMutableDictionary<NSNumber *, NSArray *> *fakeScreenshots;
+@end
+
+/// A `BGSAttachmentContract` with plain storage.
+@interface BGSFlutterFakeAttachment : NSObject <BGSAttachmentContract>
+@property(nonatomic, copy, nullable) NSString *name;
+@property(nonatomic, copy, nullable) NSString *mimeType;
+@property(nonatomic, copy, nullable) NSString *fileName;
+@property(nonatomic, copy, nullable) NSString *filePath;
+@property(nonatomic, strong, nullable) NSData *data;
 @end
 
 NS_ASSUME_NONNULL_END

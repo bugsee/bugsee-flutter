@@ -1,7 +1,11 @@
 // Regenerates the Dart <-> native bridge from pigeons/bridge.dart, or with
 // --check verifies the committed outputs are current without leaving changes.
 //
-// Run: dart scripts/generate_pigeon.dart [--check]   (needs network for pub get)
+// Run: dart scripts/generate_pigeon.dart [--package <dir>] [--check]   (needs network for pub get)
+//
+// Without --package it is the core's bridge (pigeons/). `--package packages/bugsee_flutter_feedback`
+// does the same for that package's own bridge (<dir>/pigeons/); the pin is the one in this
+// repository's native-versions.json either way.
 //
 // Pigeon is pinned in native-versions.json (`pigeon.version`) and in
 // pigeons/pubspec.yaml; test/native_versions_test.dart compares both. It lives
@@ -39,7 +43,13 @@ Future<void> run(
 Future<void> main(List<String> args) async {
   final check = args.contains('--check');
   final root = File.fromUri(Platform.script).parent.parent.path;
-  final pigeons = '$root/pigeons';
+  final at = args.indexOf('--package');
+  if (at >= 0 && at + 1 >= args.length) {
+    stderr.writeln('--package needs a directory');
+    exit(64);
+  }
+  final package = at >= 0 ? '$root/${args[at + 1]}' : root;
+  final pigeons = '$package/pigeons';
 
   final pinned =
       (jsonDecode(File('$root/native-versions.json').readAsStringSync())
@@ -47,7 +57,7 @@ Future<void> main(List<String> args) async {
           as String;
   final pubspec = File('$pigeons/pubspec.yaml').readAsStringSync();
   if (!RegExp('^  pigeon: $pinned\$', multiLine: true).hasMatch(pubspec)) {
-    stderr.writeln('pigeons/pubspec.yaml does not pin pigeon $pinned');
+    stderr.writeln('$pigeons/pubspec.yaml does not pin pigeon $pinned');
     exit(1);
   }
 

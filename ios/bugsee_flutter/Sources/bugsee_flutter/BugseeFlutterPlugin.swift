@@ -86,6 +86,8 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     // Completes what was handed to this engine's Dart: nothing else knows those handles.
     if let owner = reportOwner {
       BGSFlutterReportHandlerPipeline.shared().detachOwner(owner)
+      // Its created report, if any, goes with it; another engine's does not.
+      files.resetOwner(owner)
       reportOwner = nil
     }
     // The engine's UI is gone; there is nothing left of it to hide.
@@ -317,9 +319,56 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
         severity: severity.map { NSNumber(value: $0) }, labels: labels))
   }
 
+  // MARK: Network capture (Phase 5b; see BGSFlutterNetworkOps)
+
+  private let networkSdk = BGSFlutterRealNetworkSdk()
+
+  func addNetworkEvents(events: [NetworkEventMessage]) throws -> Int64 {
+    // The ObjC operations take plain dictionaries (they cannot see this module's Pigeon types).
+    let dictionaries: [[String: Any]] = events.map { event in
+      var d: [String: Any] = [
+        "id": event.id, "stage": event.stage, "mechanism": event.mechanism,
+        "method": event.method, "url": event.url, "ageMs": event.ageMs, "size": event.size,
+        "statusCode": event.statusCode,
+      ]
+      if let v = event.headers { d["headers"] = v }
+      if let v = event.body { d["body"] = v }
+      if let v = event.noBodyReason { d["noBodyReason"] = v }
+      if let v = event.statusText { d["statusText"] = v }
+      if let v = event.errorShortMessage { d["errorShortMessage"] = v }
+      if let v = event.errorDescription { d["errorDescription"] = v }
+      if let v = event.redirectedFromUrl { d["redirectedFromUrl"] = v }
+      return d
+    }
+    return Int64(BGSFlutterNetworkOps.addEvents(sdk: networkSdk, events: dictionaries))
+  }
+
+  // MARK: Exceptions (Phase 5a; see BGSFlutterExceptionOps)
+
+  private let exceptionSdk = BGSFlutterRealExceptionSdk()
+
+  func logException(payload: String, handled: Bool, domain: String?) async throws -> Bool {
+    // On the main queue, where the SDK's public API is used (it reads UIKit state); the generated
+    // async handler would otherwise run on the cooperative pool.
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+      DispatchQueue.main.async {
+        let result = BGSFlutterExceptionOps.log(
+          sdk: self.exceptionSdk, payload: payload, handled: handled, domain: domain)
+        if let code = result.errorCode {
+          continuation.resume(
+            throwing: PigeonError(code: code, message: result.errorMessage ?? code, details: nil))
+        } else {
+          continuation.resume(returning: (result.value as? NSNumber)?.boolValue ?? false)
+        }
+      }
+    }
+  }
+
   // MARK: Report handlers
 
   func resetReportHandlers() throws {
+    // A new Dart isolate does not know the old one's created report: release it now.
+    files.resetOwner(reportOwner ?? self)
     if let owner = reportOwner {
       BGSFlutterReportHandlerPipeline.shared().resetOwner(owner)
     }
@@ -343,7 +392,14 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     return ReportSnapshotMessage(
       id: s.reportId, type: s.type, summary: s.summary, reportDescription: s.reportDescription,
       email: s.email, severity: s.severity?.int64Value, labels: s.labels,
-      attributes: s.attributes)
+      attributes: s.attributes,
+      attachments: s.attachments.map { a in
+        ReportAttachmentMessage(
+          name: a[0] as? String, mimeType: a[1] as? String, fileName: a[2] as? String)
+      },
+      screenshots: s.screenshots.map { shot in
+        ReportScreenshotMessage(displayId: shot[0].int64Value, annotated: shot[1].boolValue)
+      })
   }
 
   func reportSetSummary(handle: String, value: String?) throws -> Bool {
@@ -410,6 +466,136 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
       BGSFlutterReportOps.clearAttributes(onReport: report)
       return true
     }
+  }
+
+  // MARK: Attachments, screenshots and createReport (Phase 6; see BGSFlutterReportFileFlow)
+
+  private let files = BGSFlutterReportFileFlow.shared()
+
+  /// A flow operation as an async call. The flow replies on the main queue; a code is an error
+  /// reply, a value is the failure code of a file operation (`nil`: done).
+  private func fileReply(_ start: (@escaping BGSFlutterFlowReply) -> Void) async throws -> String? {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String?, Error>) in
+      start { value, code, message in
+        if let code = code {
+          continuation.resume(throwing: PigeonError(code: code, message: message ?? code, details: nil))
+        } else {
+          continuation.resume(returning: value as? String)
+        }
+      }
+    }
+  }
+
+  func reportAddAttachment(handle: String, path: String, name: String, mimeType: String?, move: Bool)
+    async throws -> String?
+  {
+    try await fileReply { reply in
+      files.handlerAddFile(handle, path: path, name: name, mimeType: mimeType, move: move, reply: reply)
+    }
+  }
+
+  func reportAddAttachmentBytes(
+    handle: String, data: FlutterStandardTypedData, name: String, mimeType: String?
+  ) async throws -> String? {
+    try await fileReply { reply in
+      files.handlerAddData(handle, data: data.data, name: name, mimeType: mimeType, reply: reply)
+    }
+  }
+
+  func reportClearAttachments(handle: String) async throws -> String? {
+    try await fileReply { reply in files.handlerClearAttachments(handle, reply: reply) }
+  }
+
+  func reportSetScreenshot(handle: String, path: String, displayId: Int64, annotated: Bool)
+    async throws -> String?
+  {
+    try await fileReply { reply in
+      files.handlerSetScreenshot(
+        handle, path: path, displayId: displayId, annotated: annotated, reply: reply)
+    }
+  }
+
+  func reportRemoveScreenshot(handle: String, displayId: Int64) async throws -> String? {
+    try await fileReply { reply in
+      files.handlerRemoveScreenshot(handle, displayId: displayId, reply: reply)
+    }
+  }
+
+  func createReport(ttlMs: Int64) async throws -> String? {
+    try await fileReply { reply in files.create(forOwner: reportOwner ?? self, ttlMs: ttlMs, reply: reply) }
+  }
+
+  func createdReportRead(handle: String) throws -> CreatedReportSnapshotMessage? {
+    guard let s = files.readCreated(handle) else { return nil }
+    return CreatedReportSnapshotMessage(
+      // iOS's created report has no id and no type of its own: empty id, and `bug` (the SDK
+      // creates it for an upload, which is a bug report).
+      reportId: "", type: "bug", summary: s.summary, reportDescription: s.reportDescription,
+      severity: s.severity?.int64Value, labels: s.labels, attributes: s.attributes,
+      attachmentNames: s.attachmentNames, screenshotDisplayIds: s.screenshotDisplayIds.map { $0.int64Value })
+  }
+
+  func createdReportApply(handle: String, patch: CreatedReportPatchMessage) throws -> Bool {
+    let p = BGSFlutterCreatedReportPatch()
+    p.setSummary = patch.setSummary
+    p.summary = patch.summary
+    p.setDescription = patch.setDescription
+    p.reportDescription = patch.reportDescription
+    p.severity = patch.severity.map { NSNumber(value: $0) }
+    p.labels = patch.labels
+    p.clearAttributes = patch.clearAttributes
+    p.attributes = patch.attributes
+    p.removeAttributes = patch.removeAttributes
+    var message: NSString?
+    guard files.apply(toCreated: handle, patch: p, message: &message) else { return false }
+    if let message = message {
+      throw PigeonError(code: "invalid-argument", message: message as String, details: nil)
+    }
+    return true
+  }
+
+  func createdReportAddAttachment(handle: String, path: String, name: String, mimeType: String?)
+    async throws -> String?
+  {
+    try await fileReply { reply in
+      files.createdAddFile(handle, path: path, name: name, mimeType: mimeType, reply: reply)
+    }
+  }
+
+  func createdReportAddAttachmentBytes(
+    handle: String, data: FlutterStandardTypedData, name: String, mimeType: String?
+  ) async throws -> String? {
+    try await fileReply { reply in
+      files.createdAddData(handle, data: data.data, name: name, mimeType: mimeType, reply: reply)
+    }
+  }
+
+  func createdReportClearAttachments(handle: String) async throws -> String? {
+    try await fileReply { reply in files.createdClearAttachments(handle, reply: reply) }
+  }
+
+  func createdReportSetScreenshot(handle: String, path: String, annotated: Bool) async throws
+    -> String?
+  {
+    try await fileReply { reply in
+      files.createdSetScreenshot(handle, path: path, annotated: annotated, reply: reply)
+    }
+  }
+
+  func createdReportUpload(handle: String) async throws -> Bool {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+      files.uploadCreated(handle) { value, code, message in
+        if let code = code {
+          continuation.resume(throwing: PigeonError(code: code, message: message ?? code, details: nil))
+        } else {
+          continuation.resume(returning: (value as? NSNumber)?.boolValue ?? false)
+        }
+      }
+    }
+  }
+
+  func createdReportDiscard(handle: String) throws {
+    files.discardCreated(handle)
   }
 
   /// false: the handle is not live, nothing changed. An unusable argument is an error reply.

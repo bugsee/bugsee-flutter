@@ -1,0 +1,32 @@
+# Used by `pub publish` INSTEAD of .gitignore (pub reads one or the other per directory), so
+# everything in .gitignore is repeated here, then the dev-only trees: the iOS test package (its
+# Sources is a symlink that would be published as a full duplicate of the plugin's Objective-C
+# sources) and the pigeon code generator.
+# test/feedback_package_drift_test.dart (repository root) asserts the .gitignore rules are all here.
+.DS_Store
+*.class
+*.log
+*.pyc
+*.swp
+*.iml
+*.ipr
+*.iws
+.idea/
+.history
+.svn/
+migrate_working_dir/
+/android/local.properties
+/android/.gradle/
+/android/build/
+.build/
+.swiftpm/
+.dart_tool/
+**/doc/api/
+/build/
+/coverage/
+/pubspec.lock
+
+# Dev-only; not part of the package
+/ios/feedback_wrapper_tests/
+/pigeons/
+/ios/feedback_wrapper_tests/Package.resolved

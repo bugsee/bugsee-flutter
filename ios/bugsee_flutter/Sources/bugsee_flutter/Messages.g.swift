@@ -565,6 +565,96 @@ struct ReportHandlerRequestMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// One attachment of a report, as the SDK lists it: the display name, the MIME type and the
+/// source file's base name. Never the file's content or its place in the SDK's storage.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct ReportAttachmentMessage: Hashable, CustomStringConvertible {
+  var name: String? = nil
+  var mimeType: String? = nil
+  var fileName: String? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> ReportAttachmentMessage? {
+    let name: String? = nilOrValue(pigeonVar_list[0])
+    let mimeType: String? = nilOrValue(pigeonVar_list[1])
+    let fileName: String? = nilOrValue(pigeonVar_list[2])
+
+    return ReportAttachmentMessage(
+      name: name,
+      mimeType: mimeType,
+      fileName: fileName
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      name,
+      mimeType,
+      fileName,
+    ]
+  }
+  static func == (lhs: ReportAttachmentMessage, rhs: ReportAttachmentMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.name, rhs.name) && MessagesPigeonInternal.deepEquals(lhs.mimeType, rhs.mimeType) && MessagesPigeonInternal.deepEquals(lhs.fileName, rhs.fileName)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("ReportAttachmentMessage")
+    MessagesPigeonInternal.deepHash(value: name, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: mimeType, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: fileName, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "ReportAttachmentMessage(name: \(String(describing: name)), mimeType: \(String(describing: mimeType)), fileName: \(String(describing: fileName)))"
+  }
+}
+
+/// One screenshot a report holds. [annotated] is whether the user (or the app) drew on it.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct ReportScreenshotMessage: Hashable, CustomStringConvertible {
+  var displayId: Int64
+  var annotated: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> ReportScreenshotMessage? {
+    let displayId = pigeonVar_list[0] as! Int64
+    let annotated = pigeonVar_list[1] as! Bool
+
+    return ReportScreenshotMessage(
+      displayId: displayId,
+      annotated: annotated
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      displayId,
+      annotated,
+    ]
+  }
+  static func == (lhs: ReportScreenshotMessage, rhs: ReportScreenshotMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.displayId, rhs.displayId) && MessagesPigeonInternal.deepEquals(lhs.annotated, rhs.annotated)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("ReportScreenshotMessage")
+    MessagesPigeonInternal.deepHash(value: displayId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: annotated, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "ReportScreenshotMessage(displayId: \(String(describing: displayId)), annotated: \(String(describing: annotated)))"
+  }
+}
+
 /// A read of a live report. [severity] is the SDK's internal integer (1..5), or
 /// null when the SDK reports none (iOS reads 0 for "never set"; 7.4).
 ///
@@ -581,6 +671,10 @@ struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
   /// Only values both SDKs accept: String, bool, int, double. Anything else the
   /// report holds is left out rather than stringified.
   var attributes: [String: Any]
+  /// The attachments, in the order they were added; metadata only.
+  var attachments: [ReportAttachmentMessage]
+  /// The displays that hold a screenshot, ascending by display id.
+  var screenshots: [ReportScreenshotMessage]
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -593,6 +687,8 @@ struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
     let severity: Int64? = nilOrValue(pigeonVar_list[5])
     let labels = pigeonVar_list[6] as! [String]
     let attributes = pigeonVar_list[7] as! [String: Any]
+    let attachments = pigeonVar_list[8] as! [ReportAttachmentMessage]
+    let screenshots = pigeonVar_list[9] as! [ReportScreenshotMessage]
 
     return ReportSnapshotMessage(
       id: id,
@@ -602,7 +698,9 @@ struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
       email: email,
       severity: severity,
       labels: labels,
-      attributes: attributes
+      attributes: attributes,
+      attachments: attachments,
+      screenshots: screenshots
     )
   }
   func toList() -> [Any?] {
@@ -615,13 +713,15 @@ struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
       severity,
       labels,
       attributes,
+      attachments,
+      screenshots,
     ]
   }
   static func == (lhs: ReportSnapshotMessage, rhs: ReportSnapshotMessage) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MessagesPigeonInternal.deepEquals(lhs.id, rhs.id) && MessagesPigeonInternal.deepEquals(lhs.type, rhs.type) && MessagesPigeonInternal.deepEquals(lhs.summary, rhs.summary) && MessagesPigeonInternal.deepEquals(lhs.reportDescription, rhs.reportDescription) && MessagesPigeonInternal.deepEquals(lhs.email, rhs.email) && MessagesPigeonInternal.deepEquals(lhs.severity, rhs.severity) && MessagesPigeonInternal.deepEquals(lhs.labels, rhs.labels) && MessagesPigeonInternal.deepEquals(lhs.attributes, rhs.attributes)
+    return MessagesPigeonInternal.deepEquals(lhs.id, rhs.id) && MessagesPigeonInternal.deepEquals(lhs.type, rhs.type) && MessagesPigeonInternal.deepEquals(lhs.summary, rhs.summary) && MessagesPigeonInternal.deepEquals(lhs.reportDescription, rhs.reportDescription) && MessagesPigeonInternal.deepEquals(lhs.email, rhs.email) && MessagesPigeonInternal.deepEquals(lhs.severity, rhs.severity) && MessagesPigeonInternal.deepEquals(lhs.labels, rhs.labels) && MessagesPigeonInternal.deepEquals(lhs.attributes, rhs.attributes) && MessagesPigeonInternal.deepEquals(lhs.attachments, rhs.attachments) && MessagesPigeonInternal.deepEquals(lhs.screenshots, rhs.screenshots)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -634,10 +734,175 @@ struct ReportSnapshotMessage: Hashable, CustomStringConvertible {
     MessagesPigeonInternal.deepHash(value: severity, hasher: &hasher)
     MessagesPigeonInternal.deepHash(value: labels, hasher: &hasher)
     MessagesPigeonInternal.deepHash(value: attributes, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: attachments, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: screenshots, hasher: &hasher)
   }
 
   public var description: String {
-    return "ReportSnapshotMessage(id: \(String(describing: id)), type: \(String(describing: type)), summary: \(String(describing: summary)), reportDescription: \(String(describing: reportDescription)), email: \(String(describing: email)), severity: \(String(describing: severity)), labels: \(String(describing: labels)), attributes: \(String(describing: attributes)))"
+    return "ReportSnapshotMessage(id: \(String(describing: id)), type: \(String(describing: type)), summary: \(String(describing: summary)), reportDescription: \(String(describing: reportDescription)), email: \(String(describing: email)), severity: \(String(describing: severity)), labels: \(String(describing: labels)), attributes: \(String(describing: attributes)), attachments: \(String(describing: attachments)), screenshots: \(String(describing: screenshots)))"
+  }
+}
+
+/// A read of a report made by `createReport` (workbook 7.3 plus the SDKs' own creation APIs). iOS
+/// gives the app a `BugseeExtendedReport`, which has no id, type, e-mail, screenshot flag or
+/// attachment metadata beyond the name: those are absent here ([reportId] and [type] are empty
+/// strings, [attachmentNames] carries only what iOS can list, [screenshotDisplayIds] is `[0]` or
+/// empty there).
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct CreatedReportSnapshotMessage: Hashable, CustomStringConvertible {
+  var reportId: String
+  var type: String
+  var summary: String? = nil
+  var reportDescription: String? = nil
+  var severity: Int64? = nil
+  var labels: [String]
+  var attributes: [String: Any]
+  var attachmentNames: [String]
+  var screenshotDisplayIds: [Int64]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> CreatedReportSnapshotMessage? {
+    let reportId = pigeonVar_list[0] as! String
+    let type = pigeonVar_list[1] as! String
+    let summary: String? = nilOrValue(pigeonVar_list[2])
+    let reportDescription: String? = nilOrValue(pigeonVar_list[3])
+    let severity: Int64? = nilOrValue(pigeonVar_list[4])
+    let labels = pigeonVar_list[5] as! [String]
+    let attributes = pigeonVar_list[6] as! [String: Any]
+    let attachmentNames = pigeonVar_list[7] as! [String]
+    let screenshotDisplayIds = pigeonVar_list[8] as! [Int64]
+
+    return CreatedReportSnapshotMessage(
+      reportId: reportId,
+      type: type,
+      summary: summary,
+      reportDescription: reportDescription,
+      severity: severity,
+      labels: labels,
+      attributes: attributes,
+      attachmentNames: attachmentNames,
+      screenshotDisplayIds: screenshotDisplayIds
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      reportId,
+      type,
+      summary,
+      reportDescription,
+      severity,
+      labels,
+      attributes,
+      attachmentNames,
+      screenshotDisplayIds,
+    ]
+  }
+  static func == (lhs: CreatedReportSnapshotMessage, rhs: CreatedReportSnapshotMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.reportId, rhs.reportId) && MessagesPigeonInternal.deepEquals(lhs.type, rhs.type) && MessagesPigeonInternal.deepEquals(lhs.summary, rhs.summary) && MessagesPigeonInternal.deepEquals(lhs.reportDescription, rhs.reportDescription) && MessagesPigeonInternal.deepEquals(lhs.severity, rhs.severity) && MessagesPigeonInternal.deepEquals(lhs.labels, rhs.labels) && MessagesPigeonInternal.deepEquals(lhs.attributes, rhs.attributes) && MessagesPigeonInternal.deepEquals(lhs.attachmentNames, rhs.attachmentNames) && MessagesPigeonInternal.deepEquals(lhs.screenshotDisplayIds, rhs.screenshotDisplayIds)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("CreatedReportSnapshotMessage")
+    MessagesPigeonInternal.deepHash(value: reportId, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: type, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: summary, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: reportDescription, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: severity, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: labels, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: attributes, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: attachmentNames, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: screenshotDisplayIds, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "CreatedReportSnapshotMessage(reportId: \(String(describing: reportId)), type: \(String(describing: type)), summary: \(String(describing: summary)), reportDescription: \(String(describing: reportDescription)), severity: \(String(describing: severity)), labels: \(String(describing: labels)), attributes: \(String(describing: attributes)), attachmentNames: \(String(describing: attachmentNames)), screenshotDisplayIds: \(String(describing: screenshotDisplayIds)))"
+  }
+}
+
+/// Edits to a created report, validated as a WHOLE before any is applied (one bad field changes
+/// nothing). A `set*` flag says the field is part of the patch: that is how a `null` summary
+/// (clear it) differs from an absent one (leave it).
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct CreatedReportPatchMessage: Hashable, CustomStringConvertible {
+  var setSummary: Bool
+  var summary: String? = nil
+  var setDescription: Bool
+  var reportDescription: String? = nil
+  /// The SDK's internal integer (1..5), or null to leave it.
+  var severity: Int64? = nil
+  /// Replaces the labels when not null.
+  var labels: [String]? = nil
+  /// Applied first, then [attributes], then [removeAttributes].
+  var clearAttributes: Bool
+  var attributes: [String: Any]? = nil
+  var removeAttributes: [String]? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> CreatedReportPatchMessage? {
+    let setSummary = pigeonVar_list[0] as! Bool
+    let summary: String? = nilOrValue(pigeonVar_list[1])
+    let setDescription = pigeonVar_list[2] as! Bool
+    let reportDescription: String? = nilOrValue(pigeonVar_list[3])
+    let severity: Int64? = nilOrValue(pigeonVar_list[4])
+    let labels: [String]? = nilOrValue(pigeonVar_list[5])
+    let clearAttributes = pigeonVar_list[6] as! Bool
+    let attributes: [String: Any]? = nilOrValue(pigeonVar_list[7])
+    let removeAttributes: [String]? = nilOrValue(pigeonVar_list[8])
+
+    return CreatedReportPatchMessage(
+      setSummary: setSummary,
+      summary: summary,
+      setDescription: setDescription,
+      reportDescription: reportDescription,
+      severity: severity,
+      labels: labels,
+      clearAttributes: clearAttributes,
+      attributes: attributes,
+      removeAttributes: removeAttributes
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      setSummary,
+      summary,
+      setDescription,
+      reportDescription,
+      severity,
+      labels,
+      clearAttributes,
+      attributes,
+      removeAttributes,
+    ]
+  }
+  static func == (lhs: CreatedReportPatchMessage, rhs: CreatedReportPatchMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.setSummary, rhs.setSummary) && MessagesPigeonInternal.deepEquals(lhs.summary, rhs.summary) && MessagesPigeonInternal.deepEquals(lhs.setDescription, rhs.setDescription) && MessagesPigeonInternal.deepEquals(lhs.reportDescription, rhs.reportDescription) && MessagesPigeonInternal.deepEquals(lhs.severity, rhs.severity) && MessagesPigeonInternal.deepEquals(lhs.labels, rhs.labels) && MessagesPigeonInternal.deepEquals(lhs.clearAttributes, rhs.clearAttributes) && MessagesPigeonInternal.deepEquals(lhs.attributes, rhs.attributes) && MessagesPigeonInternal.deepEquals(lhs.removeAttributes, rhs.removeAttributes)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("CreatedReportPatchMessage")
+    MessagesPigeonInternal.deepHash(value: setSummary, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: summary, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: setDescription, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: reportDescription, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: severity, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: labels, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: clearAttributes, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: attributes, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: removeAttributes, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "CreatedReportPatchMessage(setSummary: \(String(describing: setSummary)), summary: \(String(describing: summary)), setDescription: \(String(describing: setDescription)), reportDescription: \(String(describing: reportDescription)), severity: \(String(describing: severity)), labels: \(String(describing: labels)), clearAttributes: \(String(describing: clearAttributes)), attributes: \(String(describing: attributes)), removeAttributes: \(String(describing: removeAttributes)))"
   }
 }
 
@@ -757,6 +1022,141 @@ struct BreadcrumbMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
+/// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
+/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+/// through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
+/// native filter still apply (doc/network.md).
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct NetworkEventMessage: Hashable, CustomStringConvertible {
+  /// Shared by every stage of one request; never empty.
+  var id: String
+  /// `before`, `redirect`, `complete`, `error` or `abort` (the SDK's own stage names; iOS spells
+  /// `abort` `cancel` and has no `redirect` stage, which native handles).
+  var stage: String
+  /// The intercepted stack, free-form (`dart:io`).
+  var mechanism: String
+  var method: String
+  var url: String
+  /// How long ago the event happened, in milliseconds, measured on Dart's monotonic clock when the
+  /// batch was handed to the bridge. Native subtracts it from the SDK's own clock, so the event
+  /// is stamped on the clock the SDK validates against (Android: `currentTimestamp()`, which is not
+  /// `DateTime.now()` once the device clock has been corrected) and not on one the SDK may drop.
+  var ageMs: Int64
+  /// Body size in bytes, 0 when unknown.
+  var size: Int64
+  /// HTTP status, 0 for a stage with none.
+  var statusCode: Int64
+  /// Header names are lower-case (Dart's), repeated values joined by `, `.
+  var headers: [String: String]? = nil
+  /// The body as text, only when Dart captured it (text content, within the SDK's size limit).
+  var body: String? = nil
+  /// Why [body] is absent: `no_data`, `size_too_large`, `unsupported_content_type`,
+  /// `no_content_type` or `cant_read_data` (the SDKs' wire values).
+  var noBodyReason: String? = nil
+  /// Android stores it, iOS drops it (the iOS bundle writes null).
+  var statusText: String? = nil
+  var errorShortMessage: String? = nil
+  var errorDescription: String? = nil
+  /// iOS carries a redirect as the original URL on the final event; Android has `redirect` stages.
+  var redirectedFromUrl: String? = nil
+  /// Milliseconds, Android only (iOS has no field for them).
+  var timings: [String: Double]? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> NetworkEventMessage? {
+    let id = pigeonVar_list[0] as! String
+    let stage = pigeonVar_list[1] as! String
+    let mechanism = pigeonVar_list[2] as! String
+    let method = pigeonVar_list[3] as! String
+    let url = pigeonVar_list[4] as! String
+    let ageMs = pigeonVar_list[5] as! Int64
+    let size = pigeonVar_list[6] as! Int64
+    let statusCode = pigeonVar_list[7] as! Int64
+    let headers: [String: String]? = nilOrValue(pigeonVar_list[8])
+    let body: String? = nilOrValue(pigeonVar_list[9])
+    let noBodyReason: String? = nilOrValue(pigeonVar_list[10])
+    let statusText: String? = nilOrValue(pigeonVar_list[11])
+    let errorShortMessage: String? = nilOrValue(pigeonVar_list[12])
+    let errorDescription: String? = nilOrValue(pigeonVar_list[13])
+    let redirectedFromUrl: String? = nilOrValue(pigeonVar_list[14])
+    let timings: [String: Double]? = nilOrValue(pigeonVar_list[15])
+
+    return NetworkEventMessage(
+      id: id,
+      stage: stage,
+      mechanism: mechanism,
+      method: method,
+      url: url,
+      ageMs: ageMs,
+      size: size,
+      statusCode: statusCode,
+      headers: headers,
+      body: body,
+      noBodyReason: noBodyReason,
+      statusText: statusText,
+      errorShortMessage: errorShortMessage,
+      errorDescription: errorDescription,
+      redirectedFromUrl: redirectedFromUrl,
+      timings: timings
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      id,
+      stage,
+      mechanism,
+      method,
+      url,
+      ageMs,
+      size,
+      statusCode,
+      headers,
+      body,
+      noBodyReason,
+      statusText,
+      errorShortMessage,
+      errorDescription,
+      redirectedFromUrl,
+      timings,
+    ]
+  }
+  static func == (lhs: NetworkEventMessage, rhs: NetworkEventMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.id, rhs.id) && MessagesPigeonInternal.deepEquals(lhs.stage, rhs.stage) && MessagesPigeonInternal.deepEquals(lhs.mechanism, rhs.mechanism) && MessagesPigeonInternal.deepEquals(lhs.method, rhs.method) && MessagesPigeonInternal.deepEquals(lhs.url, rhs.url) && MessagesPigeonInternal.deepEquals(lhs.ageMs, rhs.ageMs) && MessagesPigeonInternal.deepEquals(lhs.size, rhs.size) && MessagesPigeonInternal.deepEquals(lhs.statusCode, rhs.statusCode) && MessagesPigeonInternal.deepEquals(lhs.headers, rhs.headers) && MessagesPigeonInternal.deepEquals(lhs.body, rhs.body) && MessagesPigeonInternal.deepEquals(lhs.noBodyReason, rhs.noBodyReason) && MessagesPigeonInternal.deepEquals(lhs.statusText, rhs.statusText) && MessagesPigeonInternal.deepEquals(lhs.errorShortMessage, rhs.errorShortMessage) && MessagesPigeonInternal.deepEquals(lhs.errorDescription, rhs.errorDescription) && MessagesPigeonInternal.deepEquals(lhs.redirectedFromUrl, rhs.redirectedFromUrl) && MessagesPigeonInternal.deepEquals(lhs.timings, rhs.timings)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("NetworkEventMessage")
+    MessagesPigeonInternal.deepHash(value: id, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: stage, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: mechanism, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: method, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: url, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: ageMs, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: size, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: statusCode, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: headers, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: body, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: noBodyReason, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: statusText, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: errorShortMessage, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: errorDescription, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: redirectedFromUrl, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: timings, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "NetworkEventMessage(id: \(String(describing: id)), stage: \(String(describing: stage)), mechanism: \(String(describing: mechanism)), method: \(String(describing: method)), url: \(String(describing: url)), ageMs: \(String(describing: ageMs)), size: \(String(describing: size)), statusCode: \(String(describing: statusCode)), headers: \(String(describing: headers)), body: \(String(describing: body)), noBodyReason: \(String(describing: noBodyReason)), statusText: \(String(describing: statusText)), errorShortMessage: \(String(describing: errorShortMessage)), errorDescription: \(String(describing: errorDescription)), redirectedFromUrl: \(String(describing: redirectedFromUrl)), timings: \(String(describing: timings)))"
+  }
+}
+
 private class MessagesPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -773,11 +1173,21 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
     case 134:
       return ReportHandlerRequestMessage.fromList(self.readValue() as! [Any?])
     case 135:
-      return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
+      return ReportAttachmentMessage.fromList(self.readValue() as! [Any?])
     case 136:
-      return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
+      return ReportScreenshotMessage.fromList(self.readValue() as! [Any?])
     case 137:
+      return ReportSnapshotMessage.fromList(self.readValue() as! [Any?])
+    case 138:
+      return CreatedReportSnapshotMessage.fromList(self.readValue() as! [Any?])
+    case 139:
+      return CreatedReportPatchMessage.fromList(self.readValue() as! [Any?])
+    case 140:
+      return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
+    case 141:
       return BreadcrumbMessage.fromList(self.readValue() as! [Any?])
+    case 142:
+      return NetworkEventMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -804,14 +1214,29 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? ReportHandlerRequestMessage {
       super.writeByte(134)
       super.writeValue(value.toList())
-    } else if let value = value as? ReportSnapshotMessage {
+    } else if let value = value as? ReportAttachmentMessage {
       super.writeByte(135)
       super.writeValue(value.toList())
-    } else if let value = value as? LaunchOutcomeMessage {
+    } else if let value = value as? ReportScreenshotMessage {
       super.writeByte(136)
       super.writeValue(value.toList())
-    } else if let value = value as? BreadcrumbMessage {
+    } else if let value = value as? ReportSnapshotMessage {
       super.writeByte(137)
+      super.writeValue(value.toList())
+    } else if let value = value as? CreatedReportSnapshotMessage {
+      super.writeByte(138)
+      super.writeValue(value.toList())
+    } else if let value = value as? CreatedReportPatchMessage {
+      super.writeByte(139)
+      super.writeValue(value.toList())
+    } else if let value = value as? LaunchOutcomeMessage {
+      super.writeByte(140)
+      super.writeValue(value.toList())
+    } else if let value = value as? BreadcrumbMessage {
+      super.writeByte(141)
+      super.writeValue(value.toList())
+    } else if let value = value as? NetworkEventMessage {
+      super.writeByte(142)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -885,6 +1310,45 @@ protocol BugseeBridgeHostApi {
   func reportSetAttribute(handle: String, name: String, value: Any) throws -> Bool
   func reportRemoveAttribute(handle: String, name: String) throws -> Bool
   func reportClearAttributes(handle: String) throws -> Bool
+  /// Copies ([move] false) or moves ([move] true) the file at [path] into the report's storage.
+  func reportAddAttachment(handle: String, path: String, name: String, mimeType: String?, move: Bool) async throws -> String?
+  /// Writes [data] (at most `kMaxAttachmentBytes`) into the report's storage.
+  func reportAddAttachmentBytes(handle: String, data: FlutterStandardTypedData, name: String, mimeType: String?) async throws -> String?
+  /// Removes every attachment, deleting their files.
+  func reportClearAttachments(handle: String) async throws -> String?
+  /// Decodes the image file at [path] natively and stores it as the screenshot of [displayId].
+  /// [annotated] says the picture carries the user's drawing (it reaches the bundle as the screenshot
+  /// entry's `annotated` attribute).
+  func reportSetScreenshot(handle: String, path: String, displayId: Int64, annotated: Bool) async throws -> String?
+  /// Removes the screenshot of [displayId] (a no-op when there is none).
+  func reportRemoveScreenshot(handle: String, displayId: Int64) async throws -> String?
+  /// Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
+  /// (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
+  /// does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
+  /// SDK did not answer in time.
+  func createReport(ttlMs: Int64) async throws -> String?
+  /// Null when the handle is not live.
+  func createdReportRead(handle: String) throws -> CreatedReportSnapshotMessage?
+  /// Applies [patch] as a whole. False when the handle is not live. An unusable field is a
+  /// PlatformException `invalid-argument` and nothing is applied.
+  func createdReportApply(handle: String, patch: CreatedReportPatchMessage) throws -> Bool
+  /// Copies the file at [path] into the report (never moves it). iOS keeps the bytes in memory
+  /// until upload and its SDK takes at most 3 files of 3 MiB (see doc/api-surface.md); a refusal
+  /// is `limit` / `too-large`.
+  func createdReportAddAttachment(handle: String, path: String, name: String, mimeType: String?) async throws -> String?
+  func createdReportAddAttachmentBytes(handle: String, data: FlutterStandardTypedData, name: String, mimeType: String?) async throws -> String?
+  func createdReportClearAttachments(handle: String) async throws -> String?
+  /// [annotated] is Android only: iOS answers `unsupported` for true.
+  func createdReportSetScreenshot(handle: String, path: String, annotated: Bool) async throws -> String?
+  /// Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
+  /// answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
+  /// handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+  /// live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
+  func createdReportUpload(handle: String) async throws -> Bool
+  /// Releases the report without uploading it (deletes the attachments the app added on Android; the
+  /// SDK has no way to cancel a created report, so it is simply never sent). A no-op for an unknown
+  /// handle.
+  func createdReportDiscard(handle: String) throws
   /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
   /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
   /// when the SDK answers: after capture started (`launched`), at once for the other outcomes. An
@@ -943,6 +1407,34 @@ protocol BugseeBridgeHostApi {
   func showReportDialog(summary: String?, description: String?, severity: Int64?, labels: [String]?) throws
   /// Creates and uploads a report with no UI. A no-op before the SDK is launched.
   func upload(summary: String, description: String, severity: Int64?, labels: [String]?) throws
+  /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+  /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+  /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+  /// throws for a single bad event.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+  /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+  /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+  /// documented to be callable from any thread; one queue keeps the order.
+  func addNetworkEvents(events: [NetworkEventMessage]) throws -> Int64
+  /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+  /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+  /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+  /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+  /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+  /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+  /// path: dropped there).
+  ///
+  /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+  /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+  /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+  /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+  ///
+  /// `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+  /// is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+  /// of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+  /// answers `false`. iOS answers at once on the platform thread.
+  func logException(payload: String, handled: Bool, domain: String?) async throws -> Bool
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -951,6 +1443,11 @@ class BugseeBridgeHostApiSetup {
   /// Sets up an instance of `BugseeBridgeHostApi` to handle messages through the `binaryMessenger`.
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: BugseeBridgeHostApi?, messageChannelSuffix: String = "") {
     let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    #if os(iOS)
+      let taskQueue = binaryMessenger.makeBackgroundTaskQueue?()
+    #else
+      let taskQueue: FlutterTaskQueue? = nil
+    #endif
     /// The Dart side is listening: flush what was buffered while it was not (in
     /// order) and deliver from now on.
     let attachLifecycleChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.attachLifecycle\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
@@ -1255,6 +1752,283 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       reportClearAttributesChannel.setMessageHandler(nil)
+    }
+    /// Copies ([move] false) or moves ([move] true) the file at [path] into the report's storage.
+    let reportAddAttachmentChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddAttachment\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportAddAttachmentChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let pathArg = args[1] as! String
+        let nameArg = args[2] as! String
+        let mimeTypeArg: String? = nilOrValue(args[3])
+        let moveArg = args[4] as! Bool
+        Task { @MainActor in
+          do {
+            let result = try await api.reportAddAttachment(handle: handleArg, path: pathArg, name: nameArg, mimeType: mimeTypeArg, move: moveArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      reportAddAttachmentChannel.setMessageHandler(nil)
+    }
+    /// Writes [data] (at most `kMaxAttachmentBytes`) into the report's storage.
+    let reportAddAttachmentBytesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportAddAttachmentBytes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportAddAttachmentBytesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let dataArg = args[1] as! FlutterStandardTypedData
+        let nameArg = args[2] as! String
+        let mimeTypeArg: String? = nilOrValue(args[3])
+        Task { @MainActor in
+          do {
+            let result = try await api.reportAddAttachmentBytes(handle: handleArg, data: dataArg, name: nameArg, mimeType: mimeTypeArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      reportAddAttachmentBytesChannel.setMessageHandler(nil)
+    }
+    /// Removes every attachment, deleting their files.
+    let reportClearAttachmentsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportClearAttachments\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportClearAttachmentsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        Task { @MainActor in
+          do {
+            let result = try await api.reportClearAttachments(handle: handleArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      reportClearAttachmentsChannel.setMessageHandler(nil)
+    }
+    /// Decodes the image file at [path] natively and stores it as the screenshot of [displayId].
+    /// [annotated] says the picture carries the user's drawing (it reaches the bundle as the screenshot
+    /// entry's `annotated` attribute).
+    let reportSetScreenshotChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportSetScreenshot\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportSetScreenshotChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let pathArg = args[1] as! String
+        let displayIdArg = args[2] as! Int64
+        let annotatedArg = args[3] as! Bool
+        Task { @MainActor in
+          do {
+            let result = try await api.reportSetScreenshot(handle: handleArg, path: pathArg, displayId: displayIdArg, annotated: annotatedArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      reportSetScreenshotChannel.setMessageHandler(nil)
+    }
+    /// Removes the screenshot of [displayId] (a no-op when there is none).
+    let reportRemoveScreenshotChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.reportRemoveScreenshot\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      reportRemoveScreenshotChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let displayIdArg = args[1] as! Int64
+        Task { @MainActor in
+          do {
+            let result = try await api.reportRemoveScreenshot(handle: handleArg, displayId: displayIdArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      reportRemoveScreenshotChannel.setMessageHandler(nil)
+    }
+    /// Asks the SDK for a report to fill in. Completes with its handle, or null when the SDK made none
+    /// (not launched). [ttlMs] is how long native keeps it: after that it is discarded, whatever Dart
+    /// does. PlatformException `create-busy` when one is already outstanding, `create-rate-limited` after too many in a minute (the SDKs cannot cancel one), `create-timeout` when the
+    /// SDK did not answer in time.
+    let createReportChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createReport\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createReportChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let ttlMsArg = args[0] as! Int64
+        Task { @MainActor in
+          do {
+            let result = try await api.createReport(ttlMs: ttlMsArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      createReportChannel.setMessageHandler(nil)
+    }
+    /// Null when the handle is not live.
+    let createdReportReadChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportRead\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportReadChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          let result = try api.createdReportRead(handle: handleArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      createdReportReadChannel.setMessageHandler(nil)
+    }
+    /// Applies [patch] as a whole. False when the handle is not live. An unusable field is a
+    /// PlatformException `invalid-argument` and nothing is applied.
+    let createdReportApplyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportApply\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportApplyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let patchArg = args[1] as! CreatedReportPatchMessage
+        do {
+          let result = try api.createdReportApply(handle: handleArg, patch: patchArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      createdReportApplyChannel.setMessageHandler(nil)
+    }
+    /// Copies the file at [path] into the report (never moves it). iOS keeps the bytes in memory
+    /// until upload and its SDK takes at most 3 files of 3 MiB (see doc/api-surface.md); a refusal
+    /// is `limit` / `too-large`.
+    let createdReportAddAttachmentChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportAddAttachment\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportAddAttachmentChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let pathArg = args[1] as! String
+        let nameArg = args[2] as! String
+        let mimeTypeArg: String? = nilOrValue(args[3])
+        Task { @MainActor in
+          do {
+            let result = try await api.createdReportAddAttachment(handle: handleArg, path: pathArg, name: nameArg, mimeType: mimeTypeArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      createdReportAddAttachmentChannel.setMessageHandler(nil)
+    }
+    let createdReportAddAttachmentBytesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportAddAttachmentBytes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportAddAttachmentBytesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let dataArg = args[1] as! FlutterStandardTypedData
+        let nameArg = args[2] as! String
+        let mimeTypeArg: String? = nilOrValue(args[3])
+        Task { @MainActor in
+          do {
+            let result = try await api.createdReportAddAttachmentBytes(handle: handleArg, data: dataArg, name: nameArg, mimeType: mimeTypeArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      createdReportAddAttachmentBytesChannel.setMessageHandler(nil)
+    }
+    let createdReportClearAttachmentsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportClearAttachments\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportClearAttachmentsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        Task { @MainActor in
+          do {
+            let result = try await api.createdReportClearAttachments(handle: handleArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      createdReportClearAttachmentsChannel.setMessageHandler(nil)
+    }
+    /// [annotated] is Android only: iOS answers `unsupported` for true.
+    let createdReportSetScreenshotChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportSetScreenshot\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportSetScreenshotChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let pathArg = args[1] as! String
+        let annotatedArg = args[2] as! Bool
+        Task { @MainActor in
+          do {
+            let result = try await api.createdReportSetScreenshot(handle: handleArg, path: pathArg, annotated: annotatedArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      createdReportSetScreenshotChannel.setMessageHandler(nil)
+    }
+    /// Hands the report to the SDK for processing and upload; the handle is dead from now on whatever the
+    /// answer. Completes with whether the SDK scheduled it (Android: its callback; iOS: it has been
+    /// handed off); false only means the SDK declined. PlatformException `not-live` when the handle is not
+    /// live, `upload-timeout` when the SDK did not answer in 45 s (it may still send the report).
+    let createdReportUploadChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportUpload\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportUploadChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        Task { @MainActor in
+          do {
+            let result = try await api.createdReportUpload(handle: handleArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      createdReportUploadChannel.setMessageHandler(nil)
+    }
+    /// Releases the report without uploading it (deletes the attachments the app added on Android; the
+    /// SDK has no way to cancel a created report, so it is simply never sent). A no-op for an unknown
+    /// handle.
+    let createdReportDiscardChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.createdReportDiscard\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      createdReportDiscardChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          try api.createdReportDiscard(handle: handleArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      createdReportDiscardChannel.setMessageHandler(nil)
     }
     /// Launches the SDK with the flat `com.bugsee.option.*` map built by the Dart encoder (enums as
     /// the SDK's INTERNAL integers; Android converts them to its enum constants natively). Completes
@@ -1622,6 +2396,68 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       uploadChannel.setMessageHandler(nil)
+    }
+    /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+    /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+    /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+    /// throws for a single bad event.
+    ///
+    /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+    /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+    /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+    /// documented to be callable from any thread; one queue keeps the order.
+    let addNetworkEventsChannel = taskQueue == nil
+      ? FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+      : FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec, taskQueue: taskQueue)
+    if let api = api {
+      addNetworkEventsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let eventsArg = args[0] as! [NetworkEventMessage]
+        do {
+          let result = try api.addNetworkEvents(events: eventsArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      addNetworkEventsChannel.setMessageHandler(nil)
+    }
+    /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
+    /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
+    /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
+    /// true: an error report (Android `logException`, iOS `logException:reason:domain:`); false: a
+    /// crash report (Android `logUnhandledException`, iOS `logUnhandledException:reason:`).
+    /// [domain] is the SDK's grouping domain, null for none (iOS has no domain on the unhandled
+    /// path: dropped there).
+    ///
+    /// Answers whether the SDK was HANDED the exception: `false` when it is not launching or
+    /// launched (before launch, after stop), where the SDK would drop it itself (Android, iOS
+    /// handled) or, on iOS unhandled, would still write a crash report, so the wrapper gates it. A
+    /// payload over the contract's limit or an empty one is `invalid-argument`, nothing reaches the SDK.
+    ///
+    /// `@async`: Android hands the SDK call to its own single background thread (an unhandled error
+    /// is written by the SDK on the calling thread, which snapshots the capture ring: up to a couple
+    /// of seconds on the platform thread would be jank or an ANR) and replies when it ran; a full queue
+    /// answers `false`. iOS answers at once on the platform thread.
+    let logExceptionChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.logException\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      logExceptionChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let payloadArg = args[0] as! String
+        let handledArg = args[1] as! Bool
+        let domainArg: String? = nilOrValue(args[2])
+        Task { @MainActor in
+          do {
+            let result = try await api.logException(payload: payloadArg, handled: handledArg, domain: domainArg)
+            reply(wrapResult(result))
+          } catch {
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      logExceptionChannel.setMessageHandler(nil)
     }
   }
 }

@@ -3,8 +3,12 @@ import 'dart:async';
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/material.dart';
 
+import 'attachments_screen.dart';
+import 'exceptions_screen.dart';
+import 'feedback_screen.dart';
 import 'facade_screen.dart';
 import 'view_hierarchy_screen.dart';
+import 'network_screen.dart';
 
 /// The application token from the Bugsee dashboard. Pass your own with
 /// `--dart-define=BUGSEE_TOKEN=...`; the default is a placeholder, so the SDK launches but its
@@ -54,6 +58,9 @@ Future<void> _afterReport(ReportProxy report) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Records the app's `dart:io` HTTP traffic from the moment the SDK is launched (the SDKs'
+  // own interception cannot see it); chained to any HttpOverrides the app installs.
+  Bugsee.installNetworkCapture();
   // Before launch, so reports the SDK recovers while launching are seen too.
   await Bugsee.setReportHandler(exampleReportHandler);
   runApp(const ExampleApp());
@@ -84,7 +91,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) => Scaffold(
     body: IndexedStack(
       index: _page,
-      children: const [LaunchScreen(), FacadeScreen(), ViewHierarchyScreen()],
+      children: const [
+        LaunchScreen(),
+        FacadeScreen(),
+        ExceptionsScreen(),
+        AttachmentsScreen(),
+        NetworkScreen(),
+        FeedbackScreen(),
+        ViewHierarchyScreen(),
+      ],
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _page,
@@ -99,6 +114,26 @@ class _HomeScreenState extends State<HomeScreen> {
           key: Key('tab-facade'),
           icon: Icon(Icons.bug_report_outlined),
           label: 'Data',
+        ),
+        NavigationDestination(
+          key: Key('tab-errors'),
+          icon: Icon(Icons.error_outline),
+          label: 'Errors',
+        ),
+        NavigationDestination(
+          key: Key('tab-files'),
+          icon: Icon(Icons.attach_file),
+          label: 'Files',
+        ),
+        NavigationDestination(
+          key: Key('tab-network'),
+          icon: Icon(Icons.swap_vert),
+          label: 'Network',
+        ),
+        NavigationDestination(
+          key: Key('tab-feedback'),
+          icon: Icon(Icons.chat_bubble_outline),
+          label: 'Chat',
         ),
         NavigationDestination(
           key: Key('tab-view-hierarchy'),

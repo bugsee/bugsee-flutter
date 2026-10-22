@@ -286,7 +286,7 @@ Design, data flow, the SDK rules with source refs, the privacy model, limits and
 - **Not verified**: a physical device, release/obfuscated builds, iOS echo on a device, a native log filter set by the app (the Android exception
   path is unit-tested only), tvOS/visionOS, hot restart on a device, the production backend.
 - **Tests**: Dart `log_pipeline_test`, `log_capture_test`, `logs_facade_test`, `logs_drift_test`, public API pins; JUnit `LogOpsTest`, `LogWireParityTest`;
-  XCTest `BGSFlutterLogOpsTests`. Mutations: MUT_COUNTS.
+  XCTest `BGSFlutterLogOpsTests`. Mutations (each applied to the code, the tests run, the code restored): **66 Dart, 14 Android, 13 iOS**. All killed in the end; survivors of the first pass were real gaps and were fixed (a stale policy read that the newer one did not supersede: the fake read the policy after the gate instead of when asked; launch's own policy refresh hidden by a test that refreshed by hand; `forwardLog`'s default level). Left as equivalent or untestable: the install early-return (the re-chain check makes it redundant), the uninstalled hook's own `_active` check (the record path checks it again), a no-op `copy` mutant, and the real SDK's `Launching` gate in `acceptsLogs` (static SDK state: device-verified, not unit-testable).
 
 ## 6. Phase 6 — Reports (Part 7, report-contract)
 

@@ -1,4 +1,4 @@
-# Dart errors (Phase 5a)
+# Dart errors
 
 How a Dart error reaches the Bugsee backend, what the two SDKs do with it, what the installed handlers
 do (and never do), and how an obfuscated build is symbolicated. Everything below was read from source
@@ -203,8 +203,10 @@ ELF itself to get the build id): build, then run the 9.x script with the app tok
 
 ```bash
 flutter build apk --release --obfuscate --split-debug-info=build/symbols     # also: ios, appbundle
-git show origin/release:scripts/symbols.py > symbols.py    # or the copy in a 9.x release of the package
-python3 symbols.py --token <APP_TOKEN> --version <pubspec version> --symdir build/symbols [--endpoint https://api.bugsee.com/v2/]
+# The 9.x script, pinned to the commit that last changed it on the `release` branch, and verified before it runs with your app token:
+curl -fsSL https://raw.githubusercontent.com/bugsee/bugsee-flutter/9bc0f8645755114491235dc68fec84fdc5671755/scripts/symbols.py -o symbols.py \
+  && echo "ef2ed4c25b87da764fd5b70238a41d776f6aa88b5e3174faa4e33de2f08453f7  symbols.py" | shasum -a 256 -c - \
+  && python3 symbols.py --token <APP_TOKEN> --version <pubspec version> --symdir build/symbols [--endpoint https://api.bugsee.com/v2/]
 ```
 
 It zips `build/symbols/*.symbols` with a manifest (`{'target':'flutter','items':[{arch, uuid, entry, version, build}]}`),

@@ -1,9 +1,9 @@
-# Log capture (Phase 5d)
+# Log capture
 
 What the app prints from Dart (`print`, `debugPrint`, and lines its own logging forwards) is recorded into the
 report's log by this plugin, **attributed to the plugin and not to the application**: the SDKs record it with
 source `Custom` (98), never as the app's deliberate `Bugsee.log` calls (source `Bugsee`, 4). The channel the SDKs
-built for that is the wrapper channel (`specs/sdk/wrapper-channel`), the same one network events use (5b). This page
+built for that is the wrapper channel (`specs/sdk/wrapper-channel`), the same one network events use ([network.md](network.md)). This page
 is the data flow, the source and level rules, the privacy model (read the "platform echo" section), the options,
 the limits, and the SDK source the decisions were read from.
 
@@ -23,7 +23,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 `logCaptureInstalled`, `logCaptureZoneSpecification`, `runWithLogCapture(body)`, `forwardLog(message, {level, tag})`,
 `setLogFilter(filter, {timeout})`, `logFilter`, `logCaptureStats`; `BugseeLogEvent`, `BugseeLogFilter`,
 `LogCaptureStats`, `logLevelForLoggingValue(int)`. `runGuarded` also records `print` in its zone.
-`Bugsee.log` (Phase 4b) is unchanged: app-sourced, bypasses the filter, not captured by this.
+`Bugsee.log` is unchanged: app-sourced, bypasses the filter, not captured by this.
 
 ## What the SDKs ship at the pins
 
@@ -74,8 +74,8 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 * **Order** is print order; one batch in flight; native runs on a serial background thread (a Pigeon task queue) because the
   app's native filter runs on the calling thread and a throw must not reach the platform thread.
 * **Timestamps**: neither channel takes one, so a line is stamped when native hands it to the SDK (a few ms after the
-  print when the pipeline is idle; a long queue or a slow filter widens it). Unlike 5b there is no `ageMs` (network events are
-  backdated by it, so a log line can appear after the request it preceded): the pinned SDKs could not use it. **TODO (PLAN.md 5d)**:
+  print when the pipeline is idle; a long queue or a slow filter widens it). Unlike network capture there is no `ageMs` (network events are
+  backdated by it, so a log line can appear after the request it preceded): the pinned SDKs could not use it. **Pending upstream (a pin condition, PLAN.md "Known gaps")**:
   send `BugseeLogEvent.time` once a release carries the timestamp overload (Android: a tag after `v7.4.2` containing `aa9ea4c18`;
   iOS: bugsee-cocoa#265). A filter that does not answer cannot skew the timeline for long: after three timeouts in a row the filter
   is switched off for 30 s and its lines are dropped at once (fail closed, `droppedFilterCoolDown`), instead of costing a timeout each.
@@ -106,7 +106,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 | `print` inside a zone with the hook (`runWithLogCapture`, `runGuarded`, your `runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)`) | yes, tag `print` | `Zone.root` cannot be replaced; a zone spec is the only hook Dart offers |
 | `print` in the root zone | **no** | cannot be hooked in Dart |
 | `debugPrint` (incl. the framework's own, `FlutterError`'s) | yes, tag `debugPrint`, wherever it is called | the callback is a global variable (chained) |
-| `FlutterError` diagnostics dump (`══╡ EXCEPTION CAUGHT ...`, `Another exception was thrown: ...`) | **never by this capture** (see the Android echo: on a real Android app the dump ALSO reaches the SDK's logcat capture, raw; `flutter test` routes `print` to the test reporter, not logcat, so the device runs here cannot show it) | the diagnostics tree carries widget trees and property values; the error itself is Phase 5a's. Counted in `droppedErrorDumps`. The release-mode `debugPrintStack` output (message + frames) is ordinary text and is recorded |
+| `FlutterError` diagnostics dump (`══╡ EXCEPTION CAUGHT ...`, `Another exception was thrown: ...`) | **never by this capture** (see the Android echo: on a real Android app the dump ALSO reaches the SDK's logcat capture, raw; `flutter test` routes `print` to the test reporter, not logcat, so the device runs here cannot show it) | the diagnostics tree carries widget trees and property values; the error itself is reported by `Bugsee.reportException` and the installed error handlers ([exceptions.md](exceptions.md)). Counted in `droppedErrorDumps`. The release-mode `debugPrintStack` output (message + frames) is ordinary text and is recorded |
 | the plugin's own `bugsee_flutter: ...` messages | never | a diagnostic that reached the pipeline it is about could meet a failing filter again (the spec's "at most once" rule) |
 | `dart:developer` `log()` | **no**, and cannot be hooked | it goes to the VM service, not the console; use `Bugsee.forwardLog` or `Bugsee.log` |
 | `package:logging` | via `Bugsee.forwardLog` (no dependency added) | `Logger.root.onRecord.listen((r) => Bugsee.forwardLog('${r.loggerName}: ${r.message}', level: logLevelForLoggingValue(r.level.value), tag: r.loggerName))`; SEVERE/SHOUT error, WARNING warning, INFO info, CONFIG/FINE debug, lower verbose |
@@ -161,7 +161,7 @@ What follows for privacy:
    10 s, the SDK's; at most 5 min) drops that line, counted (`filterFailures`), reported once in debug builds. A filter removed or
    replaced before the queue drains still applies to what was queued under it.
 4. **Then the SDK runs the app's native filter on what the filter returned, always** (the channel has no flag: `requiresFiltering`
-   is true inside both). **The SDKs have no default log sanitizer**: unlike network events (5b), nothing redacts a log line by
+   is true inside both). **The SDKs have no default log sanitizer**: unlike network events, nothing redacts a log line by
    rule. Measured: `card 4111111111111111 password=hunter2` printed with no filter is recorded verbatim by both SDKs.
 5. A Dart filter that returns the event with the secret untouched leaks it. Recommendation: **filter in Dart**, with an allow-style
    rule where possible, and keep secrets out of `print`.
@@ -197,7 +197,7 @@ effect at once (before the options are read again); a failure to read leaves not
 real throttled `debugPrint`, the real `FlutterError.dumpErrorToConsole`, install/uninstall/restart), `logs_facade_test.dart`
 (the runtime with a fake native side, the SDK's gates), `logs_drift_test.dart` (`test/fixtures/log_wire.json` against Dart, Java
 and Objective-C and the option manifests), JUnit `LogOpsTest` / `LogWireParityTest` (against the real `LogSource` / `LogLevel`),
-XCTest `BGSFlutterLogOpsTests`. Every one was mutation-checked (PLAN.md 5d). Runtime: `example/integration_test/logs_test.dart`.
+XCTest `BGSFlutterLogOpsTests`. Every one was checked with mutation testing (counts in PLAN.md). Runtime: `example/integration_test/logs_test.dart`.
 
 ## Verified on a device
 

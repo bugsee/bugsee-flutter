@@ -1,4 +1,4 @@
-# Device verification (Phase 7, workbook Part 9)
+# Device verification (workbook Part 9)
 
 What was measured on a device, how, with the evidence, and what was NOT covered. The harness that produced it is
 in the repository (`scripts/device/`), so every number below can be taken again; this file is the result of one
@@ -316,12 +316,11 @@ For follow-up (SDK or environment, not fixed here):
 
 ### Doc claims corrected
 
-* `PLAN.md` (3c) and `.claude/CLAUDE.md` said Android completes at once on a recovered report because the recovery path runs on
+* `PLAN.md` and `.claude/CLAUDE.md` said Android completes at once on a recovered report because the recovery path runs on
   a spawned `bugsee-report-handler-bounded` thread. That is the SDK's *early-crash* path (a second crash before the first
   `onResume`). A native-crash report recovered after a normal session runs on `BugseeReportHandlerThread` with the live
   window, Dart runs, and its edits land in the recovered bundle (scenario 3). Corrected in both. The workbook's table (Part 7.1.3)
   says "main" for Android: it is not main either (a spec gap, to report).
-* `.github/CI.md` said Phase 7 owns a device harness; it now describes it.
 
 ### Observations
 

@@ -1,7 +1,7 @@
 # CI/CD
 
 Nothing here publishes, tags or deploys. Releases to pub.dev are a separate, human-run
-step (PLAN.md Phase 8). All workflows except `claude-review.yml` (owned by the org's shared workflow, which needs
+step (PLAN.md, "Release checklist"). All workflows except `claude-review.yml` (owned by the org's shared workflow, which needs
 `pull-requests`/`issues` write, `id-token` write and a secret) use `permissions: contents: read`
 and checkout with `persist-credentials: false`.
 
@@ -31,7 +31,7 @@ push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or re
 
 ## Device verification harness (not in CI)
 
-`scripts/device/` (Dart; PLAN.md Phase 7, `doc/verification.md`) builds the verification app (`example/lib/verify_main.dart`),
+`scripts/device/` (Dart; `doc/verification.md`) builds the verification app (`example/lib/verify_main.dart`),
 drives it on an Android emulator and an iOS simulator through the loopback mock API, and asserts the workbook Part 9 recipes
 (native `SIGSEGV`, airplane-mode retention, crash across an update, obfuscated builds, secure regions at other densities,
 hot restart). It needs a device and builds, so no workflow runs it; what CI runs is its pure core: the parsers, the
@@ -51,7 +51,7 @@ dart scripts/device/verify.dart ios --udid <simulator> --reuse
 ## Device tests (not in CI)
 
 `example/integration_test/{launch,cold_start,facade,exceptions,attachments,view_hierarchy,network,logs}_test.dart` (`network_test.dart` and `logs_test.dart` also need the stand-in API: `ISSUE_OK=1 UPLOAD_STATUS=503 python3 example/integration_test/support/mock_api.py 8196 /tmp/mock.log &` and `--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:8196`, or `http://localhost:8196` for iOS; it listens on 127.0.0.1 only) need the real SDKs and a device, so they run by hand
-(the Phase 7 harness above drives the verification app, not these): `cd example && flutter test integration_test/facade_test.dart -d <emulator or simulator>`.
+(the device harness above drives the verification app, not these): `cd example && flutter test integration_test/facade_test.dart -d <emulator or simulator>`.
 `network_test.dart` needs a stand-in for the Bugsee API as the SDK's endpoint (`--dart-define=BUGSEE_ENDPOINT=http://<host>:<port>`; an Android debug build needs cleartext traffic allowed for that, which the example does not do: see `doc/network.md`) and `--dart-define=NET_HOLD=<seconds>` to keep the app alive while its bundle is read with `adb shell run-as`.
 `logs_test.dart` needs the same stand-in (`mock_api.py` keeps the uploaded bundle, whose `log.json` is the readback; see `doc/logs.md`) and `--dart-define=LOGS_HOLD=<seconds>`. A plain `flutter test` run does NOT show the SDK's console echo of `print` (its zone sends `print` to the test reporter); use a plain app run for that. They use a placeholder token; iOS's SDK stops itself after the first refused upload, which `facade_test` accounts for (see
 `.claude/CLAUDE.md`). `view_hierarchy_test.dart` needs no server: it picks a closed local port as the endpoint itself: on Android the SDK keeps the report bundle and the test reads its `viewtree.json` from the app's own files directory; on iOS it reads the SDK's capture buffer. The facade's own JUnit (`FacadeOpsTest`) and XCTest (`BGSFlutterFacadeOpsTests`) run in the `build-android` and `test` jobs.
@@ -88,7 +88,7 @@ version or the `native-pins.yml` Dart SDK stops matching the JSON, so bumping th
 means editing the JSON and the workflows together.
 
 The floor cannot go lower on Linux/Windows: the plugin is SwiftPM-only, so
-`flutter pub get` fails before 3.41.0 (measured; see PLAN.md D5).
+`flutter pub get` fails before 3.41.0 (measured; see PLAN.md, decision D5).
 
 ## Bridge codegen (Pigeon)
 

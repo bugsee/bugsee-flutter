@@ -235,7 +235,7 @@ publishing is on) and asks the SDK for a pass, which the cache answers. A no-op 
 
 ## Mutation checks and the mutants that were not killed
 
-Every test of this phase was mutation-checked: the behaviour broken, the test seen failing, the code restored (Dart about 80
+Every test of the view hierarchy was mutation-checked: the behaviour broken, the test seen failing, the code restored (Dart about 80
 mutants, Java 23, Objective-C 23). Twelve Dart mutants survived the first round and led to stronger tests (clip, zero-size
 nodes, providers, the obfuscation flag, the trailing build, a stale option read, the lifecycle observer, attach-once,
 capture-flush ordering). Left, with the reasoning:

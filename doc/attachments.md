@@ -1,6 +1,6 @@
-# Attachments, annotated screenshots and `createReport` (Phase 6)
+# Attachments, annotated screenshots and `createReport`
 
-The rest of the report surface, on top of the Phase 3c `ReportProxy` and the Phase 4b report handler. The normative
+The rest of the report surface, on top of the `ReportProxy` and the report handler (see [api-surface.md](api-surface.md)). The normative
 sources are `specs/sdk/report-contract` (method matrix, lifetime, "path-first", annotated screenshots) and workbook 7.3.3
 (attachments and screenshots do not cross a bridge as bytes: a file PATH crosses and native does the work).
 
@@ -43,7 +43,7 @@ as the spec says (#136, #145) and beta7 = `0581aa02c` has them.
 Errors: `BugseeArgumentException` (found in Dart before anything crosses; native defends again with `invalid-argument`),
 `ReportAttachmentException(reason)` (`ReportAttachmentFailure`: fileNotFound, notAFile, unreadable, tooLarge,
 limitReached, rejected, busy, unsupported, imageUndecodable, imageTooLarge), `ReportClosedError` (a late call on a
-handler's report, as in 3c) and its subclass `CreatedReportClosedError`, `CreateReportException` (`busy`, `timeout`, `rateLimited`, `uploadTimeout`).
+handler's report) and its subclass `CreatedReportClosedError`, `CreateReportException` (`busy`, `timeout`, `rateLimited`, `uploadTimeout`).
 
 **Left out, with the reason:** `createAndAddAttachment` / `Attachment.openStream()` (a stream cannot cross a bridge, and the
 spec says callers should not use it on an imported file); mutating a returned `Attachment` (`setName`, `setMimeType`,
@@ -79,7 +79,7 @@ into memory), 1000 attachments per report (the SDKs' own, extracted into `test/f
 or copied then deleted). The app should not delete its own file after a move; it should not rely on a copy's source being
 untouched by anyone else either.
 
-**Lifetime.** A handler's report is live until the handler's completion (3c). A file operation is claimed on the platform
+**Lifetime.** A handler's report is live until the handler's completion. A file operation is claimed on the platform
 thread when it is called: a handle live at that moment stays valid for the operation, and the wrapper's completion waits
 for the claim to end (`ReportHandlerPipeline.Lease`, `BGSFlutterReportLease`); a call after it is `ReportClosedError` and
 changes nothing. The wait is never a blocked thread.

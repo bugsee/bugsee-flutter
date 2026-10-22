@@ -92,6 +92,7 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     }
     // The engine's UI is gone; there is nothing left of it to hide.
     BGSFlutterSecureRectangleStore.shared().dropOwner(owner)
+    BGSFlutterViewHierarchyStore.shared().dropOwner(owner)
   }
 
   func attachLifecycle() throws {
@@ -167,6 +168,13 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
       tracker?.refresh()
     }
     return applied
+  }
+
+  func setViewHierarchy(snapshot: ViewHierarchyMessage) throws -> Bool {
+    return BGSFlutterViewHierarchyStore.shared().publish(
+      forOwner: owner, epoch: snapshot.epoch, sequence: snapshot.sequence,
+      viewId: snapshot.viewId, ratio: snapshot.devicePixelRatio, segments: snapshot.segments,
+      bounds: snapshot.bounds.withUnsafeBufferPointer { Data(buffer: $0) })
   }
 
   // MARK: Launch, stop, status (workbook Part 8; see BGSFlutterLaunchOps)
@@ -285,6 +293,10 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
 
   func endBlackout() throws {
     _ = try unwrap(BGSFlutterFacadeOps.endBlackout(sdk: facadeSdk))
+  }
+
+  func captureViewHierarchy() throws {
+    _ = try unwrap(BGSFlutterFacadeOps.captureViewHierarchy(sdk: facadeSdk))
   }
 
   func isBlackout() throws -> Bool {

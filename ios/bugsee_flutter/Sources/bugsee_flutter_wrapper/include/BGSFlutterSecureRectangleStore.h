@@ -54,6 +54,25 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 + (instancetype)absent;
 @end
 
+/// Where one view's logical pixels land on the screen, in the SDK's unit (points on iOS): the ONE
+/// place the ratio, unit, scale and position are combined, used for the secure rectangles and
+/// for the managed view hierarchy (`BGSFlutterViewHierarchyStore`), so the two can never disagree
+/// about where a point is. Immutable.
+@interface BGSFlutterPlacementMapper : NSObject
+@property(nonatomic, readonly) NSInteger display;
+/// `nil` when the numbers cannot be trusted: the view was measured at another ratio than the
+/// screen has now, or a ratio, unit or scale is not a positive finite number. The caller fails
+/// closed.
++ (nullable instancetype)mapperForPlacement:(BGSFlutterSecurePlacement *)placement
+                                  viewRatio:(double)viewRatio
+                                nativeRatio:(double)nativeRatio
+                                       unit:(double)unit;
+/// The screen x of a logical x of the view, before any rounding.
+- (double)xForLogical:(double)logical;
+/// The screen y of a logical y of the view, before any rounding.
+- (double)yForLogical:(double)logical;
+@end
+
 /// Where the secure-rectangle sets live (workbook 5.4.2): outside the wrapper
 /// object, because the wrapper is replaced mid-session when Dart refines the
 /// identity, and the regions must survive that or the app is recorded
@@ -136,6 +155,18 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 
 /// The SDK's pull: asks for a placement refresh, then serves.
 - (NSData *)pullForDisplay:(NSInteger)display;
+
+/// What a pull asks first: every tracker re-reads where its Flutter view is (synchronously when
+/// this is the main thread). Never throws.
+- (void)refreshPlacements;
+
+/// How `owner`'s view `viewId`, measured at `ratio`, maps onto its screen now, or `nil` when that
+/// is not known or not trustworthy (unplaced, off screen, a ratio that no longer matches the
+/// screen's): the caller serves nothing. The same checks and the same mapper as
+/// `-snapshotForDisplay:`.
+- (nullable BGSFlutterPlacementMapper *)mapperForOwner:(int64_t)owner
+                                                viewId:(int64_t)viewId
+                                                 ratio:(double)ratio;
 
 /// The buffer for `display`, computed from the current state, scale and size.
 - (NSData *)snapshotForDisplay:(NSInteger)display;

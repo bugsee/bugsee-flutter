@@ -4,6 +4,7 @@
 #import "BGSFlutterLifecycleHub.h"
 #import "BGSFlutterReportHandlerPipeline.h"
 #import "BGSFlutterSecureRectangleStore.h"
+#import "BGSFlutterViewHierarchyStore.h"
 #import "BGSFlutterWrapper.h"
 
 @import Bugsee;
@@ -58,6 +59,7 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
 
 - (void)tearDown {
   [[BGSFlutterSecureRectangleStore shared] clearForTests];
+  [[BGSFlutterViewHierarchyStore shared] clearForTests];
   [BGSFlutterWrapperRegistrar setRegistrationHandlerForTests:nil];
 }
 
@@ -161,7 +163,7 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
 
 #pragma mark - requestData (workbook 6.1, Part 6)
 
-/// Every type is answered with nil, `vh` included (its real flow is Phase 5), and never throws.
+/// Every type is answered with nil when there is nothing to say, `vh` included, and never throws.
 - (void)assertAnswersNilForEveryType:(id<BugseeWrapper>)wrapper {
   for (NSString *type in @[ @"vh", @"", @"something-new" ]) {
     BGSCountingCallback *callback = [[BGSCountingCallback alloc] init];
@@ -176,8 +178,70 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
   XCTAssertNoThrow([wrapper requestDataWithType:@"vh" callback:(id)nil]);
 }
 
-- (void)testRequestDataAnswersNilForEveryTypeAndNeverThrows {
+- (void)testRequestDataAnswersNilWhenThereIsNothingAndNeverThrows {
   [self assertAnswersNilForEveryType:(id<BugseeWrapper>)[BGSFlutterWrapper wrapperAtProcessStart]];
+}
+
+/// `vh` is answered from the cache, synchronously on the calling thread (the SDK's main thread: a
+/// reply that waited for Dart would deadlock it), exactly once; every other type is nil.
+- (void)testVhIsAnsweredFromTheCacheSynchronouslyOnTheCallingThread {
+  BGSFlutterSecureRectangleStore *secure =
+      [[BGSFlutterSecureRectangleStore alloc] initWithEnvironment:[[BGSWrapperTestScreen alloc] init]];
+  BGSFlutterViewHierarchyStore *views = [[BGSFlutterViewHierarchyStore alloc]
+      initWithPlacement:secure
+                  clock:^NSTimeInterval {
+                    return 5;
+                  }];
+  [secure setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:1 viewId:0];
+  double bounds[] = {0, 0, 10, 20};
+  XCTAssertTrue([views publishForOwner:1 epoch:1 sequence:1 viewId:0 ratio:3
+                              segments:(@[ @"A", @"B", @"C" ])
+                                bounds:[NSData dataWithBytes:bounds length:sizeof(bounds)]]);
+  id<BugseeWrapper> wrapper = (id<BugseeWrapper>)[BGSFlutterWrapper wrapperWithType:@"flutter"
+                                                                            version:@"1"
+                                                                              build:nil
+                                                                            context:nil
+                                                                                hub:[BGSFlutterLifecycleHub shared]
+                                                                   secureRectangles:secure
+                                                                            reports:[BGSFlutterReportHandlerPipeline shared]
+                                                                      viewHierarchy:views];
+  BGSCountingCallback *callback = [[BGSCountingCallback alloc] init];
+  [wrapper requestDataWithType:@"vh" callback:callback];
+  XCTAssertEqual(callback.calls, 1u, @"answered before the call returned, exactly once");
+  XCTAssertEqualObjects(callback.last, @"A0B[0,0,10,20]C");
+  for (NSString *other in @[ @"", @"VH", @"vh ", @"something-new" ]) {
+    BGSCountingCallback *reply = [[BGSCountingCallback alloc] init];
+    [wrapper requestDataWithType:other callback:reply];
+    XCTAssertEqual(reply.calls, 1u, @"%@", other);
+    XCTAssertEqualObjects(reply.last, @"<nil>", @"%@", other);
+  }
+}
+
+/// The wrapper is replaced when Dart refines the identity: the cache is not in it.
+- (void)testTheReplacedWrapperServesTheSameCache {
+  BGSFlutterSecureRectangleStore *secure = [BGSFlutterSecureRectangleStore shared];
+  [secure setEnvironment:[[BGSWrapperTestScreen alloc] init]];
+  [secure setPlacement:[BGSFlutterSecurePlacement knownOnDisplay:0 x:0 y:0] forOwner:77 viewId:0];
+  double bounds[] = {0, 0, 10, 20};
+  XCTAssertTrue([[BGSFlutterViewHierarchyStore shared] publishForOwner:77 epoch:1 sequence:1 viewId:0 ratio:3
+                                                              segments:(@[ @"A", @"B", @"C" ])
+                                                                bounds:[NSData dataWithBytes:bounds length:sizeof(bounds)]]);
+  NSMutableArray *registered = [NSMutableArray array];
+  [BGSFlutterWrapperRegistrar setRegistrationHandlerForTests:^(id w) {
+    [registered addObject:w];
+  }];
+  XCTAssertTrue([BGSFlutterWrapperRegistrar replaceWithType:@"flutter" version:@"1.2.3" build:nil context:nil]);
+  BGSCountingCallback *fromPlaceholder = [[BGSCountingCallback alloc] init];
+  BGSCountingCallback *fromRefined = [[BGSCountingCallback alloc] init];
+  [(id<BugseeWrapper>)[BGSFlutterWrapper wrapperAtProcessStart] requestDataWithType:@"vh" callback:fromPlaceholder];
+  [(id<BugseeWrapper>)registered.firstObject requestDataWithType:@"vh" callback:fromRefined];
+  // The age (the number after "A") depends on the clock: compare what does not.
+  NSRegularExpression *age = [NSRegularExpression regularExpressionWithPattern:@"^A\\d+B" options:0 error:nil];
+  NSString *(^withoutAge)(NSString *) = ^NSString *(NSString *s) {
+    return [age stringByReplacingMatchesInString:s options:0 range:NSMakeRange(0, s.length) withTemplate:@"AB"];
+  };
+  XCTAssertEqualObjects(withoutAge(fromRefined.last), @"AB[0,0,10,20]C");
+  XCTAssertEqualObjects(withoutAge(fromPlaceholder.last), withoutAge(fromRefined.last));
 }
 
 /// The wrapper is replaced at runtime when Dart refines the identity; the replacement answers too.

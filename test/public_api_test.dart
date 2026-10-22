@@ -211,6 +211,7 @@ void main() {
         'startBlackout',
         'endBlackout',
         'isBlackout',
+        'captureViewHierarchy',
         'showReportDialog',
         'upload',
         'createReport',

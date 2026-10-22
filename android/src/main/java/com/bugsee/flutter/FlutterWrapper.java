@@ -15,16 +15,16 @@ import java.util.Map;
 /**
  * The Flutter wrapper registered with the SDK.
  *
- * <p>Identity is real (workbook Part 3), and lifecycle events are forwarded
- * (Part 4). The rest is a deliberately inert stub until Phase 3 gives it
- * behaviour: data requests are answered with {@code null}. Report handlers go through
- * {@link ReportHandlerPipeline}. Every method is
- * safe to be called by the SDK at any time, from any thread, and none throws.
+ * <p>Identity is real (workbook Part 3), lifecycle events are forwarded (Part 4), data
+ * requests are answered (Part 6: {@code vh} from {@link ViewHierarchyStore}, everything else
+ * with {@code null}) and report handlers go through {@link ReportHandlerPipeline}. Every method
+ * is safe to be called by the SDK at any time, from any thread, and none throws.
  *
  * <p>This object is replaced mid-session when Dart refines the identity, so it
  * holds no state that must survive: lifecycle events go to the process-wide
- * {@link LifecycleHub} and secure rectangles come from the process-wide
- * {@link SecureRectangleStore} (5.4.2).
+ * {@link LifecycleHub}, secure rectangles come from the process-wide
+ * {@link SecureRectangleStore} (5.4.2) and the managed view hierarchy from the process-wide
+ * {@link ViewHierarchyStore}.
  */
 final class FlutterWrapper implements BugseeWrapper {
 
@@ -45,6 +45,7 @@ final class FlutterWrapper implements BugseeWrapper {
     private final LifecycleHub lifecycle;
     private final SecureRectangleStore secureRectangles;
     private final ReportHandlerPipeline reports;
+    private final ViewHierarchyStore views;
 
     /** The identity knowable before Dart exists: type and version only. */
     @NonNull
@@ -94,6 +95,22 @@ final class FlutterWrapper implements BugseeWrapper {
             @NonNull final SecureRectangleStore secureRectangles,
             @NonNull final ReportHandlerPipeline reports
     ) {
+        return create(type, version, build, context, lifecycle, secureRectangles, reports,
+                ViewHierarchyStore.shared());
+    }
+
+    /** As above with every process-wide collaborator supplied; for tests. */
+    @NonNull
+    static FlutterWrapper create(
+            @Nullable final Object type,
+            @Nullable final Object version,
+            @Nullable final Object build,
+            @Nullable final Object context,
+            @NonNull final LifecycleHub lifecycle,
+            @NonNull final SecureRectangleStore secureRectangles,
+            @NonNull final ReportHandlerPipeline reports,
+            @NonNull final ViewHierarchyStore views
+    ) {
         final Map<String, String> cleaned = new HashMap<>();
         if (context instanceof Map) {
             for (final Map.Entry<?, ?> e : ((Map<?, ?>) context).entrySet()) {
@@ -109,7 +126,8 @@ final class FlutterWrapper implements BugseeWrapper {
                 cleaned,
                 lifecycle,
                 secureRectangles,
-                reports);
+                reports,
+                views);
     }
 
     private static String stringOr(@Nullable final Object value, @NonNull final String fallback) {
@@ -123,9 +141,11 @@ final class FlutterWrapper implements BugseeWrapper {
             @NonNull final Map<String, String> context,
             @NonNull final LifecycleHub lifecycle,
             @NonNull final SecureRectangleStore secureRectangles,
-            @NonNull final ReportHandlerPipeline reports
+            @NonNull final ReportHandlerPipeline reports,
+            @NonNull final ViewHierarchyStore views
     ) {
         this.lifecycle = lifecycle;
+        this.views = views;
         this.secureRectangles = secureRectangles;
         this.reports = reports;
         this.type = type;
@@ -159,11 +179,12 @@ final class FlutterWrapper implements BugseeWrapper {
     }
 
     /**
-     * Always answers, and always with null for now: the one flow that exists is {@code vh}
-     * (the managed view hierarchy, Phase 5), and an unknown type is answered with null
-     * (workbook 6.1). Silence would cost the SDK the whole 500 ms budget, so even a
-     * {@code vh} request is answered, with null, until Phase 5 produces a payload.
-     * Never throws, whatever the SDK or its callback does.
+     * Always answers, exactly once, and never throws (workbook 6.1): {@code vh} (the managed view
+     * hierarchy) from {@link ViewHierarchyStore}, SYNCHRONOUSLY, on whatever thread the SDK asks
+     * (the main thread; a reply that waited for Dart would miss the report), and every other
+     * type, and {@code vh} when there is nothing to say, with {@code null}. The SDK stores a
+     * non-null reply byte for byte, so the store has already made it safe to store (privacy is
+     * Dart's: no text; fail closed here).
      */
     @Override
     public void requestData(
@@ -171,7 +192,7 @@ final class FlutterWrapper implements BugseeWrapper {
             @NonNull final DataRequestResultCallback callback
     ) {
         try {
-            callback.onResult(null);
+            callback.onResult(ViewHierarchyStore.TYPE.equals(dataType) ? views.answer() : null);
         } catch (Throwable ignored) {
             // The SDK must never see a throw from a wrapper.
         }

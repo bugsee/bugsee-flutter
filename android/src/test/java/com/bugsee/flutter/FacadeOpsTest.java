@@ -169,6 +169,11 @@ public class FacadeOpsTest {
         }
 
         @Override
+        public void captureViewHierarchy() {
+            record("captureViewHierarchy");
+        }
+
+        @Override
         public void endBlackout() {
             record("endBlackout");
             blackout = false;
@@ -549,6 +554,18 @@ public class FacadeOpsTest {
         assertEquals(Arrays.asList("isBlackout", "startBlackout", "isBlackout", "endBlackout", "isBlackout"), sdk.calls);
     }
 
+    // ---- view hierarchy -----------------------------------------------------------------------
+
+    @Test
+    public void captureViewHierarchyIsPassedStraightToTheSdk() throws Exception {
+        // SDK source (BugseeInternal.captureViewHierarchy): a no-op until the capture provider
+        // exists; the wrapper adds nothing, with no launch gate of its own.
+        final FakeSdk sdk = new FakeSdk();
+        sdk.running = false;
+        FacadeOps.captureViewHierarchy(sdk);
+        assertEquals(Arrays.asList("captureViewHierarchy"), sdk.calls);
+    }
+
     // ---- reports ------------------------------------------------------------------------------
 
     @Test
@@ -597,6 +614,7 @@ public class FacadeOpsTest {
             () -> FacadeOps.startBlackout(sdk),
             () -> FacadeOps.endBlackout(sdk),
             () -> FacadeOps.isBlackout(sdk),
+            () -> FacadeOps.captureViewHierarchy(sdk),
             () -> FacadeOps.showReportDialog(sdk, null, null, null, null),
             () -> FacadeOps.upload(sdk, "s", "d", null, null),
         };

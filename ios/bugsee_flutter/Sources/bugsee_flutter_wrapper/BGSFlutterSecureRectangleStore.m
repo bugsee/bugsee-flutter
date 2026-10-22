@@ -98,6 +98,40 @@ static const NSUInteger kRetiredEpochs = 32;
 }
 @end
 
+#pragma mark - Mapper
+
+static BOOL BGSUsable(double v);
+
+@implementation BGSFlutterPlacementMapper {
+  double _factor;
+  double _sx, _sy, _x, _y;
+}
++ (instancetype)mapperForPlacement:(BGSFlutterSecurePlacement *)placement
+                         viewRatio:(double)viewRatio
+                       nativeRatio:(double)nativeRatio
+                              unit:(double)unit {
+  if (!BGSUsable(viewRatio) || !BGSUsable(nativeRatio) || !BGSUsable(unit) ||
+      !BGSUsable(placement.scaleX) || !BGSUsable(placement.scaleY) ||
+      fabs(nativeRatio - viewRatio) > kRatioTolerance * fmax(1, viewRatio)) {
+    return nil;
+  }
+  BGSFlutterPlacementMapper *mapper = [[BGSFlutterPlacementMapper alloc] init];
+  mapper->_display = placement.display;
+  mapper->_factor = viewRatio * unit;
+  mapper->_sx = placement.scaleX;
+  mapper->_sy = placement.scaleY;
+  mapper->_x = placement.x;
+  mapper->_y = placement.y;
+  return mapper;
+}
+- (double)xForLogical:(double)logical {
+  return logical * _factor * _sx + _x;
+}
+- (double)yForLogical:(double)logical {
+  return logical * _factor * _sy + _y;
+}
+@end
+
 #pragma mark - Immutable state
 
 /// One Flutter view of one Dart isolate.
@@ -352,6 +386,11 @@ static const NSUInteger kRetiredEpochs = 32;
 }
 
 - (NSData *)pullForDisplay:(NSInteger)display {
+  [self refreshPlacements];
+  return [self snapshotForDisplay:display];
+}
+
+- (void)refreshPlacements {
   void (^hook)(void);
   @synchronized(_writeLock) {
     hook = _pullHook;
@@ -363,7 +402,25 @@ static const NSUInteger kRetiredEpochs = 32;
       // The pull is always answered.
     }
   }
-  return [self snapshotForDisplay:display];
+}
+
+- (BGSFlutterPlacementMapper *)mapperForOwner:(int64_t)owner viewId:(int64_t)viewId ratio:(double)ratio {
+  @try {
+    BGSFlutterSecurePlacement *placement =
+        [self currentState].placements[[BGSFlutterLane keyForOwner:owner viewId:viewId]];
+    if (placement == nil || placement.kind != BGSFlutterPlacementKnown) return nil;
+    id<BGSFlutterSecureEnvironment> env;
+    @synchronized(_serveLock) {
+      env = _environment;
+    }
+    return [BGSFlutterPlacementMapper
+        mapperForPlacement:placement
+                 viewRatio:ratio
+               nativeRatio:[env nativePixelRatioForDisplay:placement.display]
+                      unit:[env unitsPerPhysicalPixelForDisplay:placement.display]];
+  } @catch (id exception) {
+    return nil;
+  }
 }
 
 + (int32_t)versionAfter:(int32_t)version {
@@ -408,13 +465,12 @@ static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
       bounds = [env displayBoundsInPointsForDisplay:display];
       envRead = YES;
     }
-    double ratio = lane.ratio;
-    double factor = ratio * unit;
-    double sx = placement.scaleX, sy = placement.scaleY;
     NSUInteger count = lane.rects.length / sizeof(double);
-    if (!BGSUsable(ratio) || !BGSUsable(nativeRatio) || !BGSUsable(unit) || !BGSUsable(sx) ||
-        !BGSUsable(sy) || fabs(nativeRatio - ratio) > kRatioTolerance * fmax(1, ratio) ||
-        lane.rects.length % (4 * sizeof(double)) != 0) {
+    BGSFlutterPlacementMapper *mapper = [BGSFlutterPlacementMapper mapperForPlacement:placement
+                                                                            viewRatio:lane.ratio
+                                                                          nativeRatio:nativeRatio
+                                                                                 unit:unit];
+    if (mapper == nil || lane.rects.length % (4 * sizeof(double)) != 0) {
       // Measured at another ratio than the screen has now, or not measurable.
       whole = YES;
       continue;
@@ -428,10 +484,10 @@ static NSData *BGSServe(BGSFlutterSecureState *state, NSInteger display,
       }
       if (rt <= l || b <= t) continue;  // degenerate: nothing to hide
       // Scale and place first, round outward last (5.3.1).
-      int32_t il = BGSToInt(floor(l * factor * sx + placement.x));
-      int32_t it = BGSToInt(floor(t * factor * sy + placement.y));
-      int32_t ir = BGSToInt(ceil(rt * factor * sx + placement.x));
-      int32_t ib = BGSToInt(ceil(b * factor * sy + placement.y));
+      int32_t il = BGSToInt(floor([mapper xForLogical:l]));
+      int32_t it = BGSToInt(floor([mapper yForLogical:t]));
+      int32_t ir = BGSToInt(ceil([mapper xForLogical:rt]));
+      int32_t ib = BGSToInt(ceil([mapper yForLogical:b]));
       if (bounds.width > 0 && bounds.height > 0) {
         int32_t w = (int32_t)ceil(bounds.width), h = (int32_t)ceil(bounds.height);
         il = BGSClampInt(il, w);

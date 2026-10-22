@@ -97,6 +97,42 @@ class SecureRectanglesMessage {
   List<SecureViewRectanglesMessage> views;
 }
 
+/// One snapshot of the managed view hierarchy (`vh`) of one Flutter view, as a JSON TEMPLATE
+/// plus the numbers that fill it in (doc/view-hierarchy.md). Native keeps it in memory and
+/// answers the SDK's `vh` request from it, synchronously, on whatever thread asks.
+///
+/// [segments] has `bounds.length / 4 + 2` entries: native writes `segments[0]`, the snapshot's
+/// age in milliseconds, `segments[1]`, then for node `k` the box `[x,y,w,h]` converted from
+/// `bounds[4k..4k+3]` and `segments[k + 2]`. Never parsed, never changed otherwise. An EMPTY
+/// [segments] means "no hierarchy": it clears this isolate's snapshot. A list that does not
+/// have the shape above is refused and clears it too (fail closed).
+///
+/// [bounds] is flat `[l, t, r, b, ...]` in the view's LOGICAL pixels measured at
+/// [devicePixelRatio], origin at the view's top-left, converted by the same code that places the
+/// secure rectangles (physical pixels on Android, points on iOS).
+///
+/// Ordering is the secure rectangles' (`epoch`: a random id of the Dart isolate; `sequence`
+/// grows per message): a message that is not newer than one native applied is ignored.
+class ViewHierarchyMessage {
+  ViewHierarchyMessage({
+    required this.epoch,
+    required this.sequence,
+    required this.viewId,
+    required this.devicePixelRatio,
+    required this.segments,
+    required this.bounds,
+  });
+
+  int epoch;
+  int sequence;
+
+  /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
+  int viewId;
+  double devicePixelRatio;
+  List<String> segments;
+  List<double> bounds;
+}
+
 /// One report-handler delivery native hands to Dart: the report is reachable
 /// only through [handle] (a proxy, never a copy; workbook 7.3.1), and only until
 /// the handler's completion runs (7.3.4).
@@ -392,6 +428,11 @@ abstract class BugseeBridgeHostApi {
   /// applied, which is not an error).
   bool setSecureRectangles(SecureRectanglesMessage state);
 
+  /// Publishes (or, with empty segments, clears) the managed view hierarchy native serves for
+  /// the SDK's `vh` request (see [ViewHierarchyMessage]). Never throws on content. Returns
+  /// whether the message was applied (`false`: older than one already applied, not an error).
+  bool setViewHierarchy(ViewHierarchyMessage snapshot);
+
   /// A new Dart isolate is up (`BugseeBridge.start` calls it once, first): native completes
   /// every delivery still outstanding to the previous isolate (a hot restart would otherwise
   /// leave each report waiting for its deadline) and forgets which phases had a handler.
@@ -629,6 +670,11 @@ abstract class BugseeBridgeHostApi {
   void startBlackout();
 
   void endBlackout();
+
+  /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+  /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+  /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+  void captureViewHierarchy();
 
   bool isBlackout();
 

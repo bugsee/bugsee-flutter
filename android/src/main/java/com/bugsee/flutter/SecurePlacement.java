@@ -54,8 +54,9 @@ final class SecurePlacement implements ViewTreeObserver.OnGlobalLayoutListener {
     private final SecureRectangleStore store;
     private final SecureEnvironment environment;
 
+    /** Read off the main thread too (the view-hierarchy blackout gate): volatile. */
     @Nullable
-    private Activity activity;
+    private volatile Activity activity;
     @Nullable
     private FlutterView observed;
     private final int[] location = new int[2];
@@ -70,6 +71,30 @@ final class SecurePlacement implements ViewTreeObserver.OnGlobalLayoutListener {
         this.engine = engine;
         this.store = store;
         this.environment = environment;
+    }
+
+    /** The engine this tracks, as the stores key it. */
+    long owner() {
+        return owner;
+    }
+
+    /**
+     * Whether the window the Flutter view is in has {@code FLAG_SECURE}: the SDK blanks such a
+     * display (its {@code isActivityFlagSecureBlackOut}, on by default through
+     * {@code captureRespectFlagSecure}). Unknown (no activity) counts as secure.
+     */
+    boolean windowIsFlagSecure() {
+        try {
+            final Activity a = activity;
+            if (a == null) {
+                return true;
+            }
+            final android.view.WindowManager.LayoutParams attrs = a.getWindow().getAttributes();
+            return attrs == null
+                    || (attrs.flags & android.view.WindowManager.LayoutParams.FLAG_SECURE) != 0;
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     @UiThread

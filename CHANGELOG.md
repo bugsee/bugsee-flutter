@@ -9,6 +9,10 @@
   `startBlackout`/`endBlackout`/`isBlackout`, `showReportDialog`, `upload`, `setReportHandler`/`reportHandler`
   with `ReportProxy`, the `lifecycleEvents` stream and the `BugseeSecureView` widget. See `doc/api-surface.md`
   for the inventory of both SDKs, what is left out and why, and what each call does before `launch`.
+* The Flutter widget tree in reports (the SDK's `vh` data request): boxes and type names only, no text, keys
+  or semantics, a `BugseeSecureView` subtree redacted whole, answered synchronously from a native snapshot
+  cache the Dart side keeps current while the SDK is launched, its `captureViewHierarchy` option is on and the
+  app is in the foreground. New `Bugsee.captureViewHierarchy()`. See `doc/view-hierarchy.md`.
 
 * Network capture: `Bugsee.installNetworkCapture` / `uninstallNetworkCapture` record the app's `dart:io`
   HTTP traffic (`package:http`, `dio`'s default adapter, `Image.network`, ...) through a chaining

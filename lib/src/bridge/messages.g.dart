@@ -356,6 +356,99 @@ class SecureRectanglesMessage {
   }
 }
 
+/// One snapshot of the managed view hierarchy (`vh`) of one Flutter view, as a JSON TEMPLATE
+/// plus the numbers that fill it in (doc/view-hierarchy.md). Native keeps it in memory and
+/// answers the SDK's `vh` request from it, synchronously, on whatever thread asks.
+///
+/// [segments] has `bounds.length / 4 + 2` entries: native writes `segments[0]`, the snapshot's
+/// age in milliseconds, `segments[1]`, then for node `k` the box `[x,y,w,h]` converted from
+/// `bounds[4k..4k+3]` and `segments[k + 2]`. Never parsed, never changed otherwise. An EMPTY
+/// [segments] means "no hierarchy": it clears this isolate's snapshot. A list that does not
+/// have the shape above is refused and clears it too (fail closed).
+///
+/// [bounds] is flat `[l, t, r, b, ...]` in the view's LOGICAL pixels measured at
+/// [devicePixelRatio], origin at the view's top-left, converted by the same code that places the
+/// secure rectangles (physical pixels on Android, points on iOS).
+///
+/// Ordering is the secure rectangles' (`epoch`: a random id of the Dart isolate; `sequence`
+/// grows per message): a message that is not newer than one native applied is ignored.
+class ViewHierarchyMessage {
+  ViewHierarchyMessage({
+    required this.epoch,
+    required this.sequence,
+    required this.viewId,
+    required this.devicePixelRatio,
+    required this.segments,
+    required this.bounds,
+  });
+
+  int epoch;
+
+  int sequence;
+
+  /// `FlutterView.viewId`. Mobile engines have only the implicit view (0).
+  int viewId;
+
+  double devicePixelRatio;
+
+  List<String> segments;
+
+  List<double> bounds;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      epoch,
+      sequence,
+      viewId,
+      devicePixelRatio,
+      segments,
+      bounds,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static ViewHierarchyMessage decode(Object result) {
+    result as List<Object?>;
+    return ViewHierarchyMessage(
+      epoch: result[0]! as int,
+      sequence: result[1]! as int,
+      viewId: result[2]! as int,
+      devicePixelRatio: result[3]! as double,
+      segments: (result[4]! as List<Object?>).cast<String>(),
+      bounds: (result[5]! as List<Object?>).cast<double>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! ViewHierarchyMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(epoch, other.epoch) &&
+        _deepEquals(sequence, other.sequence) &&
+        _deepEquals(viewId, other.viewId) &&
+        _deepEquals(devicePixelRatio, other.devicePixelRatio) &&
+        _deepEquals(segments, other.segments) &&
+        _deepEquals(bounds, other.bounds);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'ViewHierarchyMessage(epoch: $epoch, sequence: $sequence, viewId: $viewId, devicePixelRatio: $devicePixelRatio, segments: $segments, bounds: $bounds)';
+  }
+}
+
 /// One report-handler delivery native hands to Dart: the report is reachable
 /// only through [handle] (a proxy, never a copy; workbook 7.3.1), and only until
 /// the handler's completion runs (7.3.4).
@@ -1165,32 +1258,35 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is SecureRectanglesMessage) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
-    } else if (value is ReportHandlerRequestMessage) {
+    } else if (value is ViewHierarchyMessage) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    } else if (value is ReportAttachmentMessage) {
+    } else if (value is ReportHandlerRequestMessage) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    } else if (value is ReportScreenshotMessage) {
+    } else if (value is ReportAttachmentMessage) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    } else if (value is ReportSnapshotMessage) {
+    } else if (value is ReportScreenshotMessage) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    } else if (value is CreatedReportSnapshotMessage) {
+    } else if (value is ReportSnapshotMessage) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    } else if (value is CreatedReportPatchMessage) {
+    } else if (value is CreatedReportSnapshotMessage) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    } else if (value is LaunchOutcomeMessage) {
+    } else if (value is CreatedReportPatchMessage) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    } else if (value is BreadcrumbMessage) {
+    } else if (value is LaunchOutcomeMessage) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    } else if (value is NetworkEventMessage) {
+    } else if (value is BreadcrumbMessage) {
       buffer.putUint8(141);
+      writeValue(buffer, value.encode());
+    } else if (value is NetworkEventMessage) {
+      buffer.putUint8(142);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -1209,22 +1305,24 @@ class _PigeonCodec extends StandardMessageCodec {
       case 132:
         return SecureRectanglesMessage.decode(readValue(buffer)!);
       case 133:
-        return ReportHandlerRequestMessage.decode(readValue(buffer)!);
+        return ViewHierarchyMessage.decode(readValue(buffer)!);
       case 134:
-        return ReportAttachmentMessage.decode(readValue(buffer)!);
+        return ReportHandlerRequestMessage.decode(readValue(buffer)!);
       case 135:
-        return ReportScreenshotMessage.decode(readValue(buffer)!);
+        return ReportAttachmentMessage.decode(readValue(buffer)!);
       case 136:
-        return ReportSnapshotMessage.decode(readValue(buffer)!);
+        return ReportScreenshotMessage.decode(readValue(buffer)!);
       case 137:
-        return CreatedReportSnapshotMessage.decode(readValue(buffer)!);
+        return ReportSnapshotMessage.decode(readValue(buffer)!);
       case 138:
-        return CreatedReportPatchMessage.decode(readValue(buffer)!);
+        return CreatedReportSnapshotMessage.decode(readValue(buffer)!);
       case 139:
-        return LaunchOutcomeMessage.decode(readValue(buffer)!);
+        return CreatedReportPatchMessage.decode(readValue(buffer)!);
       case 140:
-        return BreadcrumbMessage.decode(readValue(buffer)!);
+        return LaunchOutcomeMessage.decode(readValue(buffer)!);
       case 141:
+        return BreadcrumbMessage.decode(readValue(buffer)!);
+      case 142:
         return NetworkEventMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -1306,6 +1404,30 @@ class BugseeBridgeHostApi {
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
       <Object?>[state],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Publishes (or, with empty segments, clears) the managed view hierarchy native serves for
+  /// the SDK's `vh` request (see [ViewHierarchyMessage]). Never throws on content. Returns
+  /// whether the message was applied (`false`: older than one already applied, not an error).
+  Future<bool> setViewHierarchy(ViewHierarchyMessage snapshot) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.setViewHierarchy$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[snapshot],
     );
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
@@ -2359,6 +2481,27 @@ class BugseeBridgeHostApi {
   Future<void> endBlackout() async {
     final pigeonVar_channelName =
         'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.endBlackout$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Asks the SDK to capture the view hierarchy now (`Bugsee.captureViewHierarchy`), which asks the
+  /// wrapper for the managed one: native answers from the snapshot Dart last published. A no-op
+  /// before the SDK is launched, and when its `capture.view-hierarchy` option is off.
+  Future<void> captureViewHierarchy() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.captureViewHierarchy$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,

@@ -117,6 +117,8 @@ final class FacadeOps {
 
         boolean isBlackout();
 
+        void captureViewHierarchy();
+
         void showReportDialog(
                 @Nullable String summary,
                 @Nullable String description,
@@ -500,6 +502,22 @@ final class FacadeOps {
             return sdk.isBlackout();
         } catch (final RuntimeException e) {
             throw sdkError("isBlackout", e);
+        }
+    }
+
+    // ---- View hierarchy -----------------------------------------------------------------------
+
+    /**
+     * SDK source ({@code BugseeInternal.captureViewHierarchy}): a no-op until the capture provider
+     * exists (before launch, or with {@code capture.view-hierarchy} off); otherwise a pass on the
+     * main thread, which asks the wrapper for {@code vh} (answered from the cache). The wrapper adds
+     * nothing.
+     */
+    static void captureViewHierarchy(@NonNull final Sdk sdk) throws Failure {
+        try {
+            sdk.captureViewHierarchy();
+        } catch (final RuntimeException e) {
+            throw sdkError("captureViewHierarchy", e);
         }
     }
 

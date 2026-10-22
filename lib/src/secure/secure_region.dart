@@ -47,6 +47,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../bridge/epoch.dart';
 import '../bridge/messages.g.dart';
 
 /// Sends one whole-state message to native. Returns whether it was applied.
@@ -277,7 +278,7 @@ class SecureRegionRegistry {
     this.maxRetryDelay = const Duration(seconds: 30),
     this.maxRetries = 5,
     Duration Function()? clock,
-  }) : epoch = epoch ?? _randomEpoch(),
+  }) : epoch = epoch ?? newIsolateEpoch(),
        _now = clock ?? _stopwatchClock();
 
   /// Monotonic time since the registry was made; replaced in tests.
@@ -287,14 +288,6 @@ class SecureRegionRegistry {
   }
 
   final Duration Function() _now;
-
-  /// A random id for this isolate, never a clock (a clock can go backwards
-  /// before a hot restart, and native would then reject the new isolate).
-  static int _randomEpoch() {
-    final random = math.Random.secure();
-    final int id = (random.nextInt(1 << 30) << 22) | random.nextInt(1 << 22);
-    return id == 0 ? 1 : id;
-  }
 
   /// The process-wide registry that widgets use unless given another.
   static SecureRegionRegistry get instance =>

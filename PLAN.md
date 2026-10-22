@@ -78,7 +78,7 @@ Sources: `specs/sdk/wrapper-workbook` (authoritative order of work), `wrapper-da
   `onAfter` is at-least-once: each delivery carries a stable `deliveryId` (`before|after:<reportId>`) and Dart skips a repeat
   within the isolate (128 remembered). Enums cross by value (the bridge has none; severity is the SDK integer; Dart
   `ReportSeverity.veryLow` = Android name, `low` = iOS alias, value 1). Attachments/screenshots: Phase 6 (done, below).
-- `requestData` (3c): the stub answers null/nil for every type incl. `vh`, also on the replaced wrapper; tested on both platforms.
+- `requestData` (3c): the stub answered null/nil for every type incl. `vh`, also on the replaced wrapper; `vh` is real since 5c (below), every other type still answers null.
 
 ## 4. Phase 4 — Public API and options (Part 8)
 
@@ -187,6 +187,32 @@ behaviour table with source line references, value rules, errors and threading: 
 
 ## 5. Phase 5 — Dart-side capture and data channels
 
+### 5c — managed view hierarchy (`vh`) (done)
+
+Design, payload schema, privacy rules, staleness, SDK facts and spec gaps: **`doc/view-hierarchy.md`**.
+
+- **Facts read from SDK source** (Android `v7.4.2`, iOS `origin/nextgen@0581aa02c`): `vh` is asked on the MAIN thread on both, with a 500 ms budget timed from when
+  `requestData` RETURNS (iOS cuts to 50 ms after three timeouts); the payload is a `String` stored byte for byte; the entry is stamped with the time of the
+  REPLY; no payload cap. **bugsee-android PR #120 (`ce8529c8b`) IS in 7.4.2** (an ancestor of the tag, the code is in it), but the report waits for a late reply only when the
+  snapshot is made OFF the main thread (`barrier == null` on the main thread: "lands in the next report"); iOS waits off the main thread and on the main
+  thread does not ask the wrapper at all. The workbook (6.7) and the data-requests spec (open item 1b) still call the Android wait unfixed: stale at the pin.
+- **Design: a native snapshot cache.** Dart builds the tree and pushes it (`setViewHierarchy`, a JSON template + logical boxes), native answers the SDK's request
+  synchronously from memory on any thread (`ViewHierarchyStore` / `BGSFlutterViewHierarchyStore`, immutable per-owner state outside the replaceable wrapper, a detached
+  engine drops its snapshot). Boxes are converted per answer by the secure rectangles' own `Mapper` (physical pixels on Android, points on iOS), `null` on anything
+  unplaceable. Dart: `hierarchy_builder.dart` (element tree + render objects, on stage only, paint order, caps), `publisher.dart` (post-frame/timer, never in a
+  frame, no frames of its own, cost-spaced, change-only, retried), `controller.dart` (launched AND `capture.view-hierarchy` on AND foreground).
+- **Privacy** (the SDK cannot see inside the string): only `runtimeType` names and structure; no text, controllers, semantics, keys, tags, route names or `toString()`;
+  a `BugseeSecureView` subtree is one node (fixed name, its secure-rectangle box, `secure: true`); `id` is a counter; errors send nothing.
+- **Public**: `Bugsee.captureViewHierarchy()` (flush, then the SDK's own call). 1 Pigeon method (`setViewHierarchy`) + 1 facade method; no enum.
+- **Runtime evidence** (`example/integration_test/view_hierarchy_test.dart`): Android emulator API 28 (Pixel 3a, 1080x2088 view, density 2.75): the report bundle's
+  `viewtree.json` holds the managed half (316 nodes, 30.8 KB, no text, the secure view one node, root box equal to the native `FlutterView`'s, secure box at the widget's
+  place in physical pixels) in BOTH entries made for the report, and a report made by `Bugsee.upload` alone carries it (a temporary 50 ms asynchronous reply also
+  arrived, because that snapshot is made off the main thread). iPhone 17 Pro simulator (iOS 26.5): the SDK's capture buffer holds the payload (307 nodes) in points
+  (`[0,0,402,874]`), same assertions. Not verified: an iOS report bundle (the placeholder token stops the SDK), a view off the screen origin on a device.
+- **Tests** (each mutation-checked: Dart 70+ mutants, Java 23, ObjC 23, all killed except five Dart ones, equivalent or untestable, listed with their reasoning in `doc/view-hierarchy.md`; none in Java or Objective-C): Dart builder (45), privacy (8), publisher (26), gate/runtime (23), drift (23); JUnit `ViewHierarchyStoreTest` (27)
+  and the wrapper's; XCTest `BGSFlutterViewHierarchyStoreTests` (23) and the wrapper's.
+
+
 - Wrapper-owned log/network/breadcrumb injection per `wrapper-channel` (attributed to the
   wrapper, filters chained ahead of app filters). The spec still says **Proposed**, but **both pinned SDKs ship the channel**
   (Android 7.4.2 `BugseeWrapperChannel`, iOS 7.0.0-beta7 `BGSWrapperChannel`; checked in the pinned artifacts' sources and headers):
@@ -209,10 +235,8 @@ Contract, SDK behaviour per platform with source refs, handler design, symbols a
 
 - Network: **built in 5b** (`HttpOverrides`; dio's default adapter and `package:http` ride `dart:io`, so no package interceptors).
   Record below.
-- View hierarchy (`vh`): Flutter semantic/render tree → JSON, **no text content or free-text
-  labels on secure nodes**, bounds in screen coords in platform units.
-  **Blocker (6.7):** Dart runs off the platform thread, so Android's async-reply fix
-  (`bugsee-android` PR #120) is required; track it.
+- View hierarchy (`vh`): **done in 5c** (see above and `doc/view-hierarchy.md`): a native snapshot cache answered
+  synchronously, so neither the Dart-off-the-platform-thread problem nor `bugsee-android` PR #120 (in 7.4.2, off-main snapshots only) is a blocker.
 
 ### 5b record — network capture
 
@@ -304,7 +328,7 @@ CHANGELOG; pub.dev publishing scripts (replace old `scripts/`); example app cove
 - Flutter floor 3.41 is above several competitors (D5); a podspec was ruled out because Bugsee publishes no pod. Revisit if customers on older Flutter matter.
 - iOS beta-only and unpublished → pinning and CI access (D1/D2).
 - Wrapper-channel and option-manifest specs unimplemented → schedule dependency.
-- Android async-`vh` (#120) and units unification (specs PR #20) in flight.
+- Android async-`vh` (#120; in 7.4.2 for off-main snapshots only, sidestepped by the synchronous cache) and units unification (specs PR #20) in flight.
 - Flutter's Android template/AGP may conflict with Gradle plugin 4.0.7 constraints — spike early.
 
 ## Suggested order

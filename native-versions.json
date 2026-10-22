@@ -8,8 +8,9 @@
   "android": {
     "sdk": "7.4.2",
     "gradlePlugin": "4.0.8",
+    "sdkBuild": "3b7af6371",
     "minSdk": 21,
-    "provenance": "Maven Central latest, 2026-10-20. Gradle plugin must be >= 4.0.7 (workbook 1.4).",
+    "provenance": "Maven Central latest, 2026-10-20. Gradle plugin must be >= 4.0.7 (workbook 1.4). sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.4.2 [3b7af6371]`, tag v7.4.2): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
     "jdk": {
       "supported": [
         17,
@@ -20,10 +21,13 @@
   },
   "ios": {
     "sdk": "7.0.0-beta7",
+    "sdkBuild": "9854b7e50-15",
+    "spmRevision": "73ed98341d1243ffa7985f871417adcd0ad19799",
+    "feedbackSpmRevision": "40dd3b091ce96beb2faca0ad0df0b5df4e7c60b3",
     "spmUrl": "https://github.com/bugsee/spm",
     "feedbackSpmUrl": "https://github.com/bugsee/feedback-spm",
     "deploymentTarget": "15.0",
-    "provenance": "Tag 7.0.0-beta7 of bugsee/spm (73ed983) and bugsee/feedback-spm (40dd3b0)."
+    "provenance": "Tag 7.0.0-beta7 of bugsee/spm (73ed983) and bugsee/feedback-spm (40dd3b0). sdkBuild is what the SDK prints in its banner (`Bugsee IOS SDK ver:7.0.0-beta7 build:9854b7e50-15`), read from a simulator run on 2026-10-22 and matched by the device verification harness (workbook 9.1.1)."
   },
   "feedback": {
     "package": "bugsee_flutter_feedback",

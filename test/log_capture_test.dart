@@ -13,7 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class Rig {
-  Rig({this.supported = true, LogPolicy? initial}) {
+  Rig({this.supported = true, LogPolicy? initial, bool echoRisk = false}) {
     policy = initial ?? const LogPolicy(accepting: true);
     service = LogCaptureService(
       send: (batch) async {
@@ -31,6 +31,7 @@ class Rig {
       ensureAttached: () => attached++,
       statuses: () => statuses.stream,
       supported: () => supported,
+      echoRisk: () => echoRisk,
       warn: warnings.add,
       pipelineFactory: (send, policyOf) => LogPipeline(
         send: send,
@@ -77,9 +78,19 @@ class Rig {
 
 void main() {
   late DebugPrintCallback originalDebugPrint;
+  late FlutterExceptionHandler originalPresentError;
+  late FlutterExceptionHandler? originalOnError;
 
-  setUp(() => originalDebugPrint = debugPrint);
-  tearDown(() => debugPrint = originalDebugPrint);
+  setUp(() {
+    originalDebugPrint = debugPrint;
+    originalPresentError = FlutterError.presentError;
+    originalOnError = FlutterError.onError;
+  });
+  tearDown(() {
+    debugPrint = originalDebugPrint;
+    FlutterError.presentError = originalPresentError;
+    FlutterError.onError = originalOnError;
+  });
 
   group('the zone print hook', () {
     test(
@@ -636,6 +647,285 @@ void main() {
         expect(looksLikeFlutterErrorDump('The ══╡ in the middle'), isFalse);
         expect(looksLikeFlutterErrorDump('an exception was thrown'), isFalse);
         expect(looksLikeFlutterErrorDump(''), isFalse);
+      },
+    );
+  });
+
+  group('a repeated install', () {
+    test('drops nothing: the policy it had stays in force', () async {
+      final rig = Rig();
+      await rig.install();
+      final ours = debugPrint;
+      debugPrint = (m, {wrapWidth}) => ours(m, wrapWidth: wrapWidth);
+      // No `await` for the policy read: a repeat install must not make the next line wait for one.
+      expect(rig.service.install(), isTrue);
+      debugPrint('right after the second install');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await rig.drain();
+      expect(rig.texts, ['right after the second install']);
+      expect(rig.service.pipeline.stats.droppedNotAccepting, 0);
+    });
+
+    test('does not subscribe or attach twice', () async {
+      final rig = Rig();
+      await rig.install();
+      rig.service.install();
+      rig.service.install();
+      expect(rig.attached, 1);
+    });
+  });
+
+  group('FlutterError presentation', () {
+    FlutterErrorDetails details() => FlutterErrorDetails(
+      exception: StateError('user email bob@example.com'),
+      library: 'app',
+      context: ErrorDescription('while building the profile'),
+      informationCollector: () => [
+        DiagnosticsNode.message('token=SECRET in the widget tree'),
+      ],
+    );
+
+    /// What an app's logger package does: its own `debugPrint`, not chained, that splits lines.
+    void splittingDebugPrint(String? m, {int? wrapWidth}) {
+      for (final l in (m ?? 'null').split('\n')) {
+        print(l);
+      }
+    }
+
+    test(
+      'the probe: a non-chaining, line-splitting debugPrint set after the install cannot leak the dump',
+      () async {
+        final rig = Rig();
+        FlutterError.presentError = (d) =>
+            FlutterError.dumpErrorToConsole(d, forceReport: true);
+        await rig.install();
+        debugPrint = splittingDebugPrint;
+        final out = <String>[];
+        rig.inCaptureZone(() {
+          FlutterError.presentError(details());
+        }, out: out);
+        await rig.drain();
+        // It was printed ...
+        expect(out.join('\n'), contains('bob@example.com'));
+        expect(out.join('\n'), contains('token=SECRET'));
+        // ... and not one piece of it was recorded.
+        expect(rig.sent, isEmpty);
+      },
+    );
+
+    test(
+      'the same through the framework\'s default onError (dumpErrorToConsole itself)',
+      () async {
+        final rig = Rig();
+        FlutterError.onError = FlutterError.dumpErrorToConsole;
+        await rig.install();
+        debugPrint = splittingDebugPrint;
+        final out = <String>[];
+        rig.inCaptureZone(() {
+          FlutterError.onError!(details());
+        }, out: out);
+        await rig.drain();
+        expect(out.join('\n'), contains('bob@example.com'));
+        expect(rig.sent, isEmpty);
+      },
+    );
+
+    test(
+      'an app\'s own presentError is chained, called with the details, and restored',
+      () async {
+        final seen = <FlutterErrorDetails>[];
+        void apps(FlutterErrorDetails d) => seen.add(d);
+        FlutterError.presentError = apps;
+        final rig = Rig();
+        await rig.install();
+        expect(identical(FlutterError.presentError, apps), isFalse);
+        final d = details();
+        FlutterError.presentError(d);
+        expect(seen, [d]);
+        rig.service.uninstall();
+        expect(identical(FlutterError.presentError, apps), isTrue);
+      },
+    );
+
+    test('an app\'s own onError is never replaced', () async {
+      void apps(FlutterErrorDetails d) {}
+      FlutterError.onError = apps;
+      final rig = Rig();
+      await rig.install();
+      expect(identical(FlutterError.onError, apps), isTrue);
+    });
+
+    test('the default onError is wrapped and put back', () async {
+      FlutterError.onError = FlutterError.dumpErrorToConsole;
+      final rig = Rig();
+      await rig.install();
+      expect(
+        identical(FlutterError.onError, FlutterError.dumpErrorToConsole),
+        isFalse,
+      );
+      rig.service.uninstall();
+      expect(
+        identical(FlutterError.onError, FlutterError.dumpErrorToConsole),
+        isTrue,
+      );
+    });
+
+    test(
+      'install twice wraps once; uninstall leaves a handler the app wrapped since',
+      () async {
+        final rig = Rig();
+        await rig.install();
+        final ours = FlutterError.presentError;
+        rig.service.install();
+        expect(identical(FlutterError.presentError, ours), isTrue);
+        void wrapped(FlutterErrorDetails d) => ours(d);
+        FlutterError.presentError = wrapped;
+        rig.service.uninstall();
+        expect(identical(FlutterError.presentError, wrapped), isTrue);
+      },
+    );
+
+    test(
+      'after an uninstall the chained handler records nothing and still forwards',
+      () async {
+        final seen = <FlutterErrorDetails>[];
+        FlutterError.presentError = (d) => seen.add(d);
+        final rig = Rig();
+        await rig.install();
+        final hook = FlutterError.presentError;
+        rig.service.uninstall();
+        hook(details());
+        expect(seen, hasLength(1));
+      },
+    );
+  });
+
+  group('a throttled debugPrint whose timer predates the install', () {
+    test('is recorded once, not again as print', () async {
+      final rig = Rig();
+      // Before the install, in a zone that already carries the hook: a throttled debugPrint leaves
+      // its timer pending in this zone (a message over the throttle's budget queues the next ones).
+      final out = <String>[];
+      // (the test binding makes `debugPrint` synchronous; an app runs the throttled one)
+      debugPrint = debugPrintThrottled;
+      rig.inCaptureZone(() {
+        debugPrint('first ' * 3000, wrapWidth: 100);
+      }, out: out);
+      await rig.install();
+      debugPrint('after install');
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      await rig.drain();
+      expect(out, contains('after install'));
+      expect(rig.texts.where((t) => t == 'after install'), hasLength(1));
+      // (the tail of the message printed BEFORE the install comes out of the same timer, after it:
+      // that one was never recorded, so it is the app's output the hook now sees, as print)
+      expect(
+        rig.sent.where(
+          (m) => m.tag == 'print' && m.message.contains('after install'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a print that merely looks alike, long after, is recorded', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('some words');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      rig.inCaptureZone(() => print('unrelated'));
+      await rig.drain();
+      expect(rig.texts, ['some words', 'unrelated']);
+    });
+  });
+
+  group('the Android echo warning', () {
+    test(
+      'is printed once when a filter is set while the capture accepts',
+      () async {
+        final rig = Rig(echoRisk: true);
+        await rig.install();
+        rig.service.setFilter((e) => e, const Duration(seconds: 1));
+        rig.service.setFilter((e) => e, const Duration(seconds: 1));
+        final echo = rig.warnings.where((w) => w.contains('logcat'));
+        expect(echo, hasLength(1));
+        expect(echo.single, contains('LogCat'));
+      },
+    );
+
+    test(
+      'also when the filter was set first and the policy read comes later',
+      () async {
+        final rig = Rig(echoRisk: true);
+        rig.service.setFilter((e) => e, const Duration(seconds: 1));
+        expect(rig.warnings.where((w) => w.contains('logcat')), isEmpty);
+        await rig.install();
+        expect(rig.warnings.where((w) => w.contains('logcat')), hasLength(1));
+      },
+    );
+
+    test('is not printed off Android', () async {
+      final rig = Rig();
+      await rig.install();
+      rig.service.setFilter((e) => e, const Duration(seconds: 1));
+      expect(rig.warnings.where((w) => w.contains('logcat')), isEmpty);
+    });
+
+    test(
+      'is not printed without a filter, or while capture.logs is off',
+      () async {
+        final rig = Rig(echoRisk: true);
+        await rig.install();
+        expect(rig.warnings.where((w) => w.contains('logcat')), isEmpty);
+        final off = Rig(echoRisk: true, initial: LogPolicy.off);
+        off.policy = LogPolicy.off;
+        await off.install();
+        off.service.setFilter((e) => e, const Duration(seconds: 1));
+        expect(off.warnings.where((w) => w.contains('logcat')), isEmpty);
+      },
+    );
+
+    test('removing the filter prints nothing', () async {
+      final rig = Rig(echoRisk: true);
+      await rig.install();
+      rig.service.setFilter(null, const Duration(seconds: 1));
+      expect(rig.warnings.where((w) => w.contains('logcat')), isEmpty);
+    });
+  });
+
+  group('flushBeforeReport', () {
+    test('hands over what was printed a moment ago', () async {
+      final rig = Rig();
+      await rig.install();
+      rig.inCaptureZone(() => print('just before'));
+      expect(rig.sent, isEmpty);
+      await rig.service.flushBeforeReport();
+      expect(rig.texts, ['just before']);
+    });
+
+    test('is a no-op when not installed or not accepting', () async {
+      final rig = Rig();
+      await rig.service.flushBeforeReport();
+      final off = Rig(initial: LogPolicy.off);
+      off.policy = LogPolicy.off;
+      await off.install();
+      await off.service.flushBeforeReport();
+      expect(off.sent, isEmpty);
+    });
+
+    test(
+      'never waits longer than its limit, however slow the filter is',
+      () async {
+        final rig = Rig();
+        await rig.install();
+        rig.service.setFilter(
+          (e) => Completer<BugseeLogEvent?>().future,
+          const Duration(seconds: 30),
+        );
+        rig.inCaptureZone(() => print('stuck behind the filter'));
+        final watch = Stopwatch()..start();
+        await rig.service.flushBeforeReport();
+        expect(watch.elapsedMilliseconds, lessThan(1500));
+        expect(watch.elapsedMilliseconds, greaterThanOrEqualTo(150));
       },
     );
   });

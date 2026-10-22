@@ -581,6 +581,7 @@ void main() {
           'droppedErrorDumps',
           'droppedByFilter',
           'filterFailures',
+          'droppedFilterCoolDown',
           'refusedByNative',
           'sendFailures',
         },

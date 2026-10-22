@@ -42,7 +42,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 | the app's filter runs | on the **calling thread**; an exception propagates to the caller (reaches the global handler) | on the calling thread; an exception is caught at `-postEvent:`, the line dropped |
 | a filter that never replies | dropped after 10 s (`FILTER_CALLBACK_TIMEOUT_MS`), once-per-process warning | dropped (no timeout) |
 | default log sanitizer | **none** (no `capture.logs.*sanitizer` option on either SDK; only the app's own filter redacts a log line) | **none** |
-| timestamp | the channel takes none: stamped on receipt (`TimeUtils.monotonicWallTimeMillis`; SDK issues bugsee-android#299 / bugsee-cocoa#265) | stamped on receipt (`BugseeGetCurrentTimeStampMs`) |
+| timestamp | the channel takes none: stamped on receipt (`TimeUtils.monotonicWallTimeMillis`; the timestamp overload is bugsee-android#299, closed upstream by commit `aa9ea4c18` on Android `main`: it is NOT in any tag, not in the pinned `v7.4.2`; bugsee-cocoa#265 is still open) | stamped on receipt (`BugseeGetCurrentTimeStampMs`) |
 | message length | no limit | no limit |
 | stale channel | `isLive()` / `isCurrentWrapperChannel`: dropped silently | `isCurrent` generation check; reports once after 5 s |
 
@@ -74,7 +74,24 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 * **Order** is print order; one batch in flight; native runs on a serial background thread (a Pigeon task queue) because the
   app's native filter runs on the calling thread and a throw must not reach the platform thread.
 * **Timestamps**: neither channel takes one, so a line is stamped when native hands it to the SDK (a few ms after the
-  print when the pipeline is idle; a long queue or a slow filter widens it). Unlike 5b there is no `ageMs`: the SDK could not use it.
+  print when the pipeline is idle; a long queue or a slow filter widens it). Unlike 5b there is no `ageMs` (network events are
+  backdated by it, so a log line can appear after the request it preceded): the pinned SDKs could not use it. **TODO (PLAN.md 5d)**:
+  send `BugseeLogEvent.time` once a release carries the timestamp overload (Android: a tag after `v7.4.2` containing `aa9ea4c18`;
+  iOS: bugsee-cocoa#265). A filter that does not answer cannot skew the timeline for long: after three timeouts in a row the filter
+  is switched off for 30 s and its lines are dropped at once (fail closed, `droppedFilterCoolDown`), instead of costing a timeout each.
+* **Reports**: before an upload, `createReport`, the dialog and every error report (`logException`, `reportException`, the installed
+  error handlers) the pending lines are handed to the SDK first, waiting at most 200 ms (a hung filter cannot hold a report back):
+  `print('parsing $x'); throw ...` puts the line in the report. A crash the SDK itself catches cannot wait.
+* **Error presentation**: `FlutterError.presentError` is chained at install (and `FlutterError.onError` while it is still the
+  framework's default, `dumpErrorToConsole`), so whatever they print runs in a zone the capture ignores, however the app's
+  `debugPrint` splits or throttles it later (an app that sets its own non-chaining `debugPrint` after the install, and a logger
+  package that splits lines, cannot leak the dump piece by piece). Both are restored on uninstall when still ours, and never replace
+  the app's own handler. Not covered: an app that calls `FlutterError.dumpErrorToConsole` itself from its own `onError`, with its
+  own non-chaining `debugPrint` (the `══╡` header and the single-call dump are still dropped; the pieces of a line-splitting
+  replacement are not).
+* A repeated `installLogCapture` drops nothing (it keeps the policy in force) and attaches once.
+* A throttled `debugPrint` whose timer predates the install prints later, from a zone that carries the hook: pieces of a message
+  the hook recorded a moment ago (3 s) are recognised and not recorded again as `print`.
 * **Hot restart**: hooks, queue and policy are per isolate; the new isolate's `main` installs again. Native keeps no log state.
   Installing over a hook an old service left behind records once.
 * Calls from a background isolate: `installLogCapture` throws a `BugseeException`; output of another isolate is not captured.
@@ -86,7 +103,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 | `print` inside a zone with the hook (`runWithLogCapture`, `runGuarded`, your `runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)`) | yes, tag `print` | `Zone.root` cannot be replaced; a zone spec is the only hook Dart offers |
 | `print` in the root zone | **no** | cannot be hooked in Dart |
 | `debugPrint` (incl. the framework's own, `FlutterError`'s) | yes, tag `debugPrint`, wherever it is called | the callback is a global variable (chained) |
-| `FlutterError` diagnostics dump (`══╡ EXCEPTION CAUGHT ...`, `Another exception was thrown: ...`) | **never** | the diagnostics tree carries widget trees and property values; the error itself is Phase 5a's. Counted in `droppedErrorDumps`. The release-mode `debugPrintStack` output (message + frames) is ordinary text and is recorded |
+| `FlutterError` diagnostics dump (`══╡ EXCEPTION CAUGHT ...`, `Another exception was thrown: ...`) | **never by this capture** (see the Android echo: on a real Android app the dump ALSO reaches the SDK's logcat capture, raw; `flutter test` routes `print` to the test reporter, not logcat, so the device runs here cannot show it) | the diagnostics tree carries widget trees and property values; the error itself is Phase 5a's. Counted in `droppedErrorDumps`. The release-mode `debugPrintStack` output (message + frames) is ordinary text and is recorded |
 | the plugin's own `bugsee_flutter: ...` messages | never | a diagnostic that reached the pipeline it is about could meet a failing filter again (the spec's "at most once" rule) |
 | `dart:developer` `log()` | **no**, and cannot be hooked | it goes to the VM service, not the console; use `Bugsee.forwardLog` or `Bugsee.log` |
 | `package:logging` | via `Bugsee.forwardLog` (no dependency added) | `Logger.root.onRecord.listen((r) => Bugsee.forwardLog('${r.loggerName}: ${r.message}', level: logLevelForLoggingValue(r.level.value), tag: r.loggerName))`; SEVERE/SHOUT error, WARNING warning, INFO info, CONFIG/FINE debug, lower verbose |
@@ -119,6 +136,10 @@ reach the stdout the SDK intercepts there (it goes through the system log, which
 
 What follows for privacy:
 
+* **Android: the Dart filter does not apply to the logcat echo** (source 3, tag `flutter`, raw), and no manifest key turns that route off
+  alone (`capture.logs`, `.level` and `.allsources` are the only options). A debug build warns once when a filter is set on Android
+  while `capture.logs` is on. The echo also carries the `FlutterError` dump of a real app. Kotlin:
+  `Bugsee.setLogEventFilter { e, cb -> if (e.logSource == LogSource.LogCat && e.tag == "flutter") cb.run(null) else cb.run(e) }`.
 * The Dart filter governs the lines this plugin records. It cannot reach the SDK's own console capture. Both SDKs run
   **the app's native log filter** on every non-`Bugsee` source, so redaction that must hold for the echo belongs in a
   native filter (`Bugsee.setLogEventFilter` from Kotlin/Swift), or the secret must not be printed. A native filter that
@@ -141,7 +162,7 @@ What follows for privacy:
    rule. Measured: `card 4111111111111111 password=hunter2` printed with no filter is recorded verbatim by both SDKs.
 5. A Dart filter that returns the event with the secret untouched leaks it. Recommendation: **filter in Dart**, with an allow-style
    rule where possible, and keep secrets out of `print`.
-6. `FlutterError` diagnostics trees are never recorded; lines are capped at 4000 UTF-16 units (`...[truncated N]`).
+6. `FlutterError` diagnostics trees are never recorded BY THIS CAPTURE (on Android the SDK's logcat route still records them raw: see above); lines are capped at 4000 UTF-16 units (`...[truncated N]`).
 7. Android: an exception thrown by the app's native filter propagates to the plugin's background thread; it is caught per line
    (the line is dropped, the batch goes on). iOS: caught by the SDK.
 

@@ -20,6 +20,7 @@ class Rig {
     int maxBatchLines = 64,
     int maxBatchBytes = 128 * 1024,
     LogRateLimiter? limiter,
+    int Function()? clock,
   }) {
     pipeline = LogPipeline(
       send: (batch) async {
@@ -33,6 +34,7 @@ class Rig {
       maxBatchLines: maxBatchLines,
       maxBatchBytes: maxBatchBytes,
       limiter: limiter ?? LogRateLimiter(burst: 1 << 20, perSecond: 1 << 20),
+      clockMicros: clock,
       warn: warnings.add,
     );
   }
@@ -541,6 +543,123 @@ void main() {
         rig.line('a');
         await rig.pipeline.flush();
         expect(seen, [true]);
+      },
+    );
+  });
+
+  group('a filter that keeps timing out', () {
+    Future<BugseeLogEvent?> hang(BugseeLogEvent e) =>
+        Completer<BugseeLogEvent?>().future;
+    const short = Duration(milliseconds: 15);
+
+    test(
+      'is switched off after three timeouts in a row: later lines cost nothing',
+      () async {
+        var now = 0;
+        var calls = 0;
+        final rig = Rig(clock: () => now);
+        rig.pipeline.setFilter((e) {
+          calls++;
+          return hang(e);
+        }, short);
+        for (var i = 0; i < 3; i++) {
+          rig.line('hung $i');
+        }
+        await rig.pipeline.flush();
+        expect(calls, 3);
+        expect(rig.pipeline.stats.filterFailures, 3);
+        // The fourth does not even ask the filter, and does not wait for its timeout.
+        final watch = Stopwatch()..start();
+        rig.line('fourth');
+        rig.line('fifth');
+        await rig.pipeline.flush();
+        expect(calls, 3);
+        expect(rig.pipeline.stats.droppedFilterCoolDown, 2);
+        expect(rig.sent, isEmpty);
+        expect(watch.elapsedMilliseconds, lessThan(short.inMilliseconds * 2));
+        expect(
+          rig.warnings.where((w) => w.contains('3 times in a row')),
+          hasLength(1),
+        );
+      },
+    );
+
+    test('asks again once the cool-down is over', () async {
+      var now = 0;
+      var calls = 0;
+      final rig = Rig(clock: () => now);
+      var hanging = true;
+      rig.pipeline.setFilter((e) {
+        calls++;
+        return hanging ? hang(e) : e;
+      }, short);
+      for (var i = 0; i < 3; i++) {
+        rig.line('hung $i');
+      }
+      await rig.pipeline.flush();
+      now += LogWire.filterCoolDown.inMicroseconds - 1;
+      rig.line('still cooling');
+      await rig.pipeline.flush();
+      expect(calls, 3);
+      now += 1;
+      hanging = false;
+      rig.line('recovered');
+      await rig.pipeline.flush();
+      expect(calls, 4);
+      expect(rig.texts, ['recovered']);
+    });
+
+    test('an answer in between resets the count', () async {
+      var now = 0;
+      var n = 0;
+      final rig = Rig(clock: () => now);
+      rig.pipeline.setFilter((e) {
+        n++;
+        // timeout, timeout, answer, timeout, timeout: never three in a row
+        return n == 3 ? e : hang(e);
+      }, short);
+      for (var i = 0; i < 5; i++) {
+        rig.line('l$i');
+      }
+      await rig.pipeline.flush();
+      expect(n, 5);
+      expect(rig.pipeline.stats.droppedFilterCoolDown, 0);
+      expect(rig.texts, ['l2']);
+    });
+
+    test(
+      'a filter that throws is not a timeout: it never cools down',
+      () async {
+        var now = 0;
+        final rig = Rig(clock: () => now);
+        var calls = 0;
+        rig.pipeline.setFilter((e) {
+          calls++;
+          throw StateError('bug');
+        }, short);
+        for (var i = 0; i < 6; i++) {
+          rig.line('l$i');
+        }
+        await rig.pipeline.flush();
+        expect(calls, 6);
+        expect(rig.pipeline.stats.droppedFilterCoolDown, 0);
+      },
+    );
+
+    test(
+      'lines with no filter in force are not held back by a cool-down',
+      () async {
+        var now = 0;
+        final rig = Rig(clock: () => now);
+        rig.pipeline.setFilter(hang, short);
+        for (var i = 0; i < 3; i++) {
+          rig.line('hung $i');
+        }
+        await rig.pipeline.flush();
+        rig.pipeline.setFilter(null, short);
+        rig.line('free');
+        await rig.pipeline.flush();
+        expect(rig.texts, ['free']);
       },
     );
   });

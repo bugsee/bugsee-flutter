@@ -278,6 +278,13 @@ Design, data flow, the SDK rules with source refs, the privacy model, limits and
   only visible in a plain app run.
 - **Gates mirrored**: launching|launched + `capture.logs` (+ level) in Dart and native; before launch lines are dropped, not buffered (a buffer would
   stamp them at flush time).
+- **TODO (pin condition)**: pass the capture time to the channel (`BugseeLogEvent.time`) once a release has the timestamp overload:
+  Android `aa9ea4c18` (bugsee-android#299, on `main`, in no tag, not in `v7.4.2`) and iOS bugsee-cocoa#265 (open). Revisit when
+  `native-versions.json` moves past `v7.4.2`.
+- **Review round 1 (Opus)**: dartdocs/doc state the Android logcat echo as not covered by the Dart filter (+ one-time debug warning); `presentError`
+  / default `onError` chained so a dump cannot leak piece by piece; pending lines flushed (<= 200 ms) before uploads, error reports,
+  `createReport` and the dialog; three filter timeouts in a row cool the filter down for 30 s; a throttled `debugPrint` is not recorded twice;
+  Android catches `Throwable` per line; a repeated install drops nothing.
 - **Not built, with reasons**: `dart:developer` `log` (cannot be intercepted; VM service only), `stdout`/`stderr` (would need `IOOverrides` and the
   source claim would be false), a `package:logging` adapter (no dependency: `forwardLog` + `logLevelForLoggingValue`), an echo-dropping native filter
   (the SDK filter slot is the app's).

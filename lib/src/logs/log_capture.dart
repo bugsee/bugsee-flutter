@@ -3,10 +3,17 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
-    show DebugPrintCallback, debugPrint, debugPrintSynchronously;
+    show
+        DebugPrintCallback,
+        FlutterError,
+        FlutterErrorDetails,
+        FlutterExceptionHandler,
+        debugPrint,
+        debugPrintSynchronously;
 
 import '../errors.dart';
 import '../options/bugsee_options.g.dart' show LogLevel;
+import '../network/network_event.dart' show monotonicMicros;
 import '../status.dart';
 import 'log_event.dart';
 import 'log_pipeline.dart';
@@ -43,6 +50,7 @@ final class LogCaptureService {
     required void Function() ensureAttached,
     required Stream<BugseeStatus> Function() statuses,
     required bool Function() supported,
+    bool Function()? echoRisk,
     void Function(String message)? warn,
     LogPipeline Function(LogSend send, LogPolicy Function() policy)?
     pipelineFactory,
@@ -50,6 +58,7 @@ final class LogCaptureService {
        _ensureAttached = ensureAttached,
        _statuses = statuses,
        _supported = supported,
+       _echoRisk = echoRisk ?? (() => false),
        _warn = warn ?? ((_) {}) {
     pipeline =
         (pipelineFactory ??
@@ -63,6 +72,7 @@ final class LogCaptureService {
   final void Function() _ensureAttached;
   final Stream<BugseeStatus> Function() _statuses;
   final bool Function() _supported;
+  final bool Function() _echoRisk;
   final void Function(String) _warn;
 
   late final LogPipeline pipeline;
@@ -76,6 +86,18 @@ final class LogCaptureService {
   int _generation = 0;
   bool _warnedUnsupported = false;
   bool _inPrint = false;
+  bool _warnedEcho = false;
+  FlutterExceptionHandler? _previousPresentError;
+  FlutterExceptionHandler? _ourPresentError;
+  FlutterExceptionHandler? _previousOnError;
+  FlutterExceptionHandler? _ourOnError;
+
+  /// `debugPrint` messages the capture just recorded, with when they stop counting: Flutter's
+  /// throttle prints them later, in pieces, from a timer that may belong to a zone created before the
+  /// install (it then prints outside the suppressed zone). Those pieces are the same lines, not new ones.
+  final List<(String, int)> _echoes = <(String, int)>[];
+  static const int _echoWindowMicros = 3 * 1000 * 1000;
+  static const int _maxEchoes = 64;
 
   /// The policy in force (for tests and diagnostics).
   LogPolicy get policy => _policy;
@@ -97,7 +119,11 @@ final class LogCaptureService {
       return false;
     }
     _level = level;
-    if (_active && identical(debugPrint, _ourDebugPrint)) return true;
+    final wasActive = _active;
+    if (wasActive && identical(debugPrint, _ourDebugPrint)) {
+      _chainErrorPresentation();
+      return true;
+    }
     // A repeat after the app replaced `debugPrint` without chaining puts the hook back in front of
     // the app's; one it wrapped keeps ours in its chain (and a line is recorded once: the forward
     // runs in a zone the capture ignores).
@@ -112,7 +138,10 @@ final class LogCaptureService {
       debugPrint = hook;
     }
     _active = true;
-    // A (re)install believes nothing until the SDK's status and options are read.
+    _chainErrorPresentation();
+    // A repeat install changes nothing about what the SDK accepts: it drops nothing.
+    if (wasActive) return true;
+    // A first install believes nothing until the SDK's status and options are read.
     _policy = _policy.notAccepting();
     _statusSubscription ??= _statuses().listen((status) {
       if (status != BugseeStatus.launched && status != BugseeStatus.launching) {
@@ -122,7 +151,46 @@ final class LogCaptureService {
     }, onError: (Object _) {});
     _ensureAttached();
     unawaited(refreshPolicy());
+    _maybeWarnEcho();
     return true;
+  }
+
+  /// `FlutterError.presentError` (and `onError` while it is still the framework's default, which is
+  /// `dumpErrorToConsole` itself) are chained so that everything they print, however the app's
+  /// `debugPrint` splits or throttles it, runs in a zone the capture ignores: the error's diagnostics
+  /// tree never reaches the log, not even piece by piece. The previous handler is always called.
+  void _chainErrorPresentation() {
+    if (!identical(FlutterError.presentError, _ourPresentError)) {
+      final previous = FlutterError.presentError;
+      _previousPresentError = previous;
+      void hook(FlutterErrorDetails details) =>
+          _active ? runSuppressed(() => previous(details)) : previous(details);
+      _ourPresentError = hook;
+      FlutterError.presentError = hook;
+    }
+    final onError = FlutterError.onError;
+    if (onError != null &&
+        !identical(onError, _ourOnError) &&
+        identical(onError, FlutterError.dumpErrorToConsole)) {
+      _previousOnError = onError;
+      void hook(FlutterErrorDetails details) =>
+          _active ? runSuppressed(() => onError(details)) : onError(details);
+      _ourOnError = hook;
+      FlutterError.onError = hook;
+    }
+  }
+
+  /// The Dart filter does not see what the SDK's own console capture records (Android logcat).
+  void _maybeWarnEcho() {
+    if (_warnedEcho || !_active || pipeline.filter == null) return;
+    if (!_echoRisk() || !_policy.accepting) return;
+    _warnedEcho = true;
+    _warn(
+      'a log filter is set, but on Android the SDK also records what is printed from logcat '
+      '(source LogCat, tag flutter), and that route does not pass through it. To redact there too, '
+      'set a native log filter that drops or redacts LogSource.LogCat events tagged "flutter" '
+      '(Bugsee.setLogEventFilter, see doc/logs.md).',
+    );
   }
 
   /// Stops capturing. Puts the previous `debugPrint` back when ours is still the current one; if
@@ -137,6 +205,19 @@ final class LogCaptureService {
     }
     _previousDebugPrint = null;
     _ourDebugPrint = null;
+    final ourPresent = _ourPresentError;
+    if (ourPresent != null &&
+        identical(FlutterError.presentError, ourPresent)) {
+      FlutterError.presentError =
+          _previousPresentError ?? FlutterError.dumpErrorToConsole;
+    }
+    final ourOnError = _ourOnError;
+    if (ourOnError != null && identical(FlutterError.onError, ourOnError)) {
+      FlutterError.onError = _previousOnError;
+    }
+    _previousPresentError = _ourPresentError = null;
+    _previousOnError = _ourOnError = null;
+    _echoes.clear();
     final sub = _statusSubscription;
     _statusSubscription = null;
     if (sub != null) unawaited(sub.cancel());
@@ -153,7 +234,10 @@ final class LogCaptureService {
     } catch (_) {
       next = _policy.notAccepting();
     }
-    if (generation == _generation && _active) _policy = next;
+    if (generation == _generation && _active) {
+      _policy = next;
+      _maybeWarnEcho();
+    }
   }
 
   /// Accepts nothing until the next [refreshPolicy] has read the SDK (a stop was asked for).
@@ -167,7 +251,23 @@ final class LogCaptureService {
       );
     }
     pipeline.setFilter(filter, timeout);
+    if (filter != null) _maybeWarnEcho();
   }
+
+  /// Before a report is made (an upload, an error report, a created report, the dialog): hands what
+  /// was printed so far to the SDK, so the report holds the lines that led to it. Waits at most
+  /// [flushLimit]; never throws; does nothing when the capture is not installed or not accepting.
+  Future<void> flushBeforeReport() async {
+    if (!_active || !_policy.accepting) return;
+    try {
+      await pipeline.flush().timeout(flushLimit);
+    } catch (_) {
+      // A slow filter or native side must not hold a report back.
+    }
+  }
+
+  /// How long a report waits for the pending lines.
+  static const Duration flushLimit = Duration(milliseconds: 200);
 
   // ---- The hooks ---------------------------------------------------------------------------------
 
@@ -200,7 +300,9 @@ final class LogCaptureService {
       return;
     }
     // What is printed, `null` included, is what is recorded.
-    _record(message ?? 'null', LogTags.debugPrint, Zone.current);
+    final text = message ?? 'null';
+    _record(text, LogTags.debugPrint, Zone.current);
+    _noteEcho(text);
     // The output the framework makes of it (a throttled `debugPrint` prints from a timer, later,
     // maybe in pieces) must not be recorded a second time by the zone hook: it goes through a zone the
     // capture ignores. Nothing else changes: same callback, same arguments.
@@ -212,6 +314,7 @@ final class LogCaptureService {
     try {
       if (!_active || logCaptureSuppressed(zone)) return;
       if (text.startsWith(ownOutputPrefix)) return;
+      if (tag == LogTags.print && _isEcho(text)) return;
       if (looksLikeFlutterErrorDump(text)) {
         pipeline.noteErrorDump();
         return;
@@ -220,6 +323,23 @@ final class LogCaptureService {
     } catch (_) {
       // Capture must never throw into the app.
     }
+  }
+
+  void _noteEcho(String text) {
+    final now = monotonicMicros();
+    _echoes.removeWhere((e) => e.$2 < now);
+    if (_echoes.length >= _maxEchoes) _echoes.removeAt(0);
+    _echoes.add((text, now + _echoWindowMicros));
+  }
+
+  /// Whether [line] is a piece of a `debugPrint` message that was recorded a moment ago.
+  bool _isEcho(String line) {
+    if (_echoes.isEmpty) return false;
+    final now = monotonicMicros();
+    _echoes.removeWhere((e) => e.$2 < now);
+    final piece = line.trim();
+    if (piece.isEmpty) return false;
+    return _echoes.any((e) => e.$1.contains(piece));
   }
 
   /// A line from the app's own logging (`Bugsee.forwardLog`). Whether it was taken.

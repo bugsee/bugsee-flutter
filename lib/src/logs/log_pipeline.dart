@@ -37,6 +37,12 @@ abstract final class LogWire {
   /// The longest a filter may be given.
   static const maxFilterTimeout = Duration(minutes: 5);
 
+  /// This many filter timeouts in a row switch the filter off for [filterCoolDown]: its lines are
+  /// dropped at once (fail closed, counted) instead of costing a timeout each, which would delay every
+  /// later line by that much (the SDK stamps a line when it arrives).
+  static const filterTimeoutsBeforeCoolDown = 3;
+  static const filterCoolDown = Duration(seconds: 30);
+
   /// A burst of this many lines is taken, then [linesPerSecond] a second.
   static const burstLines = 1000;
   static const linesPerSecond = 500;
@@ -111,8 +117,10 @@ final class LogPipeline {
     this.maxBatchBytes = LogWire.maxBatchBytes,
     this.sliceBudget = const Duration(milliseconds: 4),
     LogRateLimiter? limiter,
+    int Function()? clockMicros,
     void Function(String)? warn,
   }) : _limiter = limiter ?? LogRateLimiter(),
+       _clock = clockMicros ?? monotonicMicros,
        _warn = warn ?? _debugWarn;
 
   final LogSend send;
@@ -123,6 +131,9 @@ final class LogPipeline {
   final int maxBatchBytes;
   final Duration sliceBudget;
   final LogRateLimiter _limiter;
+  final int Function() _clock;
+  int _consecutiveTimeouts = 0;
+  int _coolDownUntil = 0;
   final void Function(String) _warn;
 
   static void _debugWarn(String message) {
@@ -158,6 +169,7 @@ final class LogPipeline {
   int _droppedErrorDumps = 0;
   int _droppedByFilter = 0;
   int _filterFailures = 0;
+  int _droppedCoolDown = 0;
   int _refused = 0;
   int _sendFailures = 0;
 
@@ -172,6 +184,7 @@ final class LogPipeline {
     droppedErrorDumps: _droppedErrorDumps,
     droppedByFilter: _droppedByFilter,
     filterFailures: _filterFailures,
+    droppedFilterCoolDown: _droppedCoolDown,
     refusedByNative: _refused,
     sendFailures: _sendFailures,
   );
@@ -312,6 +325,13 @@ final class LogPipeline {
       if (_filter != null && !identical(_filter, queued.filter))
         (_filter!, _filterTimeout),
     ];
+    if (chain.isNotEmpty && _coolDownUntil != 0) {
+      if (_clock() < _coolDownUntil) {
+        _droppedCoolDown++;
+        return null;
+      }
+      _coolDownUntil = 0;
+    }
     var event = queued.event;
     for (final (filter, timeout) in chain) {
       final BugseeLogEvent? next;
@@ -333,10 +353,21 @@ final class LogPipeline {
           );
         }
         next = resolved;
+        _consecutiveTimeouts = 0;
       } catch (error) {
         // A filter that throws, hangs or answers nonsense drops the line: a redaction boundary fails
         // closed, like the SDKs'.
         _filterFailures++;
+        if (error is TimeoutException &&
+            ++_consecutiveTimeouts >= LogWire.filterTimeoutsBeforeCoolDown) {
+          _consecutiveTimeouts = 0;
+          _coolDownUntil = _clock() + LogWire.filterCoolDown.inMicroseconds;
+          _warn(
+            'the log filter did not answer ${LogWire.filterTimeoutsBeforeCoolDown} times in a row; '
+            'its lines are dropped for ${LogWire.filterCoolDown.inSeconds} s (fail closed) instead of '
+            'delaying the ones behind them',
+          );
+        }
         if (!_warnedFilter) {
           _warnedFilter = true;
           _warn(

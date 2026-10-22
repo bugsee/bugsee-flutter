@@ -92,7 +92,10 @@ final class LogOps {
         final boolean accepting;
         try {
             accepting = sdk.acceptsLogs();
-        } catch (final RuntimeException e) {
+        } catch (final Throwable t) {
+            if (t instanceof VirtualMachineError) {
+                throw (VirtualMachineError) t;
+            }
             return 0;
         }
         if (!accepting) {
@@ -123,8 +126,14 @@ final class LogOps {
             return sdk.submit(tag == null || tag.isEmpty() ? null : tag, message, (int) level)
                     ? Outcome.HANDED
                     : Outcome.NOT_SUBMITTED;
-        } catch (final RuntimeException e) {
-            // The app's native log filter (or the SDK) threw on this thread: the line is dropped.
+        } catch (final Throwable t) {
+            // The app's native log filter (or the SDK) threw on this thread: the line is dropped. An
+            // Error counts too (a Kotlin TODO() is a NotImplementedError): Pigeon would otherwise answer
+            // for the whole batch and count the lines already submitted as lost. Only a dying VM is
+            // not ours to swallow.
+            if (t instanceof VirtualMachineError) {
+                throw (VirtualMachineError) t;
+            }
             return Outcome.NOT_SUBMITTED;
         }
     }

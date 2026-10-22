@@ -192,8 +192,10 @@ Bugsee.forwardLog('from my logger', level: LogLevel.warning, tag: 'net');   // p
 ```
 
 Nothing is recorded before the SDK is launching or launched, with `captureLogs` off, or below `captureLogsLevel`. The
-SDK's own console capture (Android logcat) may record the same `print` again, raw, from the platform side: the Dart
-filter does not govern that echo, a native log filter does. `dart:developer` `log`, `stdout` and root-zone `print` are
+SDK's own console capture (Android logcat) records the same `print` again, raw (source `LogCat`, tag `flutter`, the
+`FlutterError` dump of a real app included), and **the Dart filter does not apply to that echo**: on Android a native
+`Bugsee.setLogEventFilter` that drops `LogSource.LogCat` events tagged `flutter` is needed (a debug build warns once;
+Kotlin snippet in [doc/logs.md](doc/logs.md)). `dart:developer` `log`, `stdout` and root-zone `print` are
 not captured. Data flow, SDK rules, privacy and limits: [doc/logs.md](doc/logs.md).
 
 Dart errors ([doc/exceptions.md](doc/exceptions.md): the backend contract, what each SDK does, symbols):

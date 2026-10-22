@@ -18,6 +18,9 @@ class FakeHost extends BugseeBridgeHostApi {
   final List<(String, int)> appLogs = [];
   bool addThrows = false;
 
+  /// Every call that matters for ordering: `lines:<n>` and the report calls.
+  final List<String> calls = [];
+
   List<LogLineMessage> get sent => [for (final b in batches) ...b];
 
   @override
@@ -55,7 +58,40 @@ class FakeHost extends BugseeBridgeHostApi {
   Future<int> addLogLines(List<LogLineMessage> lines) async {
     if (addThrows) throw StateError('native down');
     batches.add(lines);
+    calls.add('lines:${lines.length}');
     return lines.length;
+  }
+
+  @override
+  Future<void> upload(
+    String summary,
+    String description,
+    int? severity,
+    List<String>? labels,
+  ) async => calls.add('upload');
+
+  @override
+  Future<void> showReportDialog(
+    String? summary,
+    String? description,
+    int? severity,
+    List<String>? labels,
+  ) async => calls.add('dialog');
+
+  @override
+  Future<bool> logException(
+    String payload,
+    bool handled,
+    String? domain,
+  ) async {
+    calls.add('exception');
+    return true;
+  }
+
+  @override
+  Future<String?> createReport(int timeToLiveMs) async {
+    calls.add('createReport');
+    return null;
   }
 }
 
@@ -261,6 +297,68 @@ void main() {
       expect(host.appLogs, isEmpty);
       expect(host.sent, hasLength(1));
     });
+  });
+
+  group('what was printed just before a report is in it', () {
+    Future<void> printed() async {
+      await install();
+      Bugsee.runWithLogCapture(() => print('parsing the order'));
+    }
+
+    test('upload', () async {
+      await printed();
+      await Bugsee.upload('s', 'd');
+      expect(host.calls, ['lines:1', 'upload']);
+    });
+
+    test('showReportDialog', () async {
+      await printed();
+      await Bugsee.showReportDialog();
+      expect(host.calls, ['lines:1', 'dialog']);
+    });
+
+    test('createReport', () async {
+      await printed();
+      await Bugsee.createReport();
+      expect(host.calls, ['lines:1', 'createReport']);
+    });
+
+    test(
+      'logException, reportException and the installed error handler path',
+      () async {
+        await printed();
+        await Bugsee.logException(StateError('boom'), StackTrace.current);
+        expect(host.calls, ['lines:1', 'exception']);
+        host.calls.clear();
+        Bugsee.runWithLogCapture(() => print('and again'));
+        await Bugsee.reportException(StateError('boom2'));
+        expect(host.calls, ['lines:1', 'exception']);
+      },
+    );
+
+    test(
+      'a hung filter holds the report back for a fraction of a second, no more',
+      () async {
+        await install();
+        Bugsee.setLogFilter(
+          (e) => Completer<BugseeLogEvent?>().future,
+          timeout: const Duration(seconds: 30),
+        );
+        Bugsee.runWithLogCapture(() => print('behind a hung filter'));
+        final watch = Stopwatch()..start();
+        await Bugsee.upload('s', 'd');
+        expect(watch.elapsedMilliseconds, lessThan(1500));
+        expect(host.calls, ['upload']);
+      },
+    );
+
+    test(
+      'without the capture installed a report is not delayed or changed',
+      () async {
+        await Bugsee.upload('s', 'd');
+        expect(host.calls, ['upload']);
+      },
+    );
   });
 
   group('forwardLog', () {

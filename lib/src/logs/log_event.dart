@@ -79,6 +79,7 @@ final class LogCaptureStats {
     this.droppedErrorDumps = 0,
     this.droppedByFilter = 0,
     this.filterFailures = 0,
+    this.droppedFilterCoolDown = 0,
     this.refusedByNative = 0,
     this.sendFailures = 0,
   });
@@ -118,6 +119,10 @@ final class LogCaptureStats {
   /// (fail closed).
   final int filterFailures;
 
+  /// Lines dropped without asking the filter because it had just timed out three times in a row
+  /// (a cool-down of 30 s; fail closed).
+  final int droppedFilterCoolDown;
+
   /// Lines handed to native and not taken by the SDK.
   final int refusedByNative;
 
@@ -130,6 +135,6 @@ final class LogCaptureStats {
       'droppedQueueFull $droppedQueueFull, droppedRateLimited $droppedRateLimited, '
       'droppedNotAccepting $droppedNotAccepting, droppedBelowLevel $droppedBelowLevel, '
       'droppedErrorDumps $droppedErrorDumps, droppedByFilter $droppedByFilter, '
-      'filterFailures $filterFailures, refusedByNative $refusedByNative, '
+      'filterFailures $filterFailures, droppedFilterCoolDown $droppedFilterCoolDown, refusedByNative $refusedByNative, '
       'sendFailures $sendFailures)';
 }

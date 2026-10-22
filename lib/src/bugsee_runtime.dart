@@ -508,13 +508,15 @@ final class BugseeRuntime {
     List<String>? labels,
   }) async {
     final checked = labels == null ? null : checkLabels(labels);
-    await _call<void>(
-      'showReportDialog',
-      null,
-      () =>
-          host.showReportDialog(summary, description, severity?.value, checked),
-      argument: 'severity',
-    );
+    await _call<void>('showReportDialog', null, () async {
+      await logs.flushBeforeReport();
+      await host.showReportDialog(
+        summary,
+        description,
+        severity?.value,
+        checked,
+      );
+    }, argument: 'severity');
   }
 
   Future<void> upload(
@@ -524,12 +526,10 @@ final class BugseeRuntime {
     List<String>? labels,
   }) async {
     final checked = labels == null ? null : checkLabels(labels);
-    await _call<void>(
-      'upload',
-      null,
-      () => host.upload(summary, description, severity?.value, checked),
-      argument: 'severity',
-    );
+    await _call<void>('upload', null, () async {
+      await logs.flushBeforeReport();
+      await host.upload(summary, description, severity?.value, checked);
+    }, argument: 'severity');
   }
 
   // ---- Network capture (Phase 5b) ---------------------------------------------------------------
@@ -583,6 +583,8 @@ final class BugseeRuntime {
     ensureAttached: ensureStartedInBackground,
     statuses: () => bridge.statusChanges,
     supported: () => _platform() != null,
+    // Android's own logcat capture records the same prints, outside the Dart filter.
+    echoRisk: () => _platform() == OptionPlatform.android,
     warn: _warn,
   );
 
@@ -624,6 +626,7 @@ final class BugseeRuntime {
       );
     }
     final handle = await _call<String?>('createReport', null, () async {
+      await logs.flushBeforeReport();
       try {
         return await host.createReport(timeToLive.inMilliseconds);
       } on PlatformException catch (e) {
@@ -742,7 +745,11 @@ final class BugseeRuntime {
   }) => _call<bool>(
     'logException',
     false,
-    () => host.logException(payload.json, handled, domain),
+    () async {
+      // The lines printed before the error are in the report it makes.
+      await logs.flushBeforeReport();
+      return host.logException(payload.json, handled, domain);
+    },
     // Dart checked the domain and built a document under the limit, so a refusal is about the
     // document: the native message says what (never the domain, which was valid).
     argument: 'error',

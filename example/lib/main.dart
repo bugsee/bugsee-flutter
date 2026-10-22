@@ -57,9 +57,10 @@ Future<void> _afterReport(ReportProxy report) async {
 }
 
 void main() {
-  // Everything runs inside a zone that records `print` (the hook is inert until the capture is
-  // installed); the bindings are initialized in it too, so `runApp` shares their zone.
-  Bugsee.runWithLogCapture(() async {
+  // Everything runs inside one guarded zone: it reports what escapes (an error nobody caught), and it
+  // records `print` once the capture is installed. The bindings are initialized in it too, so
+  // `runApp` shares their zone.
+  Bugsee.runGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     // Records what the app prints (`print`, `debugPrint`) into the report's log, with the plugin's
     // own source: the app's deliberate `Bugsee.log` calls stay distinguishable. Filter it with

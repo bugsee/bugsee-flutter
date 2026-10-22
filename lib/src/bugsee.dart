@@ -422,13 +422,30 @@ abstract final class Bugsee {
   /// Nothing is recorded while the SDK is neither launching nor launched (a line printed before
   /// [launch] is dropped, not buffered), nor while `capture.logs` is off
   /// (`BugseeOptions.captureLogs`), nor below
-  /// `capture.logs.level`. **Privacy**: every line runs through [setLogFilter] first (in Dart, so
-  /// it cannot be bypassed), then through the SDK's own log filter, the app's, if it set one on the
-  /// native SDK; the SDK has no default log sanitizer. See `doc/logs.md`.
+  /// `capture.logs.level`. **Privacy**: every line THIS capture records runs through [setLogFilter]
+  /// first (in Dart, before anything leaves the isolate), then through the SDK's own log filter, the
+  /// app's, if it set one on the native SDK; the SDK has no default log sanitizer. See `doc/logs.md`.
   ///
-  /// The SDK's own capture of the platform console (Android logcat, iOS stdout) may record the same
-  /// line again from the platform side under its own source: the report then shows it twice, once per
-  /// route (`doc/logs.md`).
+  /// **Android: the Dart filter does NOT cover the SDK's own logcat capture.** The SDK also reads the
+  /// process's logcat, where the engine writes every `print` and `debugPrint` (source `LogCat`, tag
+  /// `flutter`), and records those lines RAW, with the same text, whatever [setLogFilter] did to this
+  /// capture's copy. The same holds for the `FlutterError` dump on a real app (its widget tree is
+  /// printed to logcat; only this capture's own copy is withheld). No option turns that route off
+  /// alone (`captureLogs` turns off both). To redact or drop there, set a native log filter in the
+  /// host app (it runs on every non-`Bugsee` source):
+  ///
+  /// ```kotlin
+  /// Bugsee.setLogEventFilter { event, callback ->
+  ///     when {
+  ///         // the plugin's own lines (source Custom) were filtered in Dart already
+  ///         event.logSource == LogSource.LogCat && event.tag == "flutter" -> callback.run(null) // drop the echo
+  ///         else -> callback.run(event)
+  ///     }
+  /// }
+  /// ```
+  ///
+  /// iOS recorded no such echo on the simulator (not verified on a device). A debug build warns once
+  /// on Android when a filter is set. See `doc/logs.md`.
   ///
   /// Returns whether the capture is in effect, `false` on a platform with no SDK. Idempotent. Throws a
   /// [BugseeException] when called from a background isolate.
@@ -488,10 +505,15 @@ abstract final class Bugsee {
   /// });
   /// ```
   ///
-  /// This is where redaction belongs: it runs in Dart, so it cannot be bypassed, and it sees the line
-  /// before anything leaves the isolate. The SDK then runs the app's own filter on what it returns (a
-  /// filter set on the native SDK), and the SDK has **no default log sanitizer**: what this filter does
-  /// not remove is recorded. It runs on the isolate that printed, one line at a time and in order,
+  /// This is where redaction of what this capture records belongs: it runs in Dart, so nothing this
+  /// capture records can skip it, and it sees the line before anything leaves the isolate. The SDK then
+  /// runs the app's own filter on what it returns (a filter set on the native SDK), and the SDK has
+  /// **no default log sanitizer**: what this filter does not remove is recorded. **On Android the SDK's
+  /// own logcat capture records the same `print` / `debugPrint` text again, raw (source `LogCat`, tag
+  /// `flutter`), and that route does not pass through this filter**: it needs a native
+  /// `Bugsee.setLogEventFilter` that drops or redacts `LogSource.LogCat` events tagged `flutter` (a
+  /// Kotlin snippet is in [installLogCapture]; a debug build warns once when this filter is set on
+  /// Android). It runs on the isolate that printed, one line at a time and in order,
   /// never inside the `print` call; keep it fast, it may return a `Future`. Anything it prints is not
   /// recorded.
   ///

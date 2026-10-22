@@ -179,15 +179,20 @@ public class LogOpsTest {
 
     // ---- the real seam over a recording channel -------------------------------------------------
 
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(final Throwable t) throws T {
+        throw (T) t;
+    }
+
     private static final class RecordingChannel implements BugseeWrapperChannel {
         final List<Object[]> calls = new ArrayList<>();
-        RuntimeException throwing;
+        Throwable throwing;
 
         @Override
         public void log(@Nullable final String tag, @Nullable final String message,
                 @Nullable final LogLevel level, @NonNull final LogSource source) {
             if (throwing != null) {
-                throw throwing;
+                sneakyThrow(throwing);
             }
             calls.add(new Object[] {tag, message, level, source});
         }
@@ -246,6 +251,59 @@ public class LogOpsTest {
         assertEquals("before", retired.calls.get(0)[1]);
         assertEquals(1, current.calls.size());
         assertEquals("after", current.calls.get(0)[1]);
+    }
+
+    @Test
+    public void anErrorFromTheAppsFilterLosesOneLineNotTheBatch() {
+        // A Kotlin TODO() in the app's filter is a NotImplementedError: an Error, not an Exception.
+        final NetworkChannelHolder holder = new NetworkChannelHolder();
+        final int[] calls = {0};
+        final BugseeLogSdk real = new BugseeLogSdk(holder);
+        holder.set(new BugseeWrapperChannel() {
+            @Override
+            public void log(@Nullable final String tag, @Nullable final String message,
+                    @Nullable final LogLevel level, @NonNull final LogSource source) {
+                calls[0]++;
+                if ("todo".equals(message)) {
+                    throw new NotImplementedErrorLike("An operation is not implemented");
+                }
+            }
+        });
+        final LogOps.Sdk sdk = new LogOps.Sdk() {
+            @Override
+            public boolean acceptsLogs() {
+                return true;
+            }
+
+            @Override
+            public boolean submit(@Nullable final String tag, @NonNull final String message,
+                    final int level) {
+                return real.submit(tag, message, level);
+            }
+        };
+        final int handed = LogOps.addAll(sdk, Arrays.asList(
+                line("a", 3, null), line("todo", 3, null), line("c", 3, null)));
+        assertEquals(2, handed);
+        assertEquals(3, calls[0]);
+    }
+
+    @Test(expected = OutOfMemoryError.class)
+    public void aDyingVmIsNotSwallowed() {
+        final FakeSdk sdk = new FakeSdk() {
+            @Override
+            public boolean submit(@Nullable final String tag, @NonNull final String message,
+                    final int level) {
+                throw new OutOfMemoryError("out");
+            }
+        };
+        LogOps.addAll(sdk, Collections.singletonList(line("a", 3, null)));
+    }
+
+    /** What Kotlin's {@code NotImplementedError} is: an {@link Error} that is not an Exception. */
+    private static final class NotImplementedErrorLike extends Error {
+        NotImplementedErrorLike(final String message) {
+            super(message);
+        }
     }
 
     @Test

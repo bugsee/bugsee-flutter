@@ -2,8 +2,9 @@
 
 > **Status: the 7.x rewrite, in progress (10.0.0-dev.1, unpublished).** Launching, options, `stop`,
 > status, attributes, user identity, events and traces, breadcrumbs, notifications, blackout, the
-> report handler, the lifecycle event stream and the secure-view widget work on Android and iOS. Not
-> yet: Dart exception, network and `print` capture, APM spans.
+> report handler, the lifecycle event stream, the secure-view widget, Dart error reporting, report
+> attachments and `createReport`, and the `dart:io` network capture work on Android and iOS. Not yet:
+> `print` capture, APM spans.
 > Existing users should stay on the latest published release until the migration guide is available.
 > This API is a clean break from 9.x.
 
@@ -138,6 +139,36 @@ await Bugsee.setReportHandler(
 Bugsee.lifecycleEvents.listen((e) => print('${e.name} ${e.reportId ?? ''}'));
 ```
 
+### Network capture
+
+The SDKs' own network interception cannot see `dart:io` (`package:http`, `dio`'s default adapter,
+`Image.network`, a plain `HttpClient`), so this plugin records it in Dart and hands the events to the
+SDK. It is opt-in: call it once, early, before the app makes a request.
+
+```dart
+void main() {
+  // After your own `HttpOverrides.global = ...` if you set one: this chains to it.
+  Bugsee.installNetworkCapture();
+  runApp(const MyApp());
+}
+
+// Optional: runs in Dart BEFORE anything reaches the SDK, so it cannot be bypassed.
+Bugsee.setNetworkFilter((event) {
+  if (event.url.contains('/internal/')) return null;   // not recorded
+  event.headers.remove('x-session');                   // redact in place
+  return event;
+});
+```
+
+Nothing is recorded before the SDK is `launched`. Bodies follow the SDK's own options
+(`captureNetworkBodySizeLimit`, 20 KiB by default; `captureNetworkBodyWithoutType`; only text is kept);
+the SDK's default sanitizer still redacts what the filter returns (except the URL in Android's HTTP
+breadcrumbs when `captureBreadcrumbs` is on, which keeps its query: redact it in the filter, see
+[doc/network.md](doc/network.md)); a body-size limit above 2 MiB is capped at 2 MiB; a filter that throws or hangs
+**drops the event** (fail closed); requests to Bugsee itself are never recorded. Requests made in other
+isolates, WebSocket frames and a client created before the install are not captured. The data flow, the
+privacy model and the limits are in [doc/network.md](doc/network.md).
+
 Dart errors ([doc/exceptions.md](doc/exceptions.md): the backend contract, what each SDK does, symbols):
 
 ```dart
@@ -227,7 +258,7 @@ tasks.matching { it.name.startsWith("injectBugsee") && it.name.endsWith("BuildId
 
 ## Developing
 
-The example app (`example/`) has a launch screen and a data screen that calls every method above;
-`example/integration_test/launch_test.dart` and `facade_test.dart` run them against the real SDKs on a device
-or simulator.
+The example app (`example/`) has a launch screen, a data screen that calls every method above and a
+network screen; `example/integration_test/launch_test.dart`, `facade_test.dart` and `network_test.dart`
+run them against the real SDKs on a device or simulator.
 See [PLAN.md](PLAN.md) for the implementation plan and `.github/CI.md` for the checks.

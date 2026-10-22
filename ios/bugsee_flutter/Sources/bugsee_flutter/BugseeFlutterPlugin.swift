@@ -307,6 +307,30 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
         severity: severity.map { NSNumber(value: $0) }, labels: labels))
   }
 
+  // MARK: Network capture (Phase 5b; see BGSFlutterNetworkOps)
+
+  private let networkSdk = BGSFlutterRealNetworkSdk()
+
+  func addNetworkEvents(events: [NetworkEventMessage]) throws -> Int64 {
+    // The ObjC operations take plain dictionaries (they cannot see this module's Pigeon types).
+    let dictionaries: [[String: Any]] = events.map { event in
+      var d: [String: Any] = [
+        "id": event.id, "stage": event.stage, "mechanism": event.mechanism,
+        "method": event.method, "url": event.url, "ageMs": event.ageMs, "size": event.size,
+        "statusCode": event.statusCode,
+      ]
+      if let v = event.headers { d["headers"] = v }
+      if let v = event.body { d["body"] = v }
+      if let v = event.noBodyReason { d["noBodyReason"] = v }
+      if let v = event.statusText { d["statusText"] = v }
+      if let v = event.errorShortMessage { d["errorShortMessage"] = v }
+      if let v = event.errorDescription { d["errorDescription"] = v }
+      if let v = event.redirectedFromUrl { d["redirectedFromUrl"] = v }
+      return d
+    }
+    return Int64(BGSFlutterNetworkOps.addEvents(sdk: networkSdk, events: dictionaries))
+  }
+
   // MARK: Exceptions (Phase 5a; see BGSFlutterExceptionOps)
 
   private let exceptionSdk = BGSFlutterRealExceptionSdk()

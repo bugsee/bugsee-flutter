@@ -1,6 +1,7 @@
 #import "BGSFlutterWrapper.h"
 
 #import "BGSFlutterLifecycleHub.h"
+#import "BGSFlutterNetworkOps.h"
 #import "BGSFlutterReportHandlerPipeline.h"
 #import "BGSFlutterSecureRectangleStore.h"
 
@@ -105,6 +106,14 @@ static NSString *BGSFlutterStringOr(id value, NSString *fallback) {
   // The SDK's serial queue. The hub strips the prefix, hops to the main queue
   // and never throws.
   [_hub dispatchRawName:eventType data:data];
+}
+
+// The SDK's data-injection channel for THIS registration (BGSWrapperChannel), delivered
+// synchronously on the registering thread before `setWrapper:` returns. Store and return. It goes
+// to the process-wide holder: this object is replaced on a refined identity, which makes the
+// previous channel inert.
+- (void)onWrapperChannelAvailable:(id<BGSWrapperChannel>)channel {
+  [BGSFlutterNetworkChannel shared].channel = channel;
 }
 
 - (NSData *)secureRectanglesForDisplay:(NSInteger)display {

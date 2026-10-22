@@ -13,7 +13,7 @@ Sources read: Android `bugsee/bugsee-android` tag `v7.4.2` (`3b7af6371`):
 
 Phase 4a shipped `launch`, `stop`, status and `BugseeOptions`; the report-handler pipeline (native +
 the `ReportProxy`) and the secure-region widget were built internally in Phase 3 and are made public
-here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/attachments.md`); wrapper-owned log/network/exception capture is Phase 5.
+here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/attachments.md`); wrapper-owned log/exception capture is Phase 5 (network capture, 5b, is built: `doc/network.md`).
 
 ## Legend
 
@@ -76,7 +76,8 @@ here. Attachments, annotated screenshots and `createReport` are Phase 6 (`doc/at
 | Capability | Decision |
 |---|---|
 | `setWrapper` / `BugseeWrapper` | **wrapper-internal** (Phases 2-3; the plugin registers itself) |
-| `setNetworkEventFilter`, `setLogEventFilter`, `setLogFilter`, `setBreadcrumbFilter`, `addNetworkEvent`, `getDefaultNetworkSanitizer`, `setAdditionalDataCapture` | **skip (Phase 5)**: filters chain behind the wrapper's own capture |
+| `addNetworkEvent`, `setNetworkEventFilter`, `getDefaultNetworkSanitizer` | **done in 5b, not as a one-to-one method**: the wrapper's own capture (`Bugsee.installNetworkCapture`) records `dart:io` and submits through the SDK's wrapper channel (`BugseeWrapperChannel` / `BGSWrapperChannel`, both shipped at the pins) with filtering required; the filter is `Bugsee.setNetworkFilter`, a Dart-side filter that runs BEFORE the SDK's native filter slot (which stays the app's); the default sanitizer is the SDK's (`capture.network.default-sanitizer`). A free-form `addNetworkEvent` for another stack is not exposed. `doc/network.md` |
+| `setLogEventFilter`, `setLogFilter`, `setBreadcrumbFilter`, `setAdditionalDataCapture` | **skip (Phase 5)**: filters chain behind the wrapper's own capture |
 | `getExchangeFactory` | **wrapper-internal** (used to build a breadcrumb) |
 | `getAppearance` (Android `Appearance`, iOS `BugseeTheme`) | **skip, deliberately**: the 7.x appearance system is a large per-property colour/string surface that differs between the platforms (Android namespaced keys, iOS properties); RN needed a whole bridge for it, and the 9.x one was larger still. Not a plain SDK method. A later, separate design |
 | `ext` / `registerExt` | **skip**: native modules (feedback is a separate package, decision D4) |

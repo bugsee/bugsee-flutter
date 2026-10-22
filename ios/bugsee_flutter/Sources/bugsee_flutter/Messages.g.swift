@@ -944,6 +944,141 @@ struct BreadcrumbMessage: Hashable, CustomStringConvertible {
   }
 }
 
+/// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire
+/// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
+///
+/// Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
+/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+/// through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
+/// native filter still apply (doc/network.md).
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct NetworkEventMessage: Hashable, CustomStringConvertible {
+  /// Shared by every stage of one request; never empty.
+  var id: String
+  /// `before`, `redirect`, `complete`, `error` or `abort` (the SDK's own stage names; iOS spells
+  /// `abort` `cancel` and has no `redirect` stage, which native handles).
+  var stage: String
+  /// The intercepted stack, free-form (`dart:io`).
+  var mechanism: String
+  var method: String
+  var url: String
+  /// How long ago the event happened, in milliseconds, measured on Dart's monotonic clock when the
+  /// batch was handed to the bridge. Native subtracts it from the SDK's own clock, so the event
+  /// is stamped on the clock the SDK validates against (Android: `currentTimestamp()`, which is not
+  /// `DateTime.now()` once the device clock has been corrected) and not on one the SDK may drop.
+  var ageMs: Int64
+  /// Body size in bytes, 0 when unknown.
+  var size: Int64
+  /// HTTP status, 0 for a stage with none.
+  var statusCode: Int64
+  /// Header names are lower-case (Dart's), repeated values joined by `, `.
+  var headers: [String: String]? = nil
+  /// The body as text, only when Dart captured it (text content, within the SDK's size limit).
+  var body: String? = nil
+  /// Why [body] is absent: `no_data`, `size_too_large`, `unsupported_content_type`,
+  /// `no_content_type` or `cant_read_data` (the SDKs' wire values).
+  var noBodyReason: String? = nil
+  /// Android stores it, iOS drops it (the iOS bundle writes null).
+  var statusText: String? = nil
+  var errorShortMessage: String? = nil
+  var errorDescription: String? = nil
+  /// iOS carries a redirect as the original URL on the final event; Android has `redirect` stages.
+  var redirectedFromUrl: String? = nil
+  /// Milliseconds, Android only (iOS has no field for them).
+  var timings: [String: Double]? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> NetworkEventMessage? {
+    let id = pigeonVar_list[0] as! String
+    let stage = pigeonVar_list[1] as! String
+    let mechanism = pigeonVar_list[2] as! String
+    let method = pigeonVar_list[3] as! String
+    let url = pigeonVar_list[4] as! String
+    let ageMs = pigeonVar_list[5] as! Int64
+    let size = pigeonVar_list[6] as! Int64
+    let statusCode = pigeonVar_list[7] as! Int64
+    let headers: [String: String]? = nilOrValue(pigeonVar_list[8])
+    let body: String? = nilOrValue(pigeonVar_list[9])
+    let noBodyReason: String? = nilOrValue(pigeonVar_list[10])
+    let statusText: String? = nilOrValue(pigeonVar_list[11])
+    let errorShortMessage: String? = nilOrValue(pigeonVar_list[12])
+    let errorDescription: String? = nilOrValue(pigeonVar_list[13])
+    let redirectedFromUrl: String? = nilOrValue(pigeonVar_list[14])
+    let timings: [String: Double]? = nilOrValue(pigeonVar_list[15])
+
+    return NetworkEventMessage(
+      id: id,
+      stage: stage,
+      mechanism: mechanism,
+      method: method,
+      url: url,
+      ageMs: ageMs,
+      size: size,
+      statusCode: statusCode,
+      headers: headers,
+      body: body,
+      noBodyReason: noBodyReason,
+      statusText: statusText,
+      errorShortMessage: errorShortMessage,
+      errorDescription: errorDescription,
+      redirectedFromUrl: redirectedFromUrl,
+      timings: timings
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      id,
+      stage,
+      mechanism,
+      method,
+      url,
+      ageMs,
+      size,
+      statusCode,
+      headers,
+      body,
+      noBodyReason,
+      statusText,
+      errorShortMessage,
+      errorDescription,
+      redirectedFromUrl,
+      timings,
+    ]
+  }
+  static func == (lhs: NetworkEventMessage, rhs: NetworkEventMessage) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MessagesPigeonInternal.deepEquals(lhs.id, rhs.id) && MessagesPigeonInternal.deepEquals(lhs.stage, rhs.stage) && MessagesPigeonInternal.deepEquals(lhs.mechanism, rhs.mechanism) && MessagesPigeonInternal.deepEquals(lhs.method, rhs.method) && MessagesPigeonInternal.deepEquals(lhs.url, rhs.url) && MessagesPigeonInternal.deepEquals(lhs.ageMs, rhs.ageMs) && MessagesPigeonInternal.deepEquals(lhs.size, rhs.size) && MessagesPigeonInternal.deepEquals(lhs.statusCode, rhs.statusCode) && MessagesPigeonInternal.deepEquals(lhs.headers, rhs.headers) && MessagesPigeonInternal.deepEquals(lhs.body, rhs.body) && MessagesPigeonInternal.deepEquals(lhs.noBodyReason, rhs.noBodyReason) && MessagesPigeonInternal.deepEquals(lhs.statusText, rhs.statusText) && MessagesPigeonInternal.deepEquals(lhs.errorShortMessage, rhs.errorShortMessage) && MessagesPigeonInternal.deepEquals(lhs.errorDescription, rhs.errorDescription) && MessagesPigeonInternal.deepEquals(lhs.redirectedFromUrl, rhs.redirectedFromUrl) && MessagesPigeonInternal.deepEquals(lhs.timings, rhs.timings)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("NetworkEventMessage")
+    MessagesPigeonInternal.deepHash(value: id, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: stage, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: mechanism, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: method, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: url, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: ageMs, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: size, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: statusCode, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: headers, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: body, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: noBodyReason, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: statusText, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: errorShortMessage, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: errorDescription, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: redirectedFromUrl, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: timings, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "NetworkEventMessage(id: \(String(describing: id)), stage: \(String(describing: stage)), mechanism: \(String(describing: mechanism)), method: \(String(describing: method)), url: \(String(describing: url)), ageMs: \(String(describing: ageMs)), size: \(String(describing: size)), statusCode: \(String(describing: statusCode)), headers: \(String(describing: headers)), body: \(String(describing: body)), noBodyReason: \(String(describing: noBodyReason)), statusText: \(String(describing: statusText)), errorShortMessage: \(String(describing: errorShortMessage)), errorDescription: \(String(describing: errorDescription)), redirectedFromUrl: \(String(describing: redirectedFromUrl)), timings: \(String(describing: timings)))"
+  }
+}
+
 private class MessagesPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -971,6 +1106,8 @@ private class MessagesPigeonCodecReader: FlutterStandardReader {
       return LaunchOutcomeMessage.fromList(self.readValue() as! [Any?])
     case 140:
       return BreadcrumbMessage.fromList(self.readValue() as! [Any?])
+    case 141:
+      return NetworkEventMessage.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -1014,6 +1151,9 @@ private class MessagesPigeonCodecWriter: FlutterStandardWriter {
       super.writeValue(value.toList())
     } else if let value = value as? BreadcrumbMessage {
       super.writeByte(140)
+      super.writeValue(value.toList())
+    } else if let value = value as? NetworkEventMessage {
+      super.writeByte(141)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1176,6 +1316,16 @@ protocol BugseeBridgeHostApi {
   func showReportDialog(summary: String?, description: String?, severity: Int64?, labels: [String]?) throws
   /// Creates and uploads a report with no UI. A no-op before the SDK is launched.
   func upload(summary: String, description: String, severity: Int64?, labels: [String]?) throws
+  /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+  /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+  /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+  /// throws for a single bad event.
+  ///
+  /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+  /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+  /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+  /// documented to be callable from any thread; one queue keeps the order.
+  func addNetworkEvents(events: [NetworkEventMessage]) throws -> Int64
   /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
   /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of
   /// an exception named `FlutterManagedException`: the name the backend routes on). [handled]
@@ -1202,6 +1352,11 @@ class BugseeBridgeHostApiSetup {
   /// Sets up an instance of `BugseeBridgeHostApi` to handle messages through the `binaryMessenger`.
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: BugseeBridgeHostApi?, messageChannelSuffix: String = "") {
     let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    #if os(iOS)
+      let taskQueue = binaryMessenger.makeBackgroundTaskQueue?()
+    #else
+      let taskQueue: FlutterTaskQueue? = nil
+    #endif
     /// The Dart side is listening: flush what was buffered while it was not (in
     /// order) and deliver from now on.
     let attachLifecycleChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.attachLifecycle\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
@@ -2116,6 +2271,32 @@ class BugseeBridgeHostApiSetup {
       }
     } else {
       uploadChannel.setMessageHandler(nil)
+    }
+    /// Hands a batch of captured network events to the SDK through the wrapper channel, in order.
+    /// Returns how many the SDK was handed: native drops the rest without error (the SDK is not
+    /// launched, `capture.network` is off, the plugin has no channel yet, a malformed event). Never
+    /// throws for a single bad event.
+    ///
+    /// Runs on a serial BACKGROUND thread of the plugin, not the platform (main) thread: the SDK
+    /// applies its sanitizer (and the app's native filter, if it set one) on the calling thread, up to
+    /// one body-size-limit's worth of text per event, and that must not take UI time. The channel is
+    /// documented to be callable from any thread; one queue keeps the order.
+    let addNetworkEventsChannel = taskQueue == nil
+      ? FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+      : FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bugsee_flutter.BugseeBridgeHostApi.addNetworkEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec, taskQueue: taskQueue)
+    if let api = api {
+      addNetworkEventsChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let eventsArg = args[0] as! [NetworkEventMessage]
+        do {
+          let result = try api.addNetworkEvents(events: eventsArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      addNetworkEventsChannel.setMessageHandler(nil)
     }
     /// Hands a Dart error to the SDK. [payload] is the JSON document the backend reads for a Flutter
     /// exception (built by Dart, `lib/src/exceptions`; native forwards it untouched, as the reason of

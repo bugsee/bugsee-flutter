@@ -387,6 +387,9 @@ final class CapturingHttpClient implements HttpClient {
     String method,
     Uri? knownUrl,
   ) {
+    // The installation this request began under: one that finishes opening after an uninstall
+    // (and perhaps a reinstall) is never recorded.
+    final openingGeneration = _ctl.generation;
     final int startedUs;
     final NetworkPolicy policy;
     try {
@@ -401,6 +404,9 @@ final class CapturingHttpClient implements HttpClient {
     return opening.then<HttpClientRequest>(
       (request) {
         try {
+          if (!_ctl.active || _ctl.generation != openingGeneration) {
+            return request;
+          }
           if (policy.isOwnTraffic(request.uri)) return request;
           return CapturedRequest._(
             request,
@@ -413,7 +419,9 @@ final class CapturingHttpClient implements HttpClient {
       onError: (Object error, StackTrace stack) {
         // No connection, a refused certificate, a connection timeout: the request never existed.
         try {
-          if (knownUrl != null) {
+          if (_ctl.active &&
+              _ctl.generation == openingGeneration &&
+              knownUrl != null) {
             _Exchange(_ctl, policy, method, knownUrl, startedUs).fail(error);
           }
         } catch (_) {}

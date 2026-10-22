@@ -123,8 +123,19 @@ class FakeClient implements HttpClient {
 
   final FakeRequest request;
 
+  /// When set, opening waits for it (a connection that is still being made).
+  Completer<void>? openGate;
+
+  /// When set, opening fails with it.
+  Object? failOpen;
+
   @override
-  Future<HttpClientRequest> openUrl(String method, Uri url) async => request;
+  Future<HttpClientRequest> openUrl(String method, Uri url) async {
+    await openGate?.future;
+    final failure = failOpen;
+    if (failure != null) throw failure;
+    return request;
+  }
 
   @override
   Future<HttpClientRequest> getUrl(Uri url) => openUrl('GET', url);

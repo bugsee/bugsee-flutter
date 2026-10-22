@@ -226,6 +226,37 @@ void main() {
     },
   );
 
+  test(
+    'a request still opening at an uninstall is not recorded after a reinstall',
+    () async {
+      final rig = await FakeRig.create(controller);
+      rig.fake.openGate = Completer<void>();
+      final opening = rig.client.getUrl(Uri.parse('http://example.test/x'));
+      controller.active = false;
+      controller.generation++;
+      controller.active = true;
+      rig.fake.openGate!.complete();
+      final request = await opening;
+      expect(request, isNot(isA<CapturedRequest>()));
+      await request.close();
+      expect(stages(), isEmpty);
+    },
+  );
+
+  test(
+    'a request still opening at an uninstall that then fails to open records no error',
+    () async {
+      final rig = await FakeRig.create(controller);
+      rig.fake.openGate = Completer<void>();
+      rig.fake.failOpen = const SocketException('refused');
+      final opening = rig.client.getUrl(Uri.parse('http://example.test/x'));
+      controller.generation++;
+      rig.fake.openGate!.complete();
+      await expectLater(opening, throwsA(isA<SocketException>()));
+      expect(stages(), isEmpty);
+    },
+  );
+
   test('a cancel after the uninstall records no abort either', () async {
     final (rig, response) = await open();
     final sub = response.listen((_) {});

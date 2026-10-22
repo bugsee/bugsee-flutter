@@ -56,7 +56,7 @@ while the core is unpublished.
        id("dev.flutter.flutter-plugin-loader") version "1.0.0"
        id("com.android.application") version "8.11.1" apply false
        id("org.jetbrains.kotlin.android") version "2.2.20" apply false
-       id("com.bugsee.android.gradle") version "4.0.8" apply false   // must be 4.0.7 or newer; 4.0.8 is what this release is tested with
+       id("com.bugsee.android.gradle") version "4.0.8" apply false   // the version this release is tested with
    }
    ```
 
@@ -316,9 +316,17 @@ Jetpack Compose on Android). Add it next to this one, at the same version; there
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
 
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Bugsee.launch('YOUR_APP_TOKEN');   // first: before the SDK has launched, Android's show() does nothing
+  runApp(const MyApp());
+}
+
+// For example from a "Contact support" button.
 Future<void> contactSupport() async {
-  await Bugsee.launch('YOUR_APP_TOKEN');   // normally once, in main(): before the SDK has launched, Android's show() does nothing
-  await BugseeFeedback.show();
+  if (await Bugsee.waitUntilLaunched()) {   // settles `alreadyRunning` and `deferred` launches too
+    await BugseeFeedback.show();
+  }
 }
 ```
 

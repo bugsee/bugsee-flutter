@@ -60,9 +60,9 @@ support" button); a call that needs it throws a `BugseeFeedbackException` with r
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
 
-// Once, in main(), after WidgetsFlutterBinding.ensureInitialized().
-Future<void> setUpSupport() async {
-  await Bugsee.launch('YOUR_APP_TOKEN');
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Bugsee.launch('YOUR_APP_TOKEN');   // first: Android's show() does nothing before the SDK has launched
 
   // The text an empty conversation opens with (null clears it).
   await BugseeFeedback.setGreeting('How can we help?');
@@ -70,10 +70,16 @@ Future<void> setUpSupport() async {
   // Messages, as text only. The native listener is installed while a stream has a listener.
   final received = BugseeFeedback.messagesReceived.listen((messages) { /* from the dashboard, oldest first */ });
   final sent = BugseeFeedback.messageSent.listen((message) { /* the user sent one */ });
+
+  runApp(const MyApp());
 }
 
 // Wherever you offer it, for example a "Contact support" button: present the chat.
-Future<void> onContactSupport() => BugseeFeedback.show();
+Future<void> onContactSupport() async {
+  if (await Bugsee.waitUntilLaunched()) {   // settles `alreadyRunning` and `deferred` launches too
+    await BugseeFeedback.show();
+  }
+}
 ```
 
 The streams fire **only while the chat is on screen** (both SDKs poll the backend only then), so they are not a source of

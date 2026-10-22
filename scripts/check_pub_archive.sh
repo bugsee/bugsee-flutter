@@ -11,7 +11,9 @@ forbidden='^(\./)?(packages/|pigeons/|ios/wrapper_tests/|ios/feedback_wrapper_te
 
 status=0
 for archive in "$@"; do
-  hits="$(tar tzf "$archive" | grep -E "$forbidden" || true)"
+  # Read the listing first: a missing or corrupt archive must fail here, not pass as "no hits".
+  listing="$(tar tzf "$archive")"
+  hits="$(printf '%s\n' "$listing" | grep -E "$forbidden" || true)"
   if [ -n "$hits" ]; then
     echo "::error::$archive would publish files that must not be published:" >&2
     echo "$hits" >&2

@@ -226,7 +226,8 @@ so apps that never show it do not carry its UI (SwiftUI on iOS, Jetpack Compose 
 at the same version; there is nothing else to configure:
 
 ```dart
-await BugseeFeedback.show(); // import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
+await Bugsee.launch('YOUR_APP_TOKEN');   // first: before the SDK has launched Android's show() does nothing
+await BugseeFeedback.show();            // import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
 ```
 
 This package works the same without it.

@@ -279,7 +279,7 @@ retention + `request.json` read, crash across update, Dart exception, secure-rec
 - **Layout**: a member of a pub **workspace** (root `workspace:` = the feedback package + `example`), published separately
   (core first). The workspace lets the feedback package depend on `bugsee_flutter` by a hosted constraint that resolves to
   the sibling locally: no path dependency (unpublishable), no `dependency_overrides`. The root `.pubignore` drops `/packages/`.
-  Cost: `example/pubspec.lock` is gone (one gitignored lock at the root, like the packages).
+  Cost: `example/pubspec.lock` is gone (one COMMITTED lock at the root, enforced in CI with `--enforce-lockfile`, kept out of the archives by `.pubignore`).
 - **Versions**: lock-step number; the constraint is `>=<core> <next minor>` (pub warns about an exact pin); the Dart side
   also checks the core's version at run time (`incompatibleCore`). Native pins repeated as literals in the package (a published
   copy has no `native-versions.json`), compared by `test/feedback_package_drift_test.dart`; `native-versions.json` gained a

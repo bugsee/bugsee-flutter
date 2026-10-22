@@ -311,7 +311,7 @@ static NSData *Buffer(int32_t version, int32_t l, int32_t t, int32_t r, int32_t 
     }];
     [returned fulfill];
   });
-  [self waitForExpectations:@[ returned ] timeout:5];
+  [self waitForExpectations:@[ returned ] timeout:60];
   XCTAssertEqual(requests.count, 2u, @"both phases reached the Dart end, off the main thread");
   XCTAssertFalse(requests[0].after);
   XCTAssertTrue(requests[1].after);

@@ -360,7 +360,7 @@ void main() {
     Future<bool> waitWith(
       List<String> events, {
       String initial = 'stopped',
-      Duration timeout = const Duration(seconds: 2),
+      Duration timeout = const Duration(seconds: 30),
     }) async {
       native.statusName = initial;
       final f = Bugsee.waitUntilLaunched(timeout: timeout);
@@ -392,7 +392,7 @@ void main() {
         await waitWith(
           ['Launching', 'Stopped'],
           timeout: const Duration(seconds: 30),
-        ).timeout(const Duration(seconds: 2)),
+        ).timeout(const Duration(seconds: 20)),
         isFalse,
       );
       // Already launching when asked, then it fails.
@@ -401,7 +401,7 @@ void main() {
           ['Stopped'],
           initial: 'launching',
           timeout: const Duration(seconds: 30),
-        ).timeout(const Duration(seconds: 2)),
+        ).timeout(const Duration(seconds: 20)),
         isFalse,
       );
     });

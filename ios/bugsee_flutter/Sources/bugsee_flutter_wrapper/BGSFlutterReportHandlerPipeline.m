@@ -5,6 +5,11 @@
 #import "BGSFlutterReportOps.h"
 
 @import Bugsee;
+// 7.0 GA moves the wrapper contract to the Bugsee.SPI submodule (BugseeSPI.h);
+// the 7.0 betas declare it in Bugsee.h.
+#if __has_include(<Bugsee/BugseeSPI.h>)
+#import <Bugsee/BugseeSPI.h>
+#endif
 
 const int64_t BGSFlutterReportLiveDeadlineMs = 20000;
 const int64_t BGSFlutterReportRecoveryDeadlineMs = 2000;

@@ -338,7 +338,13 @@
     @"BugseeSeverityLevel" : @{@"Low" : @(BugseeSeverityLow), @"Medium" : @(BugseeSeverityMedium), @"High" : @(BugseeSeverityHigh), @"Critical" : @(BugseeSeverityCritical), @"Blocker" : @(BugseeSeverityBlocker)},
     @"BugseeStyle" : @{@"Light" : @(BugseeStyleLight), @"Dusk" : @(BugseeStyleDusk), @"BasedOnStatusBar" : @(BugseeStyleBasedOnStatusBar), @"System" : @(BugseeStyleSystem)},
     @"BugseeLogLevel" : @{@"Error" : @(BugseeLogLevelError), @"Warning" : @(BugseeLogLevelWarning), @"Info" : @(BugseeLogLevelInfo), @"Debug" : @(BugseeLogLevelDebug), @"Verbose" : @(BugseeLogLevelVerbose)},
+#if __has_include(<Bugsee/BugseeSPI.h>)
+    // 7.0 GA keeps data encryption out of the public headers (the option is still read), so
+    // the enum is not visible here; these are its values.
+    @"BugseeDataEncryptionMode" : @{@"None" : @0, @"OnDevice" : @1, @"EndToEnd" : @2},
+#else
     @"BugseeDataEncryptionMode" : @{@"None" : @(BugseeDataEncryptionNone), @"OnDevice" : @(BugseeDataEncryptionOnDevice), @"EndToEnd" : @(BugseeDataEncryptionEndToEnd)},
+#endif
     @"BugseeCrashHandlerType" : @{@"BSD" : @(BugseeCrashHandlerTypeBSD), @"Mach" : @(BugseeCrashHandlerTypeMach), @"MachAndBSD" : @(BugseeCrashHandlerTypeMachAndBSD)},
   };
   NSMutableSet *seen = [NSMutableSet set];

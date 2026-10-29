@@ -1,6 +1,11 @@
 #import "BGSFlutterReportOps.h"
 
 @import Bugsee;
+// 7.0 GA moves the wrapper contract to the Bugsee.SPI submodule (BugseeSPI.h);
+// the 7.0 betas declare it in Bugsee.h.
+#if __has_include(<Bugsee/BugseeSPI.h>)
+#import <Bugsee/BugseeSPI.h>
+#endif
 
 NSErrorDomain const BGSFlutterReportOpsErrorDomain = @"com.bugsee.flutter.report-ops";
 

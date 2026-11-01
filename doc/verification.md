@@ -63,7 +63,7 @@ Nothing in the repository is modified by a run: the app is configured with build
 | Android SDK under test | `com.bugsee:bugsee-android` and `-ndk` 7.4.2 (banner build `3b7af6371`) |
 | Android device | AVD `phase7_api30`: Pixel 4 profile, API 30 (Android 11), `google_apis` arm64-v8a userdebug image, 1080x2280 at 440 dpi (2.75), 3 GB RAM, started headless (`-no-window -no-snapshot`), emulator 37.2.12 |
 | iOS toolchain | Xcode 27.1 (27A9275), iOS SDK 27.1 |
-| iOS SDK under test | `bugsee/spm` 7.0.0 (revision `bbfdda2`, banner `build:2b88480fa-7`), `bugsee/feedback-spm` 7.0.0 (`82054e7`); the results below were taken at 7.0.0-beta7 (`73ed983`, `build:2b88480fa-7`, feedback `40dd3b0`), see "The 7.0.0 pin move" |
+| iOS SDK under test | `bugsee/spm` 7.0.0 (revision `bbfdda2`, banner `build:2b88480fa-7`), `bugsee/feedback-spm` 7.0.0 (`82054e7`); the results below were taken at 7.0.0-beta7 (`73ed983`, `build:9854b7e50-15`, feedback `40dd3b0`), see "The 7.0.0 pin move" |
 | iOS device | simulator `phase7-iphone`: iPhone 18 Pro, iOS 27.0 runtime (24A434), 3x |
 | Other tools | ffmpeg 7.1.1 and ffprobe (frames of the report video and screenshots), Python 3.14.6 (the mock API), `apkanalyzer` and `retrace` (cmdline-tools 13.0) |
 
@@ -91,7 +91,7 @@ harness was run again on a new simulator (iPhone 17, iOS 26.5, Xcode 27.1) with 
 * **Crash reporter on the simulator: still none.** The `ios-arm64_x86_64-simulator` slice of `Bugsee.xcframework` 7.0.0 has 0 strings
   matching `BGSCrashManager|PLCrashReporter`, the `ios-arm64` slice 28, so scenario 2 (and a recovered iOS report) remains NOT POSSIBLE
   without a physical iPhone.
-* Unit level, all passing: `flutter test` 1356, iOS XCTest 335 (core) + 23 (feedback) on the simulator, `flutter build ios` and the debug APK.
+* Unit level, all passing: `flutter test` 1357, iOS XCTest 335 (core) + 23 (feedback) on the simulator, `flutter build ios` and the debug APK.
 
 ## Results at a glance
 

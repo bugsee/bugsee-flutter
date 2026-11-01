@@ -16,7 +16,6 @@
 //     --android-chain /tmp/ReportHandlerChain.java --android-options /tmp/OptionsDescriptors.java \
 //     --ios-coordinator /tmp/BGSIssueReportingCoordinator.m --ios-source-ref origin/release@2b88480fa \
 //     --android-report /tmp/IssueReport.java --ios-report /tmp/BGSReport.m --ios-attachment /tmp/BGSAttachment.h \
-//     --ios-options-private .../BGSOptionsPrivate.h \
 //     --ios-options-private .../BGSOptionsPrivate.h [--check]
 //
 // (Phase 6) The same fixture carries the SDKs' ATTACHMENT limits: Android `IssueReport.MAX_ATTACHMENTS`

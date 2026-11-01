@@ -27,7 +27,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 
 ## What the SDKs ship at the pins
 
-| | Android 7.4.2 (`v7.4.2`) | iOS 7.0.0-beta7 (SDK `nextgen` `0581aa02c`) |
+| | Android 7.4.2 (`v7.4.2`) | iOS 7.0.0 (SDK read at beta7 `0581aa02c`; release `2b88480fa`) |
 |---|---|---|
 | route | `BugseeWrapperChannel.log(tag, message, level, source)` -> `BugseeWrapperChannelImpl.log` (:36) -> `BugseeInternal.log` (:1029) | `-[BGSWrapperChannel logWithTag:message:level:source:]` -> `BGSWrapperChannelImpl.m:143` -> `+[Bugsee log:level:timestamp:source:requiresFiltering:YES]` |
 | allowed `source` | allow-list: `Custom` 98, `WebView` 5, `StdOut` 1, `StdErr` 2, `Unknown` 0; **every other value is recorded as `Custom`** (`toWrapperSource` :79), reported once per process; a null source is `Custom` silently | the same allow-list (`recordedSourceForClaimedSource:` :99), the same coercion and once-per-process notice |
@@ -226,6 +226,6 @@ XCTest `BGSFlutterLogOpsTests`. Every one was checked with mutation testing (cou
 Android `bugsee-android` `v7.4.2`: `BugseeWrapperChannelImpl.java`, `contracts/internal/{BugseeWrapperChannel,LogSource}.java`,
 `contracts/options/LogLevel.java`, `BugseeInternal.java:1008-1050`, `capture/providers/log_system/BugseeCaptureDataProviderLog.java`
 (`mConsoleEventLogger`, `logEventInternal`, `FilterCallbackWrapper`, `isLevelAccepted`), `BugseeCaptureDataEntryLog.java`,
-`interception/logs/LogLogcatThread.java`. iOS `0581aa02c`: `BGSWrapperChannelImpl.m`, `BGSContracts.h` (`BGSLogEventSource`,
+`interception/logs/LogLogcatThread.java`. iOS `0581aa02c` (beta7; the SPI is in `BugseeSPI.h` at 7.0.0, `BGSContracts.h` being private and unshipped): `BGSWrapperChannelImpl.m`, `BGSContracts.h` (`BGSLogEventSource`,
 `BGSWrapperChannel`), `BugseeLogEvent.h`, `BugseeLogger.h` (`BugseeLogLevel`), `Capture/Providers/BGSCaptureDataProviderLog.m`,
 `Bugsee.m:1630-1700`. Bundle: `specs/sdk/reporting/bundle/log.md`.

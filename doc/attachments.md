@@ -6,9 +6,9 @@ sources are `specs/sdk/report-contract` (method matrix, lifetime, "path-first", 
 
 ## 1. What exists at the pins (read from SDK source, not from the spec's status line)
 
-| Piece | Android 7.4.2 (`v7.4.2`, `3b7af6371`) | iOS 7.0.0-beta7 (`origin/nextgen@0581aa02c`) |
+| Piece | Android 7.4.2 (`v7.4.2`, `3b7af6371`) | iOS 7.0.0 (`origin/release@2b88480fa`; read at beta7 `0581aa02c`, limits re-extracted at 7.0.0) |
 |---|---|---|
-| `addAttachment(file, name, mime, move)` | `Report.addAttachment(File,..)` (`contracts/reporting/Report.java`), implemented by `IssueReport.addAttachment` / `IssueReportAttachment.importFile` (rename, else copy+delete; symlink always copied) | `addAttachmentWithFilePath:name:mimeType:move:` (`BGSContracts.h`, `BGSReport.m`; lstat, rename or copy, hands a refused move back) |
+| `addAttachment(file, name, mime, move)` | `Report.addAttachment(File,..)` (`contracts/reporting/Report.java`), implemented by `IssueReport.addAttachment` / `IssueReportAttachment.importFile` (rename, else copy+delete; symlink always copied) | `addAttachmentWithFilePath:name:mimeType:move:` (`BugseeSPI.h` (`BGSContracts.h` at beta7), `BGSReport.m`; lstat, rename or copy, hands a refused move back) |
 | `addAttachment(bytes, name, mime)` | `Report.addAttachment(byte[],..)` | `addAttachmentWithData:name:mimeType:` |
 | list / clear | `getAttachments()`, `clearAttachments()` (deletes the files) | `attachments`, `clearAttachments` |
 | lifetime | `IssueReport.isAcceptingAttachments` (reporting stage `< PROCESSING_SCHEDULED`) | `stopAcceptingAttachments` / `_closedToAttachments` |
@@ -20,8 +20,8 @@ sources are `specs/sdk/report-contract` (method matrix, lifetime, "path-first", 
 
 **The spec's "Android implements on branch `feat/report-contract-parity`" is stale for the pin:** that branch is NOT
 merged into `v7.4.2` (`git merge-base --is-ancestor` fails) but the contract's pieces (PR #117 path-first, #136, #178)
-arrived through `main`, and `v7.4.2` has them; everything above was read at the tag. iOS closes its gaps on `nextgen`
-as the spec says (#136, #145) and beta7 = `0581aa02c` has them.
+arrived through `main`, and `v7.4.2` has them; everything above was read at the tag. iOS closed its gaps on `nextgen`
+(now in `origin/release`) as the spec says (#136, #145); beta7 (`0581aa02c`) and 7.0.0 (`2b88480fa`) have them.
 
 ## 2. Public API
 
@@ -70,7 +70,7 @@ Objective-C (a drift guard compares them).
 
 **Limits.** Files: a SOFT limit of 20 MiB each (`maxAttachmentFileBytes`; neither SDK has one on this path, but a copy is
 synchronous I/O in front of every other queued operation and the SDK's handler timer does not wait for it;
-`config.max-data-size`, default 50 on iOS and 150 on Android, bounds what a report may hold; a native copy, nothing read
+`config.max-data-size`, default 150 on both (iOS: 50 up to 7.0.0-beta7), bounds what a report may hold; a native copy, nothing read
 into memory), 1000 attachments per report (the SDKs' own, extracted into `test/fixtures/report_enums.json` from source). Bytes: 1 MiB, empty allowed for a handler report. Images:
 4096 x 4096 pixels, refused from the header before any pixel is allocated. A refusal never consumes the source: with
 `move: true` a refused file stays (verified on both SDKs).

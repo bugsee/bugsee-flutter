@@ -1,14 +1,14 @@
 # Public API surface and its inventory
 
 This is the written inventory the public facade was built from: every public method of the
-Android 7.4.2 and iOS 7.0.0-beta7 SDKs, whether it is cross-platform, one-platform or
+Android 7.4.2 and iOS 7.0.0 SDKs, whether it is cross-platform, one-platform or
 wrapper-internal, and what this package does about it. The decisions mirror the converged 7.x React
 Native facade (`cross/bugsee-react-native/packages/react-native/src/index.ts`) unless the SDK source
 says otherwise; where it does, the source wins and the difference is noted.
 
 Sources read: Android `bugsee/bugsee-android` tag `v7.4.2` (`3b7af6371`):
 `library/.../Bugsee.java`, `BugseeInternal.java`, `BugseeAttributes.java`, `BugseeEnvironment.java`,
-`docs/api-7.x.md`; iOS `bugsee/bugsee-ios` `origin/nextgen` (`0581aa02c`, the 7.0.0-beta7 headers):
+`docs/api-7.x.md`; iOS `bugsee/bugsee-cocoa` `origin/release@2b88480fa` (7.0.0; the lines below were read at beta7's `0581aa02c`, and 7.0.0 moved the wrapper SPI from `BGSContracts.h` (now a private header that is not shipped) into `BugseeSPI.h` / the `Bugsee.SPI` submodule):
 `Bugsee.h`, `Bugsee.m`, `BGSBugseeEnvironment.m`, `BGSContracts.h`. Line numbers below refer to those.
 
 Everything below is implemented. Details that have a page of their own: attachments, annotated screenshots and
@@ -25,7 +25,7 @@ Everything below is implemented. Details that have a page of their own: attachme
 
 ### Lifecycle and configuration
 
-| Capability | Android 7.4.2 | iOS 7.0.0-beta7 | Decision |
+| Capability | Android 7.4.2 | iOS 7.0.0 | Decision |
 |---|---|---|---|
 | launch (token, options) | `launch` x4 (+ manifest auto-init) | `launchWithToken:` x4 | **expose**: `Bugsee.launch`, `waitUntilLaunched` |
 | stop | `stop()`, `stop(Runnable)` | `stop:` | **expose**: `Bugsee.stop` |
@@ -93,7 +93,7 @@ Everything below is implemented. Details that have a page of their own: attachme
 The wrapper queues nothing and gates nothing: each call reaches the SDK as it is and does what that SDK does
 (Dart validates arguments first; native defends again). "Dropped" means the SDK ignores the call; it never throws.
 
-| `Bugsee.` | Android 7.4.2 before launch | iOS 7.0.0-beta7 before launch | Result |
+| `Bugsee.` | Android 7.4.2 before launch | iOS 7.0.0 before launch | Result |
 |---|---|---|---|
 | `setAttribute` and the other attribute calls | works: `BugseeAttributes.getInstance()` is a persisted store (`BugseeAttributes.java`, preferences scope `global_attrs`) | works: `NSUserDefaults` (`BGSBugseeEnvironment.m`, `setAttributeForKey:value:`) | works on both, persisted across launches and stops. Verified on device |
 | `setUserIdentifier`, `getUserIdentifier`, `clearUserIdentifier` | works: global preferences (`BugseeEnvironment.setUserIdentifier`) | works: Keychain, `NSUserDefaults` fallback (`Bugsee.m:2057`) | works on both. Verified on device |

@@ -8,13 +8,12 @@ or redacting it**. Everything private about that tree is decided here.
 
 Sources of truth, read for this design: `bugsee/specs` `sdk/wrapper-data-requests` (the `vh` flow),
 `sdk/wrapper-workbook` Part 5.3 (units) and Part 6 (data requests, 6.7 async replies), `sdk/reporting/bundle/viewtree.md`
-(privacy, the node vocabulary), the Android SDK at `v7.4.2` and the iOS SDK at `origin/nextgen@0581aa02c`
-(= the 7.0.0-beta7 headers). Where they disagree, the SDK source is followed and the disagreement is listed under
+(privacy, the node vocabulary), the Android SDK at `v7.4.2` and the iOS SDK at `0581aa02c` (the 7.0.0-beta7 source; the `vh` constants were re-extracted at 7.0.0, `origin/release@2b88480fa`). Where they disagree, the SDK source is followed and the disagreement is listed under
 [Spec gaps](#spec-gaps-found).
 
 ## What the SDKs do (from source)
 
-| | Android 7.4.2 | iOS 7.0.0-beta7 (nextgen `0581aa02c`) |
+| | Android 7.4.2 | iOS 7.0.0 (read at beta7 `0581aa02c`) |
 |---|---|---|
 | asked by | `BugseeCaptureDataProviderViewHierarchy.onBeforeSnapshotCreated` (every report snapshot, not while the process is terminating) and `Bugsee.captureViewHierarchy()`; one request per display, none for a blacked-out display or one with no top activity | `BGSCaptureDataProviderViewHierarchy -onBeforeSnapshotCreatedIsTerminating:` (same exceptions) and `+[Bugsee captureViewHierarchy]` |
 | thread of `requestData` | main (`ViewHierarchyBuilder.requestAdditionalData`, `@UiThread`) | main (`requestManagedHierarchyFromWrapper:`) |

@@ -1,6 +1,6 @@
 {
   "buildConfiguration" : "release",
-  "generatedAt" : "2026-10-18T04:41:18Z",
+  "generatedAt" : "2026-10-30T19:10:39Z",
   "manifestVersion" : 1,
   "options" : [
     {
@@ -319,9 +319,23 @@
       "type" : "int"
     },
     {
-      "default" : 50,
+      "default" : 150,
       "hidden" : false,
       "key" : "com.bugsee.option.config.max-data-size",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 30,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.max-pending-report-age",
+      "module" : "Bugsee",
+      "type" : "int"
+    },
+    {
+      "default" : 30,
+      "hidden" : false,
+      "key" : "com.bugsee.option.config.max-pending-reports",
       "module" : "Bugsee",
       "type" : "int"
     },
@@ -576,5 +590,5 @@
     }
   ],
   "sdk" : "ios",
-  "sdkVersion" : "7.0.0-beta7"
+  "sdkVersion" : "7.0.0"
 }

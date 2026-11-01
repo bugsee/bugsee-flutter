@@ -2,7 +2,7 @@
 // (test/fixtures/option_manifests). Do not edit by hand.
 //
 // Android 7.4.2 (manifest generatedAt 2026-10-19T07:03:45Z)
-// iOS 7.0.0-beta7 (manifest generatedAt 2026-10-18T04:41:18Z)
+// iOS 7.0.0 (manifest generatedAt 2026-10-30T19:10:39Z)
 
 import 'option_registry.dart';
 
@@ -451,7 +451,7 @@ const List<OptionSpec> optionSpecs = [
     hidden: false,
     typed: true,
     android: PlatformOption(module: 'bugsee-android', defaultValue: 150),
-    ios: PlatformOption(module: 'Bugsee', defaultValue: 50),
+    ios: PlatformOption(module: 'Bugsee', defaultValue: 150),
   ),
   OptionSpec(
     key: 'com.bugsee.option.config.max-pending-report-age',
@@ -459,6 +459,7 @@ const List<OptionSpec> optionSpecs = [
     hidden: false,
     typed: true,
     android: PlatformOption(module: 'bugsee-android', defaultValue: 30),
+    ios: PlatformOption(module: 'Bugsee', defaultValue: 30),
   ),
   OptionSpec(
     key: 'com.bugsee.option.config.max-pending-reports',
@@ -466,6 +467,7 @@ const List<OptionSpec> optionSpecs = [
     hidden: false,
     typed: true,
     android: PlatformOption(module: 'bugsee-android', defaultValue: 30),
+    ios: PlatformOption(module: 'Bugsee', defaultValue: 30),
   ),
   OptionSpec(
     key: 'com.bugsee.option.config.notify-flush-delay',

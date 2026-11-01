@@ -30,6 +30,6 @@ The pages below go deeper.
 | [../.claude/CLAUDE.md](../.claude/CLAUDE.md) | The reviewer and agent guide: rules the code must keep |
 | [../example/README.md](../example/README.md) | The example app and its integration tests |
 
-Source references in these pages name the SDK files and lines they were read from (Android tag `v7.4.2`, iOS `7.0.0-beta7`). The
+Source references in these pages name the SDK files and lines they were read from (Android tag `v7.4.2`, iOS `7.0.0`: SDK source `origin/release@2b88480fa`, the commit the 7.0.0 banner `build:2b88480fa-7` names; the iOS repository has no 7.x tag. Line numbers read at the earlier 7.0.0-beta7 commit `0581aa02c` are marked as such where they have not been re-read). The
 SDKs are private repositories; the published artefacts are Maven Central `com.bugsee:bugsee-android` and the SwiftPM package
 `github.com/bugsee/spm`.

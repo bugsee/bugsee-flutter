@@ -55,7 +55,7 @@ class Pins {
   final int minSdk;
   final String iosSdk;
 
-  /// The build the iOS SDK's banner prints for [iosSdk] (`Bugsee IOS SDK ver:7.0.0-beta7 build:...`).
+  /// The build the iOS SDK's banner prints for [iosSdk] (`Bugsee IOS SDK ver:7.0.0 build:...`).
   final String iosSdkBuild;
 
   /// The git revisions of bugsee/spm and bugsee/feedback-spm at [iosSdk]: what SwiftPM must resolve.

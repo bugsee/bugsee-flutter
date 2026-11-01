@@ -135,7 +135,7 @@ void main() {
     final typed = optionSpecs.where((s) => s.typed).toList();
 
     test(
-      'there are 100 of them (84 + 69 public, 49 shared, less 4 leak-module and 1 deprecated)',
+      'there are 100 of them (84 + 71 public, 51 shared, less 4 leak-module and 1 deprecated)',
       () {
         expect(typed.length, 100);
       },

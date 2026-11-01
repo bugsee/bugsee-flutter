@@ -17,8 +17,8 @@ let package = Package(
         .library(name: "bugsee-flutter-feedback", targets: ["bugsee_flutter_feedback"])
     ],
     dependencies: [
-        .package(url: "https://github.com/bugsee/spm", exact: "7.0.0-beta7"),
-        .package(url: "https://github.com/bugsee/feedback-spm", exact: "7.0.0-beta7")
+        .package(url: "https://github.com/bugsee/spm", exact: "7.0.0"),
+        .package(url: "https://github.com/bugsee/feedback-spm", exact: "7.0.0")
     ],
     targets: [
         // Objective-C so `+load` can register the add-on at image load, before the SDK can be

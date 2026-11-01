@@ -1,6 +1,6 @@
 #import "BGSFlutterNetworkOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 static NSString *const kStageBefore = @"before";
 static NSString *const kStageRedirect = @"redirect";

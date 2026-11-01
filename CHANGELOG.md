@@ -1,6 +1,6 @@
 ## 10.0.0-dev.1
 
-A rewrite for the Bugsee 7.x native SDKs (Android 7.4.2, iOS 7.0.0-beta7). **Not published yet; a prerelease.** Existing 9.x apps
+A rewrite for the Bugsee 7.x native SDKs (Android 7.4.2, iOS 7.0.0). **Not published yet; a prerelease.** Existing 9.x apps
 should stay on 9.x: there is no compatibility layer (the decision is open), see `doc/migration-from-9x.md`.
 
 ### Features

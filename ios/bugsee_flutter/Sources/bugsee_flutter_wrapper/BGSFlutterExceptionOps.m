@@ -1,6 +1,6 @@
 #import "BGSFlutterExceptionOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 static NSString *const kExceptionName = @"FlutterManagedException";
 static const NSInteger kMaxPayloadLength = 262144;

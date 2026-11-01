@@ -78,7 +78,7 @@ typedef NS_ENUM(NSInteger, BGSFlutterPlacementKind) {
 /// identity, and the regions must survive that or the app is recorded
 /// unredacted until it next republishes.
 ///
-/// What the SDK takes (iOS 7.0.0-beta7, BGSContracts.h `secureRectanglesForDisplay:`):
+/// What the SDK takes (iOS 7.0.0, BugseeSPI.h `secureRectanglesForDisplay:`):
 /// a packed little-endian int32 `[version, count, l, t, r, b, ...]`; the rectangles
 /// are in POINTS in the screen's coordinate space, origin top-left, `r`/`b` exclusive
 /// (the SDK draws them as they are over the recorded frame, which is the screen), and

@@ -4,7 +4,7 @@
 #import "BGSFlutterSecureRectangleStore.h"
 
 /// Workbook Part 5 on iOS: units, rounding, versions, ownership. The SDK's unit here is POINTS in
-/// the screen's coordinate space (BGSContracts.h, `secureRectanglesForDisplay:`).
+/// the screen's coordinate space (BugseeSPI.h, `secureRectanglesForDisplay:`).
 
 /// A device a test can change between pulls.
 @interface BGSMockScreen : NSObject <BGSFlutterSecureEnvironment>

@@ -1,6 +1,6 @@
 #import "BGSFlutterLaunchOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 @implementation BGSFlutterRealBugsee
 

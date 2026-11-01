@@ -6,7 +6,7 @@ import '../scripts/check_native_pins.dart';
 const pins = {
   'android': {'sdk': '7.4.2', 'gradlePlugin': '4.0.8'},
   'ios': {
-    'sdk': '7.0.0-beta7',
+    'sdk': '7.0.0',
     'spmUrl': 'https://github.com/bugsee/spm',
     'feedbackSpmUrl': 'https://github.com/bugsee/feedback-spm',
   },
@@ -17,8 +17,8 @@ PinReport run({
   List<String> sdk = const ['7.4.1', '7.4.2'],
   List<String> ndk = const ['7.4.2'],
   List<String> plugin = const ['4.0.7', '4.0.8'],
-  List<String> spm = const ['7.0.0-beta7'],
-  List<String> feedback = const ['7.0.0-beta7'],
+  List<String> spm = const ['7.0.0'],
+  List<String> feedback = const ['7.0.0'],
   List<String> androidFeedback = const ['7.4.2'],
 }) => evaluate(
   pins,
@@ -72,7 +72,10 @@ void main() {
     expect(run(ndk: []).errors.single, contains('bugsee-android-ndk'));
     expect(run(plugin: ['4.0.7']).errors.single, contains('gradle plugin'));
     expect(run(spm: []).errors.single, contains('bugsee/spm'));
-    expect(run(feedback: ['7.0.0']).errors.single, contains('feedback-spm'));
+    expect(
+      run(feedback: ['7.0.0-beta7']).errors.single,
+      contains('feedback-spm'),
+    );
     expect(
       run(androidFeedback: ['7.4.1']).errors.single,
       contains('bugsee-android-feedback 7.4.2'),

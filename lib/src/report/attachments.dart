@@ -15,8 +15,8 @@ const int maxAttachmentBytes = 1024 * 1024;
 /// The soft limit of ONE attached file: 20 MiB. Neither SDK limits a file on this path, but a copy is
 /// synchronous I/O in front of every other queued operation and the SDK's handler timer does not wait
 /// for it (Android 7.4.2 can register an add that finished after processing was scheduled: the plugin
-/// undoes it, but a copy that long is the cause). `config.max-data-size` (default 50 on iOS, 150 on
-/// Android) bounds everything a report may hold. A bigger file is [ReportAttachmentFailure.tooLarge].
+/// undoes it, but a copy that long is the cause). `config.max-data-size` (default 150 on both; iOS up to
+/// 7.0.0-beta7: 50) bounds everything a report may hold. A bigger file is [ReportAttachmentFailure.tooLarge].
 /// Repeated in Java (`ReportOps.MAX_ATTACHMENT_FILE_BYTES`) and Objective-C.
 const int maxAttachmentFileBytes = 20 * 1024 * 1024;
 

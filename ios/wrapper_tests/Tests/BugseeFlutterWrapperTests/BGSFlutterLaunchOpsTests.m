@@ -2,7 +2,7 @@
 
 #import "BGSFlutterLaunchOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// A fake SDK behind the seam: records what reaches it and answers as scripted.
 @interface BGSFakeBugsee : NSObject <BGSFlutterBugseeSDK>
@@ -329,6 +329,25 @@
   return [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
 }
 
+/// 7.0.0 keeps `BugseeDataEncryptionMode` in a private header the framework does not ship, so the
+/// values cannot come from the compiler: they are the ones scripts/extract_report_enums.dart read
+/// from BGSOptionsPrivate.h at the pinned source ref (test/fixtures/report_enums.json).
+- (NSDictionary *)encryptionModeFromSdkSource {
+  NSString *path = [[[@(__FILE__) stringByDeletingLastPathComponent]
+      stringByAppendingPathComponent:@"../../../../test/fixtures/report_enums.json"]
+      stringByStandardizingPath];
+  NSData *data = [NSData dataWithContentsOfFile:path];
+  XCTAssertNotNil(data, @"%@", path);
+  NSDictionary *fixture = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+  NSDictionary *raw = fixture[@"ios"][@"BugseeDataEncryptionMode"];
+  XCTAssertTrue(raw.count > 0);
+  NSMutableDictionary *out = [NSMutableDictionary dictionary];
+  for (NSString *name in raw) {
+    out[[name stringByReplacingOccurrencesOfString:@"BugseeDataEncryption" withString:@""]] = raw[name];
+  }
+  return out;
+}
+
 /// The enums the pinned framework compiles, by value, against the manifest the SDK published: a
 /// renumbered SDK or a stale manifest is seen (workbook 7.4.2, 7.4.3).
 - (void)testTheManifestEnumsAreTheFrameworksRealEnums {
@@ -338,7 +357,7 @@
     @"BugseeSeverityLevel" : @{@"Low" : @(BugseeSeverityLow), @"Medium" : @(BugseeSeverityMedium), @"High" : @(BugseeSeverityHigh), @"Critical" : @(BugseeSeverityCritical), @"Blocker" : @(BugseeSeverityBlocker)},
     @"BugseeStyle" : @{@"Light" : @(BugseeStyleLight), @"Dusk" : @(BugseeStyleDusk), @"BasedOnStatusBar" : @(BugseeStyleBasedOnStatusBar), @"System" : @(BugseeStyleSystem)},
     @"BugseeLogLevel" : @{@"Error" : @(BugseeLogLevelError), @"Warning" : @(BugseeLogLevelWarning), @"Info" : @(BugseeLogLevelInfo), @"Debug" : @(BugseeLogLevelDebug), @"Verbose" : @(BugseeLogLevelVerbose)},
-    @"BugseeDataEncryptionMode" : @{@"None" : @(BugseeDataEncryptionNone), @"OnDevice" : @(BugseeDataEncryptionOnDevice), @"EndToEnd" : @(BugseeDataEncryptionEndToEnd)},
+    @"BugseeDataEncryptionMode" : [self encryptionModeFromSdkSource],
     @"BugseeCrashHandlerType" : @{@"BSD" : @(BugseeCrashHandlerTypeBSD), @"Mach" : @(BugseeCrashHandlerTypeMach), @"MachAndBSD" : @(BugseeCrashHandlerTypeMachAndBSD)},
   };
   NSMutableSet *seen = [NSMutableSet set];

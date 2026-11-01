@@ -3,7 +3,7 @@
 #import "BGSFlutterLogOps.h"
 #import "BGSFlutterNetworkOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// One recorded call to the fake SDK.
 @interface BGSLogCall : NSObject

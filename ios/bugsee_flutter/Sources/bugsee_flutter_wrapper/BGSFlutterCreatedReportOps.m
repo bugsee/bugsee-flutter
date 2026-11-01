@@ -2,9 +2,9 @@
 
 #import "BGSFlutterReportOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
-// `ATTACHMENTS_LIMIT` and `MAX_SIZE_ATTACHMENT` in `BGSAttachment.h` (nextgen).
+// `ATTACHMENTS_LIMIT` and `MAX_SIZE_ATTACHMENT` in `BGSAttachment.h`.
 const NSUInteger BGSFlutterCreatedReportMaxAttachments = 3;
 const NSUInteger BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;
 

@@ -60,7 +60,7 @@ final class ReportOps {
     /**
      * The soft limit of ONE attached file: 20 MiB. Neither SDK limits a file on this path, but a copy is
      * synchronous I/O in front of every other queued operation and the SDK's handler timer does not wait
-     * for it (see {@link Window}); {@code config.max-data-size} (default 50 on iOS, 150 on Android) bounds
+     * for it (see {@link Window}); {@code config.max-data-size} (default 150 on both, 50 on iOS up to 7.0.0-beta7) bounds
      * all the data a report may hold, so one file of 20 MiB is the most a handler can attach without
      * crowding the rest out. Repeated in Dart ({@code maxAttachmentFileBytes}) and Objective-C.
      */

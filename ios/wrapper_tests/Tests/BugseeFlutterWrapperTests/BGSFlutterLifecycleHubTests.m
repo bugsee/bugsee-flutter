@@ -66,7 +66,7 @@ static void *kQueueKey = &kQueueKey;
 }
 
 - (void)testEveryRealSdkNameIsForwarded {
-  // From BGSContracts.h (BGSLifecycleEvent*), iOS origin/nextgen. Launching and
+  // From BugseeSPI.h (BGSLifecycleEvent*; BGSContracts.h until beta7), iOS origin/release. Launching and
   // Stopping have no BugseeLifecycleEventType: the SDK sends them to the wrapper
   // only. The two feedback names exist on Android; iOS does not emit them yet.
   NSArray *names = @[

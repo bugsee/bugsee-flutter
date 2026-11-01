@@ -8,7 +8,7 @@ says otherwise; where it does, the source wins and the difference is noted.
 
 Sources read: Android `bugsee/bugsee-android` tag `v7.4.2` (`3b7af6371`):
 `library/.../Bugsee.java`, `BugseeInternal.java`, `BugseeAttributes.java`, `BugseeEnvironment.java`,
-`docs/api-7.x.md`; iOS `bugsee/bugsee-cocoa` `origin/release@2b88480fa` (7.0.0; the lines below were read at beta7's `0581aa02c`, and 7.0.0 moved the wrapper SPI from `BGSContracts.h` into `BugseeSPI.h` / the `Bugsee.SPI` submodule):
+`docs/api-7.x.md`; iOS `bugsee/bugsee-cocoa` `origin/release@2b88480fa` (7.0.0; the lines below were read at beta7's `0581aa02c`, and 7.0.0 moved the wrapper SPI from `BGSContracts.h` (now a private header that is not shipped) into `BugseeSPI.h` / the `Bugsee.SPI` submodule):
 `Bugsee.h`, `Bugsee.m`, `BGSBugseeEnvironment.m`, `BGSContracts.h`. Line numbers below refer to those.
 
 Everything below is implemented. Details that have a page of their own: attachments, annotated screenshots and

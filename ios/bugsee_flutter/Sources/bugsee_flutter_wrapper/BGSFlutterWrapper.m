@@ -7,7 +7,7 @@
 #import "BGSFlutterViewHierarchyStore.h"
 
 // 7.0.0 moved the wrapper SPI (BGSWrapperChannel, BGSLifecycleEvent*, secure rectangles, report handler) out of
-// `import Bugsee` into the `Bugsee.SPI` submodule (BugseeSPI.h; BGSContracts.h is now a shim). Every wrapper file
+// `import Bugsee` into the `Bugsee.SPI` submodule (BugseeSPI.h; BGSContracts.h is now a private header that is not shipped). Every wrapper file
 // that touches it asks for the submodule; the beta7 headers had it all in the main module.
 @import Bugsee.SPI;
 

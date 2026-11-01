@@ -226,6 +226,6 @@ XCTest `BGSFlutterLogOpsTests`. Every one was checked with mutation testing (cou
 Android `bugsee-android` `v7.4.2`: `BugseeWrapperChannelImpl.java`, `contracts/internal/{BugseeWrapperChannel,LogSource}.java`,
 `contracts/options/LogLevel.java`, `BugseeInternal.java:1008-1050`, `capture/providers/log_system/BugseeCaptureDataProviderLog.java`
 (`mConsoleEventLogger`, `logEventInternal`, `FilterCallbackWrapper`, `isLevelAccepted`), `BugseeCaptureDataEntryLog.java`,
-`interception/logs/LogLogcatThread.java`. iOS `0581aa02c` (beta7; `BGSContracts.h` is `BugseeSPI.h` at 7.0.0): `BGSWrapperChannelImpl.m`, `BGSContracts.h` (`BGSLogEventSource`,
+`interception/logs/LogLogcatThread.java`. iOS `0581aa02c` (beta7; the SPI is in `BugseeSPI.h` at 7.0.0, `BGSContracts.h` being private and unshipped): `BGSWrapperChannelImpl.m`, `BGSContracts.h` (`BGSLogEventSource`,
 `BGSWrapperChannel`), `BugseeLogEvent.h`, `BugseeLogger.h` (`BugseeLogLevel`), `Capture/Providers/BGSCaptureDataProviderLog.m`,
 `Bugsee.m:1630-1700`. Bundle: `specs/sdk/reporting/bundle/log.md`.

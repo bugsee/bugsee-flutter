@@ -8,7 +8,7 @@ sources are `specs/sdk/report-contract` (method matrix, lifetime, "path-first", 
 
 | Piece | Android 7.4.2 (`v7.4.2`, `3b7af6371`) | iOS 7.0.0 (`origin/release@2b88480fa`; read at beta7 `0581aa02c`, limits re-extracted at 7.0.0) |
 |---|---|---|
-| `addAttachment(file, name, mime, move)` | `Report.addAttachment(File,..)` (`contracts/reporting/Report.java`), implemented by `IssueReport.addAttachment` / `IssueReportAttachment.importFile` (rename, else copy+delete; symlink always copied) | `addAttachmentWithFilePath:name:mimeType:move:` (`BGSContracts.h`, `BGSReport.m`; lstat, rename or copy, hands a refused move back) |
+| `addAttachment(file, name, mime, move)` | `Report.addAttachment(File,..)` (`contracts/reporting/Report.java`), implemented by `IssueReport.addAttachment` / `IssueReportAttachment.importFile` (rename, else copy+delete; symlink always copied) | `addAttachmentWithFilePath:name:mimeType:move:` (`BugseeSPI.h` (`BGSContracts.h` at beta7), `BGSReport.m`; lstat, rename or copy, hands a refused move back) |
 | `addAttachment(bytes, name, mime)` | `Report.addAttachment(byte[],..)` | `addAttachmentWithData:name:mimeType:` |
 | list / clear | `getAttachments()`, `clearAttachments()` (deletes the files) | `attachments`, `clearAttachments` |
 | lifetime | `IssueReport.isAcceptingAttachments` (reporting stage `< PROCESSING_SCHEDULED`) | `stopAcceptingAttachments` / `_closedToAttachments` |

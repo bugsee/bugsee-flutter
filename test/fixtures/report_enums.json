@@ -34,6 +34,11 @@
       "BugseeSeverityCritical": 4,
       "BugseeSeverityBlocker": 5
     },
+    "BugseeDataEncryptionMode": {
+      "BugseeDataEncryptionNone": 0,
+      "BugseeDataEncryptionOnDevice": 1,
+      "BugseeDataEncryptionEndToEnd": 2
+    },
     "issueTypeStrings": [
       "bug",
       "crash",

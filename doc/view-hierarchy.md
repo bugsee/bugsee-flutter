@@ -8,8 +8,7 @@ or redacting it**. Everything private about that tree is decided here.
 
 Sources of truth, read for this design: `bugsee/specs` `sdk/wrapper-data-requests` (the `vh` flow),
 `sdk/wrapper-workbook` Part 5.3 (units) and Part 6 (data requests, 6.7 async replies), `sdk/reporting/bundle/viewtree.md`
-(privacy, the node vocabulary), the Android SDK at `v7.4.2` and the iOS SDK at `0581aa02c` (beta7; the `vh` constants re-extracted at 7.0.0, `origin/release@2b88480fa`
-(= the beta7 headers)). Where they disagree, the SDK source is followed and the disagreement is listed under
+(privacy, the node vocabulary), the Android SDK at `v7.4.2` and the iOS SDK at `0581aa02c` (the 7.0.0-beta7 source; the `vh` constants were re-extracted at 7.0.0, `origin/release@2b88480fa`). Where they disagree, the SDK source is followed and the disagreement is listed under
 [Spec gaps](#spec-gaps-found).
 
 ## What the SDKs do (from source)

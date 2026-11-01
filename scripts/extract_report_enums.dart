@@ -8,14 +8,16 @@
 //
 //   git -C <android sdk> show v7.4.2:library/src/main/java/com/bugsee/library/contracts/options/IssueSeverity.java > /tmp/IssueSeverity.java
 //   git -C <android sdk> show v7.4.2:library/src/main/java/com/bugsee/library/contracts/options/IssueType.java > /tmp/IssueType.java
-//   # iOS: BugseeConstants.h and BugseeSPI.h (7.0.0 moved the SPI out of BGSContracts.h, now a shim) of the SDK repo at 2b88480fa
+//   # iOS: BugseeConstants.h and BugseeSPI.h (7.0.0 moved the SPI out of BGSContracts.h, a private header that is not shipped) of the SDK repo at 2b88480fa
 //   dart scripts/extract_report_enums.dart --android-severity /tmp/IssueSeverity.java \
 //     --android-type /tmp/IssueType.java --ios-constants .../BugseeConstants.h \
 //     --ios-contracts .../BugseeSPI.h \
 //     --android-coordinator /tmp/BugseeIssueReportingCoordinator.java \
 //     --android-chain /tmp/ReportHandlerChain.java --android-options /tmp/OptionsDescriptors.java \
 //     --ios-coordinator /tmp/BGSIssueReportingCoordinator.m --ios-source-ref origin/release@2b88480fa \
-//     --android-report /tmp/IssueReport.java --ios-report /tmp/BGSReport.m --ios-attachment /tmp/BGSAttachment.h [--check]
+//     --android-report /tmp/IssueReport.java --ios-report /tmp/BGSReport.m --ios-attachment /tmp/BGSAttachment.h \
+//     --ios-options-private .../BGSOptionsPrivate.h \
+//     --ios-options-private .../BGSOptionsPrivate.h [--check]
 //
 // (Phase 6) The same fixture carries the SDKs' ATTACHMENT limits: Android `IssueReport.MAX_ATTACHMENTS`
 // (v7.4.2, `library/src/main/java/com/bugsee/library/reporting/IssueReport.java`), iOS
@@ -183,6 +185,7 @@ Map<String, Object?> extract({
   required String androidReport,
   required String iosReport,
   required String iosAttachment,
+  required String iosOptionsPrivate,
   required String iosSourceRef,
   required Map<String, Object?> pins,
 }) => {
@@ -208,6 +211,12 @@ Map<String, Object?> extract({
   },
   'ios': {
     'BugseeSeverityLevel': objcEnum(iosConstants, 'BugseeSeverityLevel'),
+    // Not in a shipped header at 7.0.0 (BGSOptionsPrivate.h), so the XCTest cannot read it from the
+    // framework: the source's values are the fixture, compared with the published manifest.
+    'BugseeDataEncryptionMode': objcEnum(
+      iosOptionsPrivate,
+      'BugseeDataEncryptionMode',
+    ),
     'issueTypeStrings': iosTypeStrings(iosContracts),
     'reportHandlerTimings': {
       'source': iosSourceRef,
@@ -266,6 +275,9 @@ void main(List<String> args) {
     androidReport: File(arg(args, '--android-report')).readAsStringSync(),
     iosReport: File(arg(args, '--ios-report')).readAsStringSync(),
     iosAttachment: File(arg(args, '--ios-attachment')).readAsStringSync(),
+    iosOptionsPrivate: File(
+      arg(args, '--ios-options-private'),
+    ).readAsStringSync(),
     iosSourceRef: arg(args, '--ios-source-ref'),
     pins: {
       'android': (versions['android'] as Map)['sdk'],

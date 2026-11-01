@@ -16,7 +16,7 @@ as `bugsee/bugsee-ios` `feedback/`); the Bugsee Gradle plugin `bugsee-android-gr
 | unread count, notification settings | none | none | not invented |
 | option keys | none: the published options manifests (`test/fixtures/option_manifests`) list modules `bugsee-android`, `bugsee-android-leak`, `bugsee-android-ndk` only | none | nothing to type |
 | user identity | reads `Bugsee.setUserIdentifier`: a value containing `@` pre-fills the e-mail and skips the e-mail screen (`BugseeFeedback.prefillEmailFromUserIdentifier`) | same (`FeedbackEmailPreferences.prefill(fromUserIdentifier:)`) | documented; `Bugsee.setUserIdentifier` is the core's |
-| appearance | `FeedbackAppearance` keys through `Bugsee.getAppearance()` | `BugseeTheme.feedback*` (the 7.0.0 SwiftUI chat does not read it) | **skip**, like the core's appearance system |
+| appearance | `FeedbackAppearance` keys through `Bugsee.getAppearance()` | `BugseeTheme.feedback*` (the 7.0.0 SwiftUI chat reads `Bugsee.getAppearance()`: `feedbackBackgroundColor`, `feedbackEmailBackgroundColor`, `feedbackEmailContinueActiveColor` / `...NotActiveColor`, in `BugseeFeedback.swift` and `FeedbackEmailView.swift`) | **skip** for now: the appearance keys are simply not exposed yet, like the core's appearance system |
 | lifecycle events | `BeforeFeedbackShown` / `AfterFeedbackShown` (`FeedbackLifecycleEvents`) are dispatched | declared (`BugseeLifecycleEventBeforeFeedbackShown`) but "not dispatched yet" (`BugseeConstants.h`) | already carried as names by the core's `lifecycleEvents` stream; nothing added |
 | message objects | `FeedbackMessage` / `FeedbackMessageType` (contract types, not delivered by the listener) | `BugseeFeedbackMessage` (Swift only, not delivered) | **skip**: the listeners deliver text only |
 

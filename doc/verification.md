@@ -43,7 +43,7 @@ failure.
 
 | 9.1 | What the harness asserts, on every launch |
 |---|---|
-| 9.1.1 which build | The SDK banner (`Bugsee Android SDK 7.4.2 [3b7af6371]`, `Bugsee IOS SDK ver:7.0.0 build:9854b7e50-15`) matches the version AND the build in `native-versions.json` (`android.sdkBuild`, `ios.sdkBuild`): a version string alone cannot tell two builds of one version apart. The wrapper's own log lines (registered and refined: type `flutter`, the pubspec version, Flutter, Dart, engine, build mode) match the toolchain that built it. The artefact set: Android `./gradlew :app:dependencies` has `bugsee-android` and `bugsee-android-ndk` at the pin, the Gradle plugin in the (private) Gradle home is the pinned 4.0.8 alone, the APK carries the four `libbugsee*.so`, the merged manifest keeps the wrapper provider at `initOrder` 200 (not stripped) ahead of the SDK's 100; iOS: SwiftPM resolved `bugsee/spm` and `bugsee/feedback-spm` at the pinned tag AND revision (`ios.spmRevision`), not a branch or a local path. |
+| 9.1.1 which build | The SDK banner (`Bugsee Android SDK 7.4.2 [3b7af6371]`, `Bugsee IOS SDK ver:7.0.0 build:2b88480fa-7`) matches the version AND the build in `native-versions.json` (`android.sdkBuild`, `ios.sdkBuild`): a version string alone cannot tell two builds of one version apart. The wrapper's own log lines (registered and refined: type `flutter`, the pubspec version, Flutter, Dart, engine, build mode) match the toolchain that built it. The artefact set: Android `./gradlew :app:dependencies` has `bugsee-android` and `bugsee-android-ndk` at the pin, the Gradle plugin in the (private) Gradle home is the pinned 4.0.8 alone, the APK carries the four `libbugsee*.so`, the merged manifest keeps the wrapper provider at `initOrder` 200 (not stripped) ahead of the SDK's 100; iOS: SwiftPM resolved `bugsee/spm` and `bugsee/feedback-spm` at the pinned tag AND revision (`ios.spmRevision`), not a branch or a local path. |
 | 9.1.2 launched | The app reported `launch -> launched` and `status launched` before anything is concluded from an absence. |
 | 9.1.3 precondition | Staged facts are read back: data wiped (the app is gone), the right `versionCode`/`CFBundleVersion` installed, no retained bundle before a crash, airplane mode really on (`settings get global airplane_mode_on`), the crash data of build N still there after the update. |
 | 9.1.4 event | The process died of signal 11: logcat `Fatal signal 11 (SIGSEGV)` for that pid AND `ApplicationExitInfo` reason 5 status 11 (Android); launchd's `exited due to SIGSEGV` (followed by `sent by kill[...]`, iOS simulator). A hot restart really ran (`flutter run` printed it); a report really appeared for the command that should make one. |
@@ -63,7 +63,7 @@ Nothing in the repository is modified by a run: the app is configured with build
 | Android SDK under test | `com.bugsee:bugsee-android` and `-ndk` 7.4.2 (banner build `3b7af6371`) |
 | Android device | AVD `phase7_api30`: Pixel 4 profile, API 30 (Android 11), `google_apis` arm64-v8a userdebug image, 1080x2280 at 440 dpi (2.75), 3 GB RAM, started headless (`-no-window -no-snapshot`), emulator 37.2.12 |
 | iOS toolchain | Xcode 27.1 (27A9275), iOS SDK 27.1 |
-| iOS SDK under test | `bugsee/spm` 7.0.0 (revision `bbfdda2`, banner `build:2b88480fa-7`), `bugsee/feedback-spm` 7.0.0 (`82054e7`); the results below were taken at 7.0.0-beta7 (`73ed983`, `build:9854b7e50-15`, feedback `40dd3b0`), see "The 7.0.0 pin move" |
+| iOS SDK under test | `bugsee/spm` 7.0.0 (revision `bbfdda2`, banner `build:2b88480fa-7`), `bugsee/feedback-spm` 7.0.0 (`82054e7`); the results below were taken at 7.0.0-beta7 (`73ed983`, `build:2b88480fa-7`, feedback `40dd3b0`), see "The 7.0.0 pin move" |
 | iOS device | simulator `phase7-iphone`: iPhone 18 Pro, iOS 27.0 runtime (24A434), 3x |
 | Other tools | ffmpeg 7.1.1 and ffprobe (frames of the report video and screenshots), Python 3.14.6 (the mock API), `apkanalyzer` and `retrace` (cmdline-tools 13.0) |
 
@@ -137,7 +137,7 @@ Android, debug and release (R8, `--obfuscate`), a cold start captured for 32 s:
   `{"type":"flutter","version":"10.0.0-dev.1","context":{"dart":"3.11.0","flutter":"3.41.0","flutter-engine":"3452d735bd","build-configuration":"debug"|"release"}}`,
   `sdk` `7.4.2` / `3b7af6371`, `app` `1.0.1` (`1`), and no `identity_source` (a live report is not recovered).
 
-iOS: the log has `[BugseeFlutter] wrapper registered ...` before `Bugsee IOS SDK ver:7.0.0 build:9854b7e50-15`;
+iOS: the log has `[BugseeFlutter] wrapper registered ...` before `Bugsee IOS SDK ver:7.0.0 build:2b88480fa-7`;
 the feedback add-on registered through its `+load`; the build's `workspace-state.json` resolves `spm` and `feedback-spm` at
 7.0.0 and the pinned revisions; the report's wrapper has the same identity with `build-configuration: debug`.
 Not applicable on iOS: manifest provider, NDK artefact, Gradle plugin.

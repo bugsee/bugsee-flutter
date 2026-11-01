@@ -137,9 +137,9 @@ Android, debug and release (R8, `--obfuscate`), a cold start captured for 32 s:
   `{"type":"flutter","version":"10.0.0-dev.1","context":{"dart":"3.11.0","flutter":"3.41.0","flutter-engine":"3452d735bd","build-configuration":"debug"|"release"}}`,
   `sdk` `7.4.2` / `3b7af6371`, `app` `1.0.1` (`1`), and no `identity_source` (a live report is not recovered).
 
-iOS: the log has `[BugseeFlutter] wrapper registered ...` before `Bugsee IOS SDK ver:7.0.0 build:2b88480fa-7`;
+iOS (measured at 7.0.0-beta7, banner `build:9854b7e50-15`; the 7.0.0 banner `build:2b88480fa-7` was confirmed in the scenario 1 guards of the 2026-11-01 re-run): the log has `[BugseeFlutter] wrapper registered ...` before the `Bugsee IOS SDK ver:... build:...` banner;
 the feedback add-on registered through its `+load`; the build's `workspace-state.json` resolves `spm` and `feedback-spm` at
-7.0.0 and the pinned revisions; the report's wrapper has the same identity with `build-configuration: debug`.
+the pinned version (beta7 then) and revisions; the report's wrapper has the same identity with `build-configuration: debug`.
 Not applicable on iOS: manifest provider, NDK artefact, Gradle plugin.
 
 ### 2. Native crash (SIGSEGV), retained bundle, recovered identity

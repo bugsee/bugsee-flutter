@@ -20,8 +20,8 @@ sources are `specs/sdk/report-contract` (method matrix, lifetime, "path-first", 
 
 **The spec's "Android implements on branch `feat/report-contract-parity`" is stale for the pin:** that branch is NOT
 merged into `v7.4.2` (`git merge-base --is-ancestor` fails) but the contract's pieces (PR #117 path-first, #136, #178)
-arrived through `main`, and `v7.4.2` has them; everything above was read at the tag. iOS closes its gaps on `nextgen`
-as the spec says (#136, #145); beta7 (`0581aa02c`) and 7.0.0 (`2b88480fa`) have them.
+arrived through `main`, and `v7.4.2` has them; everything above was read at the tag. iOS closed its gaps on `nextgen`
+(now in `origin/release`) as the spec says (#136, #145); beta7 (`0581aa02c`) and 7.0.0 (`2b88480fa`) have them.
 
 ## 2. Public API
 

@@ -2,7 +2,7 @@
 //
 // The workbook says the two SDKs spell it differently: iOS a flat `endpoint` key whose value
 // includes the API version, Android `com.bugsee.option.$$ENDPOINT` without it. That was true of
-// the 6.x iOS SDK. At the pinned iOS 7.0.0 (nextgen commit d33dcc987, "namespaced endpoint
+// the 6.x iOS SDK. At the pinned iOS 7.0.0 (commit d33dcc987, contained in the 7.0.0 source `origin/release@2b88480fa`, "namespaced endpoint
 // override with /v2 normalization"; `BGSURLResolver +normalizedAPIBase:`) iOS registers the same
 // hidden `com.bugsee.option.$$ENDPOINT` (the options manifest lists it for both SDKs), keeps the
 // flat `endpoint` only as a legacy alias, and strips every trailing API-version segment before

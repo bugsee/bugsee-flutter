@@ -92,7 +92,7 @@ void main() {
       expect(
         spec.ios,
         isNotNull,
-        reason: 'iOS 7.0.0-beta7 registers it too (it did not in 6.x)',
+        reason: 'iOS 7.0.0 registers it too (it did not in 6.x)',
       );
       expect(spec.typed, isFalse);
     });

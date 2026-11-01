@@ -4,7 +4,7 @@ Guidance for reviewers and agents working in this repository.
 
 ## Project
 
-`bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.4.2, iOS 7.0.0-beta7), version `10.0.0-dev.1`,
+`bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.4.2, iOS 7.0.0), version `10.0.0-dev.1`,
 unpublished, plus the separate `packages/bugsee_flutter_feedback`. The implementation is complete and merged into `nextgen`;
 `PLAN.md` is the status, the decisions (D1 to D12), the open questions and the release checklist. The authoritative wrapper spec is
 `sdk/wrapper-workbook` in the `bugsee/specs` repository (refer to it by repo name); `doc/workbook-conformance.md` maps it to the code.

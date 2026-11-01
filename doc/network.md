@@ -23,7 +23,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installNetwork
 
 Both SDKs expose a way to hand them a network event, and, at the pinned versions, a wrapper-attributed channel:
 
-| | Android 7.4.2 (`v7.4.2`) | iOS 7.0.0-beta7 (`bugsee/spm` 73ed983; SDK `nextgen` `0581aa02c`) |
+| | Android 7.4.2 (`v7.4.2`) | iOS 7.0.0 (`bugsee/spm` bbfdda2; SDK read at beta7 `0581aa02c`; release `2b88480fa`) |
 |---|---|---|
 | public route | `Bugsee.addNetworkEvent(event, requiresFiltering)` (`Bugsee.java:1323`) over `BugseeExchangeFactory.createNetworkEvent` | `+[Bugsee addNetworkEvent:requiresFiltering:]` (`Bugsee.m:2154`); `+addNetworkEvent:` is `requiresFiltering:NO` |
 | wrapper channel | **shipped**: `BugseeWrapperChannel` (`contracts/internal`), handed to `BugseeWrapper.onWrapperChannelAvailable` by `Bugsee.setWrapper` (`BugseeEnvironment.java:709`); its `addNetworkEvent` is `BugseeWrapperChannelImpl.addNetworkEvent` | **shipped**: `BGSWrapperChannel` / `-[BGSBugseeWrapper onWrapperChannelAvailable:]` (`BGSContracts.h`, `BGSWrapperChannelImpl.m:176`; present in the binary headers of the pinned xcframework) |
@@ -342,7 +342,7 @@ Android `bugsee/bugsee-android` tag `v7.4.2`: `Bugsee.java` (`addNetworkEvent`, 
 `contracts/exchange/NetworkEvent.java`, `capture/providers/network/BugseeCaptureDataProviderNetwork.java`
 (`onNetworkEvent`, `applyBodyFilters`, `filterEntry`, `FILTER_CALLBACK_TIMEOUT_MS`), `interception/network/NetworkEventsProducer.java`
 (`getRequestBody`, `getResponseBody`), `NetworkUtils.isSupportedMediaType`.
-iOS `bugsee/bugsee-ios` `0581aa02c`: `Bugsee.m:2109-2166`, `BGSContracts.h` (`BGSWrapperChannel`),
+iOS `bugsee/bugsee-cocoa` `0581aa02c` (beta7; at 7.0.0 `BGSWrapperChannel` is in `BugseeSPI.h`): `Bugsee.m:2109-2166`, `BGSContracts.h` (`BGSWrapperChannel`),
 `BGSWrapperChannelImpl.m`, `BGSExchangeFactory.m`, `BugseeNetworkEvent.{h,m}`, `BugseeConstants.{h,m}`,
 `Capture/Providers/BGSCaptureDataProviderNetwork.m`, `BGSCaptureDataEntryNetwork.m`,
 `Interception/Network/BGSNetworkInterceptionHelper.m`.

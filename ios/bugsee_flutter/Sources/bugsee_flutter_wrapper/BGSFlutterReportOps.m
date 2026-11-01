@@ -1,6 +1,6 @@
 #import "BGSFlutterReportOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 NSErrorDomain const BGSFlutterReportOpsErrorDomain = @"com.bugsee.flutter.report-ops";
 

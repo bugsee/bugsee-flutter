@@ -2,7 +2,7 @@
 
 #import "BGSFlutterExceptionOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// The SDK's OWN signature code (`BGSExceptionSignature`, which `+logException:reason:...` feeds with the
 /// exception's name, reason and frames, and which reads the `signature` KEY of a JSON reason) fed with

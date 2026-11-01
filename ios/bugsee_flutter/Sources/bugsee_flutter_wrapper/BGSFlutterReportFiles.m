@@ -2,7 +2,7 @@
 
 #import <ImageIO/ImageIO.h>
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 NSString *const BGSFlutterFileNotLive = @"not-live";
 NSString *const BGSFlutterFileNotFound = @"file-not-found";

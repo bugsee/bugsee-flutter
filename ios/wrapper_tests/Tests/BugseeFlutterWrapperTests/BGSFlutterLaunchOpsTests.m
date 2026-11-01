@@ -2,7 +2,7 @@
 
 #import "BGSFlutterLaunchOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// A fake SDK behind the seam: records what reaches it and answers as scripted.
 @interface BGSFakeBugsee : NSObject <BGSFlutterBugseeSDK>
@@ -338,7 +338,7 @@
     @"BugseeSeverityLevel" : @{@"Low" : @(BugseeSeverityLow), @"Medium" : @(BugseeSeverityMedium), @"High" : @(BugseeSeverityHigh), @"Critical" : @(BugseeSeverityCritical), @"Blocker" : @(BugseeSeverityBlocker)},
     @"BugseeStyle" : @{@"Light" : @(BugseeStyleLight), @"Dusk" : @(BugseeStyleDusk), @"BasedOnStatusBar" : @(BugseeStyleBasedOnStatusBar), @"System" : @(BugseeStyleSystem)},
     @"BugseeLogLevel" : @{@"Error" : @(BugseeLogLevelError), @"Warning" : @(BugseeLogLevelWarning), @"Info" : @(BugseeLogLevelInfo), @"Debug" : @(BugseeLogLevelDebug), @"Verbose" : @(BugseeLogLevelVerbose)},
-    @"BugseeDataEncryptionMode" : @{@"None" : @(BugseeDataEncryptionNone), @"OnDevice" : @(BugseeDataEncryptionOnDevice), @"EndToEnd" : @(BugseeDataEncryptionEndToEnd)},
+    @"BugseeDataEncryptionMode" : @{@"None" : @0, @"OnDevice" : @1, @"EndToEnd" : @2},  // BGSOptionsPrivate.h (7.0.0: not shipped, so literals)
     @"BugseeCrashHandlerType" : @{@"BSD" : @(BugseeCrashHandlerTypeBSD), @"Mach" : @(BugseeCrashHandlerTypeMach), @"MachAndBSD" : @(BugseeCrashHandlerTypeMachAndBSD)},
   };
   NSMutableSet *seen = [NSMutableSet set];

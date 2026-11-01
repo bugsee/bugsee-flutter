@@ -33,7 +33,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 | # | Decision | Reason |
 |---|---|---|
-| D1 | **Native pins:** Android 7.4.2 (Maven Central), iOS 7.0.0-beta7 via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
+| D1 | **Native pins:** Android 7.4.2 (Maven Central), iOS 7.0.0 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
 | D2 | **iOS is SwiftPM only**, no podspec | Bugsee publishes no CocoaPods pod |
 | D3 | **Compatibility with the 9.x Dart API: deferred** to the owner (see below). The facade is isolated in `lib/src/bugsee.dart` / `bugsee_runtime.dart` so a layer could sit beside it | |
 | D4 | **The feedback chat is a separate package**, mirroring the native split and React Native | apps that never show it do not carry SwiftUI / Compose |
@@ -50,8 +50,8 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 1. **A 9.x compatibility layer** (D3): offer a `bugsee.dart`-style shim over the 10.x facade, or none. The migration guide is written for
    "none".
-2. **Whether to publish**, and when. The iOS pin is a beta (`7.0.0-beta7`): publish a stable `10.0.0` only against a stable iOS SDK,
-   or ship `10.0.0-dev.N` / `-beta` first.
+2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.4.2, iOS 7.0.0; the iOS pin was `7.0.0-beta7` until then), so a stable
+   `10.0.0` is no longer blocked by a beta dependency; the choice between `10.0.0` and `10.0.0-dev.N` / `-beta` first is open.
 3. **pub.dev name and ownership.** `bugsee_flutter` exists on pub.dev (latest `9.0.4`, publisher `bugsee.com`), so 10.x continues that
    package. `bugsee_flutter_feedback` does not exist yet (checked 2026-10-22) and must be created under the same publisher.
 4. **Versioning of the first release**: `10.0.0` against `10.0.0-dev.1`. The versions in `pubspec.yaml` (both packages), `wrapper_identity.dart`,
@@ -166,10 +166,12 @@ Facts worth keeping from the work (each is in the doc named):
   (`doc/api-surface.md`, `doc/view-hierarchy.md`, `.claude/CLAUDE.md`).
 * **Measured on a device (Phase 7):** a native-crash report recovered after a normal Android session is dispatched on `BugseeReportHandlerThread` with the live
   window, so the Dart handler runs and its edits land (the workbook table says main; the early-crash recovery path is the one that completes at once).
-* **Option manifests cross-check** (`scripts/verify_option_manifests.dart`, 2026-10-21, Android `v7.4.2`, iOS `origin/nextgen@0581aa02c`): keys, hidden
+* **Option manifests cross-check** (`scripts/verify_option_manifests.dart`, 2026-10-21, Android `v7.4.2`, iOS `origin/nextgen@0581aa02c`, beta7): keys, hidden
   keys and enum values in the vendored manifests equal what the SDK source declares. Inventory: Android 87 options (84 public, 3 hidden), iOS 70 (69
-  public, 1 hidden), 49 shared; the leak module's four options and one deprecated option have no typed field; defaults differ on exactly two shared keys
-  (`capture.video.adaptive`, `config.max-data-size`).
+  public, 1 hidden), 49 shared; the leak module's four options and one deprecated option have no typed field; defaults differed on exactly two shared keys
+  (`capture.video.adaptive`, `config.max-data-size`). Moving the iOS pin to 7.0.0 (manifest of 2026-10-30) changed that: iOS gained
+  `config.max-pending-reports` and `config.max-pending-report-age` (now 72 options, 71 public, 51 shared) and its `config.max-data-size` default went
+  from 50 to 150 (as Android), so only `capture.video.adaptive` still differs.
 * **Pre-existing, worked around:** `flutter build ios --simulator` fails on Flutter 3.41 / Xcode 27.1 (an order-sensitive architecture check); the harness
   builds with `--config-only` plus `xcodebuild` for one simulator.
 

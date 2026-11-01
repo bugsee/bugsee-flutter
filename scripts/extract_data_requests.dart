@@ -5,14 +5,15 @@
 // spec, or from the wrapper itself, cannot see the SDK change).
 //
 // Run (the iOS constants are in a .m the shipped binary does not expose, so they come from the
-// nextgen commit named by --ios-source-ref; no 7.0.0-beta7 tag exists in the iOS repository):
+// commit named by --ios-source-ref (the iOS repository has no 7.x tag; 7.0.0 is `origin/release` at
+// 2b88480fa, the build the 7.0.0 banner names: `build:2b88480fa-7`):
 //
 //   git -C <android sdk> show v7.4.2:library/src/main/java/com/bugsee/library/contracts/internal/DataRequestTypes.java > /tmp/DataRequestTypes.java
 //   git -C <android sdk> show v7.4.2:library/src/main/java/com/bugsee/library/capture/providers/vh/BugseeCaptureDataProviderViewHierarchy.java > /tmp/AndroidVH.java
-//   git -C <ios sdk> show origin/nextgen:BugseeDev/BugseeLib/BugseeLib/Capture/Providers/ViewHierarchy/BGSCaptureDataProviderViewHierarchy.m > /tmp/IosVH.m
+//   git -C <ios sdk> show 2b88480fa:BugseeDev/BugseeLib/BugseeLib/Capture/Providers/ViewHierarchy/BGSCaptureDataProviderViewHierarchy.m > /tmp/IosVH.m
 //   dart scripts/extract_data_requests.dart --android-types /tmp/DataRequestTypes.java \
 //     --android-provider /tmp/AndroidVH.java --ios-provider /tmp/IosVH.m \
-//     --ios-source-ref origin/nextgen@0581aa02c [--check]
+//     --ios-source-ref origin/release@2b88480fa [--check]
 //
 // `--check` compares with the committed fixture instead of writing it. The fixture records the
 // pins it was extracted at; the drift test fails when they stop matching native-versions.json.

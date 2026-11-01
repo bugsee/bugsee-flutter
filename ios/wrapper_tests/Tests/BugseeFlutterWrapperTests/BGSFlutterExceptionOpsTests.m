@@ -2,7 +2,7 @@
 
 #import "BGSFlutterExceptionOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// A fake SDK behind the seam: records which entry point was called, with what.
 @interface BGSFakeExceptionSdk : NSObject <BGSFlutterExceptionSDK>

@@ -1,5 +1,5 @@
 @import Foundation;
-@import Bugsee;
+@import Bugsee.SPI;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -31,7 +31,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// How many times `reportId` / `type` were read.
 @property(nonatomic) NSUInteger reads;
 
-// ---- Attachments and screenshots: a model of what the SDK does (nextgen `BGSReport.m`) ----------
+// ---- Attachments and screenshots: a model of what the SDK does (`BGSReport.m`) ----------
 /// The attachments the report holds (`BGSFlutterFakeAttachment`s).
 @property(nonatomic, readonly) NSMutableArray<id<BGSAttachmentContract>> *fakeAttachments;
 /// What each add received: `@{@"path"/@"data", @"name", @"mimeType", @"move"}`.

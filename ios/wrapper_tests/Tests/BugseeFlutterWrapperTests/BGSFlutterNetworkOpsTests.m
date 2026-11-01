@@ -3,7 +3,7 @@
 #import "BGSFlutterNetworkOps.h"
 #import "BGSFlutterWrapper.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// A fake SDK behind the seam: records every event handed to it.
 @interface BGSFakeNetworkSdk : NSObject <BGSFlutterNetworkSDK>

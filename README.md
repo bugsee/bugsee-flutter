@@ -19,7 +19,7 @@ errors.
 | Flutter / Dart | 3.41.0 or newer / 3.11 or newer |
 | Android | `minSdk` 21; JDK 17 or 21 for the build (JDK 25 breaks the Gradle 8.14 of the Flutter template); the Bugsee Gradle plugin **4.0.8** (mandatory, see below) |
 | iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
-| Native SDKs | Android `7.4.2`, iOS `7.0.0-beta7` (pinned in [`native-versions.json`](native-versions.json)) |
+| Native SDKs | Android `7.4.2`, iOS `7.0.0` (pinned in [`native-versions.json`](native-versions.json)) |
 | Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
 
 The Flutter floor is 3.41.0 because the plugin is SwiftPM-only: `flutter pub get` fails on Linux and Windows with

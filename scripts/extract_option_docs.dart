@@ -9,7 +9,7 @@
 //            property (`propertyKeyMap` in `BugseeOptions.m` maps one to the other)
 //
 //   dart scripts/extract_option_docs.dart --android-repo <android/sdk> --android-ref v7.4.2 \
-//        --ios-repo <ios/sdk> --ios-ref origin/nextgen [--check]
+//        --ios-repo <ios/sdk> --ios-ref origin/release [--check]
 //
 // `--check` compares with the committed fixture instead of writing it. Needs the (private) SDK
 // checkouts, so it is a local check; the fixture records the refs it was read from, and the
@@ -233,7 +233,7 @@ String show(String repo, String ref, String path) {
   return r.stdout as String;
 }
 
-/// `ref@<commit>`: a moving ref (`origin/nextgen`) is recorded with what it pointed at.
+/// `ref@<commit>`: a moving ref (`origin/release`) is recorded with what it pointed at.
 String pinned(String repo, String ref) {
   final r = Process.runSync('git', ['-C', repo, 'rev-parse', '--short=9', ref]);
   if (r.exitCode != 0) throw StateError('git rev-parse $ref: ${r.stderr}');

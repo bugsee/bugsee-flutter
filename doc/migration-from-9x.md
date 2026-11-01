@@ -16,7 +16,7 @@ arguments for `event` and `trace`); this page follows the code.
 | | 9.x | 10.x |
 |---|---|---|
 | Flutter / Dart | `>=3.0.0` / `^3.0.0` | **Flutter `>=3.41.0` / Dart `^3.11.0`** (the plugin is SwiftPM-only; older Flutter fails `pub get` on Linux and Windows) |
-| Native SDKs | Android 6.x, iOS 6.x | Android **7.4.2**, iOS **7.0.0-beta7** |
+| Native SDKs | Android 6.x, iOS 6.x | Android **7.4.2**, iOS **7.0.0** |
 | Android | `minSdk` 21 | `minSdk` 21; the **Bugsee Gradle plugin 4.0.8 is mandatory** and applied by the app, plus a Gradle ordering workaround (README); JDK 17 or 21 |
 | iOS | CocoaPods podspec (and a SwiftPM package), deployment target 11.0 | **SwiftPM only: no podspec, no CocoaPods**; deployment target **15.0** |
 | Android launch | from Dart | from Dart, or by the SDK itself before Dart when the manifest has `com.bugsee.app-token` (then `Bugsee.launch` answers `alreadyRunning` and its options are not applied) |

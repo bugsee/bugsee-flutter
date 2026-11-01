@@ -4,7 +4,7 @@ The first version, released in lock-step with `bugsee_flutter` (same version num
 
 * The in-app feedback chat as a separate package, so apps that never show it do not carry its UI (SwiftUI on iOS, Jetpack Compose on Android).
 * `BugseeFeedback.show`, `setGreeting`, `isAvailable`, and the `messagesReceived` and `messageSent` streams (they fire only while the chat is
-  on screen), over the feedback modules of the 7.x SDKs (`com.bugsee:bugsee-android-feedback` 7.4.2, `feedback-spm` 7.0.0-beta7). Errors are
+  on screen), over the feedback modules of the 7.x SDKs (`com.bugsee:bugsee-android-feedback` 7.4.2, `feedback-spm` 7.0.0). Errors are
   `BugseeFeedbackException`s with a `reason` (`notRegistered`, `incompatibleCore`, `nativeError`).
 * Replaces the 9.x `Bugsee.showFeedbackUI`, `setDefaultFeedbackGreeting` and `setNewFeedbackMessagesCallback`.
 * Nothing to configure beyond adding the package next to `bugsee_flutter` at the same version: the module registers itself (Android through the

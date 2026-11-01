@@ -1,7 +1,7 @@
 #import <XCTest/XCTest.h>
 
 @import BugseeFlutterFeedbackWrapper;
-@import Bugsee;
+@import Bugsee.SPI;
 @import BugseeFeedback;
 
 /// The add-on's module: records what reaches it.

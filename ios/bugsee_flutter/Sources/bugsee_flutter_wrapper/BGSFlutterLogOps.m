@@ -2,7 +2,7 @@
 
 #import "BGSFlutterNetworkOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 static const NSInteger kMinLevel = 1;
 static const NSInteger kMaxLevel = 5;

@@ -4,7 +4,7 @@
 
 #import "BGSFlutterReportOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 const int64_t BGSFlutterReportLiveDeadlineMs = 20000;
 const int64_t BGSFlutterReportRecoveryDeadlineMs = 2000;

@@ -7,7 +7,7 @@
 #import "BGSFlutterViewHierarchyStore.h"
 #import "BGSFlutterWrapper.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// A 3x phone: a Flutter logical pixel is a point, so the factor is 1.
 @interface BGSWrapperTestScreen : NSObject <BGSFlutterSecureEnvironment>

@@ -2,7 +2,7 @@
   "_comment": "Extracted from the native SDK sources by scripts/extract_option_docs.dart; do not edit by hand. The prose of the typed BugseeOptions doc comments (scripts/generate_options.dart).",
   "sources": {
     "android": "v7.4.2@3b7af6371",
-    "ios": "origin/nextgen@0581aa02c"
+    "ios": "origin/release@2b88480fa"
   },
   "docs": {
     "com.bugsee.option.capture.avplayer": {
@@ -60,7 +60,7 @@
     },
     "com.bugsee.option.capture.network.default-sanitizer": {
       "android": "Automatically sanitize sensitive data (PII) from captured network events. Applies only when no network event filter is set, whether through `Bugsee.setNetworkEventFilter` or the manifest. Redacts values for known sensitive keys in URL query parameters, HTTP headers, and JSON request/response bodies.",
-      "iosProperty": "Automatically sanitize sensitive data (PII) from captured network events. Applies only when no custom network filter (block or delegate) is set. Redacts values for known sensitive keys in URL query parameters, HTTP headers, and JSON bodies."
+      "iosProperty": "Automatically sanitize sensitive data (PII) from captured network events. Applies only when no custom network filter (block or delegate) is set; a filter can run the same redaction itself through `+[Bugsee defaultNetworkSanitizer]`. Redacts values for known sensitive keys in URL query parameters, HTTP headers, and JSON bodies."
     },
     "com.bugsee.option.capture.network.on-launch": {
       "android": "Subscribe network capture synchronously during `Bugsee.launch()`, so requests issued in the launch window — between `launch()` returning and capture starting on its background thread — are observed. Installing the interception cannot be done retroactively for a request already in flight, so it has to happen up front when this is on. The provider is only subscribed at launch, not started; events captured meanwhile are buffered and flushed when capture starts.\n\nHas no effect unless `capture.network` is also enabled. Enabling this puts the interception install (a few milliseconds) back on the launch critical path, which is why it is off by default.",
@@ -162,13 +162,19 @@
     },
     "com.bugsee.option.config.max-data-size": {
       "android": "Maximum disk space, in megabytes, that reports waiting to be sent may occupy. When exceeded, whole pending reports are deleted — errors first, then bug reports, then crashes, oldest first within each — until they fit again. The newest crash and any report being exported or uploaded are never deleted. Values below `10` are treated as `10`.",
-      "iosProperty": "Bugsee will avoid using more disk space than specified. Should be specified in Mb. Value should not be smaller than 10."
+      "iosProperty": "Most disk space, in MB, that reports waiting to be sent may take up. Past it the oldest reports are deleted whole: errors first, then bug reports, then crashes; the newest crash is kept. Values below 10 count as 10.",
+      "iosConstant": "Most disk space, in MB, that reports waiting to be sent may take up. Past it the oldest reports are deleted whole: errors first, then bug reports, then crashes; the newest crash is kept. Values below 10 count as 10."
     },
     "com.bugsee.option.config.max-pending-report-age": {
-      "android": "Maximum age, in days, of a report waiting to be sent. Older reports are deleted, whatever their type. `0` or a negative value disables aging: reports are then kept until they are sent or evicted by `config.max-data-size` / `config.max-pending-reports`."
+      "android": "Maximum age, in days, of a report waiting to be sent. Older reports are deleted, whatever their type. `0` or a negative value disables aging: reports are then kept until they are sent or evicted by `config.max-data-size` / `config.max-pending-reports`.",
+      "iosProperty": "Days a report may wait to be sent before it is deleted, crashes included. 0 or less keeps reports with no time limit.",
+      "iosConstant": "Days a report may wait to be sent before it is deleted, crashes included. 0 or less keeps reports with no time limit.",
+      "iosNote": "days"
     },
     "com.bugsee.option.config.max-pending-reports": {
-      "android": "Maximum number of reports waiting to be sent. When exceeded, pending reports are deleted in the same order as for `config.max-data-size`. Values below `1` are treated as `1`."
+      "android": "Maximum number of reports waiting to be sent. When exceeded, pending reports are deleted in the same order as for `config.max-data-size`. Values below `1` are treated as `1`.",
+      "iosProperty": "Most reports that may wait to be sent. Past it the oldest are deleted, in the same order as for `maxDataSize`. Values below 1 count as 1.",
+      "iosConstant": "Most reports that may wait to be sent. Past it the oldest are deleted, in the same order as for `BugseeOptionConfigMaxDataSize`. Values below 1 count as 1."
     },
     "com.bugsee.option.config.notify-flush-delay": {
       "android": "Coalesce window in milliseconds before a notification-relay FIFO flush. `0` (the default) tries to POST as soon as the item is on disk (still persisted first). A positive value delays the JobScheduler drain so nearby `Bugsee.notify` calls batch together.",

@@ -21,7 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Log lines the Dart capture hands to the SDK (Phase 5d: `print`, `debugPrint`, `Bugsee.forwardLog`).
 ///
-/// What the SDK would drop is not sent (iOS 7.0.0-beta7 source, `BGSWrapperChannelImpl.m`): the
+/// What the SDK would drop is not sent (iOS 7.0.0 source, `BGSWrapperChannelImpl.m`): the
 /// channel takes lines while `Launching` or `Launched` (`bugseeAvailableForUserDumps`) and drops them
 /// with `capture.logs` off ("forwarded host output is automatic capture"). The source is ALWAYS
 /// `BGSLogEventSourceCustom` ("the host runtime's own logs"): the channel accepts five wrapper

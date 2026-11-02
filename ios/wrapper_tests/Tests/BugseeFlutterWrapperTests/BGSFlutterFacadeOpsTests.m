@@ -2,7 +2,7 @@
 
 #import "BGSFlutterFacadeOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 /// A fake SDK behind the seam: records every call; stores attributes like the real one (an
 /// oversized string is ignored, and the call still "succeeds").

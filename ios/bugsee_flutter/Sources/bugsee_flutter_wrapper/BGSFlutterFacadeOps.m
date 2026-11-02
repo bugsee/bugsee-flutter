@@ -2,7 +2,7 @@
 
 #import "BGSFlutterReportOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 static NSString *const kInvalidArgument = @"invalid-argument";
 static NSString *const kAttributeRejected = @"attribute-rejected";

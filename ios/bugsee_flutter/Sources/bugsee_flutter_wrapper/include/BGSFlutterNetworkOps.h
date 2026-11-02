@@ -31,7 +31,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Network events the Dart capture hands to the SDK (Phase 5b). Dart's `dart:io` stack is invisible
 /// to the SDK's own interception, so the wrapper captures it in Dart and injects the events.
 ///
-/// What the SDK would drop is not sent (iOS 7.0.0-beta7 source): `+[Bugsee addNetworkEvent:...]`
+/// What the SDK would drop is not sent (iOS 7.0.0 source): `+[Bugsee addNetworkEvent:...]`
 /// takes events only while `Launched` (not `Launching`: the channel's own header says so), and
 /// `BGSCaptureDataProviderNetwork` only runs with `capture.network` on. Filtering is ALWAYS
 /// required (`requiresFiltering:YES`): the SDK's default sanitizer and the app's native filter see
@@ -39,7 +39,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// `body-without-type`) are enforced by the SDK on whatever arrives; Dart withholds a body the SDK
 /// would drop, so this only defends against a message that did not come from this Dart.
 ///
-/// The iOS 7.0.0-beta7 exchange factory answers nil for `createNetworkEvent` ("not wired"), so the
+/// The iOS 7.0.0 exchange factory answers nil for `createNetworkEvent` ("not wired"), so the
 /// event is a `BugseeNetworkEvent` built directly. Network events carry no source attribution at
 /// this version (only `log` does): `mechanism` (`dart:io`) says where an event came from.
 @interface BGSFlutterNetworkOps : NSObject

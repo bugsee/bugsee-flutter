@@ -124,10 +124,10 @@ void main() {
     flutter = "3.41.0";
     "flutter-engine" = 3452d735bd;
 }
-2026-10-22 11:19:15.375 Df Runner[60233:9e1d3b5] (Bugsee) Bugsee IOS SDK ver:7.0.0-beta7 build:9854b7e50-15
+2026-10-22 11:19:15.375 Df Runner[60233:9e1d3b5] (Bugsee) Bugsee IOS SDK ver:7.0.0 build:2b88480fa-7
 ''';
       final b = parseIosBanner(log)!;
-      expect([b.version, b.build], ['7.0.0-beta7', '9854b7e50-15']);
+      expect([b.version, b.build], ['7.0.0', '2b88480fa-7']);
       final w = parseWrapperLog(log);
       expect(w.context['build-configuration'], 'debug');
       expect(w.context['flutter-engine'], '3452d735bd');

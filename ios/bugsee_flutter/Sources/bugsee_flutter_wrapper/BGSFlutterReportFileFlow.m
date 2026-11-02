@@ -3,7 +3,7 @@
 #import <os/lock.h>
 #import <stdatomic.h>
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 NSString *const BGSFlutterCreateBusy = @"create-busy";
 NSString *const BGSFlutterCreateTimeout = @"create-timeout";

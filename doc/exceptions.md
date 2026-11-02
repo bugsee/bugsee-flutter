@@ -4,7 +4,7 @@ How a Dart error reaches the Bugsee backend, what the two SDKs do with it, what 
 do (and never do), and how an obfuscated build is symbolicated. Everything below was read from source
 and, where it says so, measured on a device. Source refs: worker `bugsee/worker` @ `0b987619`
 (`crash/managed/__init__.py`, `crash/managed/dart.py`, `crash/managed/common.py`, `symbolfiles/flutter.py`,
-`jobs/symbols.py`), Android SDK `v7.4.2` (`3b7af6371`), iOS SDK `origin/nextgen` (`0581aa02c`, the 7.0.0-beta7
+`jobs/symbols.py`), Android SDK `v7.4.2` (`3b7af6371`), iOS SDK (read at `0581aa02c`, the 7.0.0-beta7
 headers), the 9.x plugin (`origin/release`: `lib/src/exceptions*.dart`, `scripts/symbols.py`).
 
 ## 1. The backend contract
@@ -100,7 +100,7 @@ IsolateErrorListener Bugsee.listenToIsolateErrors(Isolate isolate)   // .cancel(
 
 ## 3. What each SDK does, before launch and after stop
 
-| | Android 7.4.2 | iOS 7.0.0-beta7 |
+| | Android 7.4.2 | iOS 7.0.0 |
 |---|---|---|
 | handled | `Bugsee.logException(Throwable, domain, skipFrames)`: an **error** report, built on the SDK's aux thread (`BugseeInternal.java:1339-1356`, `BugseeIssueReportingCoordinator.java:458`) | `+logException:reason:domain:skipFrames:completion:`: an error report (`Bugsee.m:1517-1575`) |
 | unhandled | `Bugsee.logUnhandledException(Throwable, Map)`: a **crash** report, `isTerminating` false (the capture keeps running), written **synchronously on the calling thread**, which snapshots the capture ring ("up to a couple of seconds": `BugseeInternal.java:1358-1410`; the SDK's own comment names the Flutter cost: `BugseeIssueReportingCoordinator.java:329-346`) | `+logUnhandledException:reason:completion:`: writes a PLCrashReporter report to disk that the **next launch** sends, one at a time (`Bugsee.m:1578`, `BGSCrashManager.m:296`); with a debugger attached it falls back to the handled path with `handled=NO` |

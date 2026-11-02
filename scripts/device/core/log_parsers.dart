@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'zip.dart';
 
 /// The SDK's own banner: Android `Bugsee Android SDK 7.4.2 [3b7af6371]`, iOS
-/// `Bugsee IOS SDK ver:7.0.0-beta7 build:...`.
+/// `Bugsee IOS SDK ver:7.0.0 build:...`.
 class SdkBanner {
   const SdkBanner(this.platform, this.version, this.build);
   final String platform;

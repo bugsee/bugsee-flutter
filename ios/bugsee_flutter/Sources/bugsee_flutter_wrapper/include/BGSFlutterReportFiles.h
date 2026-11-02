@@ -24,7 +24,7 @@ FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxAttachmentNameLength;
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxMimeTypeLength;
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxPathLength;
 FOUNDATION_EXPORT const unsigned long long BGSFlutterMaxScreenshotPixels;
-/// `kBGSMaxReportAttachments` in the SDK (`BGSReport.m`, nextgen): the 1001st is refused.
+/// `kBGSMaxReportAttachments` in the SDK (`BGSReport.m`): the 1001st is refused.
 FOUNDATION_EXPORT const NSUInteger BGSFlutterMaxReportAttachments;
 
 /// What a file operation did: finished (both nil), was refused with a reply code (`code`), or was

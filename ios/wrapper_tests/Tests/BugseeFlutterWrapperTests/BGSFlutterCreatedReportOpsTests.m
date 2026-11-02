@@ -1,6 +1,6 @@
 #import <XCTest/XCTest.h>
 
-@import Bugsee;
+@import Bugsee.SPI;
 
 #import "BGSFlutterCreatedReportOps.h"
 

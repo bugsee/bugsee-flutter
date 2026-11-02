@@ -4,7 +4,7 @@
 
 #include <math.h>
 
-/// Version meaning "unknown" (`BGSSecureRectanglesVersionUnknown` in the SDK's BGSContracts.h,
+/// Version meaning "unknown" (`BGSSecureRectanglesVersionUnknown` in the SDK's BugseeSPI.h,
 /// not imported here so the store needs no SDK).
 static const int32_t kUnknownVersion = 0;
 static const NSInteger kHeaderInts = 2;

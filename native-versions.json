@@ -20,14 +20,14 @@
     }
   },
   "ios": {
-    "sdk": "7.0.0-beta7",
-    "sdkBuild": "9854b7e50-15",
-    "spmRevision": "73ed98341d1243ffa7985f871417adcd0ad19799",
-    "feedbackSpmRevision": "40dd3b091ce96beb2faca0ad0df0b5df4e7c60b3",
+    "sdk": "7.0.0",
+    "sdkBuild": "2b88480fa-7",
+    "spmRevision": "bbfdda2a9f1d7aadf73be6e94793b83d7a907aba",
+    "feedbackSpmRevision": "82054e77e835933ab1d585863a97da625e0396b5",
     "spmUrl": "https://github.com/bugsee/spm",
     "feedbackSpmUrl": "https://github.com/bugsee/feedback-spm",
     "deploymentTarget": "15.0",
-    "provenance": "Tag 7.0.0-beta7 of bugsee/spm (73ed983) and bugsee/feedback-spm (40dd3b0). sdkBuild is what the SDK prints in its banner (`Bugsee IOS SDK ver:7.0.0-beta7 build:9854b7e50-15`), read from a simulator run on 2026-10-22 and matched by the device verification harness (workbook 9.1.1)."
+    "provenance": "Stable 7.0.0 (moved from 7.0.0-beta7 on 2026-11-01): tag 7.0.0 of bugsee/spm (bbfdda2) and bugsee/feedback-spm (82054e7), SDK source `origin/release@2b88480fa` of bugsee/bugsee-cocoa (the iOS source repository has no 7.x tag). sdkBuild is what the SDK prints in its banner (`Bugsee IOS SDK ver:7.0.0 build:2b88480fa-7`: the commit and its count), read from a simulator run on 2026-11-01 and matched by the device verification harness (workbook 9.1.1). The beta7 build was `9854b7e50-15`."
   },
   "feedback": {
     "package": "bugsee_flutter_feedback",
@@ -43,6 +43,6 @@
   "optionsManifest": {
     "urlTemplate": "https://download.bugsee.com/sdk/options/{sdk}/{version}.json",
     "fixtureDir": "test/fixtures/option_manifests",
-    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.4.2.json (generatedAt 2026-10-19) and ios/7.0.0-beta7.json (generatedAt 2026-10-18), fetched 2026-10-21 and vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
+    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.4.2.json (generatedAt 2026-10-19) and ios/7.0.0.json (generatedAt 2026-10-30), android fetched 2026-10-21, ios 2026-11-01, vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
   }
 }

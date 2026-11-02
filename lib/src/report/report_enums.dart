@@ -8,7 +8,7 @@
 //
 // The values are repeated from the SDK sources, not invented:
 // `test/fixtures/report_enums.json` is extracted from Android `IssueSeverity` /
-// `IssueType` (v7.4.2) and iOS `BugseeSeverityLevel` (7.0.0-beta7) by
+// `IssueType` (v7.4.2) and iOS `BugseeSeverityLevel` (7.0.0) by
 // `scripts/extract_report_enums.dart`, and `test/report_enum_parity_test.dart`
 // compares this file with BOTH platforms, so a divergence in either is seen.
 

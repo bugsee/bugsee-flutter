@@ -71,7 +71,7 @@ framework. Four checks, by where their inputs live:
 | `dart scripts/generate_options.dart --check` | PR CI (`options-codegen`) | the committed manifests and `docs.json` |
 | `flutter test` (`option_manifests_test`, `options_registry_test`, `launch_options_test`, `launch_drift_test`) | PR CI (`test`) | the committed manifests |
 | `dart scripts/sync_option_manifests.dart --check` | weekly `native-pins.yml`, or by hand | the network (the published manifests) |
-| `dart scripts/verify_option_manifests.dart ...` and `dart scripts/extract_option_docs.dart ... --check` | by hand | the private SDK checkouts (Android tag, iOS `origin/nextgen`); never CI |
+| `dart scripts/verify_option_manifests.dart ...` and `dart scripts/extract_option_docs.dart ... --check` | by hand | the private SDK checkouts (Android tag, iOS `origin/release`); never CI |
 
 Bumping a native pin: edit `native-versions.json`, run `sync_option_manifests.dart`, the two source scripts, then
 `generate_options.dart`, and commit the diff: the review shows exactly which options appeared, changed or went.

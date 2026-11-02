@@ -1,6 +1,6 @@
 #import "BGSFlutterFeedbackOps.h"
 
-@import Bugsee;
+@import Bugsee.SPI;
 @import BugseeFeedback;
 
 static NSString *const kNotRegistered = @"not-registered";

@@ -3,12 +3,7 @@
 #import "BGSFlutterLogOps.h"
 #import "BGSFlutterNetworkOps.h"
 
-@import Bugsee;
-// 7.0 GA moves the wrapper contract to the Bugsee.SPI submodule (BugseeSPI.h);
-// the 7.0 betas declare it in Bugsee.h.
-#if __has_include(<Bugsee/BugseeSPI.h>)
-#import <Bugsee/BugseeSPI.h>
-#endif
+@import Bugsee.SPI;
 
 /// One recorded call to the fake SDK.
 @interface BGSLogCall : NSObject

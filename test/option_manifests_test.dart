@@ -43,7 +43,6 @@ const knownNameDivergences = {
 /// some differ from Android intentionally"). Reviewed; a new difference fails until added.
 const knownDefaultDifferences = {
   'com.bugsee.option.capture.video.adaptive': (false, true),
-  'com.bugsee.option.config.max-data-size': (150, 50),
 };
 
 void main() {
@@ -101,8 +100,8 @@ void main() {
       final template =
           (pins['optionsManifest'] as Map)['urlTemplate'] as String;
       expect(
-        sync.manifestUrl(template, 'ios', '7.0.0-beta7'),
-        'https://download.bugsee.com/sdk/options/ios/7.0.0-beta7.json',
+        sync.manifestUrl(template, 'ios', '7.0.0'),
+        'https://download.bugsee.com/sdk/options/ios/7.0.0.json',
       );
       expect(
         (pins['optionsManifest'] as Map)['fixtureDir'],
@@ -126,11 +125,11 @@ void main() {
     final shared = a.keys.toSet().intersection(i.keys.toSet());
 
     test('counts, so a changed option surface is noticed', () {
-      // Android 7.4.2: 87 (84 public + 3 hidden). iOS 7.0.0-beta7: 70 (69 public + 1 hidden).
+      // Android 7.4.2: 87 (84 public + 3 hidden). iOS 7.0.0: 72 (71 public + 1 hidden).
       expect(a.length, 87);
-      expect(i.length, 70);
-      expect(shared.length, 49);
-      expect(a.keys.toSet().difference(i.keys.toSet()).length, 38);
+      expect(i.length, 72);
+      expect(shared.length, 51);
+      expect(a.keys.toSet().difference(i.keys.toSet()).length, 36);
       expect(i.keys.toSet().difference(a.keys.toSet()).length, 21);
     });
 

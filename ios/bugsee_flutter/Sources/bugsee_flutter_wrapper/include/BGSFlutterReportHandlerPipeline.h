@@ -9,8 +9,8 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportPhase) {
 };
 
 /// How long Dart gets, per path. Ours is the SDK's budget LESS A MARGIN of a third of it (at most
-/// 10 s), never more (workbook 7.3.5). From the iOS SDK (`origin/nextgen`,
-/// `BGSIssueReportingCoordinator.{h,m}`, `BGSContracts.h` `BGSReportHandler`):
+/// 10 s), never more (workbook 7.3.5). From the iOS SDK (`origin/release`,
+/// `BGSIssueReportingCoordinator.{h,m}`, `BugseeSPI.h` `BGSReportHandler`):
 ///
 /// - LIVE (a report raised by the running app): handlers are called on the MAIN thread, one
 ///   after another, and each completion is waited for, up to `reportHandlerCallbackTimeout`
@@ -27,7 +27,7 @@ typedef NS_ENUM(NSInteger, BGSFlutterReportPhase) {
 /// - TERMINATING (`isTerminating = YES`): no producer exists on iOS today; if one appears
 ///   the process dies when the handler returns. Never reaches Dart.
 ///
-/// The SDK does not say which of the first two it is except by the thread (`BGSContracts.h`),
+/// The SDK does not say which of the first two it is except by the thread (`BugseeSPI.h`),
 /// so that is the signal, used for the time budget and nothing else: never passed to Dart and
 /// never read as "this is a recovered crash" (workbook 7.2.3).
 FOUNDATION_EXPORT const int64_t BGSFlutterReportLiveDeadlineMs;

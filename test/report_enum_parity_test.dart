@@ -43,6 +43,27 @@ void main() {
     });
   });
 
+  group('the iOS encryption enum, which no shipped header has', () {
+    test('the source values equal what the SDK published in its manifest', () {
+      final source = (ios['BugseeDataEncryptionMode']! as Map)
+          .cast<String, int>()
+          .map(
+            (k, v) => MapEntry(k.replaceFirst('BugseeDataEncryption', ''), v),
+          );
+      final manifest = json('test/fixtures/option_manifests/ios.json');
+      final published = [
+        for (final o in manifest['options']! as List)
+          if ((o as Map)['enum'] is Map &&
+              (o['enum'] as Map)['name'] == 'BugseeDataEncryptionMode')
+            (o['enum'] as Map)['values'],
+      ];
+      expect(published, isNotEmpty);
+      for (final v in published) {
+        expect(v, source);
+      }
+    });
+  });
+
   group('IssueSeverity agrees across platforms and with Dart, by value', () {
     test('both SDKs and Dart assign the same set of values', () {
       final dart = ReportSeverity.values.map((s) => s.value).toSet();

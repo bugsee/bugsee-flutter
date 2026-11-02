@@ -818,7 +818,7 @@ final class BugseeOptions {
   /// uploaded are never deleted. Values below `10` are treated as `10`.
   ///
   /// - Option key: `com.bugsee.option.config.max-data-size`.
-  /// - SDK default: `150` on Android, `50` on iOS.
+  /// - SDK default: `150`.
   /// - Available on: Android and iOS.
   final int? configMaxDataSize;
 
@@ -828,7 +828,7 @@ final class BugseeOptions {
   ///
   /// - Option key: `com.bugsee.option.config.max-pending-report-age`.
   /// - SDK default: `30`.
-  /// - Available on: Android only. On iOS the option is ignored (a debug-mode warning says so).
+  /// - Available on: Android and iOS.
   final int? configMaxPendingReportAge;
 
   /// Maximum number of reports waiting to be sent. When exceeded, pending reports are deleted in
@@ -836,7 +836,7 @@ final class BugseeOptions {
   ///
   /// - Option key: `com.bugsee.option.config.max-pending-reports`.
   /// - SDK default: `30`.
-  /// - Available on: Android only. On iOS the option is ignored (a debug-mode warning says so).
+  /// - Available on: Android and iOS.
   final int? configMaxPendingReports;
 
   /// Coalesce window in milliseconds before a notification-relay FIFO flush. `0` (the default)

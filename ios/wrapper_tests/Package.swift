@@ -25,7 +25,7 @@ let package = Package(
         .library(name: "BugseeFlutterWrapper", targets: ["BugseeFlutterWrapper"])
     ],
     dependencies: [
-        .package(url: "https://github.com/bugsee/spm", exact: "7.0.0-beta7")
+        .package(url: "https://github.com/bugsee/spm", exact: "7.0.0")
     ],
     targets: [
         .target(

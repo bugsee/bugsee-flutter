@@ -95,8 +95,8 @@ That is the whole API, because it is all both SDKs have: show the chat, the gree
 SDK has an unread count, a notification setting, an option key for the chat, or a separate user name or e-mail
 (the chat asks the user for an e-mail address itself, and skips that screen when the identifier you set with
 `Bugsee.setUserIdentifier` contains an `@`). The chat's colours (`FeedbackAppearance` on Android, `BugseeTheme` on iOS) are
-not exposed, like the core's appearance system (see `doc/api-surface.md` of `bugsee_flutter`): the iOS 7.0.0-beta7 chat does not read
-`BugseeTheme` anyway. The details, with source references, are in [doc/feedback.md](doc/feedback.md).
+not exposed, like the core's appearance system (see `doc/api-surface.md` of `bugsee_flutter`): the iOS 7.0.0 chat does read
+`BugseeTheme`, so they could be exposed later. The details, with source references, are in [doc/feedback.md](doc/feedback.md).
 
 Call it after `Bugsee.launch`: on Android `show()` does nothing before the SDK has launched; on iOS it presents a chat
 that cannot reach the backend.

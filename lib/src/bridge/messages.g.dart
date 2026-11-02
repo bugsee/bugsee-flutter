@@ -1144,7 +1144,7 @@ class LogLineMessage {
 /// vocabulary is strings and integers only (no Pigeon enum: Pigeon sends an ordinal).
 ///
 /// Native builds the SDK's own event from it (Android: `BugseeExchangeFactory.createNetworkEvent`,
-/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0-beta7 factory answers nil) and submits it
+/// iOS: `BugseeNetworkEvent`, because the iOS 7.0.0 factory answers nil) and submits it
 /// through the wrapper channel with filtering REQUIRED, so the SDK's default sanitizer and the app's
 /// native filter still apply (doc/network.md).
 class NetworkEventMessage {

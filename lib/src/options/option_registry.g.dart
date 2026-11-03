@@ -2,7 +2,7 @@
 // (test/fixtures/option_manifests). Do not edit by hand.
 //
 // Android 7.4.2 (manifest generatedAt 2026-10-19T07:03:45Z)
-// iOS 7.0.0 (manifest generatedAt 2026-10-30T19:10:39Z)
+// iOS 7.0.1 (manifest generatedAt 2026-11-03T15:48:34Z)
 
 import 'option_registry.dart';
 

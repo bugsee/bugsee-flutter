@@ -2,7 +2,7 @@
   "_comment": "Extracted from the native SDK sources by scripts/extract_report_enums.dart; do not edit by hand. Compared by test/report_enum_parity_test.dart.",
   "pins": {
     "android": "7.4.2",
-    "ios": "7.0.0"
+    "ios": "7.0.1"
   },
   "android": {
     "IssueSeverity": {
@@ -45,13 +45,13 @@
       "error"
     ],
     "reportHandlerTimings": {
-      "source": "origin/release@2b88480fa",
+      "source": "origin/release@5c6b9d9db",
       "handlerTimeoutSeconds": 30.0,
       "chainTimeoutSeconds": 60.0,
       "boundedCapSeconds": 3.0
     },
     "attachments": {
-      "source": "origin/release@2b88480fa",
+      "source": "origin/release@5c6b9d9db",
       "maxPerReport": 1000,
       "legacyCreatedReportMaxCount": 3,
       "legacyCreatedReportMaxBytes": 3145728

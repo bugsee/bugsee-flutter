@@ -33,7 +33,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 | # | Decision | Reason |
 |---|---|---|
-| D1 | **Native pins:** Android 7.4.2 (Maven Central), iOS 7.0.0 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
+| D1 | **Native pins:** Android 7.4.2 (Maven Central), iOS 7.0.1 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
 | D2 | **iOS is SwiftPM only**, no podspec | Bugsee publishes no CocoaPods pod |
 | D3 | **Compatibility with the 9.x Dart API: deferred** to the owner (see below). The facade is isolated in `lib/src/bugsee.dart` / `bugsee_runtime.dart` so a layer could sit beside it | |
 | D4 | **The feedback chat is a separate package**, mirroring the native split and React Native | apps that never show it do not carry SwiftUI / Compose |
@@ -50,7 +50,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 1. **A 9.x compatibility layer** (D3): offer a `bugsee.dart`-style shim over the 10.x facade, or none. The migration guide is written for
    "none".
-2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.4.2, iOS 7.0.0; the iOS pin was `7.0.0-beta7` until then), so a stable
+2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.4.2, iOS 7.0.1; the iOS pin was `7.0.0-beta7`, then `7.0.0`, until then), so a stable
    `10.0.0` is no longer blocked by a beta dependency; the choice between `10.0.0` and `10.0.0-dev.N` / `-beta` first is open.
 3. **pub.dev name and ownership.** `bugsee_flutter` exists on pub.dev (latest `9.0.4`, publisher `bugsee.com`), so 10.x continues that
    package. `bugsee_flutter_feedback` does not exist yet (checked 2026-10-22) and must be created under the same publisher.

@@ -64,15 +64,15 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 ## Known gaps and filed issues
 
-State checked with `gh issue view` on 2026-10-22.
+State checked with `gh issue view` on 2026-11-06 (the Android pins moved to 7.5.0 / plugin 4.1.0 that day; the closed rows are kept with how each was verified).
 
 | Issue | State | What |
 |---|---|---|
-| [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) | open | `injectBugsee<Variant>BuildId` fails Gradle task validation in Flutter apps; the README carries the workaround |
-| [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316) | open | the report screenshot is entirely black in a `SurfaceView` (Flutter's default render mode); texture mode works |
-| [bugsee-android#309](https://github.com/bugsee/bugsee-android/issues/309) | open | `IssueReport.addAttachment` does not re-check the stage after `importFile`; the wrapper undoes a late add itself |
-| [bugsee-cocoa#291](https://github.com/bugsee/bugsee-cocoa/issues/291) | open | `BugseeFeedback.setListener` runs clear and set in unordered `Task`s; the wrapper never sets nil |
-| [bugsee-cocoa#265](https://github.com/bugsee/bugsee-cocoa/issues/265) / [bugsee-android#299](https://github.com/bugsee/bugsee-android/issues/299) | iOS open; Android closed, on `main` (`aa9ea4c18`), in no tag, not in 7.4.2 | a timestamp argument for the wrapper channel's `log`. **Pin condition:** when `native-versions.json` moves to releases that have it, pass the capture time (`BugseeLogEvent.time`) so a delayed line keeps its time |
+| [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) | **closed, fixed in plugin 4.1.0** | `injectBugsee<Variant>BuildId` task validation: the example builds debug, release and profile from clean WITHOUT the ordering workaround (2026-11-06); the README snippet is gone |
+| [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316) | **closed, fixed in 7.5.0** | the report screenshot in a `SurfaceView` (Flutter's default): device-verified (scenario 9, both render modes: content, the secure box black, the rest equal to the unsecured frame) |
+| [bugsee-android#309](https://github.com/bugsee/bugsee-android/issues/309) | **closed, fixed in 7.5.0** (`ca76e4eb4`; #324 `11d21c1a6`, #355 `9b45e488e` cover screenshot/clear/updateFrom) | stage re-check after `importFile`, atomic under the stage lock, a rejected `move` keeps its source. Read from source and covered by scenario 3 and the attachments test; the race itself was NOT re-measured on a device. The wrapper's own undo of a late add stays as defence in depth (its JUnit model still passes) |
+| [bugsee-cocoa#291](https://github.com/bugsee/bugsee-cocoa/issues/291) | **closed**, `8ab24e8f9` is in `release@5c6b9d9db` (7.0.1) | `BugseeFeedback.setListener` ordering. The wrapper still never sets nil (kept; not re-measured on iOS) |
+| [bugsee-cocoa#265](https://github.com/bugsee/bugsee-cocoa/issues/265) / [bugsee-android#299](https://github.com/bugsee/bugsee-android/issues/299) | **closed, in both pins** (iOS 7.0.1, Android 7.5.0) | the wrapper channel's `log` timestamp: implemented (`ageMs` on the bridge, `now - ageMs` on the SDK clock); measured on a device, Android: a line delayed 3 s by a filter is recorded 1 ms after the one printed before it and 4005 ms before the next. iOS is covered by XCTest only (no iOS run) |
 | [specs#61](https://github.com/bugsee/specs/issues/61) | open | workbook 7.1: the Android recovered-report row disagrees with 7.4.2 (measured: not main, edits land) |
 | [specs#63](https://github.com/bugsee/specs/issues/63) | open | the wrapper-channel README says "not implemented"; both SDKs ship it |
 | [specs#64](https://github.com/bugsee/specs/issues/64) | open | `vh` spec and workbook 6.7 still call the Android wait unfixed; PR #120 is in 7.4.2 |
@@ -80,7 +80,7 @@ State checked with `gh issue view` on 2026-10-22.
 
 Other gaps, none with an issue:
 
-* **No physical device has been used.** Everything was verified on an Android emulator (API 28 to 33) and iOS simulators (26.5 and 27.0).
+* **One physical Android device has been used, for the Android 7.5.0 move** (WOD-LX1, Android 14, arm64): the integration tests `facade, launch, cold_start, exceptions, attachments, feedback, network, logs` pass; `view_hierarchy_test` fails on it because the 12 ms walk budget cuts a walk that takes 25-29 ms there in a debug (JIT) build (`truncated: true`, as designed; the emulator takes 3 ms): a speed effect, not an SDK change. The device cannot `adb root`, so the harness scenarios ran on an emulator (API 30). No physical iPhone has been used; everything iOS was verified on simulators (26.5 and 27.0).
 * **The iOS simulator slice of the SDK has no crash reporter and files no logged exceptions**: recovered iOS crash reports, iOS exception
   bundles, crash across an update, and release or profile runs need a physical iPhone. The workbook's iOS recovery claims (off-main, capped,
   a late completion re-persists) were not measured.

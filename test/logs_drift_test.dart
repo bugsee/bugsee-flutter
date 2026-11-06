@@ -136,8 +136,32 @@ void main() {
             r'^\s*(?:String\??|int) (\w+);',
             multiLine: true,
           ).allMatches(cls).map((m) => m.group(1)).toList(),
-          ['message', 'level', 'tag'],
+          ['message', 'level', 'tag', 'ageMs'],
         );
+      },
+    );
+
+    test(
+      'the oldest age native will subtract is the same in Dart, Java and Objective-C',
+      () {
+        final expected = fixture['maxAgeMs'] as int;
+        expect(LogWire.maxAgeMs, expected);
+        final m = RegExp(
+          r'MAX_AGE_MS = (\d+)L \* (\d+)L \* (\d+)L;',
+        ).firstMatch(javaOps)!;
+        expect(
+          int.parse(m.group(1)!) *
+              int.parse(m.group(2)!) *
+              int.parse(m.group(3)!),
+          expected,
+        );
+        expect(
+          RegExp(r'kMaxAgeMs = 60LL \* 60LL \* 1000LL;').hasMatch(objcOps),
+          isTrue,
+        );
+        // The seam reads the SDK's clock, never the device's, and uses the timestamp overload.
+        expect(javaSdk, contains('channel.currentTimeMillis()'));
+        expect(javaSdk, isNot(contains('System.currentTimeMillis()')));
       },
     );
 

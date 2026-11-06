@@ -10,6 +10,7 @@
 @property(nonatomic, copy, nullable) NSString *tag;
 @property(nonatomic, copy) NSString *message;
 @property(nonatomic) NSInteger level;
+@property(nonatomic) int64_t ageMs;
 @end
 @implementation BGSLogCall
 @end
@@ -39,7 +40,7 @@
   if (_acceptsThrows) @throw [NSException exceptionWithName:@"Status" reason:@"unreadable" userInfo:nil];
   return _accepting;
 }
-- (BOOL)submitLogWithTag:(NSString *)tag message:(NSString *)message level:(NSInteger)level {
+- (BOOL)submitLogWithTag:(NSString *)tag message:(NSString *)message level:(NSInteger)level ageMs:(int64_t)ageMs {
   if (!_channelAvailable) return NO;
   if ([message isEqualToString:_throwOnMessage]) {
     @throw [NSException exceptionWithName:@"AppFilter" reason:@"the app's filter threw" userInfo:nil];
@@ -48,6 +49,7 @@
   call.tag = tag;
   call.message = message;
   call.level = level;
+  call.ageMs = ageMs;
   [_submitted addObject:call];
   return YES;
 }
@@ -64,12 +66,24 @@
   return self;
 }
 - (void)logWithTag:(NSString *)tag message:(NSString *)message level:(BugseeLogLevel)level source:(BGSLogEventSource)source {
+  // The wrapper must use the timestamp overload: a line through here lost its time.
+  XCTFail(@"the 4-argument log was used");
+}
+- (int64_t)currentTimeMillis {
+  return 5000000;
+}
+- (void)logWithTag:(NSString *)tag
+           message:(NSString *)message
+             level:(BugseeLogLevel)level
+            source:(BGSLogEventSource)source
+         timestamp:(int64_t)timestampMs {
   if (_throwing) @throw [NSException exceptionWithName:@"AppFilter" reason:@"filter bug" userInfo:nil];
   [_calls addObject:@{
     @"tag" : tag ?: [NSNull null],
     @"message" : message ?: [NSNull null],
     @"level" : @(level),
     @"source" : @(source),
+    @"timestamp" : @(timestampMs),
   }];
 }
 @end
@@ -181,8 +195,8 @@ static NSDictionary *Line(NSString *message, NSInteger level, NSString *tag) {
   BGSFakeLogChannel *channel = [[BGSFakeLogChannel alloc] init];
   [BGSFlutterNetworkChannel shared].channel = channel;
   BGSFlutterRealLogSdk *sdk = [[BGSFlutterRealLogSdk alloc] init];
-  XCTAssertTrue([sdk submitLogWithTag:@"print" message:@"hello" level:2]);
-  XCTAssertTrue([sdk submitLogWithTag:nil message:@"world" level:5]);
+  XCTAssertTrue([sdk submitLogWithTag:@"print" message:@"hello" level:2 ageMs:0]);
+  XCTAssertTrue([sdk submitLogWithTag:nil message:@"world" level:5 ageMs:0]);
   XCTAssertEqual(channel.calls.count, 2u);
   XCTAssertEqualObjects(channel.calls[0][@"tag"], @"print");
   XCTAssertEqualObjects(channel.calls[0][@"message"], @"hello");
@@ -194,10 +208,25 @@ static NSDictionary *Line(NSString *message, NSInteger level, NSString *tag) {
   [BGSFlutterNetworkChannel shared].channel = nil;
 }
 
+- (void)testALineKeepsItsTimeOnTheSdkClockAndTheAgeIsBounded {
+  BGSFakeLogChannel *channel = [[BGSFakeLogChannel alloc] init];
+  [BGSFlutterNetworkChannel shared].channel = channel;
+  BGSFlutterRealLogSdk *sdk = [[BGSFlutterRealLogSdk alloc] init];
+  XCTAssertTrue([sdk submitLogWithTag:nil message:@"late" level:3 ageMs:1500]);
+  XCTAssertEqualObjects(channel.calls[0][@"timestamp"], @(5000000 - 1500));
+  // Through the ops: a negative or huge age from a bad message is bounded, never a future time.
+  BGSFakeLogSdk *fake = [[BGSFakeLogSdk alloc] init];
+  [BGSFlutterLogOps addLineWithSdk:fake line:(@{@"message" : @"neg", @"level" : @3, @"ageMs" : @(-5)})];
+  [BGSFlutterLogOps addLineWithSdk:fake line:(@{@"message" : @"huge", @"level" : @3, @"ageMs" : @(INT64_MAX)})];
+  XCTAssertEqual(fake.submitted[0].ageMs, 0);
+  XCTAssertEqual(fake.submitted[1].ageMs, 3600000);
+  [BGSFlutterNetworkChannel shared].channel = nil;
+}
+
 - (void)testWithNoChannelTheRealSeamRefusesAndNothingThrows {
   [BGSFlutterNetworkChannel shared].channel = nil;
   BGSFlutterRealLogSdk *sdk = [[BGSFlutterRealLogSdk alloc] init];
-  XCTAssertFalse([sdk submitLogWithTag:nil message:@"x" level:3]);
+  XCTAssertFalse([sdk submitLogWithTag:nil message:@"x" level:3 ageMs:0]);
 }
 
 - (void)testAReplacedRegistrationSendsToTheNewChannelOnly {
@@ -205,9 +234,9 @@ static NSDictionary *Line(NSString *message, NSInteger level, NSString *tag) {
   BGSFakeLogChannel *current = [[BGSFakeLogChannel alloc] init];
   BGSFlutterRealLogSdk *sdk = [[BGSFlutterRealLogSdk alloc] init];
   [BGSFlutterNetworkChannel shared].channel = retired;
-  XCTAssertTrue([sdk submitLogWithTag:nil message:@"before" level:3]);
+  XCTAssertTrue([sdk submitLogWithTag:nil message:@"before" level:3 ageMs:0]);
   [BGSFlutterNetworkChannel shared].channel = current;
-  XCTAssertTrue([sdk submitLogWithTag:nil message:@"after" level:3]);
+  XCTAssertTrue([sdk submitLogWithTag:nil message:@"after" level:3 ageMs:0]);
   XCTAssertEqual(retired.calls.count, 1u);
   XCTAssertEqualObjects(retired.calls[0][@"message"], @"before");
   XCTAssertEqual(current.calls.count, 1u);

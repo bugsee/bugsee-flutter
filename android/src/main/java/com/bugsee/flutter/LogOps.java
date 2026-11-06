@@ -69,12 +69,16 @@ final class LogOps {
         boolean acceptsLogs();
 
         /**
-         * {@code channel.log(tag, message, level, LogSource.Custom)}; false when the wrapper holds
-         * no channel (it is delivered at {@code setWrapper}, so this only happens before
-         * registration) or the level is not the SDK's.
+         * {@code channel.log(tag, message, level, LogSource.Custom, now - ageMs)} with {@code now}
+         * read from the channel ({@code currentTimeMillis()}, the SDK's own clock, 7.5.0); false when
+         * the wrapper holds no channel (it is delivered at {@code setWrapper}, so this only happens
+         * before registration) or the level is not the SDK's.
          */
-        boolean submit(@Nullable String tag, @NonNull String message, int level);
+        boolean submit(@Nullable String tag, @NonNull String message, int level, long ageMs);
     }
+
+    /** Compared with Dart's {@code LogWire.maxAgeMs} by the drift guard. */
+    static final long MAX_AGE_MS = 60L * 60L * 1000L;
 
     private LogOps() {
     }
@@ -123,7 +127,8 @@ final class LogOps {
         }
         final String tag = line.getTag();
         try {
-            return sdk.submit(tag == null || tag.isEmpty() ? null : tag, message, (int) level)
+            final long age = Math.min(MAX_AGE_MS, Math.max(0L, line.getAgeMs()));
+            return sdk.submit(tag == null || tag.isEmpty() ? null : tag, message, (int) level, age)
                     ? Outcome.HANDED
                     : Outcome.NOT_SUBMITTED;
         } catch (final Throwable t) {

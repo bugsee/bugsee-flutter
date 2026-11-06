@@ -42,7 +42,7 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
 | the app's filter runs | on the **calling thread**; an exception propagates to the caller (reaches the global handler) | on the calling thread; an exception is caught at `-postEvent:`, the line dropped |
 | a filter that never replies | dropped after 10 s (`FILTER_CALLBACK_TIMEOUT_MS`), once-per-process warning | dropped (no timeout) |
 | default log sanitizer | **none** (no `capture.logs.*sanitizer` option on either SDK; only the app's own filter redacts a log line) | **none** |
-| timestamp | the channel takes none: stamped on receipt (`TimeUtils.monotonicWallTimeMillis`; the timestamp overload is bugsee-android#299, closed upstream by commit `aa9ea4c18` on Android `main`: it is NOT in any tag, not in the pinned `v7.4.2`; bugsee-cocoa#265 is still open) | stamped on receipt (`BugseeGetCurrentTimeStampMs`) |
+| timestamp | **taken from the wrapper** (7.5.0 overload, bugsee-android#299, commit `aa9ea4c18`; the wrapper sends `now - ageMs` on the SDK's clock) | **taken from the wrapper** (`-logWithTag:message:level:source:timestamp:`, bugsee-cocoa#265; the wrapper sends `currentTimeMillis - ageMs`) |
 | message length | no limit | no limit |
 | stale channel | `isLive()` / `isCurrentWrapperChannel`: dropped silently | `isCurrent` generation check; reports once after 5 s |
 
@@ -73,11 +73,13 @@ Public API (all on `Bugsee`, `doc/api-surface.md` has the rest): `installLogCapt
   restores the previous `debugPrint` only when ours is still current (otherwise it stays in the app's chain and forwards).
 * **Order** is print order; one batch in flight; native runs on a serial background thread (a Pigeon task queue) because the
   app's native filter runs on the calling thread and a throw must not reach the platform thread.
-* **Timestamps**: neither channel takes one, so a line is stamped when native hands it to the SDK (a few ms after the
-  print when the pipeline is idle; a long queue or a slow filter widens it). Unlike network capture there is no `ageMs` (network events are
-  backdated by it, so a log line can appear after the request it preceded): the pinned SDKs could not use it. **Pending upstream (a pin condition, PLAN.md "Known gaps")**:
-  send `BugseeLogEvent.time` once a release carries the timestamp overload (Android: a tag after `v7.4.2` containing `aa9ea4c18`;
-  iOS: bugsee-cocoa#265). A filter that does not answer cannot skew the timeline for long: after three timeouts in a row the filter
+* **Timestamps**: **both platforms keep the time of the print** (Android 7.5.0, bugsee-android#299; iOS 7.0.0+, bugsee-cocoa#265, both
+  in the pins: `BugseeWrapperChannel.log(..., timestampMillis)` / `-logWithTag:message:level:source:timestamp:`). A line crosses with
+  `ageMs`, how long it waited on Dart's monotonic clock (stamped when its batch is sent, at most an hour: the network capture's rule), and
+  native subtracts it from the SDK's own clock read at hand-over (`currentTimeMillis`, the wall clock the SDK stamps its lines with; not
+  `System.currentTimeMillis()`/`Date()` read by the wrapper); the SDK bounds the result itself (a future time is now, a time before the
+  session starts is the session start or drops the line). So a line a slow filter or a long queue delayed no longer appears after the
+  request it preceded. An iOS SDK without the overload (the selector check fails) stamps on arrival. A filter that does not answer cannot skew the timeline for long: after three timeouts in a row the filter
   is switched off for 30 s and its lines are dropped at once (fail closed, `droppedFilterCoolDown`), instead of costing a timeout each.
 * **Reports**: before an upload, `createReport`, the dialog and every error report (`logException`, `reportException`, the installed
   error handlers) the pending lines are handed to the SDK first, waiting at most 200 ms (a hung filter cannot hold a report back):
@@ -184,7 +186,7 @@ effect at once (before the options are read again); a failure to read leaves not
 
 * A line printed before `launch` is dropped, not buffered (a buffer would be stamped at flush time: wrong).
 * No `print` in the root zone, no `dart:developer`, no `stdout`, no other isolates (table above).
-* The platform echo (above) and the timestamp stamped on receipt.
+* The platform echo (above).
 * Rate limit 500 lines/s, burst 1000, queue 1000 lines / 2 MiB: the newest are dropped and counted (`logCaptureStats`); a tight
   loop of 3000 prints in one turn records about 1000.
 * The line cap (4000) is this plugin's (neither SDK has one); Android's own logcat path cuts near the same size.

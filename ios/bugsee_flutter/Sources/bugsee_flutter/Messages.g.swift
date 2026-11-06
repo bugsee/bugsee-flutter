@@ -1029,7 +1029,10 @@ struct BreadcrumbMessage: Hashable, CustomStringConvertible {
 /// constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
 /// has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
 /// the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
-/// Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+/// Both SDKs take the time the line was produced; Android from 7.5.0 (`BugseeWrapperChannel.log` with a timestamp),
+/// so a line the wrapper queued or filtered first keeps its time: it crosses as an AGE (`ageMs`, on
+/// Dart's monotonic clock, stamped when the batch is sent) that native subtracts from the SDK's own
+/// clock (iOS 7.0.1 takes it the same way: `-logWithTag:...timestamp:`).
 ///
 /// Generated class from Pigeon that represents data sent in messages.
 struct LogLineMessage: Hashable, CustomStringConvertible {
@@ -1039,6 +1042,8 @@ struct LogLineMessage: Hashable, CustomStringConvertible {
   var level: Int64
   /// Recorded on Android (`log.json` `tag`); iOS has no tag and drops it. Null or empty: none.
   var tag: String? = nil
+  /// Milliseconds since the line was captured, when the batch was sent (0 .. one hour).
+  var ageMs: Int64
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -1046,11 +1051,13 @@ struct LogLineMessage: Hashable, CustomStringConvertible {
     let message = pigeonVar_list[0] as! String
     let level = pigeonVar_list[1] as! Int64
     let tag: String? = nilOrValue(pigeonVar_list[2])
+    let ageMs = pigeonVar_list[3] as! Int64
 
     return LogLineMessage(
       message: message,
       level: level,
-      tag: tag
+      tag: tag,
+      ageMs: ageMs
     )
   }
   func toList() -> [Any?] {
@@ -1058,13 +1065,14 @@ struct LogLineMessage: Hashable, CustomStringConvertible {
       message,
       level,
       tag,
+      ageMs,
     ]
   }
   static func == (lhs: LogLineMessage, rhs: LogLineMessage) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MessagesPigeonInternal.deepEquals(lhs.message, rhs.message) && MessagesPigeonInternal.deepEquals(lhs.level, rhs.level) && MessagesPigeonInternal.deepEquals(lhs.tag, rhs.tag)
+    return MessagesPigeonInternal.deepEquals(lhs.message, rhs.message) && MessagesPigeonInternal.deepEquals(lhs.level, rhs.level) && MessagesPigeonInternal.deepEquals(lhs.tag, rhs.tag) && MessagesPigeonInternal.deepEquals(lhs.ageMs, rhs.ageMs)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -1072,10 +1080,11 @@ struct LogLineMessage: Hashable, CustomStringConvertible {
     MessagesPigeonInternal.deepHash(value: message, hasher: &hasher)
     MessagesPigeonInternal.deepHash(value: level, hasher: &hasher)
     MessagesPigeonInternal.deepHash(value: tag, hasher: &hasher)
+    MessagesPigeonInternal.deepHash(value: ageMs, hasher: &hasher)
   }
 
   public var description: String {
-    return "LogLineMessage(message: \(String(describing: message)), level: \(String(describing: level)), tag: \(String(describing: tag)))"
+    return "LogLineMessage(message: \(String(describing: message)), level: \(String(describing: level)), tag: \(String(describing: tag)), ageMs: \(String(describing: ageMs)))"
   }
 }
 

@@ -193,6 +193,24 @@ Future<void> main() async {
       expect(stats.droppedByFilter, 1);
       expect(stats.truncated, 1);
 
+      // ---- F. A line a slow filter delays keeps the time it was printed (SDK timestamp overload;
+      // Android 7.5.0, iOS 7.0.x): the bundle's log.json must put F-SLOW next to F-BEFORE, ~4 s
+      // before F-AFTER, not ~1 s before it (where the filter's delay would have put it).
+      Bugsee.setLogFilter((event) async {
+        if (event.message.contains('F-SLOW')) {
+          await Future<void>.delayed(const Duration(seconds: 3));
+        }
+        return event;
+      }, timeout: const Duration(seconds: 10));
+      Bugsee.runWithLogCapture(() {
+        print('LOGTEST F-BEFORE');
+        print('LOGTEST F-SLOW delayed three seconds by the filter');
+      });
+      await Future<void>.delayed(const Duration(seconds: 4));
+      Bugsee.runWithLogCapture(() => print('LOGTEST F-AFTER'));
+      await settle();
+      Bugsee.setLogFilter(null);
+
       // A report: this is what the bundle (log.json) is read from.
       // Printed the line before the report: the report waits (at most 200 ms) for it.
       Bugsee.runWithLogCapture(

@@ -201,5 +201,4 @@ a debug warning.
 * A launch that was `true` in 9.x may be `alreadyRunning` or `deferred` in 10.x: check `waitUntilLaunched()` instead of the boolean.
 * Android auto-init (a token in the manifest) ignores the options passed to `Bugsee.launch`.
 * Nothing is captured from `dart:io`, `print` or Dart errors until you install it.
-* The Android report screenshot may be black in Flutter's default `SurfaceView` render mode (README, limits).
 * Unhandled Dart errors are error reports, not crash reports, unless `reportAsCrash: true`.

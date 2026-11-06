@@ -73,20 +73,11 @@ while the core is unpublished.
 
    (Groovy: `id 'com.bugsee.android.gradle' version '4.1.0' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
 
-2. **Add the Gradle ordering workaround** at the end of `android/app/build.gradle.kts`. On Gradle 8.14 (the current Flutter
-   template) the plugin's `injectBugsee<Variant>BuildId` tasks write into the assets that Flutter's `copyFlutter<Variant>Assets`
-   produces without declaring that ordering, and Gradle rejects the build. Still open upstream as
-   [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33); remove the snippet when
-   a plugin release fixes it:
+2. Build with a JDK 17 or 21 (`JAVA_HOME`, and `org.gradle.java.home` in `gradle.properties` if Android Studio's bundled JDK is 25).
 
-   ```kotlin
-   tasks.matching { it.name.startsWith("injectBugsee") && it.name.endsWith("BuildId") }.configureEach {
-       val variant = name.removePrefix("injectBugsee").removeSuffix("BuildId")
-       mustRunAfter("copyFlutterAssets$variant")
-   }
-   ```
-
-3. Build with a JDK 17 or 21 (`JAVA_HOME`, and `org.gradle.java.home` in `gradle.properties` if Android Studio's bundled JDK is 25).
+   Plugin 4.1.0 declares its task ordering itself ([bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33),
+   fixed): the ordering snippet that 4.0.x needed on Gradle 8.14 is gone (debug, release and profile builds of the example were measured
+   without it). On an older plugin the build fails Gradle task validation on `injectBugsee<Variant>BuildId`: use 4.1.0.
 
 Nothing else is needed: the plugin declares `bugsee-android` **and** the separate `bugsee-android-ndk` artefact (native crash
 detection), registers its wrapper from a content provider that runs before the SDK can launch, and ships consumer ProGuard
@@ -377,7 +368,6 @@ Know these limits:
 | Android | API 21+. Verified on emulators (API 28 to 33): launch, auto-init, crash recovery, handlers, exceptions (debug and R8 `--obfuscate` release), view hierarchy, network, logs, attachments, `createReport`, secure regions at three densities, hot restart |
 | iOS | 15.0+. Verified on simulators (iOS 26.5 and 27.0) for everything the simulator permits |
 | iOS simulator | The SDK's simulator slice has **no crash reporter** (no recovered crash reports) and files **no logged exceptions**, so Dart error reports and crash recovery cannot be tried there; use a physical iPhone. Release and profile builds cannot run on a simulator |
-| Android report screenshot | Flutter's default `SurfaceView` render mode gives an **all black report screenshot** (an SDK gap: [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316); the video is right). Workaround: render with a `TextureView` (override `FlutterActivity.getRenderMode()` to return `RenderMode.texture`), at the cost Flutter documents for it |
 | Secure regions | Not covered for the first frame of a newly appearing region; only the implicit view (id 0) is placed |
 | Isolates | The API works from the main isolate: a call from a background isolate is a `BugseeException`. Network and log capture and the error handlers belong to the isolate that installed them; `listenToIsolateErrors` reports an isolate you spawn. Hot restart is handled (a new isolate takes over) |
 | Web, desktop | The calls do nothing; `launch` throws |
@@ -388,7 +378,7 @@ Know these limits:
 
 | Symptom | Cause and fix |
 |---|---|
-| Android build fails Gradle task validation on `injectBugsee...BuildId` | The ordering workaround of the Android step 2 is missing |
+| Android build fails Gradle task validation on `injectBugsee...BuildId` | The Gradle plugin is older than 4.1.0: use 4.1.0 (4.0.x needed an ordering workaround, `mustRunAfter("copyFlutterAssets<Variant>")` on each `injectBugsee<Variant>BuildId` task) |
 | No native crashes on Android, build green | The `bugsee-android-ndk` artefact is not on the classpath (this plugin declares it: check `./gradlew :app:dependencies \| grep bugsee-android-ndk`) or `detect.crash-ndk` is off |
 | Android extensions (e.g. the feedback chat) silently never register | The Gradle plugin is older than 4.0.7 (4.0.6 strips the extension providers and injects nothing): use 4.1.0 |
 | `Bugsee.launch` answers `alreadyRunning` and options are ignored | Android auto-init: the manifest has `com.bugsee.app-token`; see "Launching twice" |
@@ -396,7 +386,7 @@ Know these limits:
 | `flutter pub get` fails with "only Swift Package Manager compatible" | Flutter older than 3.41.0 |
 | iOS: package resolution or deployment target error | Raise the deployment target to 15.0; run `flutter config --enable-swift-package-manager` where it is not the default |
 | Gradle cannot parse the JDK version | JDK 25 (Android Studio's bundled JBR): use 17 or 21 |
-| Black Android report screenshot | Default `SurfaceView` render mode: see the table above |
+| Black Android report screenshot | Android SDK older than 7.5.0 (bugsee-android#316: it skipped Flutter's default `SurfaceView`); 7.5.0 captures it, with the secure regions redacted (measured) |
 | Events, traces, logs, notifications or uploads vanish | They are dropped before `launch` and after `stop`; nothing is queued |
 | Dart errors are not reported | `installErrorHandlers` was called before Crashlytics (it replaced the handlers): check `Bugsee.errorHandlersActive`; or the call was before launch |
 | Obfuscated stacks are not readable | Upload the `--split-debug-info` symbols of that exact build (doc/exceptions.md, section 5) |

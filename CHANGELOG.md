@@ -40,18 +40,20 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 * The Dart log, network and lifecycle types are new (`BugseeLogEvent.message` instead of `text`, `LifecycleEvent` instead of
   `BugseeLifecycleEventType`, `ReportSeverity` instead of `BugseeSeverityLevel`).
 
+* **Log lines keep the time they were printed** on both platforms (the SDKs' wrapper-channel timestamp overloads, bugsee-android#299 and
+  bugsee-cocoa#265): a line a slow filter or a long queue delayed is no longer recorded late. Fixed with the Android 7.5.0 move: the black
+  `SurfaceView` report screenshot (#316) and the attachment re-check (#309) are fixed in the SDK, and the wrapper's undo of a late add stays as a safety net.
+
 ### Requirements
 
 * Flutter 3.41.0 or newer, Dart 3.11 or newer (the plugin is SwiftPM-only).
-* Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.0 applied by the app (mandatory), and the Gradle ordering workaround
-  for [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33).
+* Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.0 applied by the app (mandatory; no Gradle ordering workaround any more,
+  [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) is fixed in 4.1.0).
 * iOS: 15.0 or newer, Swift Package Manager only (no CocoaPods).
 
 ### Known gaps
 
-* Verified on an Android emulator and iOS simulators only; no physical device yet. The iOS simulator slice has no crash reporter and
+* Verified on Android emulators, one physical Android 14 device (integration tests; not the harness) and iOS simulators; no physical iPhone yet. The iOS simulator slice has no crash reporter and
   files no logged exceptions, so those paths are unverified on iOS.
-* The Android report screenshot is black in Flutter's default `SurfaceView` render mode (SDK issue
-  [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316)); render with a `TextureView` as the workaround.
 * Not exposed: APM transactions and spans, the appearance system, `relaunch`.
 * See `PLAN.md` for the open decisions and the full list.

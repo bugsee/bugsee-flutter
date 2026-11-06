@@ -1,7 +1,7 @@
 {
   "_comment": "Extracted from the native SDK sources by scripts/extract_report_enums.dart; do not edit by hand. Compared by test/report_enum_parity_test.dart.",
   "pins": {
-    "android": "7.4.2",
+    "android": "7.5.0",
     "ios": "7.0.1"
   },
   "android": {

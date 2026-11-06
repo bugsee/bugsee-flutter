@@ -33,14 +33,14 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 | # | Decision | Reason |
 |---|---|---|
-| D1 | **Native pins:** Android 7.4.2 (Maven Central), iOS 7.0.1 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
+| D1 | **Native pins:** Android 7.5.0 (Maven Central), iOS 7.0.1 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
 | D2 | **iOS is SwiftPM only**, no podspec | Bugsee publishes no CocoaPods pod |
 | D3 | **Compatibility with the 9.x Dart API: deferred** to the owner (see below). The facade is isolated in `lib/src/bugsee.dart` / `bugsee_runtime.dart` so a layer could sit beside it | |
 | D4 | **The feedback chat is a separate package**, mirroring the native split and React Native | apps that never show it do not carry SwiftUI / Compose |
 | D5 | **Flutter floor 3.41.0 / Dart 3.11.0.** The plugin is SwiftPM-only, so `flutter pub get` fails on Linux and Windows with "only Swift Package Manager compatible" before 3.41.0. Measured on CI (Linux): 3.27.0/3.27.4, 3.29.0/3.29.3, 3.32.0/3.32.8, 3.35.0/3.35.7, 3.38.0/3.38.9/3.38.10 fail; 3.41.0, 3.41.9, 3.44.0, 3.44.9, 3.47.7 pass (no stable 3.39 or 3.40). Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase and Datadog >=3.27, Bugsnag, Shake and Embrace >=3.10, Instabug >=1.17. macOS developers on older Flutter could enable SwiftPM by hand; unsupported | the floor is a consequence of D2, not a choice |
 | D6 | **A clean break from 9.x**: a new facade, typed `BugseeOptions`, `LaunchResult`; migration guide instead of a shim ([doc/migration-from-9x.md](doc/migration-from-9x.md)) | the 9.x API wraps 6.x SDK concepts (pause/resume, appearance, flat option keys) |
 | D7 | **Pigeon** for the bridge (typed host API, Dart/Java/Swift committed, version pinned); **no Pigeon enum**: enums cross by SDK value or name | Pigeon sends ordinals; workbook 7.4 |
-| D8 | **The app applies the Bugsee Gradle plugin** (4.0.8, mandatory, not autolinkable), with the ordering workaround until upstream fixes #33 | a Flutter plugin cannot apply a plugin to the app |
+| D8 | **The app applies the Bugsee Gradle plugin** (4.1.0, mandatory, not autolinkable), with the ordering workaround until upstream fixes #33 | a Flutter plugin cannot apply a plugin to the app |
 | D9 | **Dart errors are filed as error reports by default** (`reportAsCrash: false`; `true` is an opt-in) | Dart errors never end the app; crash reports count against crash-free sessions and replace iOS's single stored crash report; RN files only fatal errors as crashes |
 | D10 | **Capture of what only Dart sees is opt-in and explicit** (`installNetworkCapture`, `installLogCapture`, `installErrorHandlers`), filters run in Dart first and fail closed | privacy; nothing changes for an app that does not call them |
 | D11 | **One pub workspace, two packages published separately** (core first, then feedback), one committed `pubspec.lock` at the root with `--enforce-lockfile` in CI, a hosted (not path) constraint between them, lock-step versions | lets the feedback package depend on the core without a path dependency or overrides |
@@ -50,7 +50,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 1. **A 9.x compatibility layer** (D3): offer a `bugsee.dart`-style shim over the 10.x facade, or none. The migration guide is written for
    "none".
-2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.4.2, iOS 7.0.1; the iOS pin was `7.0.0-beta7`, then `7.0.0`, until then), so a stable
+2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.5.0, iOS 7.0.1; the iOS pin was `7.0.0-beta7`, then `7.0.0`, until then), so a stable
    `10.0.0` is no longer blocked by a beta dependency; the choice between `10.0.0` and `10.0.0-dev.N` / `-beta` first is open.
 3. **pub.dev name and ownership.** `bugsee_flutter` exists on pub.dev (latest `9.0.4`, publisher `bugsee.com`), so 10.x continues that
    package. `bugsee_flutter_feedback` does not exist yet (checked 2026-10-22) and must be created under the same publisher.

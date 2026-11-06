@@ -28,6 +28,7 @@
   "maxLevel": 5,
   "maxLineLength": 4000,
   "filterTimeoutSeconds": 10,
+  "maxAgeMs": 3600000,
   "options": {
     "capture": "com.bugsee.option.capture.logs",
     "level": "com.bugsee.option.capture.logs.level"

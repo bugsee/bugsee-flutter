@@ -84,7 +84,7 @@ thread when it is called: a handle live at that moment stays valid for the opera
 for the claim to end (`ReportHandlerPipeline.Lease`, `BGSFlutterReportLease`); a call after it is `ReportClosedError` and
 changes nothing. The wait is never a blocked thread.
 
-**The SDK's own timer does not wait for the claim, and Android 7.4.2 has a gap there.** The SDK moves on at its per-handler
+**The SDK's own timer does not wait for the claim, and Android 7.4.2 had a gap there (bugsee-android#309, FIXED in 7.5.0: the stage check and the add are one step under the stage lock; the text below describes 7.4.2, and the wrapper's undo is kept as defence in depth).** The SDK moves on at its per-handler
 timer (30 s, `ReportHandlerCallbackTimeout`; 60 s for the chain, `ReportHandlerChain.java:68`) whether or not an add is still
 copying. iOS's `BGSReport` re-checks under its lock when it registers the attachment and hands a moved file back
 (`BGSReport.m`, `registerCapturedAttachment...`), so a late add is refused and the source is intact. Android 7.4.2 does

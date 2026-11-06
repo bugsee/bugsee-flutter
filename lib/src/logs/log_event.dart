@@ -23,8 +23,8 @@ final class BugseeLogEvent {
   /// `Bugsee.forwardLog`. Recorded by Android (`log.json` `tag`); iOS has no tag field and drops it.
   String? tag;
 
-  /// When the line was captured, on the device clock. Informational: the SDK stamps a line when it
-  /// receives it (neither SDK takes a timestamp on the wrapper channel).
+  /// When the line was captured, on the device clock. Both SDKs record the line with this time: its age
+  /// is sent and subtracted from the SDK's own clock when native hands it over.
   final DateTime time;
 
   /// A copy: what a filter is handed, so that nothing it does reaches what the capture holds.

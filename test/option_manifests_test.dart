@@ -75,23 +75,23 @@ void main() {
     test('a manifest for another version, platform or format is refused', () {
       final text = File('$dir/android.json').readAsStringSync();
       expect(
-        sync.manifestProblems(text, sdk: 'android', version: '7.4.3'),
-        contains(contains('sdkVersion is 7.4.2, the pin is 7.4.3')),
+        sync.manifestProblems(text, sdk: 'android', version: '7.5.1'),
+        contains(contains('sdkVersion is 7.5.0, the pin is 7.5.1')),
       );
       expect(
-        sync.manifestProblems(text, sdk: 'ios', version: '7.4.2'),
+        sync.manifestProblems(text, sdk: 'ios', version: '7.5.0'),
         contains(contains('sdk is android, expected ios')),
       );
       expect(
         sync.manifestProblems(
           text.replaceFirst('"manifestVersion": 1', '"manifestVersion": 2'),
           sdk: 'android',
-          version: '7.4.2',
+          version: '7.5.0',
         ),
         contains(contains('manifestVersion is 2')),
       );
       expect(
-        sync.manifestProblems('{', sdk: 'android', version: '7.4.2'),
+        sync.manifestProblems('{', sdk: 'android', version: '7.5.0'),
         contains(startsWith('not JSON')),
       );
     });
@@ -125,12 +125,12 @@ void main() {
     final shared = a.keys.toSet().intersection(i.keys.toSet());
 
     test('counts, so a changed option surface is noticed', () {
-      // Android 7.4.2: 87 (84 public + 3 hidden). iOS 7.0.0: 72 (71 public + 1 hidden).
-      expect(a.length, 87);
+      // Android 7.5.0: 88 (85 public + 3 hidden). iOS 7.0.0: 72 (71 public + 1 hidden).
+      expect(a.length, 88);
       expect(i.length, 72);
-      expect(shared.length, 51);
+      expect(shared.length, 52);
       expect(a.keys.toSet().difference(i.keys.toSet()).length, 36);
-      expect(i.keys.toSet().difference(a.keys.toSet()).length, 21);
+      expect(i.keys.toSet().difference(a.keys.toSet()).length, 20);
     });
 
     test('the hidden options are exactly the known internals', () {

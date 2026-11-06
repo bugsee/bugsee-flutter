@@ -34,7 +34,7 @@ final class BugseeLogSdk implements LogOps.Sdk {
     }
 
     @Override
-    public boolean submit(@Nullable final String tag, @NonNull final String message, final int level) {
+    public boolean submit(@Nullable final String tag, @NonNull final String message, final int level, final long ageMs) {
         final LogLevel sdkLevel = LogLevel.fromRawValue((byte) level, null);
         if (sdkLevel == null) {
             return false;
@@ -43,8 +43,10 @@ final class BugseeLogSdk implements LogOps.Sdk {
         if (channel == null) {
             return false;
         }
-        // Always filtered by the SDK (the channel has no flag), attributed to the wrapper.
-        channel.log(tag, message, sdkLevel, LogOps.WRAPPER_SOURCE);
+        // Always filtered by the SDK (the channel has no flag), attributed to the wrapper. The line
+        // keeps the time it was captured: now on the SDK's own clock (not the device wall clock,
+        // which a device clock change moves) less the age Dart measured; the SDK bounds it itself.
+        channel.log(tag, message, sdkLevel, LogOps.WRAPPER_SOURCE, channel.currentTimeMillis() - ageMs);
         return true;
     }
 }

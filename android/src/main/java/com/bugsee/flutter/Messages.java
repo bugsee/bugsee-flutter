@@ -2518,7 +2518,10 @@ public class Messages {
    * constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
    * has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
    * the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
-   * Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+   * Both SDKs take the time the line was produced; Android from 7.5.0 (`BugseeWrapperChannel.log` with a timestamp),
+   * so a line the wrapper queued or filtered first keeps its time: it crosses as an AGE (`ageMs`, on
+   * Dart's monotonic clock, stamped when the batch is sent) that native subtracts from the SDK's own
+   * clock (iOS 7.0.1 takes it the same way: `-logWithTag:...timestamp:`).
    *
    * Generated class from Pigeon that represents data sent in messages.
    */
@@ -2562,6 +2565,20 @@ public class Messages {
       this.tag = setterArg;
     }
 
+    /** Milliseconds since the line was captured, when the batch was sent (0 .. one hour). */
+    private @NonNull Long ageMs;
+
+    public @NonNull Long getAgeMs() {
+      return ageMs;
+    }
+
+    public void setAgeMs(@NonNull Long setterArg) {
+      if (setterArg == null) {
+        throw new IllegalStateException("Nonnull field \"ageMs\" is null.");
+      }
+      this.ageMs = setterArg;
+    }
+
     /** Constructor is non-public to enforce null safety; use Builder. */
     LogLineMessage() {}
 
@@ -2570,18 +2587,18 @@ public class Messages {
       if (this == o) { return true; }
       if (o == null || getClass() != o.getClass()) { return false; }
       LogLineMessage that = (LogLineMessage) o;
-      return pigeonDeepEquals(message, that.message) && pigeonDeepEquals(level, that.level) && pigeonDeepEquals(tag, that.tag);
+      return pigeonDeepEquals(message, that.message) && pigeonDeepEquals(level, that.level) && pigeonDeepEquals(tag, that.tag) && pigeonDeepEquals(ageMs, that.ageMs);
     }
 
     @Override
     public int hashCode() {
-      Object[] fields = new Object[] {getClass(), message, level, tag};
+      Object[] fields = new Object[] {getClass(), message, level, tag, ageMs};
       return pigeonDeepHashCode(fields);
     }
 
     @Override
     public String toString() {
-      return "LogLineMessage{" + "message=" + message + ", " + "level=" + level + ", " + "tag=" + tag + "}";
+      return "LogLineMessage{" + "message=" + message + ", " + "level=" + level + ", " + "tag=" + tag + ", " + "ageMs=" + ageMs + "}";
     }
 
     public static final class Builder {
@@ -2610,21 +2627,31 @@ public class Messages {
         return this;
       }
 
+      private @Nullable Long ageMs;
+
+      @CanIgnoreReturnValue
+      public @NonNull Builder setAgeMs(@NonNull Long setterArg) {
+        this.ageMs = setterArg;
+        return this;
+      }
+
       public @NonNull LogLineMessage build() {
         LogLineMessage pigeonReturn = new LogLineMessage();
         pigeonReturn.setMessage(message);
         pigeonReturn.setLevel(level);
         pigeonReturn.setTag(tag);
+        pigeonReturn.setAgeMs(ageMs);
         return pigeonReturn;
       }
     }
 
     @NonNull
     ArrayList<Object> toList() {
-      ArrayList<Object> toListResult = new ArrayList<>(3);
+      ArrayList<Object> toListResult = new ArrayList<>(4);
       toListResult.add(message);
       toListResult.add(level);
       toListResult.add(tag);
+      toListResult.add(ageMs);
       return toListResult;
     }
 
@@ -2636,6 +2663,8 @@ public class Messages {
       pigeonResult.setLevel((Long) level);
       Object tag = pigeonVar_list.get(2);
       pigeonResult.setTag((String) tag);
+      Object ageMs = pigeonVar_list.get(3);
+      pigeonResult.setAgeMs((Long) ageMs);
       return pigeonResult;
     }
   }

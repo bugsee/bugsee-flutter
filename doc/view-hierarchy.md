@@ -98,6 +98,8 @@ While active the publisher (`publisher.dart`):
 
 Measured: a stock Material screen (app bar with tabs, a `TabBarView`, a list of 40 `Card(ListTile(Icon, Text, Checkbox))`) is **771 nodes / 81 KB** (~105 bytes a node) and is not cut at the limits (a regression test builds it with and without caps and compares); the small example screen is 316 nodes / 30.8 KB, and one walk of it took 2.7 ms on the Android emulator and 1.8 ms on the iOS simulator (debug build, JIT, so a ceiling). The walk's byte estimate is the real size within a few percent and stops 1/16 short of the cap; the exact check at the end drops a template that is still over. `integration_test/view_hierarchy_test.dart` prints the cost of one walk.
 
+On physical devices (profile build, AOT, median of 25 walks, 2026-11-09) a lazy list screen of ~900 nodes took **9.7-10.3 ms on an Android phone (WOD-LX1) and 0.7-0.8 ms on an iPhone XS**; before the type-name cache below it took 16-17 ms and 1.7 ms, over the 12 ms budget on the Android phone at every list length. An eager 1000-row `Column` (16k elements, 681 on screen) took 38 ms and 4.5 ms: the walk still visits every element of the tree, on screen or not, so cost follows the whole tree. In a debug build the same screens are several times slower (25-29 ms on the Android phone), which is why `view_hierarchy_test` fails there and passes in a profile build. Type names are decided once per type (`_typeName`, a capped map; only the sanitised result is stored) and their JSON once per name: deciding a name (`toString`, `indexOf`, `substring`, a regular expression) was 35-43% of a walk.
+
 ### What the answer is, and when it is null
 
 `requestData("vh")` answers, synchronously and once: the newest snapshot, rendered for the screen as it is **now**, or

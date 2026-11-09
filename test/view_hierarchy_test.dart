@@ -855,6 +855,33 @@ void main() {
       expect(debugTypeName(const Marker()), 'Marker');
       expect(debugTypeName(ValueNotifier<int>(1)), 'ValueNotifier');
     });
+
+    test(
+      'a repeated type gives the same name, and each caller keeps its own fallback',
+      () {
+        // The decision is remembered per type (the walk names the same few types for every node), so a
+        // second answer must not depend on the first caller's fallback.
+        final shared = _SharedFreeText();
+        expect(debugTypeName(shared), 'Widget');
+        expect(debugTypeName(shared, fallback: 'RenderObject'), 'RenderObject');
+        expect(debugTypeName(shared), 'Widget');
+        for (var i = 0; i < 3; i++) {
+          expect(debugTypeName(const Marker()), 'Marker');
+          expect(
+            debugTypeName(const Marker(), fallback: 'RenderObject'),
+            'Marker',
+          );
+        }
+      },
+    );
+
+    test('a type whose name changes never carries free text', () {
+      final shifting = _ShiftingTypeHolder();
+      final names = {for (var i = 0; i < 4; i++) debugTypeName(shifting)};
+      final identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
+      expect(names.every(identifier.hasMatch), isTrue, reason: '$names');
+      expect(names.join(), isNot(contains('alice')));
+    });
   });
 
   group('order, flags and kinds', () {
@@ -1302,4 +1329,23 @@ class _FreeText {
 class _FreeTextType implements Type {
   @override
   String toString() => 'alice@example.com and a card 4242';
+}
+
+class _SharedFreeText {
+  static final Type _type = _FreeTextType();
+  @override
+  Type get runtimeType => _type;
+}
+
+/// A `runtimeType` that says an identifier first and free text afterwards.
+class _ShiftingTypeHolder {
+  static final Type _type = _ShiftingType();
+  @override
+  Type get runtimeType => _type;
+}
+
+class _ShiftingType implements Type {
+  int _calls = 0;
+  @override
+  String toString() => _calls++ == 0 ? 'Honest' : 'alice@example.com $_calls';
 }

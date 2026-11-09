@@ -144,15 +144,31 @@ bool get typeNamesAreObfuscated =>
 
 final RegExp _identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
 
+/// What [_typeName] decided for a type: the name, or `''` (never a valid identifier) when the type's
+/// name is not one. Deciding costs a string, an `indexOf`, a `substring` and a regular expression per
+/// node, and a screen repeats a few dozen types hundreds of times: measured on a phone, this was
+/// ~35-43% of one walk in a profile build. The decision depends only on the type's own `toString`,
+/// and only the SANITISED result is stored, so the cache can never hold free text (a `Type` can be
+/// implemented, and one whose `toString` changes would at worst keep its first, sanitised, answer).
+/// Bounded: a pathological number of distinct types empties it instead of growing it.
+final Map<Type, String> _typeNames = <Type, String>{};
+const int _maxTypeNames = 4096;
+
 /// A type's name without generic arguments, bounded in length and ALWAYS an identifier: a name
 /// that is not one (an overridden `runtimeType` whose `toString` says anything at all) is
 /// replaced by [fallback], so the payload cannot carry free text through a type name.
 String _typeName(Object object, String fallback) {
+  final Type type = object.runtimeType;
+  final String? known = _typeNames[type];
+  if (known != null) return known.isEmpty ? fallback : known;
   final String s = object.runtimeType.toString();
   final int generic = s.indexOf('<');
   final String bare = generic < 0 ? s : s.substring(0, generic);
   final String bounded = bare.length > 80 ? bare.substring(0, 80) : bare;
-  return _identifier.hasMatch(bounded) ? bounded : fallback;
+  final String decided = _identifier.hasMatch(bounded) ? bounded : '';
+  if (_typeNames.length >= _maxTypeNames) _typeNames.clear();
+  _typeNames[type] = decided;
+  return decided.isEmpty ? fallback : decided;
 }
 
 /// [_typeName] for a widget or render object, for tests.
@@ -523,6 +539,16 @@ class _Placed {
   final Rect clip;
 }
 
+/// `jsonEncode` of a class name, remembered: the same few dozen names are written for every node.
+final Map<String, String> _encodedNames = <String, String>{};
+
+String _encoded(String name) {
+  final String? known = _encodedNames[name];
+  if (known != null) return known;
+  if (_encodedNames.length >= _maxTypeNames) _encodedNames.clear();
+  return _encodedNames[name] = jsonEncode(name);
+}
+
 /// Serialises the node tree into a template: JSON text cut at the age and at every box.
 class _Writer {
   _Writer({required this.obfuscated});
@@ -558,9 +584,9 @@ class _Writer {
       ..write('{"id":"')
       ..write(id)
       ..write('","class_name":')
-      ..write(jsonEncode(n.className));
+      ..write(_encoded(n.className));
     final String? base = n.baseClassName;
-    if (base != null) _text.write(',"base_class_name":${jsonEncode(base)}');
+    if (base != null) _text.write(',"base_class_name":${_encoded(base)}');
     final options = <String>[];
     if (isRoot) {
       // The age is native's: it knows when the snapshot arrived.

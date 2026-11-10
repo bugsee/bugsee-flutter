@@ -158,16 +158,19 @@ const int _maxTypeNames = 4096;
 /// that is not one (an overridden `runtimeType` whose `toString` says anything at all) is
 /// replaced by [fallback], so the payload cannot carry free text through a type name.
 String _typeName(Object object, String fallback) {
-  final Type type = object.runtimeType;
-  final String? known = _typeNames[type];
+  // Read once: the cache key and the name must come from the same `Type` (an overridden
+  // `runtimeType` getter need not return the same one twice). Named `runtimeType` because the
+  // drift guard allows `toString` on nothing else.
+  final Type runtimeType = object.runtimeType;
+  final String? known = _typeNames[runtimeType];
   if (known != null) return known.isEmpty ? fallback : known;
-  final String s = object.runtimeType.toString();
+  final String s = runtimeType.toString();
   final int generic = s.indexOf('<');
   final String bare = generic < 0 ? s : s.substring(0, generic);
   final String bounded = bare.length > 80 ? bare.substring(0, 80) : bare;
   final String decided = _identifier.hasMatch(bounded) ? bounded : '';
   if (_typeNames.length >= _maxTypeNames) _typeNames.clear();
-  _typeNames[type] = decided;
+  _typeNames[runtimeType] = decided;
   return decided.isEmpty ? fallback : decided;
 }
 

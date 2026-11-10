@@ -881,6 +881,16 @@ void main() {
       final identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
       expect(names.every(identifier.hasMatch), isTrue, reason: '$names');
       expect(names.join(), isNot(contains('alice')));
+      expect(names, {'Honest'}, reason: 'decided once, then remembered');
+      expect((_ShiftingTypeHolder._type as _ShiftingType)._calls, 1);
+    });
+
+    test('the name belongs to the Type that is the cache key', () {
+      // A `runtimeType` getter that answers a different Type on every read: the name cached under
+      // the first Type must be that Type's, not the one the second read returned.
+      final alternating = _AlternatingTypeHolder();
+      expect(debugTypeName(alternating), 'Alpha');
+      expect(debugTypeName(alternating), 'Beta', reason: 'a different Type');
     });
   });
 
@@ -1342,6 +1352,26 @@ class _ShiftingTypeHolder {
   static final Type _type = _ShiftingType();
   @override
   Type get runtimeType => _type;
+}
+
+class _AlternatingTypeHolder {
+  int _reads = 0;
+  @override
+  Type get runtimeType {
+    final bool first = _reads.isEven;
+    _reads++;
+    return first ? _alpha : _beta;
+  }
+
+  static final Type _alpha = _NamedType('Alpha');
+  static final Type _beta = _NamedType('Beta');
+}
+
+class _NamedType implements Type {
+  _NamedType(this._name);
+  final String _name;
+  @override
+  String toString() => _name;
 }
 
 class _ShiftingType implements Type {

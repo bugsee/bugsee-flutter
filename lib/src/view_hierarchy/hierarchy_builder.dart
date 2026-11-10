@@ -234,6 +234,7 @@ HierarchySnapshot? buildViewHierarchy({
   HierarchyLimits limits = const HierarchyLimits(),
   Duration Function()? clock,
   @visibleForTesting bool? obfuscated,
+  @visibleForTesting bool skipContained = true,
 }) {
   try {
     final Element? top = root ?? WidgetsBinding.instance.rootElement;
@@ -241,7 +242,12 @@ HierarchySnapshot? buildViewHierarchy({
     final Element? viewElement = _findView(top, viewId);
     if (viewElement == null) return null;
     final Duration Function() now = clock ?? _stopwatchClock();
-    final walker = _Walker(limits, now, obfuscated ?? typeNamesAreObfuscated);
+    final walker = _Walker(
+      limits,
+      now,
+      obfuscated ?? typeNamesAreObfuscated,
+      skipContained,
+    );
     return walker.run(viewElement as RenderObjectElement);
   } catch (_) {
     return null;
@@ -272,9 +278,15 @@ Element? _findView(Element start, int viewId) {
 }
 
 class _Walker {
-  _Walker(this.limits, this.now, this.obfuscated) : _start = now();
+  _Walker(this.limits, this.now, this.obfuscated, this.skipContained)
+    : _start = now();
 
   final bool obfuscated;
+
+  /// Whether an off-screen subtree that provably stays inside its own box is skipped by a cheap
+  /// check ([_containedBelow]) instead of being walked. Off only in a test that compares the two.
+  final bool skipContained;
+  final Matrix4 _scratch = Matrix4.identity();
 
   final HierarchyLimits limits;
   final Duration Function() now;
@@ -444,6 +456,12 @@ class _Walker {
       if ((ro is RenderSecureRegion && ro.enabled) || _clipsChildren(ro)) {
         return;
       }
+      if (skipContained &&
+          ro is RenderBox &&
+          _isAffine(toView) &&
+          _containedBelow(e, ro)) {
+        return; // nothing below can reach the screen: no node would be made
+      }
       _children(e, _Context(ro, toView, clip), into, depth + 1);
       return;
     }
@@ -502,6 +520,96 @@ class _Walker {
     } else {
       into.children.add(node);
     }
+  }
+
+  /// Whether every render object below [anchor] (an off-screen box) lies inside the anchor's own
+  /// box, reached only by plain translations, so none of it can be on screen: the walk below it
+  /// would make no node. Anything unusual (a transform, a child outside the box, a render parent
+  /// that is not the element parent, a sliver, a view) answers `false` and the subtree is walked
+  /// the ordinary way, so the result is the same either way. Allocates nothing per element.
+  bool _containedBelow(RenderObjectElement anchor, RenderBox anchorBox) {
+    final Size size = anchorBox.size;
+    if (!(size.width.isFinite && size.height.isFinite)) return false;
+    var ok = true;
+    // The position being visited, read by the one visitor below (no closure per element): the
+    // parent render box and its origin in the anchor's space.
+    RenderBox parent = anchorBox;
+    double atX = 0;
+    double atY = 0;
+    late final ElementVisitor visit;
+    visit = (Element e) {
+      if (!ok) return;
+      if ((++_steps & 31) == 0 && now() - _start > limits.budget) {
+        _stopped = true;
+        _truncated = true;
+      }
+      if (_stopped) {
+        return; // the walk is over: what is skipped here is cut anyway
+      }
+      if (e is RenderObjectElement) {
+        final RenderObject ro = e.renderObject;
+        if (!ro.attached || ro is RenderView) return;
+        if (ro is! RenderBox || !identical(ro.parent, parent)) {
+          ok = false;
+          return;
+        }
+        if (!ro.hasSize) return;
+        if (!parent.paintsChild(ro)) return;
+        final Matrix4 m = _scratch..setIdentity();
+        parent.applyPaintTransform(ro, m);
+        final List<double> v = m.storage;
+        if (v[0] != 1 ||
+            v[1] != 0 ||
+            v[2] != 0 ||
+            v[3] != 0 ||
+            v[4] != 0 ||
+            v[5] != 1 ||
+            v[6] != 0 ||
+            v[7] != 0 ||
+            v[8] != 0 ||
+            v[9] != 0 ||
+            v[10] != 1 ||
+            v[11] != 0 ||
+            v[14] != 0 ||
+            v[15] != 1) {
+          ok = false;
+          return;
+        }
+        final double x = atX + v[12];
+        final double y = atY + v[13];
+        final Size s = ro.size;
+        if (!(x >= 0 &&
+            y >= 0 &&
+            x + s.width <= size.width &&
+            y + s.height <= size.height)) {
+          ok = false; // NaN lands here too
+          return;
+        }
+        if ((ro is RenderSecureRegion && ro.enabled) || _clipsChildren(ro)) {
+          return; // the walk does not go below these either
+        }
+        final RenderBox savedParent = parent;
+        final double savedX = atX, savedY = atY;
+        parent = ro;
+        atX = x;
+        atY = y;
+        e.debugVisitOnstageChildren(visit);
+        parent = savedParent;
+        atX = savedX;
+        atY = savedY;
+        return;
+      }
+      e.debugVisitOnstageChildren(visit);
+    };
+    anchor.debugVisitOnstageChildren(visit);
+    return ok;
+  }
+
+  /// Whether [m] has no perspective: a box inside another stays inside it once both are mapped
+  /// ([_containedBelow] compares them before the mapping).
+  bool _isAffine(Matrix4 m) {
+    final List<double> v = m.storage;
+    return v[3] == 0 && v[7] == 0 && v[11] == 0 && v[15] == 1;
   }
 
   /// Whether [ro] clips everything below it to its own box (so a box off screen hides it all).

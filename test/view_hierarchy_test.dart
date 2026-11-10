@@ -845,6 +845,202 @@ void main() {
     });
   });
 
+  group('an off-screen subtree that stays inside its box is skipped', () {
+    // The skip is only a faster way to the same snapshot: every tree here is built both ways and
+    // the payloads must be identical, node for node.
+    Future<void> same(
+      WidgetTester tester,
+      Widget w, {
+      List<String>? has,
+    }) async {
+      await tester.pumpWidget(w);
+      final HierarchySnapshot plain = buildViewHierarchy(
+        clock: frozenClock,
+        skipContained: false,
+      )!;
+      final HierarchySnapshot fast = buildViewHierarchy(clock: frozenClock)!;
+      expect(fast.render(), plain.render());
+      expect(fast.nodeCount, plain.nodeCount);
+      expect(fast.truncated, plain.truncated);
+      for (final String name in has ?? const <String>[]) {
+        expect(named(payload(fast), name), isNotEmpty, reason: name);
+      }
+    }
+
+    Widget column(Widget Function(int i) row, {int rows = 40}) => host(
+      MediaQuery(
+        data: const MediaQueryData(size: Size(300, 400)),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [for (var i = 0; i < rows; i++) row(i)],
+                ),
+              ),
+            ),
+            const Marker(width: 20, height: 20),
+          ],
+        ),
+      ),
+    );
+
+    testWidgets('plain rows', (tester) async {
+      await same(
+        tester,
+        column(
+          (i) => Padding(
+            padding: const EdgeInsets.all(2),
+            child: Marker(width: 100, height: 30, child: Text('r$i')),
+          ),
+        ),
+      );
+    });
+
+    testWidgets('a Transform that brings a child back on screen', (
+      tester,
+    ) async {
+      await same(
+        tester,
+        column(
+          (i) => i == 30
+              ? Transform.translate(
+                  offset: const Offset(0, -900),
+                  child: const OtherMarker(width: 50, height: 20),
+                )
+              : Marker(width: 100, height: 30, child: Text('r$i')),
+        ),
+        has: ['OtherMarker'],
+      );
+    });
+
+    testWidgets('a FractionalTranslation', (tester) async {
+      await same(
+        tester,
+        column(
+          (i) => i == 30
+              ? FractionalTranslation(
+                  translation: const Offset(0, -40),
+                  child: const OtherMarker(width: 50, height: 20),
+                )
+              : Marker(width: 100, height: 30),
+        ),
+        has: ['OtherMarker'],
+      );
+    });
+
+    testWidgets('a child that overflows its row without clipping', (
+      tester,
+    ) async {
+      await same(
+        tester,
+        column(
+          (i) => i == 30
+              ? SizedBox(
+                  height: 10,
+                  width: 10,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: const [
+                      Positioned(
+                        top: -800,
+                        left: 0,
+                        child: OtherMarker(width: 50, height: 20),
+                      ),
+                    ],
+                  ),
+                )
+              : Marker(width: 100, height: 30),
+        ),
+        has: ['OtherMarker'],
+      );
+    });
+
+    testWidgets('an OverlayPortal inside an off-screen row', (tester) async {
+      final controller = OverlayPortalController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (var i = 0; i < 40; i++)
+                    i == 30
+                        ? OverlayPortal(
+                            controller: controller,
+                            overlayChildBuilder: (_) => const Align(
+                              alignment: Alignment.topLeft,
+                              child: OtherMarker(width: 40, height: 15),
+                            ),
+                            child: const Marker(width: 100, height: 40),
+                          )
+                        : const Marker(width: 100, height: 40),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      controller.show();
+      await tester.pump();
+      final plain = buildViewHierarchy(
+        clock: frozenClock,
+        skipContained: false,
+      )!;
+      final fast = buildViewHierarchy(clock: frozenClock)!;
+      expect(fast.render(), plain.render());
+      expect(named(payload(fast), 'OtherMarker'), isNotEmpty);
+    });
+
+    testWidgets('secure views, nested lists, rotated and clipped rows', (
+      tester,
+    ) async {
+      await same(
+        tester,
+        column(
+          (i) => switch (i % 5) {
+            0 => const BugseeSecureView(child: Marker(width: 60, height: 20)),
+            1 => SizedBox(
+              height: 50,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (var k = 0; k < 20; k++) const Marker(width: 40),
+                ],
+              ),
+            ),
+            2 => RotatedBox(
+              quarterTurns: 1,
+              child: const Marker(width: 30, height: 10),
+            ),
+            3 => ClipRect(child: const Marker(width: 100, height: 30)),
+            _ => Opacity(
+              opacity: .5,
+              child: const Marker(width: 100, height: 30),
+            ),
+          },
+        ),
+      );
+    });
+
+    testWidgets('a long eager list is cut the same way by a node cap', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        column((i) => Marker(width: 100, height: 30, child: Text('r$i'))),
+      );
+      const limits = HierarchyLimits(maxNodes: 40);
+      final plain = buildViewHierarchy(
+        clock: frozenClock,
+        limits: limits,
+        skipContained: false,
+      )!;
+      final fast = buildViewHierarchy(clock: frozenClock, limits: limits)!;
+      expect(fast.render(), plain.render());
+      expect(fast.truncated, plain.truncated);
+    });
+  });
+
   group('type names are identifiers whatever runtimeType says', () {
     test('a name that is not an identifier is replaced', () {
       expect(debugTypeName(_FreeText()), 'Widget');

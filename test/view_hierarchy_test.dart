@@ -885,6 +885,84 @@ void main() {
       ),
     );
 
+    testWidgets(
+      'the skip really skips: nothing below an off-screen row is visited',
+      (tester) async {
+        // `_Counted` sits below each row's box, where the plain walk visits it and the skip must
+        // not: if the check always answered "not contained" the output would still be the same.
+        await tester.pumpWidget(
+          column(
+            (i) => Marker(
+              width: 100,
+              height: 30,
+              child: _Counted(child: Text('r$i')),
+            ),
+          ),
+        );
+        _Counted.reads = 0;
+        buildViewHierarchy(clock: frozenClock, skipContained: false);
+        final int plain = _Counted.reads;
+        _Counted.reads = 0;
+        buildViewHierarchy(clock: frozenClock);
+        final int fast = _Counted.reads;
+        expect(
+          plain,
+          greaterThanOrEqualTo(40),
+          reason: 'every row is visited by the plain walk',
+        );
+        expect(
+          fast,
+          lessThanOrEqualTo(plain ~/ 2),
+          reason: 'rows off screen are skipped (about half show)',
+        );
+        expect(fast, greaterThan(0), reason: 'rows on screen are not');
+      },
+    );
+
+    testWidgets('a subtree that fails late is not scanned once per level', (
+      tester,
+    ) async {
+      // Eight levels of plain boxes, each with a few siblings, and at the very end of each section
+      // a child moved far outside it: every level's check would scan nearly the whole section
+      // again before failing. Counted by the clock reads (one per 32 steps of either walk).
+      Widget level(int depth) => depth == 0
+          ? Transform.translate(
+              offset: const Offset(0, 5000),
+              child: const OtherMarker(width: 10, height: 10),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(1),
+              child: Column(
+                children: [
+                  for (var k = 0; k < 6; k++)
+                    const Marker(width: 10, height: 4),
+                  level(depth - 1),
+                ],
+              ),
+            );
+      await tester.pumpWidget(column((i) => level(8), rows: 40));
+      var reads = 0;
+      Duration counting() {
+        reads++;
+        return Duration.zero;
+      }
+
+      final plain = buildViewHierarchy(clock: counting, skipContained: false)!;
+      final int plainReads = reads;
+      reads = 0;
+      final fast = buildViewHierarchy(clock: counting)!;
+      final int fastReads = reads;
+      expect(fast.render(), plain.render());
+      debugPrint(
+        'late-failing sections: plain $plainReads reads, skip $fastReads',
+      );
+      expect(
+        fastReads,
+        lessThan(plainReads * 3),
+        reason: 'a constant number of scans, not one per level (8)',
+      );
+    });
+
     testWidgets('plain rows', (tester) async {
       await same(
         tester,
@@ -1525,6 +1603,21 @@ class _FreeText {
 class _FreeTextType implements Type {
   @override
   String toString() => 'alice@example.com and a card 4242';
+}
+
+/// A composite that counts how many times its type is read.
+class _Counted extends StatelessWidget {
+  const _Counted({required this.child});
+  static int reads = 0;
+  final Widget child;
+  @override
+  Type get runtimeType {
+    reads++;
+    return super.runtimeType;
+  }
+
+  @override
+  Widget build(BuildContext context) => child;
 }
 
 class _SharedFreeText {

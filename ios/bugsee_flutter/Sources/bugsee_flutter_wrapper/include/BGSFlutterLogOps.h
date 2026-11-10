@@ -9,9 +9,13 @@ NS_ASSUME_NONNULL_BEGIN
 @protocol BGSFlutterLogSDK <NSObject>
 /// The SDK is `Launching` or `Launched` and `capture.logs` is on.
 - (BOOL)acceptsLogs;
-/// `channel.logWithTag:message:level:source:` with the wrapper's source (`Custom`); NO when the
-/// wrapper holds no channel.
-- (BOOL)submitLogWithTag:(nullable NSString *)tag message:(NSString *)message level:(NSInteger)level;
+/// `channel.logWithTag:message:level:source:timestamp:` with the wrapper's source (`Custom`) and
+/// `channel.currentTimeMillis - ageMs` (the line keeps the time it was captured); NO when the wrapper
+/// holds no channel.
+- (BOOL)submitLogWithTag:(nullable NSString *)tag
+                 message:(NSString *)message
+                   level:(NSInteger)level
+                   ageMs:(int64_t)ageMs;
 @end
 
 /// The real SDK. The channel is the one `BGSFlutterNetworkChannel` holds (the SDK hands the wrapper
@@ -30,7 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// `+[Bugsee log:]`). The channel always runs the app's log filter (`requiresFiltering:YES` inside).
 /// `capture.logs.level` is applied by the SDK on these lines too; Dart applies it as well (Android
 /// does not apply it to channel lines). `tag` is accepted by the channel and dropped: iOS log events
-/// have no tag. Neither SDK takes a timestamp on the channel: a line is stamped when it arrives.
+/// have no tag. The line keeps its capture time: Dart sends its age (`ageMs`, monotonic) and the SDK's own
+/// clock is read here (7.0.0+ has the timestamp overload; an SDK without it stamps on arrival).
 @interface BGSFlutterLogOps : NSObject
 
 /// The SDK's `BugseeLogLevel` range (1 error .. 5 verbose); compared with Dart's `LogWire` by the

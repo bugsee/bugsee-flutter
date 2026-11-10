@@ -30,6 +30,10 @@ abstract final class LogWire {
   /// what one `print` of a large payload can cost. Android's own logcat path cuts at about 4000.
   static const maxLineLength = 4000;
 
+  /// The longest age sent with a line (an hour, the bound of a network event's): native subtracts it
+  /// from the SDK's clock. Compared with native by `test/logs_drift_test.dart`.
+  static const maxAgeMs = 60 * 60 * 1000;
+
   /// A filter's default time to answer: the SDK's own log filter timeout (Android
   /// `BugseeCaptureDataProviderLog.FILTER_CALLBACK_TIMEOUT_MS`, v7.4.2).
   static const defaultFilterTimeout = Duration(seconds: 10);
@@ -250,6 +254,7 @@ final class LogPipeline {
           bytes,
           _filter,
           _filterTimeout,
+          monotonicMicros(),
         ),
       );
       _queuedBytes += bytes;
@@ -291,6 +296,7 @@ final class LogPipeline {
     try {
       while (_queue.isNotEmpty) {
         final batch = <LogLineMessage>[];
+        final origins = <int>[];
         var batchBytes = 0;
         final slice = Stopwatch()..start();
         while (_queue.isNotEmpty &&
@@ -301,6 +307,7 @@ final class LogPipeline {
           final message = await _prepare(queued);
           if (message != null) {
             batch.add(message);
+            origins.add(queued.originUs);
             batchBytes +=
                 32 +
                 utf8Length(message.message) +
@@ -311,7 +318,7 @@ final class LogPipeline {
             slice.reset();
           }
         }
-        if (batch.isNotEmpty) await _send(batch);
+        if (batch.isNotEmpty) await _send(batch, origins);
         // Let the UI have the loop between batches.
         await Future<void>.delayed(Duration.zero);
       }
@@ -407,10 +414,22 @@ final class LogPipeline {
       message: identical(text, captured) ? text : capLine(text),
       level: event.level.value,
       tag: tag == null || tag.isEmpty ? null : capLine(tag, 256),
+      ageMs: 0, // stamped by `_send`
     );
   }
 
-  Future<void> _send(List<LogLineMessage> batch) async {
+  Future<void> _send(List<LogLineMessage> batch, List<int> origins) async {
+    // How long each line has waited, on the monotonic clock (a wall clock can be adjusted). Native
+    // subtracts it from the SDK's own clock when the batch arrives; iOS has no time on the channel.
+    final now = monotonicMicros();
+    for (var i = 0; i < batch.length; i++) {
+      final age = (now - origins[i]) ~/ 1000;
+      batch[i].ageMs = age < 0
+          ? 0
+          : age > LogWire.maxAgeMs
+          ? LogWire.maxAgeMs
+          : age;
+    }
     try {
       final handed = await send(batch);
       _submitted += handed;
@@ -430,10 +449,13 @@ final class LogPipeline {
 
 /// A line waiting in the queue, with the filter that was in force when it was captured.
 final class _Queued {
-  _Queued(this.event, this.bytes, this.filter, this.timeout);
+  _Queued(this.event, this.bytes, this.filter, this.timeout, this.originUs);
 
   final BugseeLogEvent event;
   final int bytes;
   final BugseeLogFilter? filter;
   final Duration timeout;
+
+  /// [monotonicMicros] at capture: the line's age when it is handed over.
+  final int originUs;
 }

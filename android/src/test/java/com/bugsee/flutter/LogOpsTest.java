@@ -32,11 +32,13 @@ public class LogOpsTest {
         final String tag;
         final String message;
         final int level;
+        final long ageMs;
 
-        Call(final String tag, final String message, final int level) {
+        Call(final String tag, final String message, final int level, final long ageMs) {
             this.tag = tag;
             this.message = message;
             this.level = level;
+            this.ageMs = ageMs;
         }
     }
 
@@ -59,21 +61,22 @@ public class LogOpsTest {
         }
 
         @Override
-        public boolean submit(@Nullable final String tag, @NonNull final String message, final int level) {
+        public boolean submit(@Nullable final String tag, @NonNull final String message, final int level,
+                final long ageMs) {
             if (!channelAvailable) {
                 return false;
             }
             if (message.equals(throwOnMessage)) {
                 throw new IllegalStateException("the app's filter threw");
             }
-            submitted.add(new Call(tag, message, level));
+            submitted.add(new Call(tag, message, level, ageMs));
             return true;
         }
     }
 
     private static Messages.LogLineMessage line(final String message, final long level, final String tag) {
         return new Messages.LogLineMessage.Builder()
-                .setMessage(message).setLevel(level).setTag(tag).build();
+                .setMessage(message).setLevel(level).setTag(tag).setAgeMs(0L).build();
     }
 
     // ---- the gate -------------------------------------------------------------------------------
@@ -188,14 +191,59 @@ public class LogOpsTest {
         final List<Object[]> calls = new ArrayList<>();
         Throwable throwing;
 
+        /** The SDK's clock: not the device's (7.5.0 {@code currentTimeMillis}). */
+        static final long SDK_NOW = 5_000_000L;
+
         @Override
         public void log(@Nullable final String tag, @Nullable final String message,
                 @Nullable final LogLevel level, @NonNull final LogSource source) {
+            // The wrapper must use the timestamp overload: a line through here lost its time.
+            throw new AssertionError("the 4-argument log was used");
+        }
+
+        @Override
+        public void log(@Nullable final String tag, @Nullable final String message,
+                @Nullable final LogLevel level, @NonNull final LogSource source,
+                final long timestampMillis) {
             if (throwing != null) {
                 sneakyThrow(throwing);
             }
-            calls.add(new Object[] {tag, message, level, source});
+            calls.add(new Object[] {tag, message, level, source, timestampMillis});
         }
+
+        @Override
+        public long currentTimeMillis() {
+            return SDK_NOW;
+        }
+    }
+
+    @Test
+    public void aLineKeepsItsTimeOnTheSdkClockAndTheAgeIsBounded() {
+        final NetworkChannelHolder holder = new NetworkChannelHolder();
+        final RecordingChannel channel = new RecordingChannel();
+        holder.set(channel);
+        final BugseeLogSdk sdk = new BugseeLogSdk(holder);
+        assertTrue(sdk.submit(null, "late", 3, 1_500L));
+        assertEquals(RecordingChannel.SDK_NOW - 1_500L, channel.calls.get(0)[4]);
+        // Through LogOps: a negative or huge age from a bad message is bounded, never a future time.
+        final LogOps.Sdk open = new LogOps.Sdk() {
+            @Override
+            public boolean acceptsLogs() {
+                return true;
+            }
+
+            @Override
+            public boolean submit(@Nullable final String tag, @NonNull final String message,
+                    final int level, final long ageMs) {
+                return sdk.submit(tag, message, level, ageMs);
+            }
+        };
+        LogOps.addAll(open, Arrays.asList(
+                new Messages.LogLineMessage.Builder().setMessage("neg").setLevel(3L).setAgeMs(-5L).build(),
+                new Messages.LogLineMessage.Builder().setMessage("huge").setLevel(3L)
+                        .setAgeMs(Long.MAX_VALUE).build()));
+        assertEquals(RecordingChannel.SDK_NOW, channel.calls.get(1)[4]);
+        assertEquals(RecordingChannel.SDK_NOW - LogOps.MAX_AGE_MS, channel.calls.get(2)[4]);
     }
 
     @Test
@@ -204,8 +252,8 @@ public class LogOpsTest {
         final RecordingChannel channel = new RecordingChannel();
         holder.set(channel);
         final BugseeLogSdk sdk = new BugseeLogSdk(holder);
-        assertTrue(sdk.submit("print", "hello", 2));
-        assertTrue(sdk.submit(null, "world", 5));
+        assertTrue(sdk.submit("print", "hello", 2, 0L));
+        assertTrue(sdk.submit(null, "world", 5, 0L));
         assertEquals(2, channel.calls.size());
         assertEquals("print", channel.calls.get(0)[0]);
         assertEquals("hello", channel.calls.get(0)[1]);
@@ -223,15 +271,15 @@ public class LogOpsTest {
         final RecordingChannel channel = new RecordingChannel();
         holder.set(channel);
         final BugseeLogSdk sdk = new BugseeLogSdk(holder);
-        assertFalse(sdk.submit("t", "x", 0));
-        assertFalse(sdk.submit("t", "x", 6));
+        assertFalse(sdk.submit("t", "x", 0, 0L));
+        assertFalse(sdk.submit("t", "x", 6, 0L));
         assertTrue(channel.calls.isEmpty());
     }
 
     @Test
     public void withNoChannelTheRealSeamRefusesAndNothingThrows() {
         final BugseeLogSdk sdk = new BugseeLogSdk(new NetworkChannelHolder());
-        assertFalse(sdk.submit("t", "x", 3));
+        assertFalse(sdk.submit("t", "x", 3, 0L));
     }
 
     @Test
@@ -244,9 +292,9 @@ public class LogOpsTest {
         final RecordingChannel current = new RecordingChannel();
         holder.set(retired);
         final BugseeLogSdk sdk = new BugseeLogSdk(holder);
-        assertTrue(sdk.submit(null, "before", 3));
+        assertTrue(sdk.submit(null, "before", 3, 0L));
         holder.set(current);
-        assertTrue(sdk.submit(null, "after", 3));
+        assertTrue(sdk.submit(null, "after", 3, 0L));
         assertEquals(1, retired.calls.size());
         assertEquals("before", retired.calls.get(0)[1]);
         assertEquals(1, current.calls.size());
@@ -277,8 +325,8 @@ public class LogOpsTest {
 
             @Override
             public boolean submit(@Nullable final String tag, @NonNull final String message,
-                    final int level) {
-                return real.submit(tag, message, level);
+                    final int level, final long ageMs) {
+                return real.submit(tag, message, level, ageMs);
             }
         };
         final int handed = LogOps.addAll(sdk, Arrays.asList(
@@ -292,7 +340,7 @@ public class LogOpsTest {
         final FakeSdk sdk = new FakeSdk() {
             @Override
             public boolean submit(@Nullable final String tag, @NonNull final String message,
-                    final int level) {
+                    final int level, final long ageMs) {
                 throw new OutOfMemoryError("out");
             }
         };
@@ -323,8 +371,8 @@ public class LogOpsTest {
 
             @Override
             public boolean submit(@Nullable final String tag, @NonNull final String message,
-                    final int level) {
-                return real.submit(tag, message, level);
+                    final int level, final long ageMs) {
+                return real.submit(tag, message, level, ageMs);
             }
         };
         assertEquals(0, LogOps.addAll(sdk, Arrays.asList(line("a", 3, null), line("b", 3, null))));

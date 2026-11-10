@@ -1,6 +1,6 @@
 {
   "buildConfiguration" : "release",
-  "generatedAt" : "2026-10-30T19:10:39Z",
+  "generatedAt" : "2026-11-03T15:48:34Z",
   "manifestVersion" : 1,
   "options" : [
     {
@@ -590,5 +590,5 @@
     }
   ],
   "sdk" : "ios",
-  "sdkVersion" : "7.0.0"
+  "sdkVersion" : "7.0.1"
 }

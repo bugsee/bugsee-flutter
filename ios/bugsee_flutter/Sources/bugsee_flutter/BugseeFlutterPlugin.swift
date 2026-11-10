@@ -352,6 +352,7 @@ public class BugseeFlutterPlugin: NSObject, FlutterPlugin, BugseeBridgeHostApi {
     let dictionaries: [[String: Any]] = lines.map { line in
       var d: [String: Any] = ["message": line.message, "level": line.level]
       if let v = line.tag { d["tag"] = v }
+      d["ageMs"] = line.ageMs
       return d
     }
     return Int64(BGSFlutterLogOps.addLines(sdk: logSdk, lines: dictionaries))

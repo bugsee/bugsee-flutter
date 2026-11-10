@@ -6,6 +6,8 @@
 
 static const NSInteger kMinLevel = 1;
 static const NSInteger kMaxLevel = 5;
+/// Compared with Dart's `LogWire.maxAgeMs` (and Android's `LogOps.MAX_AGE_MS`) by the drift guard.
+static const int64_t kMaxAgeMs = 60LL * 60LL * 1000LL;
 
 @implementation BGSFlutterRealLogSdk
 
@@ -19,12 +21,26 @@ static const NSInteger kMaxLevel = 5;
   return capture == nil || ![capture isKindOfClass:[NSNumber class]] || [capture boolValue];
 }
 
-- (BOOL)submitLogWithTag:(NSString *)tag message:(NSString *)message level:(NSInteger)level {
+- (BOOL)submitLogWithTag:(NSString *)tag
+                message:(NSString *)message
+                  level:(NSInteger)level
+                  ageMs:(int64_t)ageMs {
   id<BGSWrapperChannel> channel = [BGSFlutterNetworkChannel shared].channel;
   if (channel == nil || ![channel respondsToSelector:@selector(logWithTag:message:level:source:)]) {
     return NO;
   }
-  // Attributed to the wrapper, and always filtered by the SDK (the channel has no flag).
+  // Attributed to the wrapper, and always filtered by the SDK (the channel has no flag). The line keeps
+  // the time it was captured: the SDK's own clock now (`currentTimeMillis`, shipped with the timestamp
+  // overload, 7.0.0+) less the age Dart measured; the SDK bounds the result itself.
+  if ([channel respondsToSelector:@selector(logWithTag:message:level:source:timestamp:)] &&
+      [channel respondsToSelector:@selector(currentTimeMillis)]) {
+    [channel logWithTag:tag
+                message:message
+                  level:(BugseeLogLevel)level
+                 source:BGSLogEventSourceCustom
+              timestamp:[channel currentTimeMillis] - ageMs];
+    return YES;
+  }
   [channel logWithTag:tag message:message level:(BugseeLogLevel)level source:BGSLogEventSourceCustom];
   return YES;
 }
@@ -81,8 +97,11 @@ static NSString *StringOrNil(id value) {
   }
   NSString *tag = StringOrNil(line[@"tag"]);
   if (tag.length == 0) tag = nil;
+  id ageValue = line[@"ageMs"];
+  int64_t ageMs = [ageValue isKindOfClass:[NSNumber class]] ? [ageValue longLongValue] : 0;
+  ageMs = MIN(kMaxAgeMs, MAX((int64_t)0, ageMs));
   @try {
-    return [sdk submitLogWithTag:tag message:message level:level];
+    return [sdk submitLogWithTag:tag message:message level:level ageMs:ageMs];
   } @catch (NSException *exception) {
     // The app's native log filter (or the SDK) threw on this thread: the line is dropped.
     return NO;

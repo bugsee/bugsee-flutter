@@ -345,9 +345,17 @@ class BreadcrumbMessage {
 /// constant of native code, not a field: the SDKs accept five wrapper sources and Dart only ever
 /// has host-runtime output to report), so it is never recorded as the app's own `Bugsee.log`, and
 /// the SDK runs the app's log filter on it always (the channel has no flag to say otherwise).
-/// Neither SDK takes a timestamp on the channel: a line is stamped when it reaches the SDK.
+/// Both SDKs take the time the line was produced; Android from 7.5.0 (`BugseeWrapperChannel.log` with a timestamp),
+/// so a line the wrapper queued or filtered first keeps its time: it crosses as an AGE (`ageMs`, on
+/// Dart's monotonic clock, stamped when the batch is sent) that native subtracts from the SDK's own
+/// clock (iOS 7.0.1 takes it the same way: `-logWithTag:...timestamp:`).
 class LogLineMessage {
-  LogLineMessage({required this.message, required this.level, this.tag});
+  LogLineMessage({
+    required this.message,
+    required this.level,
+    this.tag,
+    required this.ageMs,
+  });
 
   /// The text, already filtered and cut to the line cap by Dart; never empty.
   String message;
@@ -357,6 +365,9 @@ class LogLineMessage {
 
   /// Recorded on Android (`log.json` `tag`); iOS has no tag and drops it. Null or empty: none.
   String? tag;
+
+  /// Milliseconds since the line was captured, when the batch was sent (0 .. one hour).
+  int ageMs;
 }
 
 /// One network event the Dart capture (`HttpOverrides`, Phase 5b) hands to the SDK. The wire

@@ -1109,13 +1109,13 @@ class AndroidCtx {
 
   // ---- 9 --------------------------------------------------------------------------------------
 
-  /// The report screenshot by Flutter render mode. In the default SurfaceView mode the SDK's screenshot
-  /// is all black (a KNOWN-GAP: the SDK skips SurfaceViews for screenshots, `ScreenCaptureScreenshot` /
-  /// `ScreenCapturePixelCopyShared`, v7.4.2); in TextureView mode (`background_mode: transparent`) it has
-  /// the content, and the redaction works in it. A fix in the SDK flips the first arm to a pass.
+  /// The report screenshot by Flutter render mode. SDK 7.4.2 skipped SurfaceViews for screenshots, so
+  /// the default SurfaceView mode gave an all black one (bugsee-android#316); 7.5.0 captures them. Both
+  /// modes (the default and TextureView, `background_mode: transparent`) must now show content with
+  /// the secured region redacted, in the screenshot and in the video.
   Future<ScenarioResult> screenshotGap() => runScenario(
     9,
-    'Report screenshot content by render mode (KNOWN-GAP in the default SurfaceView mode)',
+    'Report screenshot content and redaction by render mode',
     say,
     (run) async {
       final b = await build('debug');
@@ -1167,43 +1167,38 @@ class AndroidCtx {
         );
         if (a == null || c == null) continue;
         final flat = a.isUniform() && c.isUniform();
-        if (!texture) {
-          run.knownGap(
-            '[surface] the report screenshot has content in the default (SurfaceView) render mode',
-            !flat,
-            '${a.width}x${a.height}${flat ? ', ONE FLAT COLOUR ${a.at(0, 0)} with the region secured and unsecured; the display is not flat. SDK v7.4.2 ScreenCaptureScreenshot.captureWithPixelCopy passes null as the SurfaceView capture manager and ScreenCapturePixelCopyShared.fillRenderLayerSurfaceViews skips SurfaceViews then' : ', has content (the gap is closed)'}',
-          );
-        } else {
-          run.expect(
-            '[texture] the report screenshot has content',
-            !flat,
-            '${a.width}x${a.height}',
-          );
-          if (!flat) {
-            checkRedaction(run, 'texture screenshot', a, c);
-          }
-          final onFrame = await requireVideoFrame(
-            run,
-            'texture',
-            on,
-            tc.workDir,
-            'tex-on',
-          );
-          final offFrame = await requireVideoFrame(
-            run,
-            'texture',
-            off,
-            tc.workDir,
-            'tex-off',
-          );
-          if (onFrame != null && offFrame != null) {
-            checkRedaction(run, 'texture video', onFrame, offFrame);
-          }
+        // Since SDK 7.5.0 (bugsee-android#316) the screenshot has content in BOTH modes, so both
+        // are held to the same checks: content, then the secured region redacted in the screenshot
+        // and in the video frame. (At 7.4.2 the SurfaceView screenshot was one flat colour.)
+        run.expect(
+          '[$mode] the report screenshot has content',
+          !flat,
+          '${a.width}x${a.height}${flat ? ', ONE FLAT COLOUR ${a.at(0, 0)} with the region secured and unsecured; the display is not flat (the SurfaceView gap, bugsee-android#316, fixed in 7.5.0, is back)' : ''}',
+        );
+        if (!flat) {
+          checkRedaction(run, '$mode screenshot', a, c);
+        }
+        final onFrame = await requireVideoFrame(
+          run,
+          mode,
+          on,
+          tc.workDir,
+          '$mode-on',
+        );
+        final offFrame = await requireVideoFrame(
+          run,
+          mode,
+          off,
+          tc.workDir,
+          '$mode-off',
+        );
+        if (onFrame != null && offFrame != null) {
+          checkRedaction(run, '$mode video', onFrame, offFrame);
         }
         await s.command('secure on');
       }
       run.result.notCovered.addAll([
-        'a physical device: the SurfaceView gap is read from SDK source and reproduced on the emulator only',
+        'a physical device: the render-mode screenshot check ran on the emulator only',
         'platform views and scrolling content in TextureView mode (Flutter documents TextureView as slower to present and with different platform-view compositing); only the verification app\'s static content was captured',
       ]);
     },

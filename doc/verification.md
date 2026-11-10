@@ -105,7 +105,7 @@ harness was run again on a new simulator (iPhone 17, iOS 26.5, Xcode 27.1) with 
 | 6 | Crash across an app update | PASS | NOT POSSIBLE (no recovered crash on a simulator) |
 | 7 | Secure rectangles at density != 1 | PASS (440, 320, 560 dpi; debug and release) | PASS at 3x; a density change at run time is not possible |
 | 8 | Hot restart | PASS | PASS |
-| 9 | Report screenshot by render mode | KNOWN-GAP: all black in the default SurfaceView mode (SDK); real content, redacted, in TextureView mode | not applicable (the iOS screenshot has content, scenario 7) |
+| 9 | Report screenshot by render mode | PASS at Android 7.5.0: content and the secure box redacted in BOTH modes, screenshot and video (at 7.4.2: KNOWN-GAP, all black in the default SurfaceView mode) | not applicable (the iOS screenshot has content, scenario 7) |
 
 ## Scenarios
 
@@ -269,7 +269,7 @@ of the report's video** (ffmpeg, raw RGB) is compared:
   the density, the next report is correct).
 * the transient between a density change and Dart's republish (when the wrapper covers the whole display) was not sampled: only the
   settled state is.
-* the **Android report screenshot is not usable evidence in the default render mode**: see scenario 9 (a KNOWN-GAP). The video frame is the evidence here.
+* at Android SDK 7.5.0 the report screenshot has content in the default render mode and is checked in both modes (scenario 9); at 7.4.2 it was black there (history below). The video frame stays the stronger redaction evidence.
 
 iOS: the simulator is 3x and fixed (`wm density` has no iOS equivalent): at 3x (ratio 3.0, physical 1206x2622) the secure box is found in the
 report video (416x880, a QuickTime `.mov`) and is black, 100.0 % of it, with the region secured; **the iOS report screenshot has real content** (a 484x1024
@@ -290,7 +290,14 @@ redaction check was. A density change at run time is NOT POSSIBLE on a simulator
 
 See Findings for what the new isolate is and is not told about the status.
 
-### 9. Report screenshot by render mode (Android; KNOWN-GAP)
+### 9. Report screenshot by render mode (Android)
+
+**Re-run at Android SDK 7.5.0 (2026-11-06, emulator API 30, all nine scenarios PASS, banner `Bugsee Android SDK 7.5.0 [8f459d745]`, plugin 4.1.0):
+bugsee-android#316 is fixed.** In the default `SurfaceView` mode the screenshot (485x1024) now has content, the secure box is black 100.0 % (magenta 0.0 %) with the region
+secured, the pixels outside the box equal the unsecured frame (100.0 %) and the 14 px ring is 6.7 % black; the video frame passes the same checks. The scenario now holds BOTH
+modes to those checks (it was a `KNOWN-GAP` arm for SurfaceView), so a regression of the SDK fix fails the harness. The account below is what 7.4.2 did, kept for the
+record. Also measured on a physical Android 14 device (not rootable, so no harness): the integration tests listed in PLAN.md, and a log line delayed 3 s by a Dart filter keeps its time
+(`log.json`: 1 ms after the line printed just before it, 4005 ms before the next).
 
 The Android report screenshot (`screenshot.bgsfile`, WebP 485x1024) is **entirely black in Flutter's default render mode** (`SurfaceView`), in debug and
 release, with the secure region on or off, while the display is not black (`adb exec-out screencap`: mean colour (225, 211, 225); the harness
@@ -310,12 +317,8 @@ Result in texture mode: the screenshot has real content (mean (201, 209, 201) se
 rest of the frame equals the unsecured screenshot (100.0 %), and the video redaction still passes (100.0 % black box, 100.0 % outside agreement). So **redaction works in screenshots in
 texture mode and the black screenshot is the SurfaceView gap, not the emulator, not the wrapper's secure regions.**
 
-**What can and cannot be claimed.** NO screenshot-based redaction claim can be made for Android Flutter apps in the default SurfaceView mode: the screenshot carries
-no content at all (which also means it shows nothing that needs redacting, but it is useless as a report screenshot, and the report editor shows black). The video is unaffected.
-The workaround is `RenderMode.texture` (override `FlutterActivity.getRenderMode()`, or launch with `background_mode: transparent`). Trade-offs (Flutter documents them): a
-`TextureView` presents through an extra composition step and can cost frame rate and memory, and platform views compose differently; the
-verification app's static content was all that was captured, so none of that was measured here. The fix belongs in the SDK (capture SurfaceViews for screenshots through the
-`SurfaceViewCapture` path). The harness records it as `KNOWN-GAP` (not a failure) and flips to PASS when the default-mode screenshot has content.
+**What could and could not be claimed (Android SDK 7.4.2, history).** At 7.4.2 no screenshot-based redaction claim could be made for Android Flutter apps in the default SurfaceView mode: the screenshot carried
+no content at all (so it was useless as a report screenshot, and the report editor showed black). The video was unaffected. The workaround was `RenderMode.texture` (override `FlutterActivity.getRenderMode()`, or launch with `background_mode: transparent`), with Flutter's documented trade-offs (an extra composition step for `TextureView`, frame rate and memory, platform views composing differently; none of that was measured here). **At 7.5.0 this is fixed (bugsee-android#316): the default mode captures content and the workaround is not needed.** Scenario 9 now fails when the default-mode screenshot is one flat colour while the display is not (`scripts/device/android_scenarios.dart`), so a regression is a failure, not a known gap.
 
 ## Findings
 
@@ -328,7 +331,7 @@ own reports use chunked uploads from `dart:io`); it now reads chunked bodies, an
 
 For follow-up (SDK or environment, not fixed here):
 
-1. **Android report screenshot is all black in the default SurfaceView render mode**: an SDK gap, root-caused and confirmed (scenario 9, with the SDK source references, the
+1. **(Fixed in Android 7.5.0, bugsee-android#316; see scenario 9.)** Android report screenshot was all black in the default SurfaceView render mode at 7.4.2: an SDK gap, root-caused and confirmed (scenario 9, with the SDK source references, the
    texture-mode experiment and the workaround). Issue text for bugsee-android is in the PR description.
 2. **iOS: no crash recovery and no logged exceptions on a simulator** are SDK facts (documented in the SDK's source); listed
    here so a missing iOS recovery is never read as a wrapper defect. Everything about recovered iOS reports needs a physical iPhone.

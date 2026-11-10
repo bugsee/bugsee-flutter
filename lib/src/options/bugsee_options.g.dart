@@ -430,14 +430,24 @@ final class BugseeOptions {
   /// `bsd` is iOS only; `mach` is iOS only; `machAndBsd` is iOS only; on the other platform it is ignored, with a debug-mode warning.
   final CrashHandlerType? captureCrashHandlerType;
 
-  /// The fatal signals the crash reporter intercepts (iOS, tvOS and visionOS). See
-  /// BugseeCrashSignals. Default: BugseeCrashSignalsDefault, which is every signal except on the
-  /// Xamarin and .NET wrappers, where BugseeCrashSignalSEGV and BugseeCrashSignalBUS are left out
-  /// because the .NET runtime handles them itself.
+  /// The fatal signals the native crash handler intercepts, as an `int` bit set of
+  /// `CrashSignals`. Default: `DEFAULT` (every signal). Leave `SEGV` and `BUS` out when the app
+  /// hosts a Mono runtime (Unity's Mono backend, Xamarin), which handles them itself. Read once,
+  /// when the native handler is first armed in the process; a later launch in the same process
+  /// with a different value does not change it. Same value layout as the iOS option of the same
+  /// key.
+  ///
+  /// This package exports no `CrashSignals` constants: pass the numbers. The bits are `ABRT` 1,
+  /// `SEGV` 2, `BUS` 4, `ILL` 8, `FPE` 16 and `TRAP` 32 (63 is all six; `0` turns the selectable
+  /// signals off). `128` is the SDK default, a sentinel and not a signal mask: on its own it lets
+  /// the SDK choose, which today is every signal, so by default `SEGV` and `BUS` are intercepted
+  /// on Android and iOS alike. Any other value is used as given; to leave `SEGV` and `BUS` out,
+  /// pass `63 & ~(2 | 4)`, which is `57`.
   ///
   /// - Option key: `com.bugsee.option.capture.crash-signals`.
   /// - SDK default: `128`.
-  /// - Available on: iOS only. On Android the option is ignored (a debug-mode warning says so).
+  /// - Available on: Android and iOS.
+  /// Registered by the `bugsee-android-ndk` module, which this plugin bundles.
   final int? captureCrashSignals;
 
   /// Capture Device and wifi names. They are shown on the issue screen.
@@ -621,9 +631,9 @@ final class BugseeOptions {
   ///
   /// To stay pixel-accurate, adaptive capture automatically falls back to capturing every frame
   /// whenever the draw signal is not authoritative for the whole screen — a live frame
-  /// interceptor is attached (e.g. remoting), or the screen contains content that renders off the
-  /// normal View-draw path (a dialog / popup / floating window, a `SurfaceView` / `TextureView`,
-  /// or a `WebView`).
+  /// interceptor is attached (e.g. an extension or debug preview), or the screen contains content
+  /// that renders off the normal View-draw path (a dialog / popup / floating window, a
+  /// `SurfaceView` / `TextureView`, or a `WebView`).
   ///
   /// Option has a `boolean` value. (opt-in).
   ///
@@ -805,7 +815,8 @@ final class BugseeOptions {
   /// `none` is iOS only; `onDevice` is iOS only; `endToEnd` is iOS only; on the other platform it is ignored, with a debug-mode warning.
   final DataEncryptionMode? configDataEncryption;
 
-  /// Maximum capture duration in seconds.
+  /// Maximum capture duration in seconds. A value of `0` or below is ignored and the default is
+  /// used.
   ///
   /// - Option key: `com.bugsee.option.config.duration`.
   /// - SDK default: `60`.

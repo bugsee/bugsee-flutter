@@ -4,7 +4,7 @@ Guidance for reviewers and agents working in this repository.
 
 ## Project
 
-`bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.4.2, iOS 7.0.0), version `10.0.0-dev.1`,
+`bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.5.0, iOS 7.0.1), version `10.0.0-dev.1`,
 unpublished, plus the separate `packages/bugsee_flutter_feedback`. The implementation is complete and merged into `nextgen`;
 `PLAN.md` is the status, the decisions (D1 to D12), the open questions and the release checklist. The authoritative wrapper spec is
 `sdk/wrapper-workbook` in the `bugsee/specs` repository (refer to it by repo name); `doc/workbook-conformance.md` maps it to the code.
@@ -18,7 +18,7 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
   `test/native_versions_test.dart`. Do not hardcode a version elsewhere; update the guard when CI content changes.
 - iOS is SwiftPM-only. There is deliberately no podspec (Bugsee publishes no pod). CI runs on macOS so SwiftPM can be enabled. Do not add a podspec.
 - Flutter floor is 3.41.0 / Dart 3.11 (the SwiftPM-only plugin fails `pub get` on Linux/Windows earlier; measured, PLAN.md D5).
-- Android builds need JDK 17 or 21. JDK 25 breaks the Gradle version in use. The app applies Bugsee Gradle plugin 4.0.8 (mandatory).
+- Android builds need JDK 17 or 21. JDK 25 breaks the Gradle version in use. The app applies Bugsee Gradle plugin 4.1.0 (mandatory).
 - The Android initialization provider must never be named `Bugsee*InitProvider` (the Gradle plugin deletes it).
 - The wrapper type (`flutter`) and version (pubspec `version:`) are repeated in Dart, Android and iOS because native registers before Dart
   exists; `test/wrapper_identity_test.dart` compares every copy. Bump the iOS `BGSFlutterWrapper.m`, Dart `wrapper_identity.dart` and the

@@ -35,6 +35,7 @@
 //
 // Caps: [HierarchyLimits]. Over a cap the walk stops adding nodes, marks what it cut with
 // `truncated`, and the answer is still valid; any error fails closed (`null`, nothing sent).
+import 'dart:collection' show HashSet;
 import 'dart:convert' show jsonEncode;
 
 import 'package:flutter/rendering.dart';
@@ -65,8 +66,18 @@ class HierarchyLimits {
   final int maxBytes;
 
   /// How long the walk may run; past it the rest of the tree is cut. One walk is synchronous on
-  /// the UI isolate, so this bounds the jank it can cause.
+  /// the UI isolate, so this bounds the jank it can cause. This is the ceiling, for a walk with no
+  /// frame due; the publisher lowers it to a share of one frame while a frame is (see
+  /// `ViewHierarchyPublisher`).
   final Duration budget;
+
+  /// These limits with another time [budget].
+  HierarchyLimits withBudget(Duration budget) => HierarchyLimits(
+    maxNodes: maxNodes,
+    maxDepth: maxDepth,
+    maxBytes: maxBytes,
+    budget: budget,
+  );
 }
 
 /// One snapshot of one Flutter view: a JSON template plus the numbers that fill it in.
@@ -144,15 +155,34 @@ bool get typeNamesAreObfuscated =>
 
 final RegExp _identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
 
+/// What [_typeName] decided for a type: the name, or `''` (never a valid identifier) when the type's
+/// name is not one. Deciding costs a string, an `indexOf`, a `substring` and a regular expression per
+/// node, and a screen repeats a few dozen types hundreds of times: measured on a phone, this was
+/// ~35-43% of one walk in a profile build. The decision depends only on the type's own `toString`,
+/// and only the SANITISED result is stored, so the cache can never hold free text (a `Type` can be
+/// implemented, and one whose `toString` changes would at worst keep its first, sanitised, answer).
+/// Bounded: a pathological number of distinct types empties it instead of growing it.
+final Map<Type, String> _typeNames = <Type, String>{};
+const int _maxTypeNames = 4096;
+
 /// A type's name without generic arguments, bounded in length and ALWAYS an identifier: a name
 /// that is not one (an overridden `runtimeType` whose `toString` says anything at all) is
 /// replaced by [fallback], so the payload cannot carry free text through a type name.
 String _typeName(Object object, String fallback) {
-  final String s = object.runtimeType.toString();
+  // Read once: the cache key and the name must come from the same `Type` (an overridden
+  // `runtimeType` getter need not return the same one twice). Named `runtimeType` because the
+  // drift guard allows `toString` on nothing else.
+  final Type runtimeType = object.runtimeType;
+  final String? known = _typeNames[runtimeType];
+  if (known != null) return known.isEmpty ? fallback : known;
+  final String s = runtimeType.toString();
   final int generic = s.indexOf('<');
   final String bare = generic < 0 ? s : s.substring(0, generic);
   final String bounded = bare.length > 80 ? bare.substring(0, 80) : bare;
-  return _identifier.hasMatch(bounded) ? bounded : fallback;
+  final String decided = _identifier.hasMatch(bounded) ? bounded : '';
+  if (_typeNames.length >= _maxTypeNames) _typeNames.clear();
+  _typeNames[runtimeType] = decided;
+  return decided.isEmpty ? fallback : decided;
 }
 
 /// [_typeName] for a widget or render object, for tests.
@@ -165,14 +195,30 @@ class _Node {
   final String className;
   String? baseClassName;
   Rect? rect;
-  final List<_Node> children = <_Node>[];
+
+  // Most nodes are leaves and most have no overlay child: the lists exist only when used.
+  List<_Node>? _kids;
+  List<_Node> get children => _kids ?? const <_Node>[];
+  void addChild(_Node c) => (_kids ??= <_Node>[]).add(c);
   bool secure = false;
   bool clickable = false;
   bool truncated = false;
 
   /// Nodes that paint inside this one's render object but live elsewhere in the element tree
   /// (an `OverlayPortal` child): appended last, on top, when this node's children are done.
-  final List<_Node> late = <_Node>[];
+  List<_Node>? _late;
+  void addLate(_Node c) => (_late ??= <_Node>[]).add(c);
+
+  /// Appends the nodes that were painted from elsewhere, now that the children are done.
+  void flushLate() {
+    final List<_Node>? l = _late;
+    if (l == null) return;
+    for (final _Node c in l) {
+      addChild(c);
+    }
+    _late = null;
+  }
+
   bool open = false;
   double? alpha;
   String? contentKind;
@@ -215,6 +261,7 @@ HierarchySnapshot? buildViewHierarchy({
   HierarchyLimits limits = const HierarchyLimits(),
   Duration Function()? clock,
   @visibleForTesting bool? obfuscated,
+  @visibleForTesting bool skipContained = true,
 }) {
   try {
     final Element? top = root ?? WidgetsBinding.instance.rootElement;
@@ -222,7 +269,12 @@ HierarchySnapshot? buildViewHierarchy({
     final Element? viewElement = _findView(top, viewId);
     if (viewElement == null) return null;
     final Duration Function() now = clock ?? _stopwatchClock();
-    final walker = _Walker(limits, now, obfuscated ?? typeNamesAreObfuscated);
+    final walker = _Walker(
+      limits,
+      now,
+      obfuscated ?? typeNamesAreObfuscated,
+      skipContained,
+    );
     return walker.run(viewElement as RenderObjectElement);
   } catch (_) {
     return null;
@@ -253,9 +305,30 @@ Element? _findView(Element start, int viewId) {
 }
 
 class _Walker {
-  _Walker(this.limits, this.now, this.obfuscated) : _start = now();
+  _Walker(this.limits, this.now, this.obfuscated, this.skipContained)
+    : _start = now();
 
   final bool obfuscated;
+
+  /// Whether an off-screen subtree that provably stays inside its own box is skipped by a cheap
+  /// check ([_containedBelow]) instead of being walked. Off only in a test that compares the two.
+  final bool skipContained;
+  final Matrix4 _scratch = Matrix4.identity();
+  final List<Matrix4> _matrices = <Matrix4>[];
+
+  /// One matrix per element depth, reused by every node at that depth: a node's matrix is read
+  /// only while its own subtree is visited and never kept, and everything below a node is
+  /// visited at a greater depth than the node, so a matrix in use is never the one handed out.
+  Matrix4 _pool(int depth) {
+    while (_matrices.length <= depth) {
+      _matrices.add(Matrix4.identity());
+    }
+    return _matrices[depth];
+  }
+
+  /// Boxes on the path to something a containment check found not contained (see
+  /// [_containedBelow]): not checked again in this walk.
+  final Set<RenderObject> _noRecheck = HashSet<RenderObject>.identity();
 
   final HierarchyLimits limits;
   final Duration Function() now;
@@ -292,10 +365,10 @@ class _Walker {
       view.flutterView.devicePixelRatio,
       _truncated || rootNode.truncated,
     );
-    final String template = writer.finish();
+    final int templateLength = writer.finish();
     // The estimate while walking is generous; an over-size template is dropped, not trimmed.
     // Numbers are not in the template yet: each box adds about 24 bytes.
-    if (template.length + 24 * writer.nodeCount > limits.maxBytes) return null;
+    if (templateLength + 24 * writer.nodeCount > limits.maxBytes) return null;
     return HierarchySnapshot(
       viewId: view.flutterView.viewId,
       devicePixelRatio: view.flutterView.devicePixelRatio,
@@ -362,7 +435,7 @@ class _Walker {
       return;
     }
     node.rect = box;
-    into.children.add(node);
+    into.addChild(node);
   }
 
   /// About what the node costs in the final text: the fixed JSON around it and a box
@@ -399,7 +472,7 @@ class _Walker {
     final RenderObject? parent = ctx.parent;
     if (parent != null && identical(ro.parent, parent)) {
       if (!parent.paintsChild(ro)) return; // not painted: not on screen
-      toView = ctx.toView.clone();
+      toView = _pool(depth)..setFrom(ctx.toView);
       // The view's own transform is the device pixel ratio: boxes stay in LOGICAL pixels (the
       // space `getTransformTo(null)` and the secure rectangles use), which native converts.
       if (parent is! RenderView) parent.applyPaintTransform(ro, toView);
@@ -425,6 +498,12 @@ class _Walker {
       if ((ro is RenderSecureRegion && ro.enabled) || _clipsChildren(ro)) {
         return;
       }
+      if (skipContained &&
+          ro is RenderBox &&
+          _isAffine(toView) &&
+          _containedBelow(e, ro)) {
+        return; // nothing below can reach the screen: no node would be made
+      }
       _children(e, _Context(ro, toView, clip), into, depth + 1);
       return;
     }
@@ -442,7 +521,7 @@ class _Walker {
         ..rect = region.rect
         ..secure = true;
       _reserve(secure);
-      into.children.add(secure);
+      into.addChild(secure);
       return;
     }
     // Whether something can be tapped here, as the widgets declare it: a `GestureDetector`'s
@@ -469,20 +548,117 @@ class _Walker {
     node.open = true;
     _children(e, _Context(ro, toView, clip), node, depth + 1);
     node.open = false;
-    node.children.addAll(node.late);
-    node.late.clear();
+    node.flushLate();
     final RenderObject? render = ro.parent;
     final _Node? host = render == null ? null : _byRender[render];
     if (parent != null &&
         !identical(render, parent) &&
         host != null &&
         host.open) {
-      host.late.add(
+      host.addLate(
         node,
       ); // painted by a render object elsewhere: on top of what is there
     } else {
-      into.children.add(node);
+      into.addChild(node);
     }
+  }
+
+  /// Whether every render object below [anchor] (an off-screen box) lies inside the anchor's own
+  /// box, reached only by plain translations, so none of it can be on screen: the walk below it
+  /// would make no node. Anything unusual (a transform, a child outside the box, a render parent
+  /// that is not the element parent, a sliver, a view) answers `false` and the subtree is walked
+  /// the ordinary way, so the result is the same either way. Allocates nothing per element.
+  ///
+  /// A check that fails has scanned a good part of the subtree for nothing, and every off-screen
+  /// box below it would scan its own part again: the boxes on the path down to what failed are
+  /// remembered ([_noRecheck]) and answer `false` at once, so the waste is one scan and not one
+  /// per level. A box that answers `false` is only walked, as it was before the check existed.
+  bool _containedBelow(RenderObjectElement anchor, RenderBox anchorBox) {
+    if (_noRecheck.contains(anchorBox)) return false;
+    final Size size = anchorBox.size;
+    if (!(size.width.isFinite && size.height.isFinite)) return false;
+    var ok = true;
+    // The position being visited, read by the one visitor below (no closure per element): the
+    // parent render box and its origin in the anchor's space.
+    RenderBox parent = anchorBox;
+    double atX = 0;
+    double atY = 0;
+    late final ElementVisitor visit;
+    visit = (Element e) {
+      if (!ok) return;
+      if ((++_steps & 31) == 0 && now() - _start > limits.budget) {
+        _stopped = true;
+        _truncated = true;
+      }
+      if (_stopped) {
+        return; // the walk is over: what is skipped here is cut anyway
+      }
+      if (e is RenderObjectElement) {
+        final RenderObject ro = e.renderObject;
+        if (!ro.attached || ro is RenderView) return;
+        if (ro is! RenderBox || !identical(ro.parent, parent)) {
+          ok = false;
+          return;
+        }
+        if (!ro.hasSize) return;
+        if (!parent.paintsChild(ro)) return;
+        final Matrix4 m = _scratch..setIdentity();
+        parent.applyPaintTransform(ro, m);
+        final List<double> v = m.storage;
+        if (v[0] != 1 ||
+            v[1] != 0 ||
+            v[2] != 0 ||
+            v[3] != 0 ||
+            v[4] != 0 ||
+            v[5] != 1 ||
+            v[6] != 0 ||
+            v[7] != 0 ||
+            v[8] != 0 ||
+            v[9] != 0 ||
+            v[10] != 1 ||
+            v[11] != 0 ||
+            v[14] != 0 ||
+            v[15] != 1) {
+          ok = false;
+          return;
+        }
+        final double x = atX + v[12];
+        final double y = atY + v[13];
+        final Size s = ro.size;
+        if (!(x >= 0 &&
+            y >= 0 &&
+            x + s.width <= size.width &&
+            y + s.height <= size.height)) {
+          ok = false; // NaN lands here too
+          return;
+        }
+        if ((ro is RenderSecureRegion && ro.enabled) || _clipsChildren(ro)) {
+          return; // the walk does not go below these either
+        }
+        final RenderBox savedParent = parent;
+        final double savedX = atX, savedY = atY;
+        parent = ro;
+        atX = x;
+        atY = y;
+        e.debugVisitOnstageChildren(visit);
+        parent = savedParent;
+        atX = savedX;
+        atY = savedY;
+        if (!ok) _noRecheck.add(ro);
+        return;
+      }
+      e.debugVisitOnstageChildren(visit);
+    };
+    anchor.debugVisitOnstageChildren(visit);
+    if (!ok) _noRecheck.add(anchorBox);
+    return ok;
+  }
+
+  /// Whether [m] has no perspective: a box inside another stays inside it once both are mapped
+  /// ([_containedBelow] compares them before the mapping).
+  bool _isAffine(Matrix4 m) {
+    final List<double> v = m.storage;
+    return v[3] == 0 && v[7] == 0 && v[11] == 0 && v[15] == 1;
   }
 
   /// Whether [ro] clips everything below it to its own box (so a box off screen hides it all).
@@ -523,6 +699,16 @@ class _Placed {
   final Rect clip;
 }
 
+/// `jsonEncode` of a class name, remembered: the same few dozen names are written for every node.
+final Map<String, String> _encodedNames = <String, String>{};
+
+String _encoded(String name) {
+  final String? known = _encodedNames[name];
+  if (known != null) return known;
+  if (_encodedNames.length >= _maxTypeNames) _encodedNames.clear();
+  return _encodedNames[name] = jsonEncode(name);
+}
+
 /// Serialises the node tree into a template: JSON text cut at the age and at every box.
 class _Writer {
   _Writer({required this.obfuscated});
@@ -533,14 +719,19 @@ class _Writer {
   final List<double> bounds = <double>[];
   int nodeCount = 0;
 
+  int _length = 0;
+
   void _cut() {
-    segments.add(_text.toString());
+    final String s = _text.toString();
+    _length += s.length;
+    segments.add(s);
     _text.clear();
   }
 
-  String finish() {
+  /// The template's length (the text is kept in segments, never joined).
+  int finish() {
     _cut();
-    return segments.join();
+    return _length;
   }
 
   void writeRoot(_Node root, double ratio, bool truncated) {
@@ -558,10 +749,9 @@ class _Writer {
       ..write('{"id":"')
       ..write(id)
       ..write('","class_name":')
-      ..write(jsonEncode(n.className));
+      ..write(_encoded(n.className));
     final String? base = n.baseClassName;
-    if (base != null) _text.write(',"base_class_name":${jsonEncode(base)}');
-    final options = <String>[];
+    if (base != null) _text.write(',"base_class_name":${_encoded(base)}');
     if (isRoot) {
       // The age is native's: it knows when the snapshot arrived.
       _text.write(',"options":{"age_ms":');
@@ -571,20 +761,44 @@ class _Writer {
       if (truncated) _text.write(',"truncated":true');
       _text.write('}');
     } else {
-      if (n.secure) options.add('"secure":true');
-      if (n.clickable) options.add('"clickable":true');
       final double? alpha = n.alpha;
-      if (alpha != null && alpha.isFinite) options.add('"alpha":$alpha');
+      final bool hasAlpha = alpha != null && alpha.isFinite;
       final String? kind = n.contentKind;
-      if (kind != null) options.add('"content_kind":"$kind"');
-      if (options.isNotEmpty) {
-        _text.write(',"options":{${options.join(',')}}');
+      if (n.secure || n.clickable || hasAlpha || kind != null) {
+        _text.write(',"options":{');
+        var first = true;
+        void separate() {
+          if (!first) _text.write(',');
+          first = false;
+        }
+
+        if (n.secure) {
+          separate();
+          _text.write('"secure":true');
+        }
+        if (n.clickable) {
+          separate();
+          _text.write('"clickable":true');
+        }
+        if (hasAlpha) {
+          separate();
+          _text.write('"alpha":$alpha');
+        }
+        if (kind != null) {
+          separate();
+          _text.write('"content_kind":"$kind"');
+        }
+        _text.write('}');
       }
     }
     _text.write(',"bounds":');
     _cut();
     final Rect r = n.rect!;
-    bounds.addAll(<double>[r.left, r.top, r.right, r.bottom]);
+    bounds
+      ..add(r.left)
+      ..add(r.top)
+      ..add(r.right)
+      ..add(r.bottom);
     if (n.truncated && !isRoot) _text.write(',"truncated":true');
     if (n.children.isNotEmpty) {
       _text.write(',"subitems":[');

@@ -14,10 +14,19 @@
 //  * only a frame that happened can have changed anything, so no frame is ever scheduled except
 //    the one that starts the publisher; with the app idle nothing runs;
 //  * a snapshot identical to the one native holds is not sent;
-//  * a walk is cut by its own time budget and node/byte caps (see [HierarchyLimits]);
+//  * a walk is cut by its own time budget and node/byte caps (see [HierarchyLimits]); while a frame
+//    is already due (an animation is running) the budget is a share of one frame at the display's
+//    refresh rate ([frameShare], never over the limit's own budget), so it fits the slack of a
+//    120 Hz frame as well as a 60 Hz one; with nothing due the full budget applies;
+//  * a walk is only taken when the app has been quiet: no frame for [busyGap]. A walk straight
+//    after a frame lands next to the following frame of a scroll, a fling, an animation or a
+//    route transition, and delays it; after a quiet stretch it can only collide with an input
+//    that arrives during the walk. A stretch of frames that never stops (a spinner) still gets a
+//    walk every [busyCap], so its snapshot is refreshed;
 //  * nothing is built while the publisher is not active (not launched, option off, background).
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/scheduler.dart';
@@ -44,13 +53,43 @@ class ViewHierarchyPublisher {
     this.maxInterval = const Duration(seconds: 5),
     this.limits = const HierarchyLimits(),
     this.frameWait = const Duration(milliseconds: 400),
+    this.busyGap = const Duration(milliseconds: 100),
+    this.busyCap = const Duration(seconds: 3),
+    this.frameShare = 0.35,
+    this.minBudget = const Duration(milliseconds: 2),
+    Duration Function()? frameInterval,
+    bool Function()? framePending,
     Duration Function()? clock,
     ViewHierarchyBuilder? builder,
   }) : epoch = epoch ?? newIsolateEpoch(),
+       _frameInterval = frameInterval ?? _displayFrameInterval,
+       _framePending = framePending ?? _schedulerFramePending,
        _now = clock ?? _stopwatchClock(),
        _builder =
            builder ??
            ((limits, now) => buildViewHierarchy(limits: limits, clock: now));
+
+  /// One frame at the display's refresh rate (60 Hz when it is unknown).
+  static Duration _displayFrameInterval() {
+    try {
+      final views = PlatformDispatcher.instance.views;
+      final double hz = views.isEmpty ? 60 : views.first.display.refreshRate;
+      if (hz.isFinite && hz >= 24 && hz <= 480) {
+        return Duration(microseconds: (1e6 / hz).round());
+      }
+    } catch (_) {
+      // Unknown display: assume 60 Hz.
+    }
+    return const Duration(microseconds: 16667);
+  }
+
+  static bool _schedulerFramePending() {
+    try {
+      return SchedulerBinding.instance.hasScheduledFrame;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Duration Function() _stopwatchClock() {
     final watch = Stopwatch()..start();
@@ -80,6 +119,19 @@ class ViewHierarchyPublisher {
   /// The longest [flush] waits for a frame that is already scheduled (a screen change that has
   /// not been drawn yet), so the snapshot is of the screen as it will be, not as it was.
   final Duration frameWait;
+
+  /// A walk waits until no frame has been drawn for this long; frames closer together than this
+  /// are one stretch of activity. `Duration.zero` turns the wait off (tests).
+  final Duration busyGap;
+
+  /// The most a stretch of activity postpones a walk: after this the walk is taken anyway.
+  final Duration busyCap;
+
+  /// The share of one frame a walk may take while a frame is due, and the least it is given.
+  final double frameShare;
+  final Duration minBudget;
+  final Duration Function() _frameInterval;
+  final bool Function() _framePending;
   final Duration Function() _now;
   final ViewHierarchyBuilder _builder;
 
@@ -87,6 +139,9 @@ class ViewHierarchyPublisher {
   bool _frameArmed = false;
   bool _dirty = false;
   Timer? _timer;
+  Timer? _settleTimer;
+  Duration? _lastFrameAt;
+  Duration? _busySince;
   Duration _nextAllowed = Duration.zero;
   int _sequence = 0;
   int _failures = 0;
@@ -125,6 +180,10 @@ class ViewHierarchyPublisher {
     _active = false;
     _timer?.cancel();
     _timer = null;
+    _settleTimer?.cancel();
+    _settleTimer = null;
+    _busySince = null;
+    _lastFrameAt = null;
     _dirty = false;
     if (_lastSent == null && _nativeKnown) return;
     await _publish(null);
@@ -138,7 +197,7 @@ class ViewHierarchyPublisher {
     await _awaitScheduledFrame();
     if (!_active) return;
     _dirty = false;
-    await _buildAndSend();
+    await _buildAndSend(explicit: true);
   }
 
   /// A change is on its way to the screen: wait for its frame (a new route needs two: it is built
@@ -174,17 +233,64 @@ class ViewHierarchyPublisher {
     _frameArmed = false;
     if (!_active) return;
     // A frame happened: the only thing that can have changed the tree. This schedules no frame.
+    final Duration now = _now();
+    final Duration? last = _lastFrameAt;
+    _lastFrameAt = now;
+    if (last == null || now - last >= busyGap) _busySince = now;
     _dirty = true;
     _armFrame();
     _consider();
   }
 
+  /// Whether a frame was drawn too recently for a walk (and the stretch of frames it belongs to
+  /// has not gone on for [busyCap]).
+  bool _busy(Duration now) {
+    final Duration? since = _busySince;
+    final Duration? last = _lastFrameAt;
+    if (since == null || last == null) return false;
+    // Nothing is held natively (the first snapshot after activation or a resume, or after a
+    // failed send): a report now would carry no hierarchy at all, which is worse than the one
+    // walk next to a frame.
+    if (_lastSent == null || !_nativeKnown) return false;
+    if (now - last >= busyGap) return false; // quiet
+    return now - since < busyCap;
+  }
+
+  /// Waits for the frames to stop, then takes the walk that was postponed.
+  void _armSettle() {
+    if (_settleTimer != null) return;
+    _settleTimer = Timer(busyGap, () {
+      _settleTimer = null;
+      if (!_active) return;
+      final Duration? last = _lastFrameAt;
+      if (last != null && _now() - last < busyGap) {
+        _armSettle(); // another frame came: still busy
+        return;
+      }
+      _busySince = null;
+      final SchedulerPhase phase = SchedulerBinding.instance.schedulerPhase;
+      if (phase == SchedulerPhase.idle ||
+          phase == SchedulerPhase.postFrameCallbacks) {
+        _consider();
+      }
+    });
+  }
+
   void _consider() {
     if (!_active || !_dirty) return;
     final Duration now = _now();
+    if (_busy(now)) {
+      _armSettle();
+      return;
+    }
     if (now < _nextAllowed) {
       _armTimer(_nextAllowed - now);
       return;
+    }
+    if (_busySince != null && now - _busySince! >= busyCap) {
+      // The cap was reached and the walk goes ahead: the next stretch is counted from it (not
+      // from a walk the throttle or a retry backoff still holds back).
+      _busySince = now;
     }
     _dirty = false;
     unawaited(_buildAndSend());
@@ -216,11 +322,21 @@ class ViewHierarchyPublisher {
 
   static const Duration _maxBackoff = Duration(seconds: 30);
 
-  Future<void> _buildAndSend() async {
+  /// The limits for a walk taken now: the walk is cut at a share of one frame when a frame is
+  /// already due, because then the walk would be added to a frame on a tight budget. An explicit
+  /// capture keeps the full budget (the caller waits for it, nothing is drawn because of it).
+  HierarchyLimits _limitsNow({required bool explicit}) {
+    if (explicit || !_framePending()) return limits;
+    Duration share = _frameInterval() * frameShare;
+    if (share < minBudget) share = minBudget;
+    return share >= limits.budget ? limits : limits.withBudget(share);
+  }
+
+  Future<void> _buildAndSend({bool explicit = false}) async {
     HierarchySnapshot? snapshot;
     final Duration started = _now();
     try {
-      snapshot = _builder(limits, _now);
+      snapshot = _builder(_limitsNow(explicit: explicit), _now);
     } catch (_) {
       snapshot = null; // fail closed: nothing is sent as a hierarchy
     }
@@ -272,5 +388,7 @@ class ViewHierarchyPublisher {
     _active = false;
     _timer?.cancel();
     _timer = null;
+    _settleTimer?.cancel();
+    _settleTimer = null;
   }
 }

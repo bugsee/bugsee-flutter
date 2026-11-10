@@ -845,6 +845,280 @@ void main() {
     });
   });
 
+  group('an off-screen subtree that stays inside its box is skipped', () {
+    // The skip is only a faster way to the same snapshot: every tree here is built both ways and
+    // the payloads must be identical, node for node.
+    Future<void> same(
+      WidgetTester tester,
+      Widget w, {
+      List<String>? has,
+    }) async {
+      await tester.pumpWidget(w);
+      final HierarchySnapshot plain = buildViewHierarchy(
+        clock: frozenClock,
+        skipContained: false,
+      )!;
+      final HierarchySnapshot fast = buildViewHierarchy(clock: frozenClock)!;
+      expect(fast.render(), plain.render());
+      expect(fast.nodeCount, plain.nodeCount);
+      expect(fast.truncated, plain.truncated);
+      for (final String name in has ?? const <String>[]) {
+        expect(named(payload(fast), name), isNotEmpty, reason: name);
+      }
+    }
+
+    Widget column(Widget Function(int i) row, {int rows = 40}) => host(
+      MediaQuery(
+        data: const MediaQueryData(size: Size(300, 400)),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [for (var i = 0; i < rows; i++) row(i)],
+                ),
+              ),
+            ),
+            const Marker(width: 20, height: 20),
+          ],
+        ),
+      ),
+    );
+
+    testWidgets(
+      'the skip really skips: nothing below an off-screen row is visited',
+      (tester) async {
+        // `_Counted` sits below each row's box, where the plain walk visits it and the skip must
+        // not: if the check always answered "not contained" the output would still be the same.
+        await tester.pumpWidget(
+          column(
+            (i) => Marker(
+              width: 100,
+              height: 30,
+              child: _Counted(child: Text('r$i')),
+            ),
+          ),
+        );
+        _Counted.reads = 0;
+        buildViewHierarchy(clock: frozenClock, skipContained: false);
+        final int plain = _Counted.reads;
+        _Counted.reads = 0;
+        buildViewHierarchy(clock: frozenClock);
+        final int fast = _Counted.reads;
+        expect(
+          plain,
+          greaterThanOrEqualTo(40),
+          reason: 'every row is visited by the plain walk',
+        );
+        expect(
+          fast,
+          lessThanOrEqualTo(plain ~/ 2),
+          reason: 'rows off screen are skipped (about half show)',
+        );
+        expect(fast, greaterThan(0), reason: 'rows on screen are not');
+      },
+    );
+
+    testWidgets('a subtree that fails late is not scanned once per level', (
+      tester,
+    ) async {
+      // Eight levels of plain boxes, each with a few siblings, and at the very end of each section
+      // a child moved far outside it: every level's check would scan nearly the whole section
+      // again before failing. Counted by the clock reads (one per 32 steps of either walk).
+      Widget level(int depth) => depth == 0
+          ? Transform.translate(
+              offset: const Offset(0, 5000),
+              child: const OtherMarker(width: 10, height: 10),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(1),
+              child: Column(
+                children: [
+                  for (var k = 0; k < 6; k++)
+                    const Marker(width: 10, height: 4),
+                  level(depth - 1),
+                ],
+              ),
+            );
+      await tester.pumpWidget(column((i) => level(8), rows: 40));
+      var reads = 0;
+      Duration counting() {
+        reads++;
+        return Duration.zero;
+      }
+
+      final plain = buildViewHierarchy(clock: counting, skipContained: false)!;
+      final int plainReads = reads;
+      reads = 0;
+      final fast = buildViewHierarchy(clock: counting)!;
+      final int fastReads = reads;
+      expect(fast.render(), plain.render());
+      debugPrint(
+        'late-failing sections: plain $plainReads reads, skip $fastReads',
+      );
+      expect(
+        fastReads,
+        lessThan(plainReads * 3),
+        reason: 'a constant number of scans, not one per level (8)',
+      );
+    });
+
+    testWidgets('plain rows', (tester) async {
+      await same(
+        tester,
+        column(
+          (i) => Padding(
+            padding: const EdgeInsets.all(2),
+            child: Marker(width: 100, height: 30, child: Text('r$i')),
+          ),
+        ),
+      );
+    });
+
+    testWidgets('a Transform that brings a child back on screen', (
+      tester,
+    ) async {
+      await same(
+        tester,
+        column(
+          (i) => i == 30
+              ? Transform.translate(
+                  offset: const Offset(0, -900),
+                  child: const OtherMarker(width: 50, height: 20),
+                )
+              : Marker(width: 100, height: 30, child: Text('r$i')),
+        ),
+        has: ['OtherMarker'],
+      );
+    });
+
+    testWidgets('a FractionalTranslation', (tester) async {
+      await same(
+        tester,
+        column(
+          (i) => i == 30
+              ? FractionalTranslation(
+                  translation: const Offset(0, -40),
+                  child: const OtherMarker(width: 50, height: 20),
+                )
+              : Marker(width: 100, height: 30),
+        ),
+        has: ['OtherMarker'],
+      );
+    });
+
+    testWidgets('a child that overflows its row without clipping', (
+      tester,
+    ) async {
+      await same(
+        tester,
+        column(
+          (i) => i == 30
+              ? SizedBox(
+                  height: 10,
+                  width: 10,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: const [
+                      Positioned(
+                        top: -800,
+                        left: 0,
+                        child: OtherMarker(width: 50, height: 20),
+                      ),
+                    ],
+                  ),
+                )
+              : Marker(width: 100, height: 30),
+        ),
+        has: ['OtherMarker'],
+      );
+    });
+
+    testWidgets('an OverlayPortal inside an off-screen row', (tester) async {
+      final controller = OverlayPortalController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (var i = 0; i < 40; i++)
+                    i == 30
+                        ? OverlayPortal(
+                            controller: controller,
+                            overlayChildBuilder: (_) => const Align(
+                              alignment: Alignment.topLeft,
+                              child: OtherMarker(width: 40, height: 15),
+                            ),
+                            child: const Marker(width: 100, height: 40),
+                          )
+                        : const Marker(width: 100, height: 40),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      controller.show();
+      await tester.pump();
+      final plain = buildViewHierarchy(
+        clock: frozenClock,
+        skipContained: false,
+      )!;
+      final fast = buildViewHierarchy(clock: frozenClock)!;
+      expect(fast.render(), plain.render());
+      expect(named(payload(fast), 'OtherMarker'), isNotEmpty);
+    });
+
+    testWidgets('secure views, nested lists, rotated and clipped rows', (
+      tester,
+    ) async {
+      await same(
+        tester,
+        column(
+          (i) => switch (i % 5) {
+            0 => const BugseeSecureView(child: Marker(width: 60, height: 20)),
+            1 => SizedBox(
+              height: 50,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (var k = 0; k < 20; k++) const Marker(width: 40),
+                ],
+              ),
+            ),
+            2 => RotatedBox(
+              quarterTurns: 1,
+              child: const Marker(width: 30, height: 10),
+            ),
+            3 => ClipRect(child: const Marker(width: 100, height: 30)),
+            _ => Opacity(
+              opacity: .5,
+              child: const Marker(width: 100, height: 30),
+            ),
+          },
+        ),
+      );
+    });
+
+    testWidgets('a long eager list is cut the same way by a node cap', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        column((i) => Marker(width: 100, height: 30, child: Text('r$i'))),
+      );
+      const limits = HierarchyLimits(maxNodes: 40);
+      final plain = buildViewHierarchy(
+        clock: frozenClock,
+        limits: limits,
+        skipContained: false,
+      )!;
+      final fast = buildViewHierarchy(clock: frozenClock, limits: limits)!;
+      expect(fast.render(), plain.render());
+      expect(fast.truncated, plain.truncated);
+    });
+  });
+
   group('type names are identifiers whatever runtimeType says', () {
     test('a name that is not an identifier is replaced', () {
       expect(debugTypeName(_FreeText()), 'Widget');
@@ -854,6 +1128,43 @@ void main() {
       );
       expect(debugTypeName(const Marker()), 'Marker');
       expect(debugTypeName(ValueNotifier<int>(1)), 'ValueNotifier');
+    });
+
+    test(
+      'a repeated type gives the same name, and each caller keeps its own fallback',
+      () {
+        // The decision is remembered per type (the walk names the same few types for every node), so a
+        // second answer must not depend on the first caller's fallback.
+        final shared = _SharedFreeText();
+        expect(debugTypeName(shared), 'Widget');
+        expect(debugTypeName(shared, fallback: 'RenderObject'), 'RenderObject');
+        expect(debugTypeName(shared), 'Widget');
+        for (var i = 0; i < 3; i++) {
+          expect(debugTypeName(const Marker()), 'Marker');
+          expect(
+            debugTypeName(const Marker(), fallback: 'RenderObject'),
+            'Marker',
+          );
+        }
+      },
+    );
+
+    test('a type whose name changes never carries free text', () {
+      final shifting = _ShiftingTypeHolder();
+      final names = {for (var i = 0; i < 4; i++) debugTypeName(shifting)};
+      final identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
+      expect(names.every(identifier.hasMatch), isTrue, reason: '$names');
+      expect(names.join(), isNot(contains('alice')));
+      expect(names, {'Honest'}, reason: 'decided once, then remembered');
+      expect((_ShiftingTypeHolder._type as _ShiftingType)._calls, 1);
+    });
+
+    test('the name belongs to the Type that is the cache key', () {
+      // A `runtimeType` getter that answers a different Type on every read: the name cached under
+      // the first Type must be that Type's, not the one the second read returned.
+      final alternating = _AlternatingTypeHolder();
+      expect(debugTypeName(alternating), 'Alpha');
+      expect(debugTypeName(alternating), 'Beta', reason: 'a different Type');
     });
   });
 
@@ -1302,4 +1613,58 @@ class _FreeText {
 class _FreeTextType implements Type {
   @override
   String toString() => 'alice@example.com and a card 4242';
+}
+
+/// A composite that counts how many times its type is read.
+class _Counted extends StatelessWidget {
+  const _Counted({required this.child});
+  static int reads = 0;
+  final Widget child;
+  @override
+  Type get runtimeType {
+    reads++;
+    return super.runtimeType;
+  }
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+class _SharedFreeText {
+  static final Type _type = _FreeTextType();
+  @override
+  Type get runtimeType => _type;
+}
+
+/// A `runtimeType` that says an identifier first and free text afterwards.
+class _ShiftingTypeHolder {
+  static final Type _type = _ShiftingType();
+  @override
+  Type get runtimeType => _type;
+}
+
+class _AlternatingTypeHolder {
+  int _reads = 0;
+  @override
+  Type get runtimeType {
+    final bool first = _reads.isEven;
+    _reads++;
+    return first ? _alpha : _beta;
+  }
+
+  static final Type _alpha = _NamedType('Alpha');
+  static final Type _beta = _NamedType('Beta');
+}
+
+class _NamedType implements Type {
+  _NamedType(this._name);
+  final String _name;
+  @override
+  String toString() => _name;
+}
+
+class _ShiftingType implements Type {
+  int _calls = 0;
+  @override
+  String toString() => _calls++ == 0 ? 'Honest' : 'alice@example.com $_calls';
 }

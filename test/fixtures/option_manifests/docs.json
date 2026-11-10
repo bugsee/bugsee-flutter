@@ -1,8 +1,8 @@
 {
   "_comment": "Extracted from the native SDK sources by scripts/extract_option_docs.dart; do not edit by hand. The prose of the typed BugseeOptions doc comments (scripts/generate_options.dart).",
   "sources": {
-    "android": "v7.4.2@3b7af6371",
-    "ios": "origin/release@2b88480fa"
+    "android": "v7.5.0@8f459d745",
+    "ios": "origin/release@5c6b9d9db"
   },
   "docs": {
     "com.bugsee.option.capture.avplayer": {
@@ -25,6 +25,7 @@
       "iosProperty": "How the crash reporter intercepts crashes (iOS and visionOS; tvOS always uses BSD signal handlers). See BugseeCrashHandlerType."
     },
     "com.bugsee.option.capture.crash-signals": {
+      "android": "The fatal signals the native crash handler intercepts, as an `int` bit set of `CrashSignals`. Default: `DEFAULT` (every signal). Leave `SEGV` and `BUS` out when the app hosts a Mono runtime (Unity's Mono backend, Xamarin), which handles them itself. Read once, when the native handler is first armed in the process; a later launch in the same process with a different value does not change it. Same value layout as the iOS option of the same key.",
       "iosProperty": "The fatal signals the crash reporter intercepts (iOS, tvOS and visionOS). See BugseeCrashSignals. Default: BugseeCrashSignalsDefault, which is every signal except on the Xamarin and .NET wrappers, where BugseeCrashSignalSEGV and BugseeCrashSignalBUS are left out because the .NET runtime handles them itself."
     },
     "com.bugsee.option.capture.device-network-names": {
@@ -91,7 +92,7 @@
       "iosProperty": "Enable video recording"
     },
     "com.bugsee.option.capture.video.adaptive": {
-      "android": "Enables adaptive capture: on a truly idle screen the SDK skips the screen readback entirely — not just the frame encoding — saving the most expensive per-frame work (readback + downscale composite) while nothing on screen is changing. A frame is only captured when the tracked window actually drew, plus a ~1 second forced-capture floor so the video never stalls.\n\nTo stay pixel-accurate, adaptive capture automatically falls back to capturing every frame whenever the draw signal is not authoritative for the whole screen — a live frame interceptor is attached (e.g. remoting), or the screen contains content that renders off the normal View-draw path (a dialog / popup / floating window, a `SurfaceView` / `TextureView`, or a `WebView`).\n\nOption has a `boolean` value. (opt-in).",
+      "android": "Enables adaptive capture: on a truly idle screen the SDK skips the screen readback entirely — not just the frame encoding — saving the most expensive per-frame work (readback + downscale composite) while nothing on screen is changing. A frame is only captured when the tracked window actually drew, plus a ~1 second forced-capture floor so the video never stalls.\n\nTo stay pixel-accurate, adaptive capture automatically falls back to capturing every frame whenever the draw signal is not authoritative for the whole screen — a live frame interceptor is attached (e.g. an extension or debug preview), or the screen contains content that renders off the normal View-draw path (a dialog / popup / floating window, a `SurfaceView` / `TextureView`, or a `WebView`).\n\nOption has a `boolean` value. (opt-in).",
       "iosNote": "adaptive/idle-throttled screen capture"
     },
     "com.bugsee.option.capture.video.custom-muxer": {
@@ -157,7 +158,7 @@
       "wrapper": "Whether, and how, the data the SDK keeps on the device is encrypted: not at all, with a key kept on the device, or end to end, where only the server can decrypt it. (Bugsee.m `-initializeDataEncryption`.)"
     },
     "com.bugsee.option.config.duration": {
-      "android": "Maximum capture duration in seconds.",
+      "android": "Maximum capture duration in seconds. A value of `0` or below is ignored and the default is used.",
       "iosProperty": "Maximum recording duration"
     },
     "com.bugsee.option.config.max-data-size": {

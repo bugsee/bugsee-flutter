@@ -32,6 +32,9 @@ class Rig {
         return true;
       },
       epoch: 1,
+      // These tests are about the gate and the lifecycle, with frames pumped back to back: the
+      // wait for a quiet app (publisher tests have it) would only delay what they look at.
+      busyGap: Duration.zero,
       builder: (limits, now) {
         builds++;
         return fake('A');
@@ -561,6 +564,8 @@ void main() {
           },
           epoch: 1,
           minInterval: const Duration(hours: 1),
+          busyGap: Duration
+              .zero, // real clock under fake timers: "quiet" would never pass
           builder: (limits, now) => fake('fresh${sent.length}'),
         );
         final controller = ViewHierarchyController(

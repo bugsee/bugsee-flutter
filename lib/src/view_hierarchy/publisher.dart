@@ -15,6 +15,11 @@
 //    the one that starts the publisher; with the app idle nothing runs;
 //  * a snapshot identical to the one native holds is not sent;
 //  * a walk is cut by its own time budget and node/byte caps (see [HierarchyLimits]);
+//  * a walk is only taken when the app has been quiet: no frame for [busyGap]. A walk straight
+//    after a frame lands next to the following frame of a scroll, a fling, an animation or a
+//    route transition, and delays it; after a quiet stretch it can only collide with an input
+//    that arrives during the walk. A stretch of frames that never stops (a spinner) still gets a
+//    walk every [busyCap], so its snapshot is refreshed;
 //  * nothing is built while the publisher is not active (not launched, option off, background).
 import 'dart:async';
 import 'dart:math' as math;
@@ -44,6 +49,8 @@ class ViewHierarchyPublisher {
     this.maxInterval = const Duration(seconds: 5),
     this.limits = const HierarchyLimits(),
     this.frameWait = const Duration(milliseconds: 400),
+    this.busyGap = const Duration(milliseconds: 100),
+    this.busyCap = const Duration(seconds: 3),
     Duration Function()? clock,
     ViewHierarchyBuilder? builder,
   }) : epoch = epoch ?? newIsolateEpoch(),
@@ -80,6 +87,13 @@ class ViewHierarchyPublisher {
   /// The longest [flush] waits for a frame that is already scheduled (a screen change that has
   /// not been drawn yet), so the snapshot is of the screen as it will be, not as it was.
   final Duration frameWait;
+
+  /// A walk waits until no frame has been drawn for this long; frames closer together than this
+  /// are one stretch of activity. `Duration.zero` turns the wait off (tests).
+  final Duration busyGap;
+
+  /// The most a stretch of activity postpones a walk: after this the walk is taken anyway.
+  final Duration busyCap;
   final Duration Function() _now;
   final ViewHierarchyBuilder _builder;
 
@@ -87,6 +101,9 @@ class ViewHierarchyPublisher {
   bool _frameArmed = false;
   bool _dirty = false;
   Timer? _timer;
+  Timer? _settleTimer;
+  Duration? _lastFrameAt;
+  Duration? _busySince;
   Duration _nextAllowed = Duration.zero;
   int _sequence = 0;
   int _failures = 0;
@@ -125,6 +142,10 @@ class ViewHierarchyPublisher {
     _active = false;
     _timer?.cancel();
     _timer = null;
+    _settleTimer?.cancel();
+    _settleTimer = null;
+    _busySince = null;
+    _lastFrameAt = null;
     _dirty = false;
     if (_lastSent == null && _nativeKnown) return;
     await _publish(null);
@@ -174,14 +195,56 @@ class ViewHierarchyPublisher {
     _frameArmed = false;
     if (!_active) return;
     // A frame happened: the only thing that can have changed the tree. This schedules no frame.
+    final Duration now = _now();
+    final Duration? last = _lastFrameAt;
+    _lastFrameAt = now;
+    if (last == null || now - last >= busyGap) _busySince = now;
     _dirty = true;
     _armFrame();
     _consider();
   }
 
+  /// Whether a frame was drawn too recently for a walk (and the stretch of frames it belongs to
+  /// has not gone on for [busyCap]).
+  bool _busy(Duration now) {
+    final Duration? since = _busySince;
+    final Duration? last = _lastFrameAt;
+    if (since == null || last == null) return false;
+    if (now - last >= busyGap) return false; // quiet
+    return now - since < busyCap;
+  }
+
+  /// Waits for the frames to stop, then takes the walk that was postponed.
+  void _armSettle() {
+    if (_settleTimer != null) return;
+    _settleTimer = Timer(busyGap, () {
+      _settleTimer = null;
+      if (!_active) return;
+      final Duration? last = _lastFrameAt;
+      if (last != null && _now() - last < busyGap) {
+        _armSettle(); // another frame came: still busy
+        return;
+      }
+      _busySince = null;
+      final SchedulerPhase phase = SchedulerBinding.instance.schedulerPhase;
+      if (phase == SchedulerPhase.idle ||
+          phase == SchedulerPhase.postFrameCallbacks) {
+        _consider();
+      }
+    });
+  }
+
   void _consider() {
     if (!_active || !_dirty) return;
     final Duration now = _now();
+    if (_busy(now)) {
+      _armSettle();
+      return;
+    }
+    if (_busySince != null && now - _busySince! >= busyCap) {
+      _busySince =
+          now; // the cap was reached: the next stretch is counted from this walk
+    }
     if (now < _nextAllowed) {
       _armTimer(_nextAllowed - now);
       return;
@@ -272,5 +335,7 @@ class ViewHierarchyPublisher {
     _active = false;
     _timer?.cancel();
     _timer = null;
+    _settleTimer?.cancel();
+    _settleTimer = null;
   }
 }

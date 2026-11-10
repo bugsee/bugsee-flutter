@@ -88,6 +88,11 @@ While active the publisher (`publisher.dart`):
 * builds only in a **post-frame callback or a timer, never inside a frame** (a test records the scheduler phase);
 * schedules **no frame of its own** (only the frame that starts it): Flutter draws nothing without a frame, so with the app
   idle nothing runs;
+* takes a walk **only when the app has been quiet**: no frame for `busyGap` = 100 ms. A walk straight after a frame lands next to
+  the following frame of a scroll, a fling, an animation or a route transition and delays it (measured: frame intervals of a
+  scrolling eager list go from 1 to 2-4 vsyncs); after a quiet stretch it can only collide with an input that arrives while it
+  runs. Each frame that happens arms a timer; a frame before it fires pushes it back. A stretch of frames that never stops (a
+  spinner) gets one walk per `busyCap` = 3 s. `captureViewHierarchy` ignores this, as it ignores the throttle;
 * spaces builds by `max(300 ms, 20 x the cost of the last build)`, capped at 5 s, with a trailing build so the last change
   of a burst is not lost;
 * sends **only when the payload changed**; a failed send is retried with a doubling backoff (never given up, 30 s cap), and
@@ -114,7 +119,8 @@ Dart refines its identity and serves the same cache.
 ### Staleness
 
 A snapshot is as of the **last frame that changed the tree, plus the publisher's throttle** (300 ms by default, more after
-an expensive build). Flutter draws only on a frame, so a screen that has not changed is described exactly however old the
+an expensive build; the walk also waits for 100 ms without a frame, so a report taken mid-scroll carries the screen as it
+was before the scroll began, and one taken within 100 ms of any frame the screen before it, or up to 3 s into an endless animation). Flutter draws only on a frame, so a screen that has not changed is described exactly however old the
 snapshot is: there is deliberately **no maximum age**. The exceptions are a UI isolate that is blocked or dead while the app
 lives (then native keeps the last snapshot; the only guard is that the engine's detach drops it) and the throttle window
 itself (a report made within ~300 ms of a change can carry the screen before it).

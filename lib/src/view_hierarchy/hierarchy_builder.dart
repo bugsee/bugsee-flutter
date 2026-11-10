@@ -191,14 +191,30 @@ class _Node {
   final String className;
   String? baseClassName;
   Rect? rect;
-  final List<_Node> children = <_Node>[];
+
+  // Most nodes are leaves and most have no overlay child: the lists exist only when used.
+  List<_Node>? _kids;
+  List<_Node> get children => _kids ?? const <_Node>[];
+  void addChild(_Node c) => (_kids ??= <_Node>[]).add(c);
   bool secure = false;
   bool clickable = false;
   bool truncated = false;
 
   /// Nodes that paint inside this one's render object but live elsewhere in the element tree
   /// (an `OverlayPortal` child): appended last, on top, when this node's children are done.
-  final List<_Node> late = <_Node>[];
+  List<_Node>? _late;
+  void addLate(_Node c) => (_late ??= <_Node>[]).add(c);
+
+  /// Appends the nodes that were painted from elsewhere, now that the children are done.
+  void flushLate() {
+    final List<_Node>? l = _late;
+    if (l == null) return;
+    for (final _Node c in l) {
+      addChild(c);
+    }
+    _late = null;
+  }
+
   bool open = false;
   double? alpha;
   String? contentKind;
@@ -294,6 +310,17 @@ class _Walker {
   /// check ([_containedBelow]) instead of being walked. Off only in a test that compares the two.
   final bool skipContained;
   final Matrix4 _scratch = Matrix4.identity();
+  final List<Matrix4> _matrices = <Matrix4>[];
+
+  /// One matrix per element depth, reused by every node at that depth: a node's matrix is read
+  /// only while its own subtree is visited and never kept, and everything below a node is
+  /// visited at a greater depth than the node, so a matrix in use is never the one handed out.
+  Matrix4 _pool(int depth) {
+    while (_matrices.length <= depth) {
+      _matrices.add(Matrix4.identity());
+    }
+    return _matrices[depth];
+  }
 
   final HierarchyLimits limits;
   final Duration Function() now;
@@ -330,10 +357,10 @@ class _Walker {
       view.flutterView.devicePixelRatio,
       _truncated || rootNode.truncated,
     );
-    final String template = writer.finish();
+    final int templateLength = writer.finish();
     // The estimate while walking is generous; an over-size template is dropped, not trimmed.
     // Numbers are not in the template yet: each box adds about 24 bytes.
-    if (template.length + 24 * writer.nodeCount > limits.maxBytes) return null;
+    if (templateLength + 24 * writer.nodeCount > limits.maxBytes) return null;
     return HierarchySnapshot(
       viewId: view.flutterView.viewId,
       devicePixelRatio: view.flutterView.devicePixelRatio,
@@ -400,7 +427,7 @@ class _Walker {
       return;
     }
     node.rect = box;
-    into.children.add(node);
+    into.addChild(node);
   }
 
   /// About what the node costs in the final text: the fixed JSON around it and a box
@@ -437,7 +464,7 @@ class _Walker {
     final RenderObject? parent = ctx.parent;
     if (parent != null && identical(ro.parent, parent)) {
       if (!parent.paintsChild(ro)) return; // not painted: not on screen
-      toView = ctx.toView.clone();
+      toView = _pool(depth)..setFrom(ctx.toView);
       // The view's own transform is the device pixel ratio: boxes stay in LOGICAL pixels (the
       // space `getTransformTo(null)` and the secure rectangles use), which native converts.
       if (parent is! RenderView) parent.applyPaintTransform(ro, toView);
@@ -486,7 +513,7 @@ class _Walker {
         ..rect = region.rect
         ..secure = true;
       _reserve(secure);
-      into.children.add(secure);
+      into.addChild(secure);
       return;
     }
     // Whether something can be tapped here, as the widgets declare it: a `GestureDetector`'s
@@ -513,19 +540,18 @@ class _Walker {
     node.open = true;
     _children(e, _Context(ro, toView, clip), node, depth + 1);
     node.open = false;
-    node.children.addAll(node.late);
-    node.late.clear();
+    node.flushLate();
     final RenderObject? render = ro.parent;
     final _Node? host = render == null ? null : _byRender[render];
     if (parent != null &&
         !identical(render, parent) &&
         host != null &&
         host.open) {
-      host.late.add(
+      host.addLate(
         node,
       ); // painted by a render object elsewhere: on top of what is there
     } else {
-      into.children.add(node);
+      into.addChild(node);
     }
   }
 
@@ -677,14 +703,19 @@ class _Writer {
   final List<double> bounds = <double>[];
   int nodeCount = 0;
 
+  int _length = 0;
+
   void _cut() {
-    segments.add(_text.toString());
+    final String s = _text.toString();
+    _length += s.length;
+    segments.add(s);
     _text.clear();
   }
 
-  String finish() {
+  /// The template's length (the text is kept in segments, never joined).
+  int finish() {
     _cut();
-    return segments.join();
+    return _length;
   }
 
   void writeRoot(_Node root, double ratio, bool truncated) {
@@ -705,7 +736,6 @@ class _Writer {
       ..write(_encoded(n.className));
     final String? base = n.baseClassName;
     if (base != null) _text.write(',"base_class_name":${_encoded(base)}');
-    final options = <String>[];
     if (isRoot) {
       // The age is native's: it knows when the snapshot arrived.
       _text.write(',"options":{"age_ms":');
@@ -715,20 +745,44 @@ class _Writer {
       if (truncated) _text.write(',"truncated":true');
       _text.write('}');
     } else {
-      if (n.secure) options.add('"secure":true');
-      if (n.clickable) options.add('"clickable":true');
       final double? alpha = n.alpha;
-      if (alpha != null && alpha.isFinite) options.add('"alpha":$alpha');
+      final bool hasAlpha = alpha != null && alpha.isFinite;
       final String? kind = n.contentKind;
-      if (kind != null) options.add('"content_kind":"$kind"');
-      if (options.isNotEmpty) {
-        _text.write(',"options":{${options.join(',')}}');
+      if (n.secure || n.clickable || hasAlpha || kind != null) {
+        _text.write(',"options":{');
+        var first = true;
+        void separate() {
+          if (!first) _text.write(',');
+          first = false;
+        }
+
+        if (n.secure) {
+          separate();
+          _text.write('"secure":true');
+        }
+        if (n.clickable) {
+          separate();
+          _text.write('"clickable":true');
+        }
+        if (hasAlpha) {
+          separate();
+          _text.write('"alpha":$alpha');
+        }
+        if (kind != null) {
+          separate();
+          _text.write('"content_kind":"$kind"');
+        }
+        _text.write('}');
       }
     }
     _text.write(',"bounds":');
     _cut();
     final Rect r = n.rect!;
-    bounds.addAll(<double>[r.left, r.top, r.right, r.bottom]);
+    bounds
+      ..add(r.left)
+      ..add(r.top)
+      ..add(r.right)
+      ..add(r.bottom);
     if (n.truncated && !isRoot) _text.write(',"truncated":true');
     if (n.children.isNotEmpty) {
       _text.write(',"subitems":[');

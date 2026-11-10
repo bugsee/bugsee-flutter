@@ -14,7 +14,10 @@
 //  * only a frame that happened can have changed anything, so no frame is ever scheduled except
 //    the one that starts the publisher; with the app idle nothing runs;
 //  * a snapshot identical to the one native holds is not sent;
-//  * a walk is cut by its own time budget and node/byte caps (see [HierarchyLimits]);
+//  * a walk is cut by its own time budget and node/byte caps (see [HierarchyLimits]); while a frame
+//    is already due (an animation is running) the budget is a share of one frame at the display's
+//    refresh rate ([frameShare], never over the limit's own budget), so it fits the slack of a
+//    120 Hz frame as well as a 60 Hz one; with nothing due the full budget applies;
 //  * a walk is only taken when the app has been quiet: no frame for [busyGap]. A walk straight
 //    after a frame lands next to the following frame of a scroll, a fling, an animation or a
 //    route transition, and delays it; after a quiet stretch it can only collide with an input
@@ -23,6 +26,7 @@
 //  * nothing is built while the publisher is not active (not launched, option off, background).
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/scheduler.dart';
@@ -51,13 +55,41 @@ class ViewHierarchyPublisher {
     this.frameWait = const Duration(milliseconds: 400),
     this.busyGap = const Duration(milliseconds: 100),
     this.busyCap = const Duration(seconds: 3),
+    this.frameShare = 0.35,
+    this.minBudget = const Duration(milliseconds: 2),
+    Duration Function()? frameInterval,
+    bool Function()? framePending,
     Duration Function()? clock,
     ViewHierarchyBuilder? builder,
   }) : epoch = epoch ?? newIsolateEpoch(),
+       _frameInterval = frameInterval ?? _displayFrameInterval,
+       _framePending = framePending ?? _schedulerFramePending,
        _now = clock ?? _stopwatchClock(),
        _builder =
            builder ??
            ((limits, now) => buildViewHierarchy(limits: limits, clock: now));
+
+  /// One frame at the display's refresh rate (60 Hz when it is unknown).
+  static Duration _displayFrameInterval() {
+    try {
+      final views = PlatformDispatcher.instance.views;
+      final double hz = views.isEmpty ? 60 : views.first.display.refreshRate;
+      if (hz.isFinite && hz >= 24 && hz <= 480) {
+        return Duration(microseconds: (1e6 / hz).round());
+      }
+    } catch (_) {
+      // Unknown display: assume 60 Hz.
+    }
+    return const Duration(microseconds: 16667);
+  }
+
+  static bool _schedulerFramePending() {
+    try {
+      return SchedulerBinding.instance.hasScheduledFrame;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Duration Function() _stopwatchClock() {
     final watch = Stopwatch()..start();
@@ -94,6 +126,12 @@ class ViewHierarchyPublisher {
 
   /// The most a stretch of activity postpones a walk: after this the walk is taken anyway.
   final Duration busyCap;
+
+  /// The share of one frame a walk may take while a frame is due, and the least it is given.
+  final double frameShare;
+  final Duration minBudget;
+  final Duration Function() _frameInterval;
+  final bool Function() _framePending;
   final Duration Function() _now;
   final ViewHierarchyBuilder _builder;
 
@@ -159,7 +197,7 @@ class ViewHierarchyPublisher {
     await _awaitScheduledFrame();
     if (!_active) return;
     _dirty = false;
-    await _buildAndSend();
+    await _buildAndSend(explicit: true);
   }
 
   /// A change is on its way to the screen: wait for its frame (a new route needs two: it is built
@@ -279,11 +317,21 @@ class ViewHierarchyPublisher {
 
   static const Duration _maxBackoff = Duration(seconds: 30);
 
-  Future<void> _buildAndSend() async {
+  /// The limits for a walk taken now: the walk is cut at a share of one frame when a frame is
+  /// already due, because then the walk would be added to a frame on a tight budget. An explicit
+  /// capture keeps the full budget (the caller waits for it, nothing is drawn because of it).
+  HierarchyLimits _limitsNow({required bool explicit}) {
+    if (explicit || !_framePending()) return limits;
+    Duration share = _frameInterval() * frameShare;
+    if (share < minBudget) share = minBudget;
+    return share >= limits.budget ? limits : limits.withBudget(share);
+  }
+
+  Future<void> _buildAndSend({bool explicit = false}) async {
     HierarchySnapshot? snapshot;
     final Duration started = _now();
     try {
-      snapshot = _builder(limits, _now);
+      snapshot = _builder(_limitsNow(explicit: explicit), _now);
     } catch (_) {
       snapshot = null; // fail closed: nothing is sent as a hierarchy
     }

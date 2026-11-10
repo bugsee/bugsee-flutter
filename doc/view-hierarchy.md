@@ -97,7 +97,7 @@ While active the publisher (`publisher.dart`):
   of a burst is not lost;
 * sends **only when the payload changed**; a failed send is retried with a doubling backoff (never given up, 30 s cap), and
   a clear that failed is retried until it lands;
-* cuts the walk by a **12 ms budget**, **2000 nodes**, **256 KiB**, **512 element levels** (a provider of data, an `InheritedElement`, is not a level: a Material app has dozens): over a cap the tree is cut
+* cuts the walk by a **12 ms budget** (the ceiling, used when no frame is due; while a frame is already due, that is an animation is running, the budget is **35% of one frame at the display's refresh rate**, at least 2 ms: 5.8 ms at 60 Hz, 2.9 ms at 120 Hz, so a walk fits the slack of the frame it is added to; an explicit `captureViewHierarchy` keeps the full 12 ms; a walk cut by the smaller budget is marked `truncated` like any other), **2000 nodes**, **256 KiB**, **512 element levels** (a provider of data, an `InheritedElement`, is not a level: a Material app has dozens): over a cap the tree is cut
   and the cut nodes carry `"truncated": true` (and the root's `options.truncated`), the answer stays valid; a template over
   the byte cap is dropped, not trimmed.
 
@@ -237,7 +237,7 @@ publishing is on) and asks the SDK for a pass, which the cache answers. A no-op 
   hide an older one that is shown).
 * `--obfuscate` release builds: names are minified and flagged, not decoded.
 * A hot-restarted isolate that publishes nothing leaves the old isolate's snapshot until the engine detaches (debug only).
-* The Dart walk is synchronous on the UI isolate and bounded by 12 ms / 2000 nodes, not preemptible: a huge tree is cut, not
+* The Dart walk is synchronous on the UI isolate and bounded by 12 ms (35% of a frame while a frame is due) / 2000 nodes, not preemptible: a huge tree is cut, not
   skipped.
 
 ## Mutation checks and the mutants that were not killed

@@ -65,8 +65,18 @@ class HierarchyLimits {
   final int maxBytes;
 
   /// How long the walk may run; past it the rest of the tree is cut. One walk is synchronous on
-  /// the UI isolate, so this bounds the jank it can cause.
+  /// the UI isolate, so this bounds the jank it can cause. This is the ceiling, for a walk with no
+  /// frame due; the publisher lowers it to a share of one frame while a frame is (see
+  /// `ViewHierarchyPublisher`).
   final Duration budget;
+
+  /// These limits with another time [budget].
+  HierarchyLimits withBudget(Duration budget) => HierarchyLimits(
+    maxNodes: maxNodes,
+    maxDepth: maxDepth,
+    maxBytes: maxBytes,
+    budget: budget,
+  );
 }
 
 /// One snapshot of one Flutter view: a JSON template plus the numbers that fill it in.

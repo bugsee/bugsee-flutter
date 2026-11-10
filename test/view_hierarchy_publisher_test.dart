@@ -27,6 +27,8 @@ class Rig {
     Duration maxInterval = const Duration(seconds: 5),
     Duration frameWait = const Duration(milliseconds: 400),
     bool deferWhileBusy = false,
+    Duration? frameInterval,
+    bool Function()? framePending,
   }) {
     _start = tester.binding.clock.now();
     publisher = ViewHierarchyPublisher(
@@ -42,9 +44,12 @@ class Rig {
       busyGap: deferWhileBusy
           ? const Duration(milliseconds: 100)
           : Duration.zero,
+      frameInterval: frameInterval == null ? null : () => frameInterval,
+      framePending: framePending,
       clock: () => tester.binding.clock.now().difference(_start) + _cost,
       builder: (limits, now) {
         builds++;
+        budgets.add(limits.budget);
         phases.add(SchedulerBinding.instance.schedulerPhase);
         _cost += buildCost;
         if (throwOnBuild) throw StateError('boom');
@@ -58,6 +63,7 @@ class Rig {
   late final ViewHierarchyPublisher publisher;
   final List<ViewHierarchyMessage> sent = [];
   final List<SchedulerPhase> phases = [];
+  final List<Duration> budgets = [];
   int builds = 0;
   int failSends = 0;
   bool throwOnBuild = false;
@@ -639,6 +645,76 @@ void main() {
       },
       deferWhileBusy: true,
     );
+  });
+
+  group('the walk budget follows the frame', () {
+    /// One walk, taken with a frame due or not, on a display of [hz]; the budget it was given.
+    Future<Duration> budgetFor(
+      WidgetTester tester, {
+      required double hz,
+      required bool pending,
+      bool explicit = false,
+    }) async {
+      await tester.pumpWidget(const SizedBox());
+      final r = Rig(
+        tester,
+        frameInterval: Duration(microseconds: (1e6 / hz).round()),
+        framePending: () => pending,
+      );
+      r.publisher.activate();
+      await r.frame(); // the first walk
+      if (explicit) {
+        // No frame is scheduled now, so the capture does not wait for one.
+        await r.publisher.flush();
+      }
+      expect(r.budgets, hasLength(explicit ? 2 : 1));
+      final Duration b = r.budgets.last;
+      await r.publisher.deactivate();
+      r.publisher.dispose();
+      return b;
+    }
+
+    testWidgets('with nothing due the full budget applies', (tester) async {
+      expect(
+        await budgetFor(tester, hz: 120, pending: false),
+        const Duration(milliseconds: 12),
+      );
+    });
+
+    testWidgets('a frame due at 60 Hz gets 35% of 16.7 ms', (tester) async {
+      final b = await budgetFor(tester, hz: 60, pending: true);
+      expect(b.inMicroseconds, closeTo(5833, 5));
+    });
+
+    testWidgets('a frame due at 120 Hz gets 35% of 8.3 ms', (tester) async {
+      final b = await budgetFor(tester, hz: 120, pending: true);
+      expect(b.inMicroseconds, closeTo(2917, 5));
+    });
+
+    testWidgets('a very fast display still gets the least budget', (
+      tester,
+    ) async {
+      expect(
+        await budgetFor(tester, hz: 480, pending: true),
+        const Duration(milliseconds: 2),
+      );
+    });
+
+    testWidgets('a slow display never exceeds the limit itself', (
+      tester,
+    ) async {
+      expect(
+        await budgetFor(tester, hz: 24, pending: true),
+        const Duration(milliseconds: 12),
+      );
+    });
+
+    testWidgets('an explicit capture keeps the full budget', (tester) async {
+      expect(
+        await budgetFor(tester, hz: 120, pending: true, explicit: true),
+        const Duration(milliseconds: 12),
+      );
+    });
   });
 
   group('flush', () {

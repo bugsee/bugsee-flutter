@@ -89,8 +89,7 @@ While active the publisher (`publisher.dart`):
 * schedules **no frame of its own** (only the frame that starts it): Flutter draws nothing without a frame, so with the app
   idle nothing runs;
 * takes a walk **only when the app has been quiet**: no frame for `busyGap` = 100 ms. A walk straight after a frame lands next to
-  the following frame of a scroll, a fling, an animation or a route transition and delays it (measured: frame intervals of a
-  scrolling eager list go from 1 to 2-4 vsyncs); after a quiet stretch it can only collide with an input that arrives while it
+  the following frame of a scroll, a fling, an animation or a route transition and delays it (measured on an eager 1000-row list: the p99 frame interval went from 16.8 to 33.3 ms on the Android phone, 1 to 2 vsyncs, and 2-3% of frames were lost; PLAN.md has the runs); after a quiet stretch it can only collide with an input that arrives while it
   runs. Each frame that happens arms a timer; a frame before it fires pushes it back. A stretch of frames that never stops (a
   spinner) gets one walk per `busyCap` = 3 s. The first snapshot (nothing held natively yet, after a resume too) is taken at once. `captureViewHierarchy` ignores this, as it ignores the throttle;
 * spaces builds by `max(300 ms, 20 x the cost of the last build)`, capped at 5 s, with a trailing build so the last change

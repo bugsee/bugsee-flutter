@@ -35,6 +35,7 @@
 //
 // Caps: [HierarchyLimits]. Over a cap the walk stops adding nodes, marks what it cut with
 // `truncated`, and the answer is still valid; any error fails closed (`null`, nothing sent).
+import 'dart:collection' show HashSet;
 import 'dart:convert' show jsonEncode;
 
 import 'package:flutter/rendering.dart';
@@ -322,6 +323,10 @@ class _Walker {
     return _matrices[depth];
   }
 
+  /// Boxes on the path to something a containment check found not contained (see
+  /// [_containedBelow]): not checked again in this walk.
+  final Set<RenderObject> _noRecheck = HashSet<RenderObject>.identity();
+
   final HierarchyLimits limits;
   final Duration Function() now;
   final Duration _start;
@@ -560,7 +565,13 @@ class _Walker {
   /// would make no node. Anything unusual (a transform, a child outside the box, a render parent
   /// that is not the element parent, a sliver, a view) answers `false` and the subtree is walked
   /// the ordinary way, so the result is the same either way. Allocates nothing per element.
+  ///
+  /// A check that fails has scanned a good part of the subtree for nothing, and every off-screen
+  /// box below it would scan its own part again: the boxes on the path down to what failed are
+  /// remembered ([_noRecheck]) and answer `false` at once, so the waste is one scan and not one
+  /// per level. A box that answers `false` is only walked, as it was before the check existed.
   bool _containedBelow(RenderObjectElement anchor, RenderBox anchorBox) {
+    if (_noRecheck.contains(anchorBox)) return false;
     final Size size = anchorBox.size;
     if (!(size.width.isFinite && size.height.isFinite)) return false;
     var ok = true;
@@ -630,11 +641,13 @@ class _Walker {
         parent = savedParent;
         atX = savedX;
         atY = savedY;
+        if (!ok) _noRecheck.add(ro);
         return;
       }
       e.debugVisitOnstageChildren(visit);
     };
     anchor.debugVisitOnstageChildren(visit);
+    if (!ok) _noRecheck.add(anchorBox);
     return ok;
   }
 

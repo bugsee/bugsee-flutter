@@ -53,7 +53,9 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 
 ### Known gaps
 
-* Verified on Android emulators, one physical Android 14 device (integration tests; not the harness) and iOS simulators; no physical iPhone yet. The iOS simulator slice has no crash reporter and
-  files no logged exceptions, so those paths are unverified on iOS.
+* Verified on Android emulators and iOS simulators, plus integration tests (not the device harness) on one physical Android 14 device, an iPhone XS and an iPhone 16 Pro. On the
+  phones some tests failed or were not run (`view_hierarchy_test` fails on the debug builds of the Android device and the iPhone XS and passes in profile builds; the iPhone 16 Pro ran only
+  `attachments`, `network` and `logs`), and the harness scenarios (iOS recovered crash, exception bundles) were not run on a phone. The iOS simulator slice has no crash reporter and
+  files no logged exceptions, so those paths are unverified on iOS. Details: PLAN.md.
 * Not exposed: APM transactions and spans, the appearance system, `relaunch`.
 * See `PLAN.md` for the open decisions and the full list.

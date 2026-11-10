@@ -45,6 +45,7 @@ class Rig {
       clock: () => tester.binding.clock.now().difference(_start) + _cost,
       builder: (limits, now) {
         builds++;
+        buildTimes.add(now());
         phases.add(SchedulerBinding.instance.schedulerPhase);
         _cost += buildCost;
         if (throwOnBuild) throw StateError('boom');
@@ -58,6 +59,7 @@ class Rig {
   late final ViewHierarchyPublisher publisher;
   final List<ViewHierarchyMessage> sent = [];
   final List<SchedulerPhase> phases = [];
+  final List<Duration> buildTimes = [];
   int builds = 0;
   int failSends = 0;
   bool throwOnBuild = false;
@@ -544,14 +546,47 @@ void main() {
     const Duration quiet = Duration(milliseconds: 150);
 
     rigTest(
-      'a lone frame is walked after the quiet, not inside its frame',
+      'the first snapshot is not made to wait (native holds nothing yet)',
       (tester, r) async {
         r.publisher.activate();
         await r.frame();
-        expect(r.builds, 0, reason: 'not next to the frame that just ended');
+        expect(
+          r.builds,
+          1,
+          reason: 'a report now would carry no hierarchy at all',
+        );
+      },
+      deferWhileBusy: true,
+    );
+
+    rigTest(
+      'nor is the first one after a resume, which cleared native',
+      (tester, r) async {
+        r.publisher.activate();
+        await r.frame();
+        await tester.pump(quiet);
+        await r.publisher.deactivate();
+        r.publisher.activate();
+        await r.frame();
+        expect(r.builds, 2);
+      },
+      deferWhileBusy: true,
+    );
+
+    rigTest(
+      'a later frame is walked after the quiet, not inside its frame',
+      (tester, r) async {
+        r.publisher.activate();
+        await r.frame();
         await tester.pump(quiet);
         expect(r.builds, 1);
-        expect(r.phases.single, isNot(SchedulerPhase.persistentCallbacks));
+        r.result = fake('B');
+        await r.frame(const Duration(milliseconds: 400)); // past the throttle
+        expect(r.builds, 1, reason: 'not next to the frame that just ended');
+        await tester.pump(quiet);
+        expect(r.builds, 2);
+        expect(r.phases.last, isNot(SchedulerPhase.persistentCallbacks));
+        expect(r.tags.last, 'B');
       },
       deferWhileBusy: true,
     );
@@ -598,14 +633,21 @@ void main() {
     );
 
     rigTest(
-      'an endless animation is still refreshed, at most every busyCap',
+      'an endless animation is walked once per busyCap, no oftener',
       (tester, r) async {
         r.publisher.activate();
         for (var i = 0; i < 400; i++) {
           r.result = fake('A$i');
           await r.frame(vsync); // 6.4 s
         }
-        expect(r.builds, inInclusiveRange(1, 3));
+        // The first at once (nothing held), then one per 3 s of continuous frames.
+        expect(r.buildTimes, hasLength(3));
+        expect(r.buildTimes.first, lessThan(const Duration(milliseconds: 50)));
+        for (var i = 1; i < r.buildTimes.length; i++) {
+          final gap = r.buildTimes[i] - r.buildTimes[i - 1];
+          expect(gap, greaterThanOrEqualTo(const Duration(seconds: 3)));
+          expect(gap, lessThan(const Duration(milliseconds: 3100)));
+        }
       },
       deferWhileBusy: true,
     );
@@ -614,13 +656,14 @@ void main() {
       'an explicit capture is taken even in the middle of a stretch',
       (tester, r) async {
         r.publisher.activate();
+        await r.frame();
         for (var i = 0; i < 20; i++) {
           await r.frame(vsync);
         }
-        expect(r.builds, 0);
+        expect(r.builds, 1);
         r.result = fake('NOW');
         await r.publisher.flush();
-        expect(r.builds, 1);
+        expect(r.builds, 2);
         expect(r.tags.last, 'NOW');
       },
       deferWhileBusy: true,
@@ -630,12 +673,13 @@ void main() {
       'turning it off while a walk is waiting leaves nothing pending',
       (tester, r) async {
         r.publisher.activate();
+        await r.frame();
         for (var i = 0; i < 20; i++) {
           await r.frame(vsync);
         }
         await r.publisher.deactivate();
         await tester.pump(const Duration(seconds: 2));
-        expect(r.builds, 0);
+        expect(r.builds, 1);
       },
       deferWhileBusy: true,
     );

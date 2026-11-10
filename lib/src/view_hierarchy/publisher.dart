@@ -210,6 +210,10 @@ class ViewHierarchyPublisher {
     final Duration? since = _busySince;
     final Duration? last = _lastFrameAt;
     if (since == null || last == null) return false;
+    // Nothing is held natively (the first snapshot after activation or a resume, or after a
+    // failed send): a report now would carry no hierarchy at all, which is worse than the one
+    // walk next to a frame.
+    if (_lastSent == null || !_nativeKnown) return false;
     if (now - last >= busyGap) return false; // quiet
     return now - since < busyCap;
   }
@@ -241,13 +245,14 @@ class ViewHierarchyPublisher {
       _armSettle();
       return;
     }
-    if (_busySince != null && now - _busySince! >= busyCap) {
-      _busySince =
-          now; // the cap was reached: the next stretch is counted from this walk
-    }
     if (now < _nextAllowed) {
       _armTimer(_nextAllowed - now);
       return;
+    }
+    if (_busySince != null && now - _busySince! >= busyCap) {
+      // The cap was reached and the walk goes ahead: the next stretch is counted from it (not
+      // from a walk the throttle or a retry backoff still holds back).
+      _busySince = now;
     }
     _dirty = false;
     unawaited(_buildAndSend());

@@ -92,7 +92,7 @@ While active the publisher (`publisher.dart`):
   the following frame of a scroll, a fling, an animation or a route transition and delays it (measured: frame intervals of a
   scrolling eager list go from 1 to 2-4 vsyncs); after a quiet stretch it can only collide with an input that arrives while it
   runs. Each frame that happens arms a timer; a frame before it fires pushes it back. A stretch of frames that never stops (a
-  spinner) gets one walk per `busyCap` = 3 s. `captureViewHierarchy` ignores this, as it ignores the throttle;
+  spinner) gets one walk per `busyCap` = 3 s. The first snapshot (nothing held natively yet, after a resume too) is taken at once. `captureViewHierarchy` ignores this, as it ignores the throttle;
 * spaces builds by `max(300 ms, 20 x the cost of the last build)`, capped at 5 s, with a trailing build so the last change
   of a burst is not lost;
 * sends **only when the payload changed**; a failed send is retried with a doubling backoff (never given up, 30 s cap), and
@@ -119,11 +119,13 @@ Dart refines its identity and serves the same cache.
 ### Staleness
 
 A snapshot is as of the **last frame that changed the tree, plus the publisher's throttle** (300 ms by default, more after
-an expensive build; the walk also waits for 100 ms without a frame, so a report taken mid-scroll carries the screen as it
-was before the scroll began, and one taken within 100 ms of any frame the screen before it, or up to 3 s into an endless animation). Flutter draws only on a frame, so a screen that has not changed is described exactly however old the
-snapshot is: there is deliberately **no maximum age**. The exceptions are a UI isolate that is blocked or dead while the app
-lives (then native keeps the last snapshot; the only guard is that the engine's detach drops it) and the throttle window
-itself (a report made within ~300 ms of a change can carry the screen before it).
+an expensive build) **and its wait for a quiet app** (100 ms without a frame). Flutter draws only on a frame, so a screen that
+has not changed is described exactly however old the snapshot is: there is deliberately **no maximum age**. The exceptions are a
+UI isolate that is blocked or dead while the app lives (then native keeps the last snapshot; the only guard is that the engine's
+detach drops it) and the two waits above: a report made within about 400 ms of a change, in the middle of a scroll or animation
+(it carries the screen from before the scroll began), or up to 3 s into an endless animation, can carry the screen before the
+change. The first snapshot after the publisher starts (launch, a resume) is not made to wait, so a report is never left with no
+hierarchy at all while native holds nothing.
 
 The SDK **does not know the age**: it stamps the entry with the time of the reply. So the payload carries it: the root's
 `options.age_ms` is `now - the moment native received the snapshot`, computed at every answer (so an old snapshot says it is

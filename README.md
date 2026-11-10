@@ -9,8 +9,8 @@ errors.
 
 > **Version 10.0.0-dev.1, not published yet.** This is a clean rewrite for the 7.x native SDKs and a **breaking change from
 > 9.x**: see [doc/migration-from-9x.md](doc/migration-from-9x.md). Whether a 9.x compatibility layer is offered has not been
-> decided. Everything below was verified on an Android emulator and an iOS simulator; no physical device has been used yet
-> (see [Platform support and limits](#platform-support-and-limits)).
+> decided. Everything below was verified on Android emulators and iOS simulators; physical devices (an Android 14 phone, an iPhone XS, an iPhone 16 Pro)
+> ran only part of the integration tests, with some failures and unverified reports (see [Platform support and limits](#platform-support-and-limits)).
 
 ## Requirements
 
@@ -372,7 +372,7 @@ Know these limits:
 | Isolates | The API works from the main isolate: a call from a background isolate is a `BugseeException`. Network and log capture and the error handlers belong to the isolate that installed them; `listenToIsolateErrors` reports an isolate you spawn. Hot restart is handled (a new isolate takes over) |
 | Web, desktop | The calls do nothing; `launch` throws |
 | tvOS, visionOS | Not covered |
-| Real devices | **Not exercised yet.** All evidence is from emulators and simulators ([doc/verification.md](doc/verification.md), including what was not covered) |
+| Real devices | **Partly exercised.** Integration tests ran on one Android 14 phone, an iPhone XS and an iPhone 16 Pro: `view_hierarchy_test` fails on the debug builds of the Android phone and the iPhone XS (it passes in profile builds), the iPhone 16 Pro ran only `attachments`, `network` and `logs`, and the device harness scenarios (recovered iOS crash, iOS exception bundles) were not run on a phone. Most evidence is from emulators and simulators ([doc/verification.md](doc/verification.md), including what was not covered) |
 
 ## Troubleshooting
 

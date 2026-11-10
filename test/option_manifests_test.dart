@@ -125,7 +125,7 @@ void main() {
     final shared = a.keys.toSet().intersection(i.keys.toSet());
 
     test('counts, so a changed option surface is noticed', () {
-      // Android 7.5.0: 88 (85 public + 3 hidden). iOS 7.0.0: 72 (71 public + 1 hidden).
+      // Android 7.5.0: 88 (85 public + 3 hidden). iOS 7.0.1: 72 (71 public + 1 hidden).
       expect(a.length, 88);
       expect(i.length, 72);
       expect(shared.length, 52);

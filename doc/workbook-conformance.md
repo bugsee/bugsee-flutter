@@ -26,7 +26,7 @@ How to read the columns:
 | **1.2** declare the NDK artefact | `android/build.gradle` (`bugsee-android` and `bugsee-android-ndk`, `api`) | `test/native_versions_test.dart` ("declares the NDK artefact next to the core", 1.2.2) | 1, 2 (`./gradlew :app:dependencies`; a real `SIGSEGV` produces a report) | |
 | 1.2.3 four `libbugsee*.so` | | | 1, 2: **measured** from `/proc/PID/maps` and the crashpad handler's maps, not by the workbook's logcat grep (which reads 1 to 2 on a correct build; specs#65) | Android emulator only |
 | **1.3** optional modules | only `bugsee-android` and `-ndk` are bundled; the feedback chat is the separate `packages/bugsee_flutter_feedback` | `test/feedback_package_drift_test.dart` (the core never mentions feedback) | feedback: Android registration and the chat opened (see `packages/bugsee_flutter_feedback/doc/feedback.md`) | The leak module is not bundled (no typed option fields) |
-| **1.4** Gradle plugin 4.0.7 or later | the app applies `com.bugsee.android.gradle` (pin 4.0.8, not autolinkable): README, `example/android` | `test/native_versions_test.dart` ("example applies the Gradle plugin at the pinned version") | 1 (the plugin in use is the pinned one alone; provider kept at `initOrder` 200) | The broken 4.0.6 arm was **not run**; only the fixed arm. The ordering bug [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) needs an app-side workaround (README) |
+| **1.4** Gradle plugin 4.0.7 or later | the app applies `com.bugsee.android.gradle` (pin 4.1.0, not autolinkable): README, `example/android` | `test/native_versions_test.dart` ("example applies the Gradle plugin at the pinned version") | 1 (the plugin in use is the pinned one alone; provider kept at `initOrder` 200) | The broken 4.0.6 arm was **not run**; only the fixed arm. The ordering bug [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) is fixed in plugin 4.1.0: no app-side workaround is needed |
 | **2.1** register before launch, not from the managed runtime | `FlutterWrapperInitProvider.java`; iOS `BGSFlutterWrapperRegistrar` `+load` (`BGSFlutterWrapper.m`) | `test/wrapper_registration_test.dart`; JUnit `FlutterWrapperInitProviderTest`; XCTest `BGSFlutterWrapperTests` | 1 (the wrapper's log line precedes the SDK banner on both platforms), **2** (the recovered report carries the wrapper: the run that exposes a late registration) | The recovery run is Android only (the iOS simulator has no crash reporter) |
 | **2.2** Android `ContentProvider`, `initOrder` 200, base class, `onExtensionCreate`; the name must not match `Bugsee*InitProvider` | `android/src/main/AndroidManifest.xml`, `FlutterWrapperInitProvider` | `test/wrapper_registration_test.dart` (attributes, the regex against the class name, no other provider; 2.2.4, 2.2.5); the feedback package asserts it adds no provider | 1 (merged manifest has the provider at 200 ahead of 100) | |
 | **2.3** iOS: register before `launch` | `+load` registrar, before `main` and before the engine exists | `test/wrapper_registration_test.dart` ("registers at image load, not only from the engine"); XCTest | 1 | |
@@ -72,7 +72,7 @@ How to read the columns:
 | Trap | Implemented as | Guard | Device |
 |---|---|---|---|
 | NDK artefact not declared (1.2) | `bugsee-android-ndk` is an `api` dependency of the plugin | `test/native_versions_test.dart` | 1, 2 |
-| Gradle plugin 4.0.6 (1.4) | the app applies 4.0.8 (README); the feedback package registers its module itself as a safety net | `test/native_versions_test.dart`; `test/feedback_package_drift_test.dart` | 1 (fixed arm only; the broken arm was not run) |
+| Gradle plugin 4.0.6 (1.4) | the app applies 4.1.0 (README); the feedback package registers its module itself as a safety net | `test/native_versions_test.dart`; `test/feedback_package_drift_test.dart` | 1 (fixed arm only; the broken arm was not run) |
 | Provider named `Bugsee*InitProvider` (2.2) | `FlutterWrapperInitProvider` | `test/wrapper_registration_test.dart` (the regex against the class name) | 1 |
 | Wrapper registered from the managed runtime (2.1) | registered natively at process start; Dart only refines | `test/wrapper_registration_test.dart`; `test/wrapper_identity_test.dart` | 2 (recovered report has the wrapper), 6 |
 | Secure rectangles in the wrong unit (5.3) | per-platform conversion at every pull | `test/secure_rects_drift_test.dart`; JUnit `ViewScaleTest`; XCTest | 7 (emulator densities; iOS 3x) |
@@ -87,7 +87,7 @@ How to read the columns:
 |---|---|---|
 | 1 | Versions in one file, with a drift guard | Done (`native-versions.json`, `test/native_versions_test.dart`) |
 | 2 | NDK artefact declared and verified on a device | Done; verified on an Android emulator (scenarios 1 and 2) |
-| 3 | Gradle plugin 4.0.7 or later | Done (4.0.8); the 4.0.6 failure arm not run |
+| 3 | Gradle plugin 4.0.7 or later | Done (4.1.0); the 4.0.6 failure arm not run |
 | 4 | Registered before launch, provider correctly named | Done; guarded; verified on a recovered Android report; iOS registration verified, iOS recovery not possible on a simulator |
 | 5 | Identity: type, version, context | Done |
 | 6 | Lifecycle events forwarded, unknown names included | Done |
@@ -108,4 +108,4 @@ Beyond the minimum, the workbook's "can follow" items 6.7, 7.3 and Part 8 are im
 5. Spec gaps filed against `bugsee/specs`: #61 (7.1 Android recovered-report row), #63 (wrapper channel "not implemented"), #64
    (`vh` async wait), #65 (the four-library logcat grep).
 6. SDK defects filed (#309 attachment re-check and #316 black SurfaceView screenshot fixed in Android 7.5.0; bugsee-cocoa#291 closed in 7.0.1): bugsee-android#309, bugsee-android#316, bugsee-cocoa#291
-   (feedback listener ordering); the Gradle plugin ordering bug (#33).
+   (feedback listener ordering); the Gradle plugin ordering bug (#33, fixed in plugin 4.1.0).

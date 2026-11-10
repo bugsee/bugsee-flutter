@@ -437,6 +437,13 @@ final class BugseeOptions {
   /// with a different value does not change it. Same value layout as the iOS option of the same
   /// key.
   ///
+  /// This package exports no `CrashSignals` constants: pass the numbers. The bits are `ABRT` 1,
+  /// `SEGV` 2, `BUS` 4, `ILL` 8, `FPE` 16 and `TRAP` 32 (63 is all six; `0` turns the selectable
+  /// signals off). `128` is the SDK default, a sentinel and not a signal mask: on its own it lets
+  /// the SDK choose, which today is every signal, so by default `SEGV` and `BUS` are intercepted
+  /// on Android and iOS alike. Any other value is used as given; to leave `SEGV` and `BUS` out,
+  /// pass `63 & ~(2 | 4)`, which is `57`.
+  ///
   /// - Option key: `com.bugsee.option.capture.crash-signals`.
   /// - SDK default: `128`.
   /// - Available on: Android and iOS.

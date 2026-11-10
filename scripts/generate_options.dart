@@ -385,6 +385,20 @@ String platformsLine(Option o) {
   return 'iOS only. On Android the option is ignored (a debug-mode warning says so).';
 }
 
+/// Prose this wrapper adds after the SDK's own text for an option, where the SDK text
+/// names a native type this package does not export. Checked against the Android SDK's
+/// `CrashSignals` (bit values "the same as the iOS SDK's `BugseeCrashSignals`").
+const wrapperDocNotes = {
+  'com.bugsee.option.capture.crash-signals':
+      'This package exports no `CrashSignals` constants: pass the numbers. The bits are '
+      '`ABRT` 1, `SEGV` 2, `BUS` 4, `ILL` 8, `FPE` 16 and `TRAP` 32 (63 is all six; `0` '
+      'turns the selectable signals off). `128` is the SDK default, a sentinel and not a '
+      'signal mask: on its own it lets the SDK choose, which today is every signal, so '
+      'by default `SEGV` and `BUS` are intercepted on Android and iOS alike. Any other '
+      'value is used as given; to leave `SEGV` and `BUS` out, pass `63 & ~(2 | 4)`, which '
+      'is `57`.',
+};
+
 String fieldDoc(
   Option o,
   Map<String, dynamic> docs,
@@ -405,6 +419,11 @@ String fieldDoc(
     }
   } else {
     lines.add('The SDK publishes no description for this option.');
+  }
+  final note = wrapperDocNotes[o.key];
+  if (note != null) {
+    lines.add('');
+    lines.addAll(wrap(note));
   }
   lines.add('');
   lines.add('- Option key: `${o.key}`.');

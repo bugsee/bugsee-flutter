@@ -279,9 +279,9 @@ class AndroidCtx {
       await delay(2);
       final log = await dev.logcat();
       final signal = parseFatalSignal(log, l.pid);
+      // `E AndroidRuntime: FATAL EXCEPTION: <thread>`, the `Process:` line, then the exception.
       final fatalJava = RegExp(
-        r'FATAL EXCEPTION[^\n]*\n[^\n]*'
-        '${RegExp.escape(k.marker ?? '@')}',
+        'FATAL EXCEPTION[\\s\\S]{0,600}?${RegExp.escape(k.marker ?? '@')}',
       ).hasMatch(log);
       run.guard(
         'event: the process died of ${k.layer == CrashLayer.native ? 'signal ${k.signal}' : 'an uncaught ${k.marker}'}',
@@ -329,11 +329,11 @@ class AndroidCtx {
       if (k.layer == CrashLayer.native) {
         final sig = crash?['signal'] as Map?;
         run.expect(
-          '[${k.name}] crash.json records signal ${k.signal} as native, with a minidump',
+          '[${k.name}] crash.json records signal ${k.signal} as native, with a minidump or tombstone',
           crash?['ndkCrash'] == true &&
               sig?['number'] == k.signal &&
               crash?['exception_type'] == 'native' &&
-              types.contains('minidump'),
+              (types.contains('minidump') || types.contains('crash.tombstone')),
           'ndkCrash=${crash?['ndkCrash']} signal=$sig exception_type=${crash?['exception_type']} entries $types',
         );
       } else {

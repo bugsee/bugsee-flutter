@@ -31,7 +31,8 @@ stated in the report (`env`): (1) the app reaches the host's mock API as `127.0.
 emulator's `10.0.2.2`: build and run with `BUGSEE_VERIFY_HOST=127.0.0.1` (baked into the build, so an emulator build is not
 reusable on a phone); (2) a phone has no `adb root`, so a non-debuggable release build's private data cannot be read: build with
 `BUGSEE_VERIFY_DEBUGGABLE_RELEASE=1` and the release builds (still R8, `--obfuscate`, the Gradle plugin) are debuggable, read with
-`run-as`; the report says `releaseDebuggable: true` and a guard proves the build is debuggable; they are not what a store ships,
+`run-as` (an overlay manifest with `android:debuggable` and lint's `HardcodedDebugMode` off, added only then; NOT `isDebuggable` on the
+build type, which makes Flutter's Gradle plugin build in DEBUG mode, measured); the report says `releaseDebuggable: true` and a guard proves the build is debuggable; they are not what a store ships,
 so a result that depends on a non-debuggable app (the native symbol upload is skipped for a debuggable build) is not made with it;
 (3) some phones leave `ApplicationExitInfo.status` at 0 for a native crash (measured on an Android 14 phone): on a device that is
 not an emulator a status of 0 is accepted, ONLY with the kernel's `Fatal signal 11` for the same pid in logcat and a native-crash

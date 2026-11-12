@@ -597,9 +597,13 @@ class AndroidCtx {
         if (bundle == null) continue;
         final crash = bundle.crash;
         final types = bundle.entries.map((e) => e['type']).toList();
+        // `kill -SEGV` from outside is the crashpad handler's: a minidump. A fault raised inside the
+        // process leaves a tombstone instead (scenario 10); this phone leaves the tombstone for the
+        // kill as well. Either is the crash's native evidence; the entry says which.
         run.expect(
-          '[$name] the crash entry and the minidump are in the manifest',
-          types.contains('crash') && types.contains('minidump'),
+          '[$name] the crash entry and its native evidence (minidump or tombstone) are in the manifest',
+          types.contains('crash') &&
+              (types.contains('minidump') || types.contains('crash.tombstone')),
           '$types',
         );
         final signal = crash?['signal'] as Map?;
@@ -980,7 +984,7 @@ class AndroidCtx {
         await delay(5);
         // The features, each staged then asked of one report.
         await s.command('vh');
-        await s.command('net http://127.0.0.1:${mock.port}/ping?s5');
+        await s.command('net http://$netHost:${mock.port}/ping?s5');
         await s.command('print s5');
         await delay(4);
         final plain = await _report(run, 'upload plain-$name');

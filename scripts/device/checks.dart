@@ -376,7 +376,11 @@ Future<RawImage?> lastVideoFrame(Bundle b, String workDir, String tag) async {
     }
     return RawImage(w, h, Uint8List.sublistView(raw.bytes!, 0, w * h * 3));
   } finally {
-    if (mp4.existsSync()) mp4.deleteSync();
+    // BUGSEE_VERIFY_KEEP_FRAMES=1 keeps the videos for a look (build/device-verify/frames).
+    if (mp4.existsSync() &&
+        Platform.environment['BUGSEE_VERIFY_KEEP_FRAMES'] != '1') {
+      mp4.deleteSync();
+    }
   }
 }
 

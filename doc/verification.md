@@ -119,6 +119,7 @@ harness was run again on a new simulator (iPhone 17, iOS 26.5, Xcode 27.1) with 
 | 7 | Secure rectangles at density != 1 | PASS (440, 320, 560 dpi; debug and release) | PASS at 3x; a density change at run time is not possible |
 | 8 | Hot restart | PASS | PASS |
 | 9 | Report screenshot by render mode | PASS at Android 7.5.0: content and the secure box redacted in BOTH modes, screenshot and video (at 7.4.2: KNOWN-GAP, all black in the default SurfaceView mode) | not applicable (the iOS screenshot has content, scenario 7) |
+| 10 | Crash and error matrix: native signals, Java, Dart routes | PASS on a physical phone at Android 7.5.1: see section 10 | not run (no iOS device harness yet) |
 
 ## Scenarios
 
@@ -332,6 +333,34 @@ texture mode and the black screenshot is the SurfaceView gap, not the emulator, 
 
 **What could and could not be claimed (Android SDK 7.4.2, history).** At 7.4.2 no screenshot-based redaction claim could be made for Android Flutter apps in the default SurfaceView mode: the screenshot carried
 no content at all (so it was useless as a report screenshot, and the report editor showed black). The video was unaffected. The workaround was `RenderMode.texture` (override `FlutterActivity.getRenderMode()`, or launch with `background_mode: transparent`), with Flutter's documented trade-offs (an extra composition step for `TextureView`, frame rate and memory, platform views composing differently; none of that was measured here). **At 7.5.0 this is fixed (bugsee-android#316): the default mode captures content and the workaround is not needed.** Scenario 9 now fails when the default-mode screenshot is one flat colour while the display is not (`scripts/device/android_scenarios.dart`), so a regression is a failure, not a known gap.
+
+### 10. Crash and error matrix (Android, physical phone)
+
+Run on a physical Android 14 phone (HONOR/Huawei WOD-LX1, arm64, not rootable) on 2026-11-12 at Android SDK 7.5.1 (banner `[7b2ce1f52]`), Gradle plugin
+4.1.1, debug build, `BUGSEE_VERIFY_HOST=127.0.0.1` (see "Physical devices" above). The verification app takes itself down with `crash <kind>` (a crash lab:
+`example/lib/crash_lab.dart`, `MainActivity.java`; the kinds and what each must produce are one table, `scripts/device/core/crash_kinds.dart`, compared with
+the app's by a test). Every fatal kind must really die (proved from logcat) and the NEXT launch must produce the recovered crash report with the wrapper identity
+and the Gradle plugin's build id; 180 of 180 checks passed.
+
+| Kind | How | Result |
+|---|---|---|
+| `ffi-segv`, `ffi-abort`, `ffi-fpe`, `ffi-bus`, `ffi-ill` | a real signal raised in the process through `dart:ffi` (a write to address 0; `abort`; `raise` of 8, 7, 4) | the kernel logs `Fatal signal N`; the report is `ndkCrash: true`, `exception_type: native`, the right signal number and name, with a `crash.tombstone` entry |
+| `java-main`, `java-thread`, `java-nested` | an uncaught exception on the main thread, on a worker thread, and with a cause chain, thrown from native Java | `FATAL EXCEPTION` in logcat; the report is a crash that is NOT native and names the exception (and, nested, its cause) |
+| `dart-sync-framework`, `dart-async`, `dart-zone`, `dart-isolate`, `dart-platform-dispatcher`, `dart-timer`, `dart-stream` | Dart errors through `FlutterError.reportError`, an unawaited future, `Bugsee.runGuarded`, an isolate with `Bugsee.listenToIsolateErrors`, `PlatformDispatcher.onError`, a `Timer`, a stream error | one error report each, with the carrier and the document checked |
+| `dart-isolate-unlistened` | an error in a spawned isolate nobody listened to | **no report, by design** (documented limit), proved against a positive control in the same setup |
+
+Findings: the in-process faults leave a **tombstone**, not a minidump (the minidump entry appears for a kill from outside on an emulator; on this phone the
+external SEGV of scenario 2 also leaves the tombstone: scenario 2 accepts either as the crash's native evidence). Not covered: ANR and hang detection,
+a Java crash during launch (early crash) or in the background, and native symbolication (needs a release build with its libraries uploaded).
+
+**Re-run on a physical Android phone (2026-11-12, SDK 7.5.1, plugin 4.1.1, WOD-LX1 Android 14, not rootable):** with the release builds made debuggable
+(`BUGSEE_VERIFY_DEBUGGABLE_RELEASE=1`, still AOT with R8 and `--obfuscate`) every scenario 1 to 10 PASSED at least once on the final code (the full run: 1, 3,
+4, 6, 7, 8, 9, 10; scenarios 2 and 5 after the harness fixes: 50/50 and 73/73). Not clean, and said so: scenario 5 had three failures in the first full run
+(the network check, which was a harness error: Bugsee's own traffic is excluded by host and the endpoint and the check were both 127.0.0.1, fixed by sending
+the check to `localhost`; and two profile-build pixel checks that did not repeat in the next run, so they are intermittent and not explained), scenario 7 had
+one failed pixel check in an earlier run and passed in the full one, and scenarios 2 and 5 were twice INVALID at their first launch ("wrapper registered as
+null", "alreadyRunning"; the harness refuses to count that experiment, and the same scenarios passed on the next run). No product failure was found. The startup
+hold (`WrapperHold`) was in the build for all of this.
 
 ## Findings
 

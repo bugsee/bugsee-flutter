@@ -139,6 +139,37 @@ public class BugseeFlutterPlugin
         // No activity yet: where the view is is not known, so cover rather than guess.
         store.setPlacement(owner, SecurePlacement.IMPLICIT_VIEW_ID,
                 SecureRectangleStore.Placement.UNKNOWN);
+        watchFirstFrame(binding.getFlutterEngine());
+    }
+
+    /**
+     * The SDK holds capture from process start (manifest {@code com.bugsee.wrapper-hold}) until
+     * the first Flutter frame is up and Dart has had time to publish its secure rectangles
+     * ({@link WrapperHold}).
+     */
+    private static void watchFirstFrame(@NonNull final io.flutter.embedding.engine.FlutterEngine engine) {
+        try {
+            WrapperHold.shared().engineAttached();
+            final io.flutter.embedding.engine.renderer.FlutterRenderer renderer = engine.getRenderer();
+            renderer.addIsDisplayingFlutterUiListener(
+                    new io.flutter.embedding.engine.renderer.FlutterUiDisplayListener() {
+                        @Override
+                        public void onFlutterUiDisplayed() {
+                            WrapperHold.shared().uiDisplayed();
+                        }
+
+                        @Override
+                        public void onFlutterUiNoLongerDisplayed() {
+                        }
+                    });
+            if (renderer.isDisplayingFlutterUi()) {
+                WrapperHold.shared().uiDisplayed();
+            }
+        } catch (Throwable t) {
+            // The cap still ends the hold.
+            Log.e(FlutterWrapperInitProvider.TAG, "wrapper-hold: no first-frame listener: "
+                    + t.getClass().getName());
+        }
     }
 
     @Override

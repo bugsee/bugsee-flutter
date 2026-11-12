@@ -1,0 +1,45 @@
+package com.bugsee.interop_spike
+
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+private class Impl : SpikeApi {
+  override fun ping() {}
+  override fun echo(value: Long): Long = value
+  override fun publishInts(rects: IntArray) { if (rects.isEmpty()) throw IllegalStateException() }
+  override fun publishList(rects: List<Long>) { if (rects.isEmpty()) throw IllegalStateException() }
+  override fun thread(): String = Thread.currentThread().name
+}
+
+private class Trig(val engine: FlutterEngine) : SpikeTrigger {
+  override fun fire(name: String) {
+    val send = Runnable {
+      val t = System.nanoTime()
+      try {
+        SpikeEventsRegistrar().getInstance(engine)?.onEvent(Evt("$name@" + Thread.currentThread().name, null))
+        android.util.Log.i("SPIKE", "native fire($name) returned in ${(System.nanoTime() - t) / 1000} us on ${Thread.currentThread().name}")
+      } catch (e: Throwable) {
+        android.util.Log.e("SPIKE", "native fire($name) threw $e")
+      }
+    }
+    if (name.startsWith("worker")) Thread(send, "spike-worker").start() else send.run()
+  }
+}
+
+class MainActivity : FlutterActivity() {
+  override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+    super.configureFlutterEngine(flutterEngine)
+    SpikeApiRegistrar().register(Impl(), flutterEngine)
+    SpikeTriggerRegistrar().register(Trig(flutterEngine), flutterEngine)
+    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "spike/chan").setMethodCallHandler { call, result ->
+      when (call.method) {
+        "ping" -> result.success(null)
+        "echo" -> result.success(call.arguments)
+        "publishInts" -> result.success(null)
+        "thread" -> result.success(Thread.currentThread().name)
+        else -> result.notImplemented()
+      }
+    }
+  }
+}

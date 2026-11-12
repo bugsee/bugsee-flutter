@@ -6,11 +6,11 @@
     "provenance": "The plugin is SwiftPM-only (no podspec), so `flutter pub get` fails on Linux/Windows before 3.41.0 ('only Swift Package Manager compatible'); measured on CI across 3.27-3.38, first passing release 3.41.0. For reference, competitor floors (pub.dev, 2026-10-20): Sentry 3.44, Firebase/Datadog 3.27, Bugsnag/Shake/Embrace 3.10, Instabug 1.17."
   },
   "android": {
-    "sdk": "7.5.0",
-    "gradlePlugin": "4.1.0",
-    "sdkBuild": "8f459d745",
+    "sdk": "7.5.1",
+    "gradlePlugin": "4.1.1",
+    "sdkBuild": "7b2ce1f52",
     "minSdk": 21,
-    "provenance": "Maven Central latest, 2026-11-06 (moved from 7.4.2 / plugin 4.0.8). Gradle plugin must be >= 4.0.7 (workbook 1.4); 4.1.0 is on the Gradle plugin portal. sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.5.0 [8f459d745]`, tag v7.5.0; read from the tag, not yet from a run): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
+    "provenance": "Maven Central latest, 2026-11-12 (moved from 7.5.0 / plugin 4.1.0; 7.5.1 is a fix release: no API change except the new Bugsee.getSdkVersion()/getSdkBuild(); options, report enums and the vh request are unchanged). Gradle plugin must be >= 4.0.7 (workbook 1.4); 4.1.1 is the latest release, tag v4.1.1. sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.5.1 [7b2ce1f52]`, tag v7.5.1; read from the tag, not yet from a run): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
     "jdk": {
       "supported": [
         17,
@@ -34,7 +34,7 @@
     "dir": "packages/bugsee_flutter_feedback",
     "androidArtifact": "com.bugsee:bugsee-android-feedback",
     "iosProduct": "BugseeFeedback",
-    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, 2026-11-06: bugsee-android-feedback 7.5.0, which depends on bugsee-android 7.5.0); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
+    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, 2026-11-12: bugsee-android-feedback 7.5.1, which depends on bugsee-android 7.5.1); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
   },
   "pigeon": {
     "version": "29.0.7",
@@ -43,6 +43,6 @@
   "optionsManifest": {
     "urlTemplate": "https://download.bugsee.com/sdk/options/{sdk}/{version}.json",
     "fixtureDir": "test/fixtures/option_manifests",
-    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.5.0.json (generatedAt 2026-11-06) and ios/7.0.1.json (generatedAt 2026-11-03), android fetched 2026-11-06, ios 2026-11-03, vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
+    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.5.1.json (generatedAt 2026-11-11) and ios/7.0.1.json (generatedAt 2026-11-03), android fetched 2026-11-12, ios 2026-11-03, vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
   }
 }

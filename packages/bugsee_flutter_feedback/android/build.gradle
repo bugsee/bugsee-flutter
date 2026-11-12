@@ -26,7 +26,7 @@ apply plugin: "com.android.library"
 // package (the pub cache) has no such file next to it. test/feedback_package_drift_test.dart in the
 // repository root compares both literals to native-versions.json (android.sdk, android.minSdk), so
 // they cannot drift from the core's.
-def feedbackSdkVersion = "7.5.0"
+def feedbackSdkVersion = "7.5.1"
 def feedbackMinSdk = 21
 
 android {

@@ -33,14 +33,14 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 | # | Decision | Reason |
 |---|---|---|
-| D1 | **Native pins:** Android 7.5.0 (Maven Central), iOS 7.0.1 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
+| D1 | **Native pins:** Android 7.5.1 (Maven Central), iOS 7.0.1 (stable) via SwiftPM `github.com/bugsee/spm`; every pin in `native-versions.json` with provenance | one source, compared by tests |
 | D2 | **iOS is SwiftPM only**, no podspec | Bugsee publishes no CocoaPods pod |
 | D3 | **Compatibility with the 9.x Dart API: deferred** to the owner (see below). The facade is isolated in `lib/src/bugsee.dart` / `bugsee_runtime.dart` so a layer could sit beside it | |
 | D4 | **The feedback chat is a separate package**, mirroring the native split and React Native | apps that never show it do not carry SwiftUI / Compose |
 | D5 | **Flutter floor 3.41.0 / Dart 3.11.0.** The plugin is SwiftPM-only, so `flutter pub get` fails on Linux and Windows with "only Swift Package Manager compatible" before 3.41.0. Measured on CI (Linux): 3.27.0/3.27.4, 3.29.0/3.29.3, 3.32.0/3.32.8, 3.35.0/3.35.7, 3.38.0/3.38.9/3.38.10 fail; 3.41.0, 3.41.9, 3.44.0, 3.44.9, 3.47.7 pass (no stable 3.39 or 3.40). Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase and Datadog >=3.27, Bugsnag, Shake and Embrace >=3.10, Instabug >=1.17. macOS developers on older Flutter could enable SwiftPM by hand; unsupported | the floor is a consequence of D2, not a choice |
 | D6 | **A clean break from 9.x**: a new facade, typed `BugseeOptions`, `LaunchResult`; migration guide instead of a shim ([doc/migration-from-9x.md](doc/migration-from-9x.md)) | the 9.x API wraps 6.x SDK concepts (pause/resume, appearance, flat option keys) |
 | D7 | **Pigeon** for the bridge (typed host API, Dart/Java/Swift committed, version pinned); **no Pigeon enum**: enums cross by SDK value or name | Pigeon sends ordinals; workbook 7.4 |
-| D8 | **The app applies the Bugsee Gradle plugin** (4.1.0, mandatory, not autolinkable), no ordering workaround is needed (upstream #33 is fixed in 4.1.0) | a Flutter plugin cannot apply a plugin to the app |
+| D8 | **The app applies the Bugsee Gradle plugin** (4.1.1, mandatory, not autolinkable), no ordering workaround is needed (upstream #33 is fixed in 4.1.0) | a Flutter plugin cannot apply a plugin to the app |
 | D9 | **Dart errors are filed as error reports by default** (`reportAsCrash: false`; `true` is an opt-in) | Dart errors never end the app; crash reports count against crash-free sessions and replace iOS's single stored crash report; RN files only fatal errors as crashes |
 | D10 | **Capture of what only Dart sees is opt-in and explicit** (`installNetworkCapture`, `installLogCapture`, `installErrorHandlers`), filters run in Dart first and fail closed | privacy; nothing changes for an app that does not call them |
 | D11 | **One pub workspace, two packages published separately** (core first, then feedback), one committed `pubspec.lock` at the root with `--enforce-lockfile` in CI, a hosted (not path) constraint between them, lock-step versions | lets the feedback package depend on the core without a path dependency or overrides |
@@ -50,7 +50,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 1. **A 9.x compatibility layer** (D3): offer a `bugsee.dart`-style shim over the 10.x facade, or none. The migration guide is written for
    "none".
-2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.5.0, iOS 7.0.1; the iOS pin was `7.0.0-beta7`, then `7.0.0`, until then), so a stable
+2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.5.1, iOS 7.0.1; the iOS pin was `7.0.0-beta7`, then `7.0.0`, until then), so a stable
    `10.0.0` is no longer blocked by a beta dependency; the choice between `10.0.0` and `10.0.0-dev.N` / `-beta` first is open.
 3. **pub.dev name and ownership.** `bugsee_flutter` exists on pub.dev (latest `9.0.4`, publisher `bugsee.com`), so 10.x continues that
    package. `bugsee_flutter_feedback` does not exist yet (checked 2026-10-22) and must be created under the same publisher.
@@ -64,7 +64,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 ## Known gaps and filed issues
 
-State checked with `gh issue view` on 2026-11-06 (the Android pins moved to 7.5.0 / plugin 4.1.0 that day; the closed rows are kept with how each was verified).
+State checked with `gh issue view` on 2026-11-06 (the Android pins moved to 7.5.0 / plugin 4.1.0 that day and to 7.5.1 / 4.1.1 on 2026-11-12; the closed rows are kept with how each was verified).
 
 | Issue | State | What |
 |---|---|---|
@@ -72,7 +72,7 @@ State checked with `gh issue view` on 2026-11-06 (the Android pins moved to 7.5.
 | [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316) | **closed, fixed in 7.5.0** | the report screenshot in a `SurfaceView` (Flutter's default): device-verified (scenario 9, both render modes: content, the secure box black, the rest equal to the unsecured frame) |
 | [bugsee-android#309](https://github.com/bugsee/bugsee-android/issues/309) | **closed, fixed in 7.5.0** (`ca76e4eb4`; #324 `11d21c1a6`, #355 `9b45e488e` cover screenshot/clear/updateFrom) | stage re-check after `importFile`, atomic under the stage lock, a rejected `move` keeps its source. Read from source and covered by scenario 3 and the attachments test; the race itself was NOT re-measured on a device. The wrapper's own undo of a late add stays as defence in depth (its JUnit model still passes) |
 | [bugsee-cocoa#291](https://github.com/bugsee/bugsee-cocoa/issues/291) | **closed**, `8ab24e8f9` is in `release@5c6b9d9db` (7.0.1) | `BugseeFeedback.setListener` ordering. The wrapper still never sets nil (kept; not re-measured on iOS) |
-| [bugsee-cocoa#265](https://github.com/bugsee/bugsee-cocoa/issues/265) / [bugsee-android#299](https://github.com/bugsee/bugsee-android/issues/299) | **closed, in both pins** (iOS 7.0.1, Android 7.5.0) | the wrapper channel's `log` timestamp: implemented (`ageMs` on the bridge, `now - ageMs` on the SDK clock); measured on a device, Android: a line delayed 3 s by a filter is recorded 1 ms after the one printed before it and 4005 ms before the next. iOS is covered by XCTest only (no iOS run) |
+| [bugsee-cocoa#265](https://github.com/bugsee/bugsee-cocoa/issues/265) / [bugsee-android#299](https://github.com/bugsee/bugsee-android/issues/299) | **closed, in both pins** (iOS 7.0.1, Android 7.5.1) | the wrapper channel's `log` timestamp: implemented (`ageMs` on the bridge, `now - ageMs` on the SDK clock); measured on a device, Android: a line delayed 3 s by a filter is recorded 1 ms after the one printed before it and 4005 ms before the next. iOS is covered by XCTest only (no iOS run) |
 | [specs#61](https://github.com/bugsee/specs/issues/61) | open | workbook 7.1: the Android recovered-report row disagrees with 7.4.2 (measured: not main, edits land) |
 | [specs#63](https://github.com/bugsee/specs/issues/63) | open | the wrapper-channel README says "not implemented"; both SDKs ship it |
 | [specs#64](https://github.com/bugsee/specs/issues/64) | open | `vh` spec and workbook 6.7 still call the Android wait unfixed; PR #120 is in 7.4.2 |

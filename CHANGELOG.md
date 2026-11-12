@@ -1,6 +1,6 @@
 ## 10.0.0-dev.1
 
-A rewrite for the Bugsee 7.x native SDKs (Android 7.5.0, iOS 7.0.1). **Not published yet; a prerelease.** Existing 9.x apps
+A rewrite for the Bugsee 7.x native SDKs (Android 7.5.1, iOS 7.0.1). **Not published yet; a prerelease.** Existing 9.x apps
 should stay on 9.x: there is no compatibility layer (the decision is open), see `doc/migration-from-9x.md`.
 
 ### Features
@@ -47,7 +47,7 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 ### Requirements
 
 * Flutter 3.41.0 or newer, Dart 3.11 or newer (the plugin is SwiftPM-only).
-* Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.0 applied by the app (mandatory; no Gradle ordering workaround any more,
+* Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.1 applied by the app (mandatory; no Gradle ordering workaround any more,
   [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) is fixed in 4.1.0).
 * iOS: 15.0 or newer, Swift Package Manager only (no CocoaPods).
 

@@ -39,6 +39,14 @@ not an emulator a status of 0 is accepted, ONLY with the kernel's `Fatal signal 
 reason (`exitRecordProblems`, tested to still fail for any other status or reason). Run with
 `--serial <adb serial> --allow-dirty --allow-not-possible`.
 
+**Physical iPhone.** `dart scripts/device/verify.dart ios-device --udid <device> --scenarios 10` (with `BUGSEE_VERIFY_MOCK_BIND=<the Mac's LAN
+address>`, one address) installs the signed release build with `devicectl`, launches it with its console attached (the child's exit is the proof the
+process ended; the console also carries the SDK banner, e.g. `Bugsee IOS SDK ver:7.0.1 build:5c6b9d9db-8`, measured on an iPhone XS) and runs the crash
+matrix of scenario 10 against the mock API on the LAN. Only scenario 10 exists for a device (1 to 9 need the simulator's filesystem and `simctl`). The first
+launch after an install shows iOS's Local Network prompt, which a script cannot answer: the run says so and waits 3 minutes for a tap. **Status: written and
+tested up to the install and launch on an iPhone XS (iOS 18.7.9); the matrix itself has NOT run** (the first attempt ended INVALID at "SDK launched": the
+phone reported "The Internet connection appears to be offline" because nobody was there to allow the prompt, or the phone is not on the Mac's network).
+
 **What it drives.** `example/lib/verify_main.dart` is the example app's second entry point: it launches the SDK
 from build flags (`--dart-define=VERIFY_SERVER`, `BUGSEE_ENDPOINT`), registers a report handler that records what
 it saw (into the report itself: an attribute, a label, an attached file) and polls `GET /__cmd` on the loopback

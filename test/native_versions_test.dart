@@ -143,6 +143,18 @@ void main() {
         contains('id("com.bugsee.android.gradle")'),
       );
     });
+
+    test(
+      'example turns the native symbol upload on (off by default in the plugin)',
+      () {
+        // Without it a native crash in a release build reaches the backend as raw addresses.
+        expect(
+          read('example/android/app/build.gradle.kts'),
+          contains('ndk { enabled.set(true) }'),
+        );
+        expect(read('README.md'), contains('ndk { enabled.set(true) }'));
+      },
+    );
   });
 
   group('iOS', () {

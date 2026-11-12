@@ -47,6 +47,8 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 ### Requirements
 
 * Flutter 3.41.0 or newer, Dart 3.11 or newer (the plugin is SwiftPM-only).
+* Android: turn on the native symbol upload with `bugsee { ndk { enabled.set(true) } }` (the plugin has it off; without it native crashes
+  in release builds are unreadable), see README "Debug symbols" (also the Dart and iOS symbols, which are uploaded by hand).
 * Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.1 applied by the app (mandatory; no Gradle ordering workaround any more,
   [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) is fixed in 4.1.0).
 * iOS: 15.0 or newer, Swift Package Manager only (no CocoaPods).

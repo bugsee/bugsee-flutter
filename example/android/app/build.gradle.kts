@@ -43,3 +43,12 @@ android {
 flutter {
     source = "../.."
 }
+
+// Native crash FRAMES are only readable with the native symbols: this uploads the unstripped
+// libraries (libflutter.so and every other .so the app ships) of each non-debuggable build, keyed
+// by build id. It is OFF by default in the plugin; without it a native crash in a release build
+// reaches the backend as raw addresses. It needs the app token (`bugsee.properties` in this
+// directory or `appToken("...")` here); with none it skips quietly.
+bugsee {
+    ndk { enabled.set(true) }
+}

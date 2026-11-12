@@ -573,96 +573,96 @@ class AndroidCtx {
     return cycle;
   }
 
-  Future<ScenarioResult> nativeCrash() => runScenario(
-    2,
-    'Native crash (SIGSEGV), retained bundle, recovered identity',
-    say,
-    (run) async {
-      for (final name in ['debug', 'releaseA']) {
-        final c = await _cycle(run, name);
-        run.note('--- $name (${c.crash.method})');
-        final bundle = c.bundle;
-        run.expect(
-          '[$name] a bundle was retained and produced by the relaunch',
-          bundle != null,
-          bundle == null
-              ? 'none after 90 s'
-              : '${bundle.source} ${bundle.type}',
-        );
-        if (bundle == null) continue;
-        final crash = bundle.crash;
-        final types = bundle.entries.map((e) => e['type']).toList();
-        run.expect(
-          '[$name] the crash entry and the minidump are in the manifest',
-          types.contains('crash') && types.contains('minidump'),
-          '$types',
-        );
-        final signal = crash?['signal'] as Map?;
-        run.expect(
-          '[$name] crash.json records SIGSEGV 11, native',
-          crash?['ndkCrash'] == true &&
-              signal?['number'] == 11 &&
-              signal?['name'] == 'SIGSEGV' &&
-              crash?['exception_type'] == 'native',
-          'ndkCrash=${crash?['ndkCrash']} signal=$signal exception_type=${crash?['exception_type']}',
-        );
-        run.expect(
-          '[$name] crash.json uuid is the Gradle plugin build id of THIS apk',
-          crash?['uuid'] == c.build.buildUuid,
-          'bundle ${crash?['uuid']} apk ${c.build.buildUuid}',
-        );
-        final problems = c.exp.wrapperInReport(bundle.wrapper);
-        run.expect(
-          '[$name] sdk.wrapper identity is on the RECOVERED report (the "fails only on a relaunch after a crash" trap)',
-          problems.isEmpty,
-          problems.isEmpty ? jsonEncode(bundle.wrapper) : problems.join('; '),
-        );
-        run.expect(
-          '[$name] identity_source marker (specs/sdk/report-identity)',
-          bundle.identitySource == 'session',
-          'environment.identity_source = ${bundle.identitySource}',
-        );
-        run.expect(
-          '[$name] report type crash, severity from the option',
-          bundle.type == 'crash' && bundle.request['severity'] == 4,
-          'type ${bundle.type}, severity ${bundle.request['severity']}',
-        );
-        run.expect(
-          '[$name] app build on the recovered report is the crashed build',
-          bundle.app['build'] == '${c.build.buildNumber}',
-          '${bundle.app['version']} (${bundle.app['build']})',
-        );
-        final plain = distinctBugseeLibs(c.allLogs);
-        final pair = {
-          'libbugsee-crashpad-trampoline.so',
-          'libbugsee-crashpad-handler.so',
-        };
-        final inProcess = {'libbugsee-native.so', 'libbugsee-crashcp.so'};
-        final ranHandler = bundle.entriesOfType('minidump').isNotEmpty;
-        final handlerMeasured = c.crash.handlerLibs.containsAll(pair);
-        run.note(
-          '[$name] workbook measure (logcat grep over cold start + crash + relaunch): ${plain.length} distinct $plain. It can only ever see libraries executed from FILES in the app data directory (an `avc: granted { execute }` audit line names the path); libraries mapped from base.apk are never named in logcat, so it cannot reach four on this setup',
-        );
-        run.expect(
-          '[$name] MEASURED: libbugsee-native.so and libbugsee-crashcp.so are mapped into the app process (/proc/PID/maps resolved against the APK)',
-          c.mapped.containsAll(inProcess),
-          '${c.mapped}',
-        );
-        run.expect(
-          '[$name] the crashpad pair: ${handlerMeasured ? 'MEASURED in the handler process\'s own maps' : 'INFERRED (the handler process was not caught): extracted next to the app and its minidump is in the bundle'}',
-          handlerMeasured || (c.extracted.containsAll(pair) && ranHandler),
-          'handler process: ${c.crash.handlerPs ?? 'not caught'}; its maps: ${c.crash.handlerLibs}; extracted: ${c.extracted}; minidump in bundle: $ranHandler',
-        );
-        run.note(
-          '[$name] four distinct libbugsee*.so: ${{...c.mapped, ...(handlerMeasured ? c.crash.handlerLibs : c.extracted)}.length} (${handlerMeasured ? 'all four measured' : '2 measured + 2 inferred'})',
-        );
-      }
-      run.result.notCovered.addAll([
-        'a native crash while the app is in the background, or during launch (early crash)',
-        'a crash with the SDK stopped',
-      ]);
-    },
-  );
+  Future<ScenarioResult>
+  nativeCrash() => runScenario(2, 'Native crash (SIGSEGV), retained bundle, recovered identity', say, (
+    run,
+  ) async {
+    for (final name in ['debug', 'releaseA']) {
+      final c = await _cycle(run, name);
+      run.note('--- $name (${c.crash.method})');
+      final bundle = c.bundle;
+      run.expect(
+        '[$name] a bundle was retained and produced by the relaunch',
+        bundle != null,
+        bundle == null ? 'none after 90 s' : '${bundle.source} ${bundle.type}',
+      );
+      if (bundle == null) continue;
+      final crash = bundle.crash;
+      final types = bundle.entries.map((e) => e['type']).toList();
+      // `kill -SEGV` from outside is the crashpad handler's: a minidump. A fault raised inside the
+      // process leaves a tombstone instead (scenario 10); this phone leaves the tombstone for the
+      // kill as well. Either is the crash's native evidence; the entry says which.
+      run.expect(
+        '[$name] the crash entry and its native evidence (minidump or tombstone) are in the manifest',
+        types.contains('crash') &&
+            (types.contains('minidump') || types.contains('crash.tombstone')),
+        '$types',
+      );
+      final signal = crash?['signal'] as Map?;
+      run.expect(
+        '[$name] crash.json records SIGSEGV 11, native',
+        crash?['ndkCrash'] == true &&
+            signal?['number'] == 11 &&
+            signal?['name'] == 'SIGSEGV' &&
+            crash?['exception_type'] == 'native',
+        'ndkCrash=${crash?['ndkCrash']} signal=$signal exception_type=${crash?['exception_type']}',
+      );
+      run.expect(
+        '[$name] crash.json uuid is the Gradle plugin build id of THIS apk',
+        crash?['uuid'] == c.build.buildUuid,
+        'bundle ${crash?['uuid']} apk ${c.build.buildUuid}',
+      );
+      final problems = c.exp.wrapperInReport(bundle.wrapper);
+      run.expect(
+        '[$name] sdk.wrapper identity is on the RECOVERED report (the "fails only on a relaunch after a crash" trap)',
+        problems.isEmpty,
+        problems.isEmpty ? jsonEncode(bundle.wrapper) : problems.join('; '),
+      );
+      run.expect(
+        '[$name] identity_source marker (specs/sdk/report-identity)',
+        bundle.identitySource == 'session',
+        'environment.identity_source = ${bundle.identitySource}',
+      );
+      run.expect(
+        '[$name] report type crash, severity from the option',
+        bundle.type == 'crash' && bundle.request['severity'] == 4,
+        'type ${bundle.type}, severity ${bundle.request['severity']}',
+      );
+      run.expect(
+        '[$name] app build on the recovered report is the crashed build',
+        bundle.app['build'] == '${c.build.buildNumber}',
+        '${bundle.app['version']} (${bundle.app['build']})',
+      );
+      final plain = distinctBugseeLibs(c.allLogs);
+      final pair = {
+        'libbugsee-crashpad-trampoline.so',
+        'libbugsee-crashpad-handler.so',
+      };
+      final inProcess = {'libbugsee-native.so', 'libbugsee-crashcp.so'};
+      final ranHandler = bundle.entriesOfType('minidump').isNotEmpty;
+      final handlerMeasured = c.crash.handlerLibs.containsAll(pair);
+      run.note(
+        '[$name] workbook measure (logcat grep over cold start + crash + relaunch): ${plain.length} distinct $plain. It can only ever see libraries executed from FILES in the app data directory (an `avc: granted { execute }` audit line names the path); libraries mapped from base.apk are never named in logcat, so it cannot reach four on this setup',
+      );
+      run.expect(
+        '[$name] MEASURED: libbugsee-native.so and libbugsee-crashcp.so are mapped into the app process (/proc/PID/maps resolved against the APK)',
+        c.mapped.containsAll(inProcess),
+        '${c.mapped}',
+      );
+      run.expect(
+        '[$name] the crashpad pair: ${handlerMeasured ? 'MEASURED in the handler process\'s own maps' : 'INFERRED (the handler process was not caught): extracted next to the app and its minidump is in the bundle'}',
+        handlerMeasured || (c.extracted.containsAll(pair) && ranHandler),
+        'handler process: ${c.crash.handlerPs ?? 'not caught'}; its maps: ${c.crash.handlerLibs}; extracted: ${c.extracted}; minidump in bundle: $ranHandler',
+      );
+      run.note(
+        '[$name] four distinct libbugsee*.so: ${{...c.mapped, ...(handlerMeasured ? c.crash.handlerLibs : c.extracted)}.length} (${handlerMeasured ? 'all four measured' : '2 measured + 2 inferred'})',
+      );
+    }
+    run.result.notCovered.addAll([
+      'a native crash while the app is in the background, or during launch (early crash)',
+      'a crash with the SDK stopped',
+    ]);
+  });
 
   Future<ScenarioResult>
   handlers() => runScenario(3, 'Report handlers on a recovered report', say, (
@@ -973,7 +973,7 @@ class AndroidCtx {
         await delay(5);
         // The features, each staged then asked of one report.
         await s.command('vh');
-        await s.command('net http://127.0.0.1:${mock.port}/ping?s5');
+        await s.command('net http://$netHost:${mock.port}/ping?s5');
         await s.command('print s5');
         await delay(4);
         final plain = await _report(run, 'upload plain-$name');

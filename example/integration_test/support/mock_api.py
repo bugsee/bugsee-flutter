@@ -125,4 +125,6 @@ class H(BaseHTTPRequestHandler):
 
 # Loopback only: the server stores whatever is PUT to it. The Android emulator reaches it as 10.0.2.2 and
 # the iOS simulator as localhost, both of which arrive on the loopback interface of the host.
-ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()
+# Loopback unless told otherwise: a PHYSICAL iPhone reaches the Mac only over the LAN, so the device
+# harness may bind the one LAN address it prints (MOCK_BIND), never all interfaces.
+ThreadingHTTPServer((os.environ.get('MOCK_BIND', '127.0.0.1'), int(sys.argv[1])), H).serve_forever()

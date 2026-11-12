@@ -264,7 +264,9 @@ class AndroidCtx {
     run,
   ) async {
     final b = await build('debug');
-    for (final k in crashKindTable.where((k) => k.fatal)) {
+    for (final k in crashKindTable.where(
+      (k) => k.fatal && k.platforms.contains('android'),
+    )) {
       run.note('--- ${k.name} (${k.layer.name})');
       await s.install(run, b);
       final l = await s.launch(run, b);

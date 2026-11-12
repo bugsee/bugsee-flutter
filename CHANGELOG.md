@@ -47,6 +47,7 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 ### Requirements
 
 * Flutter 3.50.0 or newer, Dart 3.14 or newer (the 10.0 major moves the floor to the release with Direct Interop, Android Gradle Plugin 9 and `material_ui`; it was 3.41.0 / 3.11, the first where a SwiftPM-only plugin resolves on Linux and Windows).
+* Android: the SDK's startup hold is on (`com.bugsee.wrapper-hold`): capture is blacked out from process start until the first Flutter frame is up and the secure rectangles are published (about 1 s after it; a cap bounds it), so a secure view is never recorded before Dart masked it. The first seconds of a session are therefore not recorded.
 * Android: turn on the native symbol upload with `bugsee { ndk { enabled.set(true) } }` (the plugin has it off; without it native crashes
   in release builds are unreadable), see README "Debug symbols" (also the Dart and iOS symbols, which are uploaded by hand).
 * Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.1 applied by the app (mandatory; no Gradle ordering workaround any more,

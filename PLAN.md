@@ -87,7 +87,7 @@ Other gaps, none with an issue:
 * The Gradle plugin 4.0.6 failure arm was not run; `optimizeExtensionsLoading=false` and the feedback safety-net path were not run.
 * A real token and the production backend: the harness uses a loopback stand-in; server-side symbolication was run offline with the
   worker's own tool.
-* Secure views do not cover the first frame of a newly appearing region (documented on the widget); iOS verified in portrait only.
+* Secure views do not cover the first frame of a newly appearing region (documented on the widget); iOS verified in portrait only. Android startup: the SDK's `wrapper-hold` is on (found by the API audit of 2026-11-12: the wrapper never used it), so the first ~4 s of a session are not recorded and no secure view can be recorded before Dart published; measured on the Android phone in a profile build (hold released on the first frame), a debug build there reaches its first frame late (the 10 s cap released it). iOS has no equivalent.
 * The Android logcat echo of `print` is not governed by the Dart log filter (needs a native filter; documented).
 * `tvOS`, `visionOS`, the Android leak module, `x86_64` and `armeabi-v7a` ABIs, a second display, rotation and split screen were not covered.
 * **Lifecycle delivery limit**: guarantees end at the hop into the channel sink. A message sent while the Dart side has no handler is held only

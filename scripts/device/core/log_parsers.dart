@@ -19,16 +19,16 @@ class SdkBanner {
 }
 
 SdkBanner? parseAndroidBanner(String log) {
-  final m = RegExp(
-    r'Bugsee Android SDK (\S+) \[([0-9a-f]+)\]',
-  ).allMatches(log).lastOrNull;
+  final m = RegExp(r'Bugsee Android SDK (\S+) \[([0-9a-f]+)\]')
+      .allMatches(log)
+      .lastOrNull;
   return m == null ? null : SdkBanner('android', m.group(1)!, m.group(2)!);
 }
 
 SdkBanner? parseIosBanner(String log) {
-  final m = RegExp(
-    r'Bugsee IOS SDK ver:(\S+) build:(\S+)',
-  ).allMatches(log).lastOrNull;
+  final m = RegExp(r'Bugsee IOS SDK ver:(\S+) build:(\S+)')
+      .allMatches(log)
+      .lastOrNull;
   return m == null ? null : SdkBanner('ios', m.group(1)!, m.group(2)!);
 }
 
@@ -249,9 +249,8 @@ VerifyEvent? _tryEvent(String json) {
 /// for 25033ms` for pid 58975 (the simulator's processes are host processes, so the sender is a host
 /// process too).
 ({String signal, String sentBy})? parseIosExit(String log, int pid) {
-  final m = RegExp(
-    '\\[$pid\\]:\\] exited due to (\\w+) \\| sent by ([^,\\n]+)',
-  ).firstMatch(log);
+  final m = RegExp('\\[$pid\\]:\\] exited due to (\\w+) \\| sent by ([^,\\n]+)')
+      .firstMatch(log);
   return m == null ? null : (signal: m.group(1)!, sentBy: m.group(2)!.trim());
 }
 
@@ -262,9 +261,8 @@ VerifyEvent? _tryEvent(String json) {
 Set<int> parseNonLazyClassList(String otool, {int imageBase = 0x100000000}) {
   final out = <int>{};
   for (final line in otool.split('\n')) {
-    final m = RegExp(
-      r'^[0-9a-f]{16}\s+((?:[0-9a-f]{8}\s*)+)$',
-    ).firstMatch(line.trim());
+    final m = RegExp(r'^[0-9a-f]{16}\s+((?:[0-9a-f]{8}\s*)+)$')
+        .firstMatch(line.trim());
     if (m == null) continue;
     final words = m.group(1)!.trim().split(RegExp(r'\s+'));
     for (var i = 0; i + 1 < words.length; i += 2) {

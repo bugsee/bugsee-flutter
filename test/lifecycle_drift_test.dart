@@ -11,9 +11,10 @@ String read(String path) => File(path).readAsStringSync();
 
 /// Source with comments removed, so a call that is only commented out does not
 /// satisfy a guard.
-String code(String path) => read(path)
-    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+String code(String path) =>
+    read(path)
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .replaceAll(RegExp(r'//[^\n]*'), '');
 
 const java = 'android/src/main/java/com/bugsee/flutter';
 const objc = 'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper';
@@ -132,20 +133,23 @@ void main() {
   });
 
   group('wiring', () {
-    test('both wrappers forward lifecycle events to the hub and nothing else', () {
-      expect(
-        RegExp(
-          r'public void onLifecycleEvent\([^)]*\) \{\s*lifecycle\.dispatch\(eventType, data\);\s*\}',
-        ).hasMatch(code('$java/FlutterWrapper.java')),
-        isTrue,
-      );
-      expect(
-        RegExp(
-          r'- \(void\)onLifecycleEvent:\(NSString \*\)eventType data:\(id\)data \{\s*\[_hub dispatchRawName:eventType data:data\];\s*\}',
-        ).hasMatch(code('$objc/BGSFlutterWrapper.m')),
-        isTrue,
-      );
-    });
+    test(
+      'both wrappers forward lifecycle events to the hub and nothing else',
+      () {
+        expect(
+          RegExp(
+            r'public void onLifecycleEvent\([^)]*\) \{\s*lifecycle\.dispatch\(eventType, data\);\s*\}',
+          ).hasMatch(code('$java/FlutterWrapper.java')),
+          isTrue,
+        );
+        expect(
+          RegExp(
+            r'- \(void\)onLifecycleEvent:\(NSString \*\)eventType data:\(id\)data \{\s*\[_hub dispatchRawName:eventType data:data\];\s*\}',
+          ).hasMatch(code('$objc/BGSFlutterWrapper.m')),
+          isTrue,
+        );
+      },
+    );
 
     test('delivery hops to the platform thread before touching Flutter', () {
       expect(
@@ -244,16 +248,13 @@ void main() {
       );
     });
 
-    test(
-      'native identity entry points take the facts from Dart, not from Pigeon types',
-      () {
-        // Wrapper construction goes through the same cleaning as the placeholder
-        // (unknown for missing, non-strings dropped); the plugin passes raw values.
-        final p = code('$java/BugseeFlutterPlugin.java');
-        expect(p, contains('identity.getType()'));
-        expect(p, contains('identity.getContext()'));
-      },
-    );
+    test('native identity entry points take the facts from Dart, not from Pigeon types', () {
+      // Wrapper construction goes through the same cleaning as the placeholder
+      // (unknown for missing, non-strings dropped); the plugin passes raw values.
+      final p = code('$java/BugseeFlutterPlugin.java');
+      expect(p, contains('identity.getType()'));
+      expect(p, contains('identity.getContext()'));
+    });
 
     test('the Swift pump sends in order and hands unsent events back', () {
       final s = code('$swift/BugseeFlutterPlugin.swift');
@@ -261,9 +262,8 @@ void main() {
       expect(s, contains('for await _ in wakeups'));
       expect(s, contains('self.pending.removeFirst()'));
       expect(
-        RegExp(
-          r'BGSFlutterLifecycleHub\.shared\(\)\.attachSink \{[^}]*Task',
-        ).hasMatch(s),
+        RegExp(r'BGSFlutterLifecycleHub\.shared\(\)\.attachSink \{[^}]*Task')
+            .hasMatch(s),
         isFalse,
         reason: 'a Task per event does not promise delivery order',
       );

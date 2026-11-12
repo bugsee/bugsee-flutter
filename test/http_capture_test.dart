@@ -428,28 +428,25 @@ void main() {
       return h.stage(NetworkStage.before).single;
     }
 
-    test(
-      'add, write, writeAll, writeln and writeCharCode all end up in the body, as sent',
-      () async {
-        final before = await send((r) {
-          r.add(utf8.encode('a'));
-          r.write('b');
-          r.writeAll(['c', 'd'], '-');
-          r.writeln('e');
-          r.writeCharCode(0x66);
-        });
-        expect(
-          before.body,
-          'ab'
-          'c-d'
-          'e\nf',
-        );
-        expect(before.size, 'abc-de\nf'.length);
-        // The server received exactly the same bytes.
-        final echoed = h.stage(NetworkStage.complete).single;
-        expect(echoed.body, before.body);
-      },
-    );
+    test('add, write, writeAll, writeln and writeCharCode all end up in the body, as sent', () async {
+      final before = await send((r) {
+        r.add(utf8.encode('a'));
+        r.write('b');
+        r.writeAll(['c', 'd'], '-');
+        r.writeln('e');
+        r.writeCharCode(0x66);
+      });
+      expect(
+        before.body,
+        'ab'
+        'c-d'
+        'e\nf',
+      );
+      expect(before.size, 'abc-de\nf'.length);
+      // The server received exactly the same bytes.
+      final echoed = h.stage(NetworkStage.complete).single;
+      expect(echoed.body, before.body);
+    });
 
     test('writeAll walks a one-shot iterable once', () async {
       var walks = 0;
@@ -482,15 +479,12 @@ void main() {
       expect(before.body, '{"a":1}');
     });
 
-    test(
-      'no content type: no body, no_content_type (the option is off by default)',
-      () async {
-        final before = await send((r) => r.write('secret'), type: '');
-        expect(before.body, isNull);
-        expect(before.noBodyReason, NoBodyReason.noContentType);
-        expect(before.size, 6);
-      },
-    );
+    test('no content type: no body, no_content_type (the option is off by default)', () async {
+      final before = await send((r) => r.write('secret'), type: '');
+      expect(before.body, isNull);
+      expect(before.noBodyReason, NoBodyReason.noContentType);
+      expect(before.size, 6);
+    });
 
     test('with body-without-type on, a typeless body is kept', () async {
       h.policy = const NetworkPolicy(accepting: true, bodyWithoutType: true);
@@ -534,18 +528,15 @@ void main() {
       expect(over.noBodyReason, NoBodyReason.sizeTooLarge);
     });
 
-    test(
-      'a declared Content-Length over the limit drops the body from the first byte',
-      () async {
-        h.policy = const NetworkPolicy(accepting: true, bodySizeLimit: 4);
-        final before = await send((r) {
-          r.contentLength = 6;
-          r.write('abcdef');
-        });
-        expect(before.body, isNull);
-        expect(before.noBodyReason, NoBodyReason.sizeTooLarge);
-      },
-    );
+    test('a declared Content-Length over the limit drops the body from the first byte', () async {
+      h.policy = const NetworkPolicy(accepting: true, bodySizeLimit: 4);
+      final before = await send((r) {
+        r.contentLength = 6;
+        r.write('abcdef');
+      });
+      expect(before.body, isNull);
+      expect(before.noBodyReason, NoBodyReason.sizeTooLarge);
+    });
 
     test('a limit of 0 keeps no body at all', () async {
       h.policy = const NetworkPolicy(accepting: true, bodySizeLimit: 0);
@@ -569,17 +560,14 @@ void main() {
   });
 
   group('response bodies', () {
-    test(
-      'a 5 MB body with a 1 KiB limit: counted in full, not kept, size_too_large',
-      () async {
-        h.policy = const NetworkPolicy(accepting: true, bodySizeLimit: 1024);
-        await observe(h.captured(), 'GET', h.url('/big'));
-        final complete = h.stage(NetworkStage.complete).single;
-        expect(complete.size, 5 * 1024 * 1024);
-        expect(complete.body, isNull);
-        expect(complete.noBodyReason, NoBodyReason.sizeTooLarge);
-      },
-    );
+    test('a 5 MB body with a 1 KiB limit: counted in full, not kept, size_too_large', () async {
+      h.policy = const NetworkPolicy(accepting: true, bodySizeLimit: 1024);
+      await observe(h.captured(), 'GET', h.url('/big'));
+      final complete = h.stage(NetworkStage.complete).single;
+      expect(complete.size, 5 * 1024 * 1024);
+      expect(complete.body, isNull);
+      expect(complete.noBodyReason, NoBodyReason.sizeTooLarge);
+    });
 
     test('binary: counted, never kept', () async {
       await observe(h.captured(), 'GET', h.url('/png'));
@@ -666,31 +654,28 @@ void main() {
       await streaming.close();
     });
 
-    test(
-      'chunks reach the app as they arrive, and the exchange completes only at the end',
-      () async {
-        final request = await streaming.captured().getUrl(streaming.url('/'));
-        final response = await request.close();
-        final first = Completer<String>();
-        final all = StringBuffer();
-        final done = Completer<void>();
-        response.transform(utf8.decoder).listen((s) {
-          all.write(s);
-          if (!first.isCompleted) first.complete(s);
-        }, onDone: done.complete);
-        // The server is still holding the rest back: the first chunk is already here.
-        expect(await first.future, 'first;');
-        expect(streaming.stage(NetworkStage.complete), isEmpty);
-        expect(streaming.stage(NetworkStage.before), hasLength(1));
-        gate.complete();
-        await done.future;
-        expect(all.toString(), 'first;second;');
-        expect(
-          streaming.stage(NetworkStage.complete).single.body,
-          'first;second;',
-        );
-      },
-    );
+    test('chunks reach the app as they arrive, and the exchange completes only at the end', () async {
+      final request = await streaming.captured().getUrl(streaming.url('/'));
+      final response = await request.close();
+      final first = Completer<String>();
+      final all = StringBuffer();
+      final done = Completer<void>();
+      response.transform(utf8.decoder).listen((s) {
+        all.write(s);
+        if (!first.isCompleted) first.complete(s);
+      }, onDone: done.complete);
+      // The server is still holding the rest back: the first chunk is already here.
+      expect(await first.future, 'first;');
+      expect(streaming.stage(NetworkStage.complete), isEmpty);
+      expect(streaming.stage(NetworkStage.before), hasLength(1));
+      gate.complete();
+      await done.future;
+      expect(all.toString(), 'first;second;');
+      expect(
+        streaming.stage(NetworkStage.complete).single.body,
+        'first;second;',
+      );
+    });
 
     test(
       'pause and resume are forwarded: nothing is lost across them',
@@ -732,46 +717,43 @@ void main() {
       },
     );
 
-    test(
-      'a paused subscription holds the server back: the backpressure reaches the socket',
-      () async {
-        const chunk = 256 * 1024;
-        const chunks = 400; // 100 MB in all
-        var written = 0;
-        final big = await Harness.start((request) async {
-          final response = request.response
-            ..headers.contentType = ContentType.text
-            ..bufferOutput = false;
-          final bytes = Uint8List(chunk);
-          try {
-            for (var i = 0; i < chunks; i++) {
-              response.add(bytes);
-              await response.flush();
-              written += chunk;
-            }
-          } catch (_) {}
-          await response.close().catchError((_) {});
-        });
-        addTearDown(big.close);
-        final request = await big.captured().getUrl(big.url('/'));
-        final response = await request.close();
-        var received = 0;
-        final done = Completer<void>();
-        late StreamSubscription<List<int>> sub;
-        sub = response.listen((data) {
-          received += data.length;
-          if (received == data.length) sub.pause();
-        }, onDone: done.complete);
-        await Future<void>.delayed(const Duration(milliseconds: 600));
-        // Without backpressure the capture would have read all 100 MB into memory by now.
-        expect(written, lessThan(50 * 1024 * 1024));
-        expect(done.isCompleted, isFalse);
-        sub.resume();
-        await done.future.timeout(const Duration(seconds: 30));
-        expect(received, chunk * chunks);
-        expect(big.stage(NetworkStage.complete).single.size, chunk * chunks);
-      },
-    );
+    test('a paused subscription holds the server back: the backpressure reaches the socket', () async {
+      const chunk = 256 * 1024;
+      const chunks = 400; // 100 MB in all
+      var written = 0;
+      final big = await Harness.start((request) async {
+        final response = request.response
+          ..headers.contentType = ContentType.text
+          ..bufferOutput = false;
+        final bytes = Uint8List(chunk);
+        try {
+          for (var i = 0; i < chunks; i++) {
+            response.add(bytes);
+            await response.flush();
+            written += chunk;
+          }
+        } catch (_) {}
+        await response.close().catchError((_) {});
+      });
+      addTearDown(big.close);
+      final request = await big.captured().getUrl(big.url('/'));
+      final response = await request.close();
+      var received = 0;
+      final done = Completer<void>();
+      late StreamSubscription<List<int>> sub;
+      sub = response.listen((data) {
+        received += data.length;
+        if (received == data.length) sub.pause();
+      }, onDone: done.complete);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      // Without backpressure the capture would have read all 100 MB into memory by now.
+      expect(written, lessThan(50 * 1024 * 1024));
+      expect(done.isCompleted, isFalse);
+      sub.resume();
+      await done.future.timeout(const Duration(seconds: 30));
+      expect(received, chunk * chunks);
+      expect(big.stage(NetworkStage.complete).single.size, chunk * chunks);
+    });
 
     test('a second listen fails the way the real response does', () async {
       final request = await streaming.captured().getUrl(streaming.url('/'));
@@ -784,35 +766,31 @@ void main() {
   });
 
   group('redirects', () {
-    test(
-      'every hop is a redirect stage and the final response says where it started',
-      () async {
-        await observe(h.captured(), 'GET', h.url('/r1'));
-        final stages = [for (final e in h.events) e.stage];
-        expect(stages, [
-          NetworkStage.before,
-          NetworkStage.redirect,
-          NetworkStage.redirect,
-          NetworkStage.complete,
-        ]);
-        final redirects = h.stage(NetworkStage.redirect);
-        expect(redirects[0].url, h.url('/r1').toString());
-        expect(redirects[0].statusCode, 302);
-        expect(
-          redirects[0].headers,
-          isEmpty,
-          reason:
-              'a synthesised location header would carry the next URL, query included',
-        );
-        expect(redirects[1].url, h.url('/r2').toString());
-        expect(redirects[1].statusCode, 301);
-        final complete = h.stage(NetworkStage.complete).single;
-        expect(complete.url, h.url('/json').toString());
-        expect(complete.redirectedFrom, h.url('/r1').toString());
-        expect(complete.statusCode, 200);
-        expect({for (final e in h.events) e.id}, hasLength(1));
-      },
-    );
+    test('every hop is a redirect stage and the final response says where it started', () async {
+      await observe(h.captured(), 'GET', h.url('/r1'));
+      final stages = [for (final e in h.events) e.stage];
+      expect(stages, [
+        NetworkStage.before,
+        NetworkStage.redirect,
+        NetworkStage.redirect,
+        NetworkStage.complete,
+      ]);
+      final redirects = h.stage(NetworkStage.redirect);
+      expect(redirects[0].url, h.url('/r1').toString());
+      expect(redirects[0].statusCode, 302);
+      expect(
+        redirects[0].headers,
+        isEmpty,
+        reason: 'a synthesised location header would carry the next URL, query included',
+      );
+      expect(redirects[1].url, h.url('/r2').toString());
+      expect(redirects[1].statusCode, 301);
+      final complete = h.stage(NetworkStage.complete).single;
+      expect(complete.url, h.url('/json').toString());
+      expect(complete.redirectedFrom, h.url('/r1').toString());
+      expect(complete.statusCode, 200);
+      expect({for (final e in h.events) e.id}, hasLength(1));
+    });
 
     test(
       'with followRedirects off the redirect response itself is the complete',
@@ -830,49 +808,46 @@ void main() {
       },
     );
 
-    test(
-      'a redirect the app follows itself: the 3xx is drained, then the next response is a new exchange that says where it came from',
-      () async {
-        final request = await h.captured().getUrl(h.url('/r1'));
-        request.followRedirects = false;
-        final first = await request.close();
-        expect(first.isRedirect, isTrue);
-        await first.drain<void>();
-        final second = await first.redirect();
-        await second.drain<void>();
-        final third = await second.redirect();
-        final body = await third.fold<int>(0, (n, c) => n + c.length);
-        expect(body, 11);
-        final complete = h.stage(NetworkStage.complete);
-        expect([for (final e in complete) e.statusCode], [302, 301, 200]);
-        expect(
-          [for (final e in complete) e.url],
-          [
-            h.url('/r1').toString(),
-            h.url('/r2').toString(),
-            h.url('/json').toString(),
-          ],
-        );
-        expect(complete[0].redirectedFrom, isNull);
-        expect(complete[1].redirectedFrom, h.url('/r1').toString());
-        expect(complete[2].redirectedFrom, h.url('/r2').toString());
-        expect(complete[2].body, '{"ok":true}');
-        // Three exchanges, each with its own before, in order.
-        expect({for (final e in h.events) e.id}, hasLength(3));
-        expect(
-          [for (final e in h.events) '${e.stage.name}:${e.statusCode}'],
-          [
-            'before:0',
-            'complete:302',
-            'before:0',
-            'complete:301',
-            'before:0',
-            'complete:200',
-          ],
-        );
-        expect(h.stage(NetworkStage.redirect), isEmpty);
-      },
-    );
+    test('a redirect the app follows itself: the 3xx is drained, then the next response is a new exchange that says where it came from', () async {
+      final request = await h.captured().getUrl(h.url('/r1'));
+      request.followRedirects = false;
+      final first = await request.close();
+      expect(first.isRedirect, isTrue);
+      await first.drain<void>();
+      final second = await first.redirect();
+      await second.drain<void>();
+      final third = await second.redirect();
+      final body = await third.fold<int>(0, (n, c) => n + c.length);
+      expect(body, 11);
+      final complete = h.stage(NetworkStage.complete);
+      expect([for (final e in complete) e.statusCode], [302, 301, 200]);
+      expect(
+        [for (final e in complete) e.url],
+        [
+          h.url('/r1').toString(),
+          h.url('/r2').toString(),
+          h.url('/json').toString(),
+        ],
+      );
+      expect(complete[0].redirectedFrom, isNull);
+      expect(complete[1].redirectedFrom, h.url('/r1').toString());
+      expect(complete[2].redirectedFrom, h.url('/r2').toString());
+      expect(complete[2].body, '{"ok":true}');
+      // Three exchanges, each with its own before, in order.
+      expect({for (final e in h.events) e.id}, hasLength(3));
+      expect(
+        [for (final e in h.events) '${e.stage.name}:${e.statusCode}'],
+        [
+          'before:0',
+          'complete:302',
+          'before:0',
+          'complete:301',
+          'before:0',
+          'complete:200',
+        ],
+      );
+      expect(h.stage(NetworkStage.redirect), isEmpty);
+    });
 
     test(
       'a redirect followed without reading the 3xx completes it without a body',
@@ -1012,18 +987,15 @@ void main() {
       expect(h.stage(NetworkStage.abort).single.size, 7);
     });
 
-    test(
-      'an exchange ends once: no complete after an abort, no abort after a complete',
-      () async {
-        await observe(h.captured(), 'GET', h.url('/json'));
-        expect(h.stage(NetworkStage.abort), isEmpty);
-        final request = await h.captured().getUrl(h.url('/json'));
-        final response = await request.close();
-        await response.drain<void>();
-        request.abort();
-        expect(h.stage(NetworkStage.abort), isEmpty);
-      },
-    );
+    test('an exchange ends once: no complete after an abort, no abort after a complete', () async {
+      await observe(h.captured(), 'GET', h.url('/json'));
+      expect(h.stage(NetworkStage.abort), isEmpty);
+      final request = await h.captured().getUrl(h.url('/json'));
+      final response = await request.close();
+      await response.drain<void>();
+      request.abort();
+      expect(h.stage(NetworkStage.abort), isEmpty);
+    });
   });
 
   group('never into the app', () {
@@ -1072,22 +1044,19 @@ void main() {
   });
 
   group('fragments and paths that carry a query', () {
-    test(
-      'a redirect to a URL with a fragment records neither the fragment nor a header with it',
-      () async {
-        await observe(h.captured(), 'GET', h.url('/cb'));
-        final raw = [
-          for (final e in h.events)
-            [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
-        ].join('\n');
-        expect(raw, isNot(contains('FRAGSECRET')));
-        expect(raw, isNot(contains('#')));
-        expect(
-          h.stage(NetworkStage.complete).single.url,
-          h.url('/json').toString(),
-        );
-      },
-    );
+    test('a redirect to a URL with a fragment records neither the fragment nor a header with it', () async {
+      await observe(h.captured(), 'GET', h.url('/cb'));
+      final raw = [
+        for (final e in h.events)
+          [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
+      ].join('\n');
+      expect(raw, isNot(contains('FRAGSECRET')));
+      expect(raw, isNot(contains('#')));
+      expect(
+        h.stage(NetworkStage.complete).single.url,
+        h.url('/json').toString(),
+      );
+    });
 
     test('a manual redirect with a fragment keeps it out too', () async {
       final request = await h.captured().getUrl(h.url('/cb'));
@@ -1103,40 +1072,34 @@ void main() {
       expect(raw, isNot(contains('FRAGSECRET')));
     });
 
-    test(
-      'a manual redirect chain keeps a fragment of an earlier hop out of redirectedFrom',
-      () async {
-        final request = await h.captured().getUrl(h.url('/cb2'));
-        request.followRedirects = false;
-        final first = await request.close();
-        await first.drain<void>();
-        final second = await first.redirect();
-        await second.drain<void>();
-        await (await second.redirect()).drain<void>();
-        final raw = [
-          for (final e in h.events)
-            [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
-        ].join('\n');
-        expect(raw, isNot(contains('HOPSECRET')));
-        expect(raw, isNot(contains('FRAGSECRET')));
-        expect(h.stage(NetworkStage.complete).last.redirectedFrom, isNotNull);
-      },
-    );
+    test('a manual redirect chain keeps a fragment of an earlier hop out of redirectedFrom', () async {
+      final request = await h.captured().getUrl(h.url('/cb2'));
+      request.followRedirects = false;
+      final first = await request.close();
+      await first.drain<void>();
+      final second = await first.redirect();
+      await second.drain<void>();
+      await (await second.redirect()).drain<void>();
+      final raw = [
+        for (final e in h.events)
+          [e.url, e.redirectedFrom, ...e.headers.values].join(' '),
+      ].join('\n');
+      expect(raw, isNot(contains('HOPSECRET')));
+      expect(raw, isNot(contains('FRAGSECRET')));
+      expect(h.stage(NetworkStage.complete).last.redirectedFrom, isNotNull);
+    });
 
-    test(
-      'open(host, port, path) with a query in the path: a failure keeps the query a query',
-      () async {
-        final closed = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-        final port = closed.port;
-        await closed.close(force: true);
-        try {
-          await h.captured().get('127.0.0.1', port, '/x?token=SECRET#frag');
-        } catch (_) {}
-        final failed = h.stage(NetworkStage.error).single;
-        expect(failed.url, 'http://127.0.0.1:$port/x?token=SECRET');
-        expect(failed.url, isNot(contains('%3F')));
-      },
-    );
+    test('open(host, port, path) with a query in the path: a failure keeps the query a query', () async {
+      final closed = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final port = closed.port;
+      await closed.close(force: true);
+      try {
+        await h.captured().get('127.0.0.1', port, '/x?token=SECRET#frag');
+      } catch (_) {}
+      final failed = h.stage(NetworkStage.error).single;
+      expect(failed.url, 'http://127.0.0.1:$port/x?token=SECRET');
+      expect(failed.url, isNot(contains('%3F')));
+    });
   });
 
   group('credentials and secrets in URL-bearing fields', () {
@@ -1312,67 +1275,57 @@ void main() {
       },
     );
 
-    test(
-      'own-traffic matching is by host: bugsee.com and below, the configured host, nothing else',
-      () {
-        const policy = NetworkPolicy(
-          accepting: true,
-          ownHosts: {'bugsee.internal.example'},
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://api.bugsee.com/v2/apps')),
-          isTrue,
-        );
-        expect(policy.isOwnTraffic(Uri.parse('https://BUGSEE.com/')), isTrue);
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://a.b.bugsee.com:8443/x')),
-          isTrue,
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://bugsee.internal.example/v2')),
-          isTrue,
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://notbugsee.com/')),
-          isFalse,
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://bugsee.com.evil.example/')),
-          isFalse,
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://example.com/bugsee.com')),
-          isFalse,
-        );
-        expect(policy.isOwnTraffic(Uri.parse('/relative')), isFalse);
-        // A trailing dot is the same host; userinfo does not make a host.
-        expect(policy.isOwnTraffic(Uri.parse('https://bugsee.com./')), isTrue);
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://API.Bugsee.COM../v2')),
-          isTrue,
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://bugsee.com@evil.example/')),
-          isFalse,
-        );
-        expect(
-          policy.isOwnTraffic(
-            Uri.parse('https://evil.example@api.bugsee.com/'),
-          ),
-          isTrue,
-        );
-        expect(
-          policy.isOwnTraffic(
-            Uri.parse('https://bugsee.com:8443@evil.example/'),
-          ),
-          isFalse,
-        );
-        expect(
-          policy.isOwnTraffic(Uri.parse('https://xn--bugsee-9ua.com/')),
-          isFalse,
-        );
-      },
-    );
+    test('own-traffic matching is by host: bugsee.com and below, the configured host, nothing else', () {
+      const policy = NetworkPolicy(
+        accepting: true,
+        ownHosts: {'bugsee.internal.example'},
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://api.bugsee.com/v2/apps')),
+        isTrue,
+      );
+      expect(policy.isOwnTraffic(Uri.parse('https://BUGSEE.com/')), isTrue);
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://a.b.bugsee.com:8443/x')),
+        isTrue,
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://bugsee.internal.example/v2')),
+        isTrue,
+      );
+      expect(policy.isOwnTraffic(Uri.parse('https://notbugsee.com/')), isFalse);
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://bugsee.com.evil.example/')),
+        isFalse,
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://example.com/bugsee.com')),
+        isFalse,
+      );
+      expect(policy.isOwnTraffic(Uri.parse('/relative')), isFalse);
+      // A trailing dot is the same host; userinfo does not make a host.
+      expect(policy.isOwnTraffic(Uri.parse('https://bugsee.com./')), isTrue);
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://API.Bugsee.COM../v2')),
+        isTrue,
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://bugsee.com@evil.example/')),
+        isFalse,
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://evil.example@api.bugsee.com/')),
+        isTrue,
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://bugsee.com:8443@evil.example/')),
+        isFalse,
+      );
+      expect(
+        policy.isOwnTraffic(Uri.parse('https://xn--bugsee-9ua.com/')),
+        isFalse,
+      );
+    });
   });
 
   group('chained to the app\'s own overrides', () {
@@ -1514,30 +1467,27 @@ void main() {
     );
   });
 
-  test(
-    'the proxy and certificate settings of a client are all forwarded (HttpClient has no member this wrapper skips)',
-    () {
-      // A compile-time guard is the real one (`CapturingHttpClient implements HttpClient` without
-      // noSuchMethod): this exercises the setters that cannot be read back.
-      final client = h.captured();
-      client.addCredentials(
-        h.url('/'),
-        'realm',
-        HttpClientBasicCredentials('u', 'p'),
-      );
-      client.addProxyCredentials(
-        'proxy',
-        3128,
-        'realm',
-        HttpClientBasicCredentials('u', 'p'),
-      );
-      client.authenticate = (url, scheme, realm) async => true;
-      client.authenticateProxy = (host, port, scheme, realm) async => true;
-      client.keyLog = (line) {};
-      client.connectionFactory = null;
-      client.close();
-    },
-  );
+  test('the proxy and certificate settings of a client are all forwarded (HttpClient has no member this wrapper skips)', () {
+    // A compile-time guard is the real one (`CapturingHttpClient implements HttpClient` without
+    // noSuchMethod): this exercises the setters that cannot be read back.
+    final client = h.captured();
+    client.addCredentials(
+      h.url('/'),
+      'realm',
+      HttpClientBasicCredentials('u', 'p'),
+    );
+    client.addProxyCredentials(
+      'proxy',
+      3128,
+      'realm',
+      HttpClientBasicCredentials('u', 'p'),
+    );
+    client.authenticate = (url, scheme, realm) async => true;
+    client.authenticateProxy = (host, port, scheme, realm) async => true;
+    client.keyLog = (line) {};
+    client.connectionFactory = null;
+    client.close();
+  });
 }
 
 class _RecordingOverrides extends HttpOverrides {

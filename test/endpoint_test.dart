@@ -29,25 +29,22 @@ void main() {
       expect(normalizeEndpoint('http://10.0.2.2:8080'), 'http://10.0.2.2:8080');
     });
 
-    test(
-      'the version segment and trailing slashes are removed: the SDKs append it',
-      () {
-        for (final given in [
-          'https://api.example.com/v2',
-          'https://api.example.com/v2/',
-          'https://api.example.com/',
-          'https://api.example.com//',
-          'https://api.example.com/v2/v2',
-          'https://api.example.com/v2//v2/',
-        ]) {
-          expect(
-            normalizeEndpoint(given),
-            'https://api.example.com',
-            reason: given,
-          );
-        }
-      },
-    );
+    test('the version segment and trailing slashes are removed: the SDKs append it', () {
+      for (final given in [
+        'https://api.example.com/v2',
+        'https://api.example.com/v2/',
+        'https://api.example.com/',
+        'https://api.example.com//',
+        'https://api.example.com/v2/v2',
+        'https://api.example.com/v2//v2/',
+      ]) {
+        expect(
+          normalizeEndpoint(given),
+          'https://api.example.com',
+          reason: given,
+        );
+      }
+    });
 
     test('a path prefix is kept, the version after it is removed', () {
       expect(

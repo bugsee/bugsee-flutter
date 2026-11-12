@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Dart errors: reporting one yourself (`Bugsee.logException`), and the opt-in capture of the
 /// ones nobody handled (`Bugsee.installErrorHandlers`). Each button throws or reports one error;
@@ -117,9 +116,8 @@ class _ExceptionsScreenState extends State<ExceptionsScreen> {
                 }),
                 _button('thrown string', () {
                   unawaited(
-                    Future<void>.delayed(
-                      const Duration(milliseconds: 10),
-                    ).then((_) => throw 'a thrown string'),
+                    Future<void>.delayed(const Duration(milliseconds: 10))
+                        .then((_) => throw 'a thrown string'),
                   );
                 }),
                 _button('guarded zone', () {

@@ -39,11 +39,10 @@ import 'hierarchy_builder.dart';
 typedef ViewHierarchySender = Future<bool> Function(ViewHierarchyMessage m);
 
 /// Builds a snapshot (replaced in tests).
-typedef ViewHierarchyBuilder =
-    HierarchySnapshot? Function(
-      HierarchyLimits limits,
-      Duration Function() now,
-    );
+typedef ViewHierarchyBuilder = HierarchySnapshot? Function(
+  HierarchyLimits limits,
+  Duration Function() now,
+);
 
 class ViewHierarchyPublisher {
   ViewHierarchyPublisher({

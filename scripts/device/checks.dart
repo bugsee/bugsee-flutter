@@ -472,10 +472,8 @@ Future<RawImage?> requireVideoFrame(
 /// ffmpeg and ffprobe are needed for every pixel check: fail before any scenario runs, not inside one.
 Future<String?> missingImageTools() async {
   for (final t in ['ffmpeg', 'ffprobe']) {
-    final r = await sh([
-      t,
-      '-version',
-    ]).catchError((Object _) => Out(127, '', 'not found'));
+    final r = await sh([t, '-version'])
+        .catchError((Object _) => Out(127, '', 'not found'));
     if (!r.ok) {
       return '$t is not installed (brew install ffmpeg): every redaction check needs it';
     }

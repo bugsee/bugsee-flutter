@@ -94,9 +94,9 @@ class AndroidDevice {
 
   /// `true` when the app's window composes a `SurfaceView` layer (Flutter's default render mode), `false`
   /// for a `TextureView` (the `transparent` background mode): from SurfaceFlinger's layer list.
-  Future<bool> hasSurfaceViewLayer() async => (await shell(
-    'dumpsys SurfaceFlinger --list',
-  )).contains('SurfaceView - $pkg');
+  Future<bool> hasSurfaceViewLayer() async =>
+      (await shell('dumpsys SurfaceFlinger --list'))
+          .contains('SurfaceView - $pkg');
 
   Future<int?> pid() async {
     final out = (await shell('pidof $pkg')).trim();

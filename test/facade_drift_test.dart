@@ -100,15 +100,15 @@ void main() {
       () {
         expect(attributeStringMaxLength, 1024);
         expect(
-          RegExp(
-            r'ATTRIBUTE_STRING_MAX_LENGTH = (\d+);',
-          ).firstMatch(javaOps)!.group(1),
+          RegExp(r'ATTRIBUTE_STRING_MAX_LENGTH = (\d+);')
+              .firstMatch(javaOps)!
+              .group(1),
           '$attributeStringMaxLength',
         );
         expect(
-          RegExp(
-            r'kAttributeStringMaxLength = (\d+);',
-          ).firstMatch(objcOps)!.group(1),
+          RegExp(r'kAttributeStringMaxLength = (\d+);')
+              .firstMatch(objcOps)!
+              .group(1),
           '$attributeStringMaxLength',
         );
       },
@@ -121,9 +121,9 @@ void main() {
         contains('ATTRIBUTE_NUMBER_LIMIT = (double) Float.MAX_VALUE;'),
       );
       expect(
-        RegExp(
-          r'kAttributeNumberLimit = ([0-9.e+]+);',
-        ).firstMatch(objcOps)!.group(1),
+        RegExp(r'kAttributeNumberLimit = ([0-9.e+]+);')
+            .firstMatch(objcOps)!
+            .group(1),
         '3.4028234663852886e38',
       );
     });

@@ -467,122 +467,124 @@ class IosCtx {
 
   // ---- 2 --------------------------------------------------------------------------------------
 
-  Future<ScenarioResult>
-  nativeCrash() => runScenario(2, 'Native crash (SIGSEGV), retained bundle, recovered identity', say, (
-    run,
-  ) async {
-    final b = await build('debug');
-    await install(run, b);
-    final l = await launch(run, b);
-    await delay(5);
-    // The positive control (9.2): the same setup CAN produce a report.
-    final control = await report(run, 'upload control');
-    run.expect(
-      'control: a live report reaches the mock API in this setup',
-      control.summary == 'verify upload control',
-      '${control.type} ${control.source}',
-    );
-    await crash(run, l.pid);
-    final l2 = await launch(run, b);
-    await delay(20);
-    final crashBundle = await newBundle(
-      where: (x) => x.type == 'crash',
-      timeout: const Duration(seconds: 60),
-    );
-    final events = await dev.events(since: l2.since);
-    // The positive control AFTER the window, from the relaunched process: it CAN upload, so the absence
-    // above is the SDK's, not a relaunched process that could not reach the mock (9.2).
-    final after = await report(run, 'upload control-after');
-    run.expect(
-      'control after the window: the RELAUNCHED process uploads a live report',
-      after.summary == 'verify upload control-after',
-      '${after.type} ${after.source}',
-    );
-    // And nothing crash-shaped retained on the device side: the SDK keeps the bundles it could not upload
-    // under the container's Library/Caches/com.bugsee.data/capture/bundles; their types are read.
-    final container = await dev.dataContainer();
-    final listing = container == null
-        ? ''
-        : (await sh([
-            'find',
-            container,
-            '-type',
-            'f',
-            '(',
-            '-iname',
-            '*.bundle.zip',
-            '-o',
-            '-iname',
-            '*.dmp',
-            '-o',
-            '-iname',
-            '*.plcrash',
-            '-o',
-            '-iname',
-            '*crash*report*',
-            ')',
-          ])).text;
-    final files = listing.split('\n').where((l) => l.isNotEmpty).toList();
-    final types = <String>[];
-    for (final f in files.where((f) => f.endsWith('.bundle.zip'))) {
-      final r = await sh([
-        'python3',
-        '-I',
+  Future<ScenarioResult> nativeCrash() => runScenario(
+    2,
+    'Native crash (SIGSEGV), retained bundle, recovered identity',
+    say,
+    (run) async {
+      final b = await build('debug');
+      await install(run, b);
+      final l = await launch(run, b);
+      await delay(5);
+      // The positive control (9.2): the same setup CAN produce a report.
+      final control = await report(run, 'upload control');
+      run.expect(
+        'control: a live report reaches the mock API in this setup',
+        control.summary == 'verify upload control',
+        '${control.type} ${control.source}',
+      );
+      await crash(run, l.pid);
+      final l2 = await launch(run, b);
+      await delay(20);
+      final crashBundle = await newBundle(
+        where: (x) => x.type == 'crash',
+        timeout: const Duration(seconds: 60),
+      );
+      final events = await dev.events(since: l2.since);
+      // The positive control AFTER the window, from the relaunched process: it CAN upload, so the absence
+      // above is the SDK's, not a relaunched process that could not reach the mock (9.2).
+      final after = await report(run, 'upload control-after');
+      run.expect(
+        'control after the window: the RELAUNCHED process uploads a live report',
+        after.summary == 'verify upload control-after',
+        '${after.type} ${after.source}',
+      );
+      // And nothing crash-shaped retained on the device side: the SDK keeps the bundles it could not upload
+      // under the container's Library/Caches/com.bugsee.data/capture/bundles; their types are read.
+      final container = await dev.dataContainer();
+      final listing = container == null
+          ? ''
+          : (await sh([
+              'find',
+              container,
+              '-type',
+              'f',
+              '(',
+              '-iname',
+              '*.bundle.zip',
+              '-o',
+              '-iname',
+              '*.dmp',
+              '-o',
+              '-iname',
+              '*.plcrash',
+              '-o',
+              '-iname',
+              '*crash*report*',
+              ')',
+            ])).text;
+      final files = listing.split('\n').where((l) => l.isNotEmpty).toList();
+      final types = <String>[];
+      for (final f in files.where((f) => f.endsWith('.bundle.zip'))) {
+        final r = await sh([
+          'python3',
+          '-I',
+          '-c',
+          'import zipfile,json,sys; print(json.loads(zipfile.ZipFile(sys.argv[1]).read("request.json"))["type"])',
+          f,
+        ]);
+        types.add(r.ok ? r.text : 'unreadable');
+      }
+      final other = files.where((f) => !f.endsWith('.bundle.zip')).toList();
+      run.expect(
+        'the simulator container retains no crash bundle and no crash file (retained bundles: ${types.length}, types $types)',
+        container != null &&
+            !types.contains('crash') &&
+            !types.contains('unreadable') &&
+            other.isEmpty,
+        'searched $container: ${files.map((f) => f.split('/').last).toList()}',
+      );
+      run.expect(
+        'no crash report is recovered on the simulator (nothing at the mock API after the relaunch)',
+        crashBundle == null,
+        crashBundle == null
+            ? 'none within 80 s'
+            : '${crashBundle.type} ${crashBundle.source}',
+      );
+      run.expect(
+        'no RelaunchedAfterCrash lifecycle event either',
+        !events.any(
+          (e) =>
+              e.kind == 'lifecycle' &&
+              '${e['event']}'.contains('RelaunchedAfterCrash'),
+        ),
+        'lifecycle events: ${events.where((e) => e.kind == 'lifecycle').map((e) => e['event']).toList()}',
+      );
+      // Why: the simulator slice of the SDK has no crash reporter; the device slice does (the control).
+      final xc = await _xcframework();
+      final simStrings = await sh([
+        'bash',
         '-c',
-        'import zipfile,json,sys; print(json.loads(zipfile.ZipFile(sys.argv[1]).read("request.json"))["type"])',
-        f,
+        "strings '$xc/ios-arm64_x86_64-simulator/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
       ]);
-      types.add(r.ok ? r.text : 'unreadable');
-    }
-    final other = files.where((f) => !f.endsWith('.bundle.zip')).toList();
-    run.expect(
-      'the simulator container retains no crash bundle and no crash file (retained bundles: ${types.length}, types $types)',
-      container != null &&
-          !types.contains('crash') &&
-          !types.contains('unreadable') &&
-          other.isEmpty,
-      'searched $container: ${files.map((f) => f.split('/').last).toList()}',
-    );
-    run.expect(
-      'no crash report is recovered on the simulator (nothing at the mock API after the relaunch)',
-      crashBundle == null,
-      crashBundle == null
-          ? 'none within 80 s'
-          : '${crashBundle.type} ${crashBundle.source}',
-    );
-    run.expect(
-      'no RelaunchedAfterCrash lifecycle event either',
-      !events.any(
-        (e) =>
-            e.kind == 'lifecycle' &&
-            '${e['event']}'.contains('RelaunchedAfterCrash'),
-      ),
-      'lifecycle events: ${events.where((e) => e.kind == 'lifecycle').map((e) => e['event']).toList()}',
-    );
-    // Why: the simulator slice of the SDK has no crash reporter; the device slice does (the control).
-    final xc = await _xcframework();
-    final simStrings = await sh([
-      'bash',
-      '-c',
-      "strings '$xc/ios-arm64_x86_64-simulator/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
-    ]);
-    final devStrings = await sh([
-      'bash',
-      '-c',
-      "strings '$xc/ios-arm64/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
-    ]);
-    run.expect(
-      'the reason: the simulator slice of the SDK carries no crash reporter symbols, the device slice does',
-      simStrings.text == '0' && int.parse(devStrings.text) > 0,
-      'ios-arm64_x86_64-simulator: ${simStrings.text} matching strings; ios-arm64: ${devStrings.text}',
-    );
-    run.result.notCovered.addAll([
-      'everything about a RECOVERED iOS crash report: the retained bundle, request.json identity and identity_source on the recovered report, the recovered-report handler dispatch (off-main, bounded cap, late completion re-persist). They need a physical iPhone.',
-    ]);
-    throw NotPossible(
-      'the iOS SDK\'s simulator slice has no crash reporter (measured: a SIGSEGV was proven, the relaunch recovered nothing while a live report arrived; the device slice has the symbols); a physical iPhone is required. airplane mode does not exist on the simulator either (the mock API refusing the upload with 503 is its stand-in)',
-    );
-  });
+      final devStrings = await sh([
+        'bash',
+        '-c',
+        "strings '$xc/ios-arm64/Bugsee.framework/Bugsee' | grep -ciE 'BGSCrashManager|PLCrashReporter' || true",
+      ]);
+      run.expect(
+        'the reason: the simulator slice of the SDK carries no crash reporter symbols, the device slice does',
+        simStrings.text == '0' && int.parse(devStrings.text) > 0,
+        'ios-arm64_x86_64-simulator: ${simStrings.text} matching strings; ios-arm64: ${devStrings.text}',
+      );
+      run.result.notCovered.addAll([
+        'everything about a RECOVERED iOS crash report: the retained bundle, request.json identity and identity_source on the recovered report, the recovered-report handler dispatch (off-main, bounded cap, late completion re-persist). They need a physical iPhone.',
+      ]);
+      throw NotPossible(
+        'the iOS SDK\'s simulator slice has no crash reporter (measured: a SIGSEGV was proven, the relaunch recovered nothing while a live report arrived; the device slice has the symbols); a physical iPhone is required. airplane mode does not exist on the simulator either (the mock API refusing the upload with 503 is its stand-in)',
+      );
+    },
+  );
 
   Future<String> _xcframework() async {
     final r = await sh([
@@ -687,9 +689,9 @@ class IosCtx {
       await mock.command('throw-async a4');
       await delay(30);
       final log = await dev.log(since: l.since);
-      final refused = RegExp(
-        'logged exceptions are not filed on the simulator',
-      ).allMatches(log).length;
+      final refused = RegExp('logged exceptions are not filed on the simulator')
+          .allMatches(log)
+          .length;
       final exceptionReports = mock.storedNames();
       final bundles = <Bundle>[];
       for (final n in exceptionReports) {
@@ -708,9 +710,9 @@ class IosCtx {
             bundles.any((x) => x.summary == 'verify upload control4'),
         'bundles: ${bundles.map((x) => '${x.type}:${x.summary}').toList()}',
       );
-      final commands = parseVerifyEvents(
-        log,
-      ).where((e) => e.kind == 'command-error').toList();
+      final commands = parseVerifyEvents(log)
+          .where((e) => e.kind == 'command-error')
+          .toList();
       run.expect(
         'the Dart side raised no error handing the exceptions over',
         commands.isEmpty,
@@ -852,9 +854,9 @@ class IosCtx {
       'iphoneos',
       '-showBuildSettings',
     ], cwd: '$example/ios');
-    final deadStrip = RegExp(
-      r'DEAD_CODE_STRIPPING = (\w+)',
-    ).firstMatch(settings.stdout)?.group(1);
+    final deadStrip = RegExp(r'DEAD_CODE_STRIPPING = (\w+)')
+        .firstMatch(settings.stdout)
+        ?.group(1);
     run.note(
       'the Release configuration links with DEAD_CODE_STRIPPING = $deadStrip',
     );
@@ -1036,9 +1038,7 @@ class IosCtx {
           'precondition: flutter run is up with a debug session',
           up
               ? []
-              : [
-                  'flutter run did not reach the key-commands banner: ${child.output}',
-                ],
+              : ['flutter run did not reach the key-commands banner: ${child.output}'],
           'flutter run attached',
         );
         final started = await waitEvent(
@@ -1063,9 +1063,9 @@ class IosCtx {
               .toList(),
           '$banner',
         );
-        final mainBefore = parseVerifyEvents(
-          beforeLog,
-        ).where((e) => e.kind == 'main').toList();
+        final mainBefore = parseVerifyEvents(beforeLog)
+            .where((e) => e.kind == 'main')
+            .toList();
         await mock.command('upload before-restart');
         await newBundle();
         await delay(3);
@@ -1150,9 +1150,9 @@ class IosCtx {
           bundle != null && bundle.attributes.containsKey('verify.before'),
           bundle == null ? 'no bundle' : '${bundle.attributes.keys.toList()}',
         );
-        final registered = RegExp(
-          r'wrapper registered',
-        ).allMatches(await dev.log(since: since)).length;
+        final registered = RegExp(r'wrapper registered')
+            .allMatches(await dev.log(since: since))
+            .length;
         run.note(
           '"wrapper registered" lines since the session began: $registered (it registers once per process)',
         );

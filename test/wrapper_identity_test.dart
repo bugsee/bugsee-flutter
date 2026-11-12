@@ -26,9 +26,8 @@ void main() {
       final java = read(
         'android/src/main/java/com/bugsee/flutter/FlutterWrapper.java',
       );
-      final m = RegExp(
-        r'static final String WRAPPER_TYPE = "([^"]*)";',
-      ).firstMatch(java);
+      final m = RegExp(r'static final String WRAPPER_TYPE = "([^"]*)";')
+          .firstMatch(java);
       expect(m, isNotNull, reason: 'WRAPPER_TYPE constant not found');
       expect(m!.group(1), dart.wrapperType);
     });
@@ -67,9 +66,8 @@ void main() {
       final objc = read(
         'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper/BGSFlutterWrapper.m',
       );
-      final m = RegExp(
-        r'BGSFlutterWrapperVersion = @"([^"]*)";',
-      ).firstMatch(objc);
+      final m = RegExp(r'BGSFlutterWrapperVersion = @"([^"]*)";')
+          .firstMatch(objc);
       expect(m, isNotNull, reason: 'BGSFlutterWrapperVersion not found');
       expect(m!.group(1), pubspecVersion());
     });

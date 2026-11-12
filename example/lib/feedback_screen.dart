@@ -2,8 +2,7 @@ import 'dart:async';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
-// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The in-app feedback chat (`bugsee_flutter_feedback`, a separate package): show the SDK's native
 /// chat screen, set the greeting an empty conversation opens with, and log the messages the

@@ -10,7 +10,7 @@
 // Pigeon is pinned in native-versions.json (`pigeon.version`) and in
 // pigeons/pubspec.yaml; test/native_versions_test.dart compares both. It lives
 // in its own pure-Dart package because pigeon needs a newer `meta` than the
-// Flutter floor (3.41.0) ships, so it cannot be a dev_dependency of the plugin.
+// Flutter floor (3.50.0) ships, so it cannot be a dev_dependency of the plugin.
 // The generated Dart is then formatted with the `dart` on PATH, so run this on
 // the floor Dart (CI does) or the result differs from what CI expects.
 import 'dart:convert';
@@ -61,9 +61,9 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
-  final outputs = outputsOf(
-    File('$pigeons/bridge.dart').readAsStringSync(),
-  ).map((p) => File('$pigeons/$p')).toList();
+  final outputs = outputsOf(File('$pigeons/bridge.dart').readAsStringSync())
+      .map((p) => File('$pigeons/$p'))
+      .toList();
   if (outputs.length != 3) {
     stderr.writeln(
       'expected 3 outputs in bridge.dart, found ${outputs.length}',

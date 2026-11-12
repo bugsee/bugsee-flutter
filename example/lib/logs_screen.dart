@@ -1,7 +1,6 @@
 // ignore_for_file: avoid_print
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Log capture (`Bugsee.installLogCapture`, called in `main`): what the app prints from Dart is
 /// recorded into the report with the plugin's own source, apart from the deliberate `Bugsee.log`

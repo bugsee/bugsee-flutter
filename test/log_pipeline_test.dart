@@ -437,56 +437,47 @@ void main() {
       expect(rig.pipeline.stats.filterFailures, 1);
     });
 
-    test(
-      'the filter is handed a copy: changing it changes nothing it does not return',
-      () async {
-        final rig = Rig();
-        rig.pipeline.setFilter((e) {
-          e.message = 'tampered';
-          return BugseeLogEvent(message: 'replacement');
-        }, const Duration(seconds: 1));
-        rig.line('original');
-        await rig.pipeline.flush();
-        expect(rig.sent.single.message, 'replacement');
-      },
-    );
+    test('the filter is handed a copy: changing it changes nothing it does not return', () async {
+      final rig = Rig();
+      rig.pipeline.setFilter((e) {
+        e.message = 'tampered';
+        return BugseeLogEvent(message: 'replacement');
+      }, const Duration(seconds: 1));
+      rig.line('original');
+      await rig.pipeline.flush();
+      expect(rig.sent.single.message, 'replacement');
+    });
 
-    test(
-      'lines run through it one at a time, in order, even when it is asynchronous',
-      () async {
-        final rig = Rig();
-        var running = 0;
-        var peak = 0;
-        rig.pipeline.setFilter((e) async {
-          running++;
-          if (running > peak) peak = running;
-          await Future<void>.delayed(
-            Duration(milliseconds: e.message == 'a' ? 15 : 1),
-          );
-          running--;
-          return e;
-        }, const Duration(seconds: 1));
-        rig.line('a');
-        rig.line('b');
-        rig.line('c');
-        await rig.pipeline.flush();
-        expect(peak, 1);
-        expect(rig.texts, ['a', 'b', 'c']);
-      },
-    );
+    test('lines run through it one at a time, in order, even when it is asynchronous', () async {
+      final rig = Rig();
+      var running = 0;
+      var peak = 0;
+      rig.pipeline.setFilter((e) async {
+        running++;
+        if (running > peak) peak = running;
+        await Future<void>.delayed(
+          Duration(milliseconds: e.message == 'a' ? 15 : 1),
+        );
+        running--;
+        return e;
+      }, const Duration(seconds: 1));
+      rig.line('a');
+      rig.line('b');
+      rig.line('c');
+      await rig.pipeline.flush();
+      expect(peak, 1);
+      expect(rig.texts, ['a', 'b', 'c']);
+    });
 
-    test(
-      'the filter in force when the line was captured still applies after it is removed',
-      () async {
-        final rig = Rig();
-        rig.pipeline.setFilter((e) => null, const Duration(seconds: 1));
-        rig.line('secret');
-        rig.pipeline.setFilter(null, const Duration(seconds: 1));
-        await rig.pipeline.flush();
-        expect(rig.sent, isEmpty);
-        expect(rig.pipeline.stats.droppedByFilter, 1);
-      },
-    );
+    test('the filter in force when the line was captured still applies after it is removed', () async {
+      final rig = Rig();
+      rig.pipeline.setFilter((e) => null, const Duration(seconds: 1));
+      rig.line('secret');
+      rig.pipeline.setFilter(null, const Duration(seconds: 1));
+      await rig.pipeline.flush();
+      expect(rig.sent, isEmpty);
+      expect(rig.pipeline.stats.droppedByFilter, 1);
+    });
 
     test(
       'a filter set after capture also covers the queued line, after the first',
@@ -714,22 +705,25 @@ void main() {
   });
 
   group('the pipeline is not blocked by a slow filter on the print path', () {
-    test('submit returns before any filtering when the filter is slow', () async {
-      final rig = Rig();
-      var asked = 0;
-      rig.pipeline.setFilter((e) async {
-        asked++;
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        return e;
-      }, const Duration(seconds: 30));
-      for (var i = 0; i < 50; i++) {
-        rig.line('l$i');
-      }
-      // Submitting never ran, let alone waited for, the filter: no wall-clock threshold.
-      expect(asked, 0);
-      expect(rig.sent, isEmpty);
-      await rig.pipeline.flush();
-      expect(rig.sent, hasLength(50));
-    });
+    test(
+      'submit returns before any filtering when the filter is slow',
+      () async {
+        final rig = Rig();
+        var asked = 0;
+        rig.pipeline.setFilter((e) async {
+          asked++;
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+          return e;
+        }, const Duration(seconds: 30));
+        for (var i = 0; i < 50; i++) {
+          rig.line('l$i');
+        }
+        // Submitting never ran, let alone waited for, the filter: no wall-clock threshold.
+        expect(asked, 0);
+        expect(rig.sent, isEmpty);
+        await rig.pipeline.flush();
+        expect(rig.sent, hasLength(50));
+      },
+    );
   });
 }

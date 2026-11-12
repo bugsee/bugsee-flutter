@@ -26,8 +26,7 @@ import 'package:bugsee_flutter/src/view_hierarchy/publisher.dart';
 import 'package:bugsee_flutter_example/main.dart';
 import 'package:bugsee_flutter_example/view_hierarchy_screen.dart';
 import 'package:flutter/foundation.dart';
-// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -244,8 +243,7 @@ void main() {
           expect(
             e['managed'],
             isA<String>(),
-            reason:
-                'the managed half is in the entry taken for this report, not the next one',
+            reason: 'the managed half is in the entry taken for this report, not the next one',
           );
         }
         final last = mine.last;

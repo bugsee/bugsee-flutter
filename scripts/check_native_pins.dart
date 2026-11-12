@@ -14,17 +14,18 @@ const gradlePluginMetadata =
     'com.bugsee.android.gradle.gradle.plugin/maven-metadata.xml';
 
 /// Versions listed in a Maven `maven-metadata.xml`.
-List<String> parseMavenVersions(String xml) => RegExp(
-  r'<version>([^<]+)</version>',
-).allMatches(xml).map((m) => m.group(1)!.trim()).toList();
+List<String> parseMavenVersions(String xml) =>
+    RegExp(r'<version>([^<]+)</version>')
+        .allMatches(xml)
+        .map((m) => m.group(1)!.trim())
+        .toList();
 
 /// Tag names from `git ls-remote --tags` output (peeled `^{}` entries folded in).
 Set<String> parseLsRemoteTags(String output) {
   final tags = <String>{};
   for (final line in output.split('\n')) {
-    final m = RegExp(
-      r'\trefs/tags/(\S+?)(\^\{\})?$',
-    ).firstMatch(line.trimRight());
+    final m = RegExp(r'\trefs/tags/(\S+?)(\^\{\})?$')
+        .firstMatch(line.trimRight());
     if (m != null) tags.add(m.group(1)!);
   }
   return tags;
@@ -172,13 +173,10 @@ Future<Never> _exit(int code) async {
 Future<void> main(List<String> args) async {
   final PinReport report;
   try {
-    final pins =
-        jsonDecode(
-              File(
-                args.isNotEmpty ? args.first : 'native-versions.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
+    final pins = jsonDecode(
+      File(args.isNotEmpty ? args.first : 'native-versions.json')
+          .readAsStringSync(),
+    ) as Map<String, dynamic>;
     final ios = pins['ios'] as Map<String, dynamic>;
     report = evaluate(
       pins,

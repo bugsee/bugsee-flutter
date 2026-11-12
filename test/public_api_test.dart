@@ -100,18 +100,15 @@ void main() {
     expect(all, exports.length);
   });
 
-  test(
-    'nothing is exported from the bridge, the options registry or the secure internals',
-    () {
-      for (final path in exports.keys) {
-        expect(path, isNot(contains('bridge')));
-        expect(path, isNot(contains('messages')));
-        expect(path, isNot(contains('option_registry')));
-        expect(path, isNot(endsWith('secure_region.dart')));
-        expect(path, isNot(contains('runtime')));
-      }
-    },
-  );
+  test('nothing is exported from the bridge, the options registry or the secure internals', () {
+    for (final path in exports.keys) {
+      expect(path, isNot(contains('bridge')));
+      expect(path, isNot(contains('messages')));
+      expect(path, isNot(contains('option_registry')));
+      expect(path, isNot(endsWith('secure_region.dart')));
+      expect(path, isNot(contains('runtime')));
+    }
+  });
 
   test('an exported file does not re-export anything itself', () {
     for (final path in exports.keys) {

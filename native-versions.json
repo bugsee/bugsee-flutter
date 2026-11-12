@@ -1,9 +1,9 @@
 {
   "_comment": "The single source of every pinned native version. Every other copy (Gradle, Package.swift, example app, CI) is asserted against this file by test/native_versions_test.dart.",
   "flutter": {
-    "min": "3.41.0",
-    "dart": "3.11.0",
-    "provenance": "The plugin is SwiftPM-only (no podspec), so `flutter pub get` fails on Linux/Windows before 3.41.0 ('only Swift Package Manager compatible'); measured on CI across 3.27-3.38, first passing release 3.41.0. For reference, competitor floors (pub.dev, 2026-10-20): Sentry 3.44, Firebase/Datadog 3.27, Bugsnag/Shake/Embrace 3.10, Instabug 1.17."
+    "min": "3.50.0",
+    "dart": "3.14.0",
+    "provenance": "Raised from 3.41.0 (the first release where a SwiftPM-only plugin resolves on Linux/Windows) to 3.50.0 / Dart 3.14.0 for the 10.0 major: Direct Interop (JNIgen and FFIgen for Objective-C stable, Pigeon interop mode in preview), AGP 9 and `material_ui` are only there from 3.50 (flutter.dev/blog/whats-new-in-flutter-3-50, 2026-11). Competitor floors (pub.dev, 2026-10-20): Sentry 3.44, Firebase/Datadog 3.27, Bugsnag/Shake/Embrace 3.10, Instabug 1.17."
   },
   "android": {
     "sdk": "7.5.0",

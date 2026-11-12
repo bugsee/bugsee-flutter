@@ -20,9 +20,9 @@ import 'helpers/option_samples.dart';
 const dir = 'test/fixtures/option_manifests';
 
 Map<String, Map<String, dynamic>> manifest(String sdk) {
-  final json =
-      jsonDecode(File('$dir/$sdk.json').readAsStringSync())
-          as Map<String, dynamic>;
+  final json = jsonDecode(
+    File('$dir/$sdk.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
   return {
     for (final o in (json['options'] as List).cast<Map<String, dynamic>>())
       o['key'] as String: o,
@@ -82,36 +82,33 @@ void main() {
       },
     );
 
-    test(
-      'hidden options have no typed field, nor do those of a module not bundled',
-      () {
-        for (final spec in optionSpecs) {
-          final bundledAndroid =
-              spec.android != null &&
-              bundledModules[OptionPlatform.android]!.contains(
-                spec.android!.module,
-              );
-          final bundledIos =
-              spec.ios != null &&
-              bundledModules[OptionPlatform.ios]!.contains(spec.ios!.module);
-          final deprecated =
-              (spec.android?.deprecatedSince ?? spec.ios?.deprecatedSince) !=
-              null;
-          expect(
-            spec.typed,
-            !spec.hidden && !deprecated && (bundledAndroid || bundledIos),
-            reason: spec.key,
-          );
-        }
-        // The four leak-module options (bugsee-android-leak is not a dependency of this plugin).
+    test('hidden options have no typed field, nor do those of a module not bundled', () {
+      for (final spec in optionSpecs) {
+        final bundledAndroid =
+            spec.android != null &&
+            bundledModules[OptionPlatform.android]!.contains(
+              spec.android!.module,
+            );
+        final bundledIos =
+            spec.ios != null &&
+            bundledModules[OptionPlatform.ios]!.contains(spec.ios!.module);
+        final deprecated =
+            (spec.android?.deprecatedSince ?? spec.ios?.deprecatedSince) !=
+            null;
         expect(
-          optionSpecs
-              .where((s) => s.android?.module == 'bugsee-android-leak')
-              .map((s) => s.typed),
-          everyElement(isFalse),
+          spec.typed,
+          !spec.hidden && !deprecated && (bundledAndroid || bundledIos),
+          reason: spec.key,
         );
-      },
-    );
+      }
+      // The four leak-module options (bugsee-android-leak is not a dependency of this plugin).
+      expect(
+        optionSpecs
+            .where((s) => s.android?.module == 'bugsee-android-leak')
+            .map((s) => s.typed),
+        everyElement(isFalse),
+      );
+    });
 
     test(
       'the bundled modules are the artefacts android/build.gradle declares',
@@ -134,28 +131,22 @@ void main() {
   group('BugseeOptions has a field for every typed option', () {
     final typed = optionSpecs.where((s) => s.typed).toList();
 
-    test(
-      'there are 100 of them (84 + 71 public, 51 shared, less 4 leak-module and 1 deprecated)',
-      () {
-        expect(typed.length, 100);
-      },
-    );
+    test('there are 100 of them (84 + 71 public, 51 shared, less 4 leak-module and 1 deprecated)', () {
+      expect(typed.length, 100);
+    });
 
-    test(
-      'each registry key is a constructor field of the generated name, emitted under its key',
-      () {
-        for (final spec in typed) {
-          final name = gen.fieldName(spec.key);
-          final s = sample(spec);
-          final options =
-              Function.apply(BugseeOptions.new, [], {Symbol(name): s.value})
-                  as BugseeOptions;
-          expect(options.typedEntries(), {
-            spec.key: s.entry,
-          }, reason: '$name -> ${spec.key}');
-        }
-      },
-    );
+    test('each registry key is a constructor field of the generated name, emitted under its key', () {
+      for (final spec in typed) {
+        final name = gen.fieldName(spec.key);
+        final s = sample(spec);
+        final options = Function.apply(BugseeOptions.new, [], {
+          Symbol(name): s.value,
+        }) as BugseeOptions;
+        expect(options.typedEntries(), {
+          spec.key: s.entry,
+        }, reason: '$name -> ${spec.key}');
+      }
+    });
 
     test('an unset option is not emitted: null means "the SDK default"', () {
       expect(const BugseeOptions().typedEntries(), isEmpty);
@@ -178,97 +169,90 @@ void main() {
       });
     });
 
-    test(
-      'generated enum constants match the manifests by value, with platform flags',
-      () {
-        void expectEnum(
-          String sdkEnum,
-          String platform,
-          Map<String, int> dart,
-        ) {
-          final source = (platform == 'android' ? android : ios).values
-              .map((o) => o['enum'] as Map<String, dynamic>?)
-              .firstWhere((e) => e?['name'] == sdkEnum)!;
-          final values = (source['values'] as Map).cast<String, int>();
-          expect(
-            dart.values.toSet(),
-            values.values.toSet(),
-            reason: '$sdkEnum on $platform',
-          );
-        }
+    test('generated enum constants match the manifests by value, with platform flags', () {
+      void expectEnum(String sdkEnum, String platform, Map<String, int> dart) {
+        final source = (platform == 'android' ? android : ios).values
+            .map((o) => o['enum'] as Map<String, dynamic>?)
+            .firstWhere((e) => e?['name'] == sdkEnum)!;
+        final values = (source['values'] as Map).cast<String, int>();
+        expect(
+          dart.values.toSet(),
+          values.values.toSet(),
+          reason: '$sdkEnum on $platform',
+        );
+      }
 
-        Map<String, int> of<T extends Enum>(
-          List<T> all,
-          int Function(T) value,
-          bool Function(T) on,
-        ) => {
-          for (final c in all)
-            if (on(c)) c.name: value(c),
-        };
-        expectEnum(
-          'LogLevel',
-          'android',
-          of(LogLevel.values, (c) => c.value, (c) => c.onAndroid),
-        );
-        expectEnum(
-          'BugseeLogLevel',
-          'ios',
-          of(LogLevel.values, (c) => c.value, (c) => c.onIos),
-        );
-        expectEnum(
-          'FrameRate',
-          'android',
-          of(FrameRate.values, (c) => c.value, (c) => c.onAndroid),
-        );
-        expectEnum(
-          'BugseeFrameRate',
-          'ios',
-          of(FrameRate.values, (c) => c.value, (c) => c.onIos),
-        );
-        expectEnum(
-          'VideoMode',
-          'android',
-          of(VideoMode.values, (c) => c.value, (c) => c.onAndroid),
-        );
-        expectEnum(
-          'VideoQuality',
-          'android',
-          of(VideoQuality.values, (c) => c.value, (c) => c.onAndroid),
-        );
-        expectEnum(
-          'BugseeVideoQuality',
-          'ios',
-          of(VideoQuality.values, (c) => c.value, (c) => c.onIos),
-        );
-        expectEnum(
-          'BugseeCrashHandlerType',
-          'ios',
-          of(CrashHandlerType.values, (c) => c.value, (c) => c.onIos),
-        );
-        expectEnum(
-          'BugseeDataEncryptionMode',
-          'ios',
-          of(DataEncryptionMode.values, (c) => c.value, (c) => c.onIos),
-        );
-        expectEnum(
-          'BugseeStyle',
-          'ios',
-          of(BugseeStyle.values, (c) => c.value, (c) => c.onIos),
-        );
-        // The hand-written severity enum is compared by value with both platforms (ReportSeverity).
-        expectEnum('IssueSeverity', 'android', {
-          for (final s in ReportSeverity.values) s.name: s.value,
-        });
-        expectEnum('BugseeSeverityLevel', 'ios', {
-          for (final s in ReportSeverity.values) s.name: s.value,
-        });
-        // The one value a platform lacks.
-        expect(FrameRate.raw.onIos, isFalse);
-        expect(FrameRate.raw.onAndroid, isTrue);
-        expect(FrameRate.fromValue(3), FrameRate.high);
-        expect(FrameRate.fromValue(99), isNull);
-      },
-    );
+      Map<String, int> of<T extends Enum>(
+        List<T> all,
+        int Function(T) value,
+        bool Function(T) on,
+      ) => {
+        for (final c in all)
+          if (on(c)) c.name: value(c),
+      };
+      expectEnum(
+        'LogLevel',
+        'android',
+        of(LogLevel.values, (c) => c.value, (c) => c.onAndroid),
+      );
+      expectEnum(
+        'BugseeLogLevel',
+        'ios',
+        of(LogLevel.values, (c) => c.value, (c) => c.onIos),
+      );
+      expectEnum(
+        'FrameRate',
+        'android',
+        of(FrameRate.values, (c) => c.value, (c) => c.onAndroid),
+      );
+      expectEnum(
+        'BugseeFrameRate',
+        'ios',
+        of(FrameRate.values, (c) => c.value, (c) => c.onIos),
+      );
+      expectEnum(
+        'VideoMode',
+        'android',
+        of(VideoMode.values, (c) => c.value, (c) => c.onAndroid),
+      );
+      expectEnum(
+        'VideoQuality',
+        'android',
+        of(VideoQuality.values, (c) => c.value, (c) => c.onAndroid),
+      );
+      expectEnum(
+        'BugseeVideoQuality',
+        'ios',
+        of(VideoQuality.values, (c) => c.value, (c) => c.onIos),
+      );
+      expectEnum(
+        'BugseeCrashHandlerType',
+        'ios',
+        of(CrashHandlerType.values, (c) => c.value, (c) => c.onIos),
+      );
+      expectEnum(
+        'BugseeDataEncryptionMode',
+        'ios',
+        of(DataEncryptionMode.values, (c) => c.value, (c) => c.onIos),
+      );
+      expectEnum(
+        'BugseeStyle',
+        'ios',
+        of(BugseeStyle.values, (c) => c.value, (c) => c.onIos),
+      );
+      // The hand-written severity enum is compared by value with both platforms (ReportSeverity).
+      expectEnum('IssueSeverity', 'android', {
+        for (final s in ReportSeverity.values) s.name: s.value,
+      });
+      expectEnum('BugseeSeverityLevel', 'ios', {
+        for (final s in ReportSeverity.values) s.name: s.value,
+      });
+      // The one value a platform lacks.
+      expect(FrameRate.raw.onIos, isFalse);
+      expect(FrameRate.raw.onAndroid, isTrue);
+      expect(FrameRate.fromValue(3), FrameRate.high);
+      expect(FrameRate.fromValue(99), isNull);
+    });
   });
 
   group('the generator', () {
@@ -297,35 +281,32 @@ void main() {
       },
     );
 
-    test(
-      'name overrides: compound words are capitalised, and every override names a real option',
-      () {
+    test('name overrides: compound words are capitalised, and every override names a real option', () {
+      expect(
+        gen.fieldName('com.bugsee.option.capture.avplayer'),
+        'captureAvPlayer',
+      );
+      expect(
+        gen.fieldName('com.bugsee.option.capture.logs.allsources'),
+        'captureLogsAllSources',
+      );
+      expect(
+        gen.fieldName('com.bugsee.option.capture.logs.oslog'),
+        'captureLogsOsLog',
+      );
+      expect(
+        gen.fieldName('com.bugsee.option.capture.websocket'),
+        'captureWebSocket',
+      );
+      expect(gen.constantName('Default', 'VideoQuality'), 'defaultQuality');
+      for (final k in gen.fieldNameOverrides.keys) {
         expect(
-          gen.fieldName('com.bugsee.option.capture.avplayer'),
-          'captureAvPlayer',
+          registry.containsKey('com.bugsee.option.$k'),
+          isTrue,
+          reason: 'stale override $k',
         );
-        expect(
-          gen.fieldName('com.bugsee.option.capture.logs.allsources'),
-          'captureLogsAllSources',
-        );
-        expect(
-          gen.fieldName('com.bugsee.option.capture.logs.oslog'),
-          'captureLogsOsLog',
-        );
-        expect(
-          gen.fieldName('com.bugsee.option.capture.websocket'),
-          'captureWebSocket',
-        );
-        expect(gen.constantName('Default', 'VideoQuality'), 'defaultQuality');
-        for (final k in gen.fieldNameOverrides.keys) {
-          expect(
-            registry.containsKey('com.bugsee.option.$k'),
-            isTrue,
-            reason: 'stale override $k',
-          );
-        }
-      },
-    );
+      }
+    });
 
     test('a reserved word as a constant gets the enum name appended', () {
       expect(gen.constantName('Default', 'VideoQuality'), 'defaultQuality');

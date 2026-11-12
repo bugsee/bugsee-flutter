@@ -4,8 +4,7 @@ import 'dart:convert';
 
 import 'package:bugsee_flutter/src/secure/bugsee_secure_view.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
-// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -436,33 +435,34 @@ void main() {
   });
 
   group('more of what is on stage', () {
-    testWidgets('a list in a small viewport shows only what the viewport shows', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        host(
-          at(
-            0,
-            0,
-            SizedBox(
-              width: 200,
-              height: 100,
-              child: ListView(
-                children: [
-                  for (var i = 0; i < 20; i++) Marker(width: 200, height: 50),
-                ],
+    testWidgets(
+      'a list in a small viewport shows only what the viewport shows',
+      (tester) async {
+        await tester.pumpWidget(
+          host(
+            at(
+              0,
+              0,
+              SizedBox(
+                width: 200,
+                height: 100,
+                child: ListView(
+                  children: [
+                    for (var i = 0; i < 20; i++) Marker(width: 200, height: 50),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      );
-      // The cache extent keeps more in the tree, all inside the 800 x 600 screen, none visible.
-      expect(
-        find.byType(Marker, skipOffstage: false).evaluate().length,
-        greaterThan(2),
-      );
-      expect(named(payload(snapshot()), 'Marker'), hasLength(2));
-    });
+        );
+        // The cache extent keeps more in the tree, all inside the 800 x 600 screen, none visible.
+        expect(
+          find.byType(Marker, skipOffstage: false).evaluate().length,
+          greaterThan(2),
+        );
+        expect(named(payload(snapshot()), 'Marker'), hasLength(2));
+      },
+    );
 
     testWidgets('what an ancestor clips away is absent even on screen', (
       tester,
@@ -1131,24 +1131,21 @@ void main() {
       expect(debugTypeName(ValueNotifier<int>(1)), 'ValueNotifier');
     });
 
-    test(
-      'a repeated type gives the same name, and each caller keeps its own fallback',
-      () {
-        // The decision is remembered per type (the walk names the same few types for every node), so a
-        // second answer must not depend on the first caller's fallback.
-        final shared = _SharedFreeText();
-        expect(debugTypeName(shared), 'Widget');
-        expect(debugTypeName(shared, fallback: 'RenderObject'), 'RenderObject');
-        expect(debugTypeName(shared), 'Widget');
-        for (var i = 0; i < 3; i++) {
-          expect(debugTypeName(const Marker()), 'Marker');
-          expect(
-            debugTypeName(const Marker(), fallback: 'RenderObject'),
-            'Marker',
-          );
-        }
-      },
-    );
+    test('a repeated type gives the same name, and each caller keeps its own fallback', () {
+      // The decision is remembered per type (the walk names the same few types for every node), so a
+      // second answer must not depend on the first caller's fallback.
+      final shared = _SharedFreeText();
+      expect(debugTypeName(shared), 'Widget');
+      expect(debugTypeName(shared, fallback: 'RenderObject'), 'RenderObject');
+      expect(debugTypeName(shared), 'Widget');
+      for (var i = 0; i < 3; i++) {
+        expect(debugTypeName(const Marker()), 'Marker');
+        expect(
+          debugTypeName(const Marker(), fallback: 'RenderObject'),
+          'Marker',
+        );
+      }
+    });
 
     test('a type whose name changes never carries free text', () {
       final shifting = _ShiftingTypeHolder();

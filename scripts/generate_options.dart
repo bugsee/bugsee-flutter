@@ -698,14 +698,12 @@ final class BugseeOptions {
     b.writeln('  final ${dartType(o)}? ${fieldName(o.key)};');
     b.writeln();
   }
-  b.writeln(
-    '''  /// The typed fields that are set, by SDK key, with enums as their internal value.
+  b.writeln('''  /// The typed fields that are set, by SDK key, with enums as their internal value.
   ///
   /// Internal: the platform filtering, validation and the endpoint rule are applied by the
   /// encoder (`encodeLaunchOptions`), which is what reaches the SDKs.
   @internal
-  Map<String, Object> typedEntries() => {''',
-  );
+  Map<String, Object> typedEntries() => {''');
   for (final o in typed) {
     final n = fieldName(o.key);
     final value = o.type == 'enum' ? '$n!.value' : '$n!';
@@ -736,13 +734,13 @@ void main(List<String> args) {
   final dir = '$root/test/fixtures/option_manifests';
   final android = readManifest('$dir/android.json', 'android');
   final ios = readManifest('$dir/ios.json', 'ios');
-  final docs =
-      jsonDecode(File('$dir/docs.json').readAsStringSync())
-          as Map<String, dynamic>;
+  final docs = jsonDecode(
+    File('$dir/docs.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
   Map<String, dynamic> meta(String sdk) {
-    final j =
-        jsonDecode(File('$dir/$sdk.json').readAsStringSync())
-            as Map<String, dynamic>;
+    final j = jsonDecode(
+      File('$dir/$sdk.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
     return j;
   }
 

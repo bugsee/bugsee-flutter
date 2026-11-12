@@ -46,18 +46,14 @@ void main() {
       expect(
         javaCarrier,
         contains('package com.bugsee.flutter;'),
-        reason:
-            'top level, in this package: com.bugsee.flutter.FlutterManagedException',
+        reason: 'top level, in this package: com.bugsee.flutter.FlutterManagedException',
       );
     });
 
-    test(
-      'Java: the carrier is what the SDK is handed, with the document as its message',
-      () {
-        expect(javaCode, contains('new FlutterManagedException(payload)'));
-        expect(javaCarrier, contains('super(document)'));
-      },
-    );
+    test('Java: the carrier is what the SDK is handed, with the document as its message', () {
+      expect(javaCode, contains('new FlutterManagedException(payload)'));
+      expect(javaCarrier, contains('super(document)'));
+    });
 
     test(
       'R8 keeps the class name for every app, and the build ships the rule',
@@ -93,16 +89,10 @@ void main() {
       },
     );
 
-    test(
-      'the document says it too (a build that renamed the class is still routed by the reason)',
-      () {
-        final p = buildExceptionPayload(StateError('x'), null);
-        expect(
-          p.json,
-          contains('"internalType":"${ExceptionWire.managedName}"'),
-        );
-      },
-    );
+    test('the document says it too (a build that renamed the class is still routed by the reason)', () {
+      final p = buildExceptionPayload(StateError('x'), null);
+      expect(p.json, contains('"internalType":"${ExceptionWire.managedName}"'));
+    });
   });
 
   group('the limits are the same in Dart, Java and Objective-C', () {
@@ -139,9 +129,8 @@ void main() {
       ]) {
         // Each is a CLASS property of its own (a plain method, or one shared declaration, is not).
         expect(
-          RegExp(
-            r'@property\(class, readonly\)[^;]*\b' + name + r'\s*;',
-          ).hasMatch(header),
+          RegExp(r'@property\(class, readonly\)[^;]*\b' + name + r'\s*;')
+              .hasMatch(header),
           isTrue,
           reason: name,
         );
@@ -154,97 +143,83 @@ void main() {
   });
 
   group('the stack taken at the facade', () {
-    test(
-      'each method that takes StackTrace.current is never inlined (the plugin\'s frame is exactly one, and dropped by position)',
-      () {
-        final api = read('lib/src/bugsee.dart');
-        for (final name in [
-          'logException',
-          'logUnhandledException',
-          'reportException',
-        ]) {
-          final match = RegExp(
-            r"@pragma\('vm:never-inline'\)\s+static Future<bool> " +
-                name +
-                r'\(',
-          );
-          expect(match.hasMatch(api), isTrue, reason: name);
-        }
-        // Exactly those three take the stack, so exactly those three need the pragma.
-        expect(
-          RegExp(r'StackTrace\.current').allMatches(stripComments(api)).length,
-          3,
-          reason:
-              'a fourth method that takes the stack needs the pragma, and a test',
+    test('each method that takes StackTrace.current is never inlined (the plugin\'s frame is exactly one, and dropped by position)', () {
+      final api = read('lib/src/bugsee.dart');
+      for (final name in [
+        'logException',
+        'logUnhandledException',
+        'reportException',
+      ]) {
+        final match = RegExp(
+          r"@pragma\('vm:never-inline'\)\s+static Future<bool> " + name + r'\(',
         );
-      },
-    );
+        expect(match.hasMatch(api), isTrue, reason: name);
+      }
+      // Exactly those three take the stack, so exactly those three need the pragma.
+      expect(
+        RegExp(r'StackTrace\.current').allMatches(stripComments(api)).length,
+        3,
+        reason:
+            'a fourth method that takes the stack needs the pragma, and a test',
+      );
+    });
   });
 
   group('which SDK call each path makes', () {
-    test(
-      'Android: handled is logException, unhandled is logUnhandledException (never onUncaughtException)',
-      () {
-        expect(
-          javaSdk,
-          contains('Bugsee.logException(throwable, domain, skipFrames)'),
-        );
-        expect(
-          javaSdk,
-          contains('Bugsee.logUnhandledException(throwable, options)'),
-        );
-        expect(javaSdk, isNot(contains('onUncaughtException')));
-        expect(javaCode, contains('if (handled)'));
-        expect(javaCode, contains('sdk.logUnhandledException'));
-        expect(
-          javaCode.indexOf('if (handled)'),
-          lessThan(javaCode.indexOf('sdk.logUnhandledException')),
-        );
-      },
-    );
+    test('Android: handled is logException, unhandled is logUnhandledException (never onUncaughtException)', () {
+      expect(
+        javaSdk,
+        contains('Bugsee.logException(throwable, domain, skipFrames)'),
+      );
+      expect(
+        javaSdk,
+        contains('Bugsee.logUnhandledException(throwable, options)'),
+      );
+      expect(javaSdk, isNot(contains('onUncaughtException')));
+      expect(javaCode, contains('if (handled)'));
+      expect(javaCode, contains('sdk.logUnhandledException'));
+      expect(
+        javaCode.indexOf('if (handled)'),
+        lessThan(javaCode.indexOf('sdk.logUnhandledException')),
+      );
+    });
 
-    test(
-      'iOS: handled is logException:reason:domain:, unhandled is logUnhandledException:reason:',
-      () {
-        expect(
-          objcCode,
-          contains(
-            '[Bugsee logException:name reason:reason domain:domain skipFrames:skipFrames completion:nil]',
-          ),
-        );
-        expect(
-          objcCode,
-          contains(
-            '[Bugsee logUnhandledException:name reason:reason completion:nil]',
-          ),
-        );
-      },
-    );
+    test('iOS: handled is logException:reason:domain:, unhandled is logUnhandledException:reason:', () {
+      expect(
+        objcCode,
+        contains(
+          '[Bugsee logException:name reason:reason domain:domain skipFrames:skipFrames completion:nil]',
+        ),
+      );
+      expect(
+        objcCode,
+        contains(
+          '[Bugsee logUnhandledException:name reason:reason completion:nil]',
+        ),
+      );
+    });
 
-    test(
-      'both gate on the SDK being launching or launched BEFORE they hand anything over',
-      () {
-        // The gate must exist (an absent one is index -1, which is "before" everything).
-        expect(javaCode, contains('if (!sdk.isLaunchedOrLaunching())'));
-        expect(objcCode, contains('if (![sdk isLaunchedOrLaunching])'));
-        expect(
-          javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
-          lessThan(javaCode.indexOf('sdk.logException(')),
-        );
-        expect(
-          javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
-          lessThan(javaCode.indexOf('sdk.logUnhandledException(')),
-        );
-        expect(
-          objcCode.indexOf('isLaunchedOrLaunching]'),
-          lessThan(objcCode.indexOf('[sdk logHandledName')),
-        );
-        expect(
-          objcCode.indexOf('isLaunchedOrLaunching]'),
-          lessThan(objcCode.indexOf('[sdk logUnhandledName')),
-        );
-      },
-    );
+    test('both gate on the SDK being launching or launched BEFORE they hand anything over', () {
+      // The gate must exist (an absent one is index -1, which is "before" everything).
+      expect(javaCode, contains('if (!sdk.isLaunchedOrLaunching())'));
+      expect(objcCode, contains('if (![sdk isLaunchedOrLaunching])'));
+      expect(
+        javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
+        lessThan(javaCode.indexOf('sdk.logException(')),
+      );
+      expect(
+        javaCode.indexOf('sdk.isLaunchedOrLaunching()'),
+        lessThan(javaCode.indexOf('sdk.logUnhandledException(')),
+      );
+      expect(
+        objcCode.indexOf('isLaunchedOrLaunching]'),
+        lessThan(objcCode.indexOf('[sdk logHandledName')),
+      );
+      expect(
+        objcCode.indexOf('isLaunchedOrLaunching]'),
+        lessThan(objcCode.indexOf('[sdk logUnhandledName')),
+      );
+    });
 
     test('both gates are the SDK\'s Launching/Launched pair', () {
       expect(javaSdk, contains('BugseeStatus.Launching'));
@@ -253,13 +228,10 @@ void main() {
       expect(objcCode, contains('BugseeStatusLaunched'));
     });
 
-    test(
-      'an SDK exception is caught natively (an NSException escaping into Swift crashes the app)',
-      () {
-        expect(javaCode, contains('catch (final RuntimeException e)'));
-        expect(objcCode, contains('@catch (NSException *exception)'));
-      },
-    );
+    test('an SDK exception is caught natively (an NSException escaping into Swift crashes the app)', () {
+      expect(javaCode, contains('catch (final RuntimeException e)'));
+      expect(objcCode, contains('@catch (NSException *exception)'));
+    });
 
     test('the plugins hand the call to the ops, and nothing else', () {
       expect(
@@ -274,25 +246,22 @@ void main() {
       );
     });
 
-    test(
-      'Android: the SDK call runs on the dispatcher\'s thread, never on the platform thread',
-      () {
-        final plugin = stripComments(read('$java/BugseeFlutterPlugin.java'));
-        // The only call of the ops is inside the lambda handed to the dispatcher.
-        expect(plugin, contains('ExceptionDispatcher.shared().submit('));
-        expect(
-          RegExp(r'\(\) -> ExceptionOps\.log\(').allMatches(plugin).length,
-          1,
-        );
-        expect(
-          RegExp(r'ExceptionOps\.log\(').allMatches(plugin).length,
-          1,
-          reason: 'no second, inline call',
-        );
-        // The reply goes back to the platform thread.
-        expect(plugin, contains('onMain(() -> result.success(handedToSdk))'));
-      },
-    );
+    test('Android: the SDK call runs on the dispatcher\'s thread, never on the platform thread', () {
+      final plugin = stripComments(read('$java/BugseeFlutterPlugin.java'));
+      // The only call of the ops is inside the lambda handed to the dispatcher.
+      expect(plugin, contains('ExceptionDispatcher.shared().submit('));
+      expect(
+        RegExp(r'\(\) -> ExceptionOps\.log\(').allMatches(plugin).length,
+        1,
+      );
+      expect(
+        RegExp(r'ExceptionOps\.log\(').allMatches(plugin).length,
+        1,
+        reason: 'no second, inline call',
+      );
+      // The reply goes back to the platform thread.
+      expect(plugin, contains('onMain(() -> result.success(handedToSdk))'));
+    });
 
     test(
       'the dispatcher is one daemon thread with a bounded queue that drops',
@@ -313,24 +282,21 @@ void main() {
       },
     );
 
-    test(
-      'the bridge method is async (the answer comes from another thread) and says why',
-      () {
-        final bridge = read('pigeons/bridge.dart');
-        expect(
-          bridge,
-          contains(
-            '@async\n  bool logException(String payload, bool handled, String? domain);',
-          ),
-        );
-        expect(
-          read('$java/Messages.java'),
-          contains(
-            'void logException(@NonNull String payload, @NonNull Boolean handled, @Nullable String domain, @NonNull Result<Boolean> result);',
-          ),
-        );
-      },
-    );
+    test('the bridge method is async (the answer comes from another thread) and says why', () {
+      final bridge = read('pigeons/bridge.dart');
+      expect(
+        bridge,
+        contains(
+          '@async\n  bool logException(String payload, bool handled, String? domain);',
+        ),
+      );
+      expect(
+        read('$java/Messages.java'),
+        contains(
+          'void logException(@NonNull String payload, @NonNull Boolean handled, @Nullable String domain, @NonNull Result<Boolean> result);',
+        ),
+      );
+    });
 
     test(
       'iOS: the SDK call stays on the main queue (it reads UIKit state)',

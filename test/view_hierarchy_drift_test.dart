@@ -8,10 +8,11 @@ import 'dart:io';
 import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-String code(String path) => File(path)
-    .readAsStringSync()
-    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+String code(String path) =>
+    File(path)
+        .readAsStringSync()
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .replaceAll(RegExp(r'//[^\n]*'), '');
 
 Map<String, Object?> json(String path) =>
     jsonDecode(File(path).readAsStringSync()) as Map<String, Object?>;
@@ -68,15 +69,18 @@ void main() {
       );
     });
 
-    test('the SDKs budget is 500 ms on both, timed from when the call returns', () {
-      // Nothing of the wrapper's depends on the number (it answers at once), but a SDK that
-      // changed it would change what a slow answer costs: this makes that visible.
-      expect(android['vhBudgetMs'], 500);
-      expect(ios['vhBudgetMs'], 500);
-      // iOS cuts to 50 ms after 3 timeouts in a row; an answer, even null, is not a timeout.
-      expect(ios['silentBudgetMs'], 50);
-      expect(ios['silentAfterTimeouts'], 3);
-    });
+    test(
+      'the SDKs budget is 500 ms on both, timed from when the call returns',
+      () {
+        // Nothing of the wrapper's depends on the number (it answers at once), but a SDK that
+        // changed it would change what a slow answer costs: this makes that visible.
+        expect(android['vhBudgetMs'], 500);
+        expect(ios['vhBudgetMs'], 500);
+        // iOS cuts to 50 ms after 3 timeouts in a row; an answer, even null, is not a timeout.
+        expect(ios['silentBudgetMs'], 50);
+        expect(ios['silentAfterTimeouts'], 3);
+      },
+    );
 
     test('Android 7.4.2 waits for a late reply only off the main thread', () {
       // This is why the cache exists: the SDK asks on the main thread, where it does not wait.
@@ -192,22 +196,21 @@ void main() {
     test('two more segments than boxes, in Dart, Java and Objective-C', () {
       expect(store, contains('bounds.length / 4 + 2'));
       expect(mStore, contains('doubles / 4 + 2'));
-      final dart = File(
-        'lib/src/view_hierarchy/hierarchy_builder.dart',
-      ).readAsStringSync();
+      final dart = File('lib/src/view_hierarchy/hierarchy_builder.dart')
+          .readAsStringSync();
       expect(dart, contains('bounds.length / 4 + 2'));
     });
 
     test('the template cap and the retired-epoch memory agree', () {
       final j = int.parse(
-        RegExp(
-          r'MAX_TEMPLATE_CHARS\s*=\s*1 << (\d+)',
-        ).firstMatch(store)!.group(1)!,
+        RegExp(r'MAX_TEMPLATE_CHARS\s*=\s*1 << (\d+)')
+            .firstMatch(store)!
+            .group(1)!,
       );
       final o = int.parse(
-        RegExp(
-          r'kMaxTemplateCharacters\s*=\s*1u << (\d+)',
-        ).firstMatch(mStore)!.group(1)!,
+        RegExp(r'kMaxTemplateCharacters\s*=\s*1u << (\d+)')
+            .firstMatch(mStore)!
+            .group(1)!,
       );
       expect(j, o);
       expect(
@@ -234,9 +237,9 @@ void main() {
       final j =
           1 <<
           int.parse(
-            RegExp(
-              r'MAX_TEMPLATE_CHARS\s*=\s*1 << (\d+)',
-            ).firstMatch(store)!.group(1)!,
+            RegExp(r'MAX_TEMPLATE_CHARS\s*=\s*1 << (\d+)')
+                .firstMatch(store)!
+                .group(1)!,
           );
       // The template plus its numbers, with a large margin for the numbers.
       expect(limits.maxBytes + limits.maxNodes * 32, lessThan(j));
@@ -272,25 +275,23 @@ void main() {
       expect(wrapper, isNot(contains('new ViewHierarchyStore')));
     });
 
-    test(
-      'the SDK asks on the main thread, so the placement refresh is synchronous there',
-      () {
-        expect(plugin, contains('refreshForViewHierarchy'));
-        expect(
-          body(plugin, 'private static void refreshForViewHierarchy'),
-          contains('Looper.myLooper() == Looper.getMainLooper()'),
-        );
-      },
-    );
+    test('the SDK asks on the main thread, so the placement refresh is synchronous there', () {
+      expect(plugin, contains('refreshForViewHierarchy'));
+      expect(
+        body(plugin, 'private static void refreshForViewHierarchy'),
+        contains('Looper.myLooper() == Looper.getMainLooper()'),
+      );
+    });
   });
 
   group('the builder reads no text', () {
     final src = code('lib/src/view_hierarchy/hierarchy_builder.dart');
 
     test('the only members read off a render object are structural', () {
-      final reads = RegExp(
-        r'\bro\.(\w+)',
-      ).allMatches(src).map((m) => m.group(1)!).toSet();
+      final reads = RegExp(r'\bro\.(\w+)')
+          .allMatches(src)
+          .map((m) => m.group(1)!)
+          .toSet();
       const structural = {
         'attached',
         'hasSize',
@@ -314,9 +315,10 @@ void main() {
             'a new member read off a render object must be reviewed for text',
       );
       // `properties` is a Semantics annotation's: only whether a callback exists is read from it.
-      final props = RegExp(
-        r'\bp\.(\w+)',
-      ).allMatches(src).map((m) => m.group(1)!).toSet();
+      final props = RegExp(r'\bp\.(\w+)')
+          .allMatches(src)
+          .map((m) => m.group(1)!)
+          .toSet();
       expect(props, {'onTap', 'onLongPress'});
     });
 

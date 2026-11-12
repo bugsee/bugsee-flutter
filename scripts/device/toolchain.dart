@@ -52,9 +52,8 @@ class Toolchain {
   static bool _javaOk(String home) {
     final release = File('$home/release');
     if (!release.existsSync()) return false;
-    final m = RegExp(
-      r'JAVA_VERSION="(\d+)',
-    ).firstMatch(release.readAsStringSync());
+    final m = RegExp(r'JAVA_VERSION="(\d+)')
+        .firstMatch(release.readAsStringSync());
     final major = int.tryParse(m?.group(1) ?? '');
     return major == 17 || major == 21;
   }
@@ -100,10 +99,9 @@ class Toolchain {
         .cast<String, Object?>();
     final java = javaHome == null
         ? 'none'
-        : (await sh([
-            '$javaHome/bin/java',
-            '-version',
-          ])).stderr.split('\n').first;
+        : (await sh(['$javaHome/bin/java', '-version'])).stderr
+              .split('\n')
+              .first;
     final xcode = Platform.isMacOS
         ? (await sh(['xcodebuild', '-version'])).text.replaceAll('\n', ' ')
         : 'n/a';

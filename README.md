@@ -79,9 +79,28 @@ while the core is unpublished.
    fixed): the ordering snippet that 4.0.x needed on Gradle 8.14 is gone (debug, release and profile builds of the example were measured
    without it). On an older plugin the build fails Gradle task validation on `injectBugsee<Variant>BuildId`: use 4.1.1.
 
-Nothing else is needed: the plugin declares `bugsee-android` **and** the separate `bugsee-android-ndk` artefact (native crash
-detection), registers its wrapper from a content provider that runs before the SDK can launch, and ships consumer ProGuard
-rules. The working example is [`example/android`](example/android).
+3. **Turn on the native symbol upload** in `android/app/build.gradle.kts` (the Bugsee plugin has it OFF by default):
+
+   ```kotlin
+   bugsee {
+       ndk { enabled.set(true) }
+   }
+   ```
+
+   The native crash detector itself is always present (this package depends on the separate `bugsee-android-ndk` artefact), but a
+   crash in `libflutter.so` or any other `.so` is only readable (function and file:line) when the backend has that build's
+   native symbols. With `ndk.enabled` the plugin uploads the unstripped libraries of every **non-debuggable** build (task
+   `upload<Variant>Native`, for example `uploadBugseeReleaseNative`) with the app token (`bugsee.properties` at the root of the
+   Android project, or `appToken("...")` in the `bugsee { }` block); without a token it skips quietly. The R8 mapping upload
+   needs no setting. See [Debug symbols](#debug-symbols) for the Dart and iOS symbols too.
+
+Besides that, the plugin registers this package's wrapper from a content provider that runs before the SDK can launch and the
+package ships consumer ProGuard rules. The working example is [`example/android`](example/android).
+
+**Other Bugsee Android modules** (`bugsee-android-okhttp`, `-ktor-2`, `-ktor-3`, `-cronet`, `-compose`, `-leak`) are not added: they
+instrument NATIVE UI and HTTP stacks (OkHttp, Ktor, Cronet, Jetpack Compose, native leak watching), which a Flutter UI and Dart's
+`dart:io` network capture do not use. An app that has native code using one of them declares the dependency itself and the plugin
+wires it. The feedback chat is the separate package `bugsee_flutter_feedback`.
 
 ### iOS
 
@@ -334,6 +353,21 @@ Future<void> contactSupport() async {
   }
 }
 ```
+
+## Debug symbols
+
+A crash or error report is only readable when the backend holds the symbols of the build that produced it. Keep the symbols of
+every build you ship.
+
+| What | Where it comes from | How it gets to Bugsee |
+|---|---|---|
+| Android Java/Kotlin frames (R8 mapping) | the Bugsee Gradle plugin | automatic, on every minified build (`upload<Variant>Mapping`) |
+| Android native frames (`libflutter.so`, your `.so` files) | the Bugsee Gradle plugin | **only with `bugsee { ndk { enabled.set(true) } }`** (see Install, Android); non-debuggable builds |
+| Dart frames of a release build made with `--split-debug-info` (and `--obfuscate`) | `build/symbols/*.symbols` | **manual**: [doc/exceptions.md](doc/exceptions.md) section 5 (the 9.x `symbols.py` script; `bugsee-cli` has no Flutter type yet) |
+| iOS native frames (the app, `Flutter.framework`) | the build's dSYMs | **manual in a Flutter app**: a Run Script phase after "Embed Frameworks" running `bugsee-cli xcode upload-dsyms --app-token "$BUGSEE_APP_TOKEN"` ([Bugsee CLI, Xcode](https://docs.bugsee.com/cli/xcode/)), or `bugsee-cli debug-files upload <archive>/dSYMs --type dsym --version <v> --build <n>` in CI; with Xcode 15 and newer set `ENABLE_USER_SCRIPT_SANDBOXING = NO` on the target |
+
+Dart symbols and iOS dSYMs are not uploaded for you by this package: nothing in a Flutter build calls the Bugsee uploader. The iOS
+row is taken from Bugsee's CLI documentation and has not been measured with a Flutter build here.
 
 ## Privacy model
 

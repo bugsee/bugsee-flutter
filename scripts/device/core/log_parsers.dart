@@ -139,6 +139,25 @@ class ExitInfo {
   bool get isNativeCrash => reason.startsWith('5 ');
 }
 
+/// What is wrong with the exit record of a process the harness killed with SIGSEGV (9.1.4); empty
+/// when it proves a native crash. [status] 11 is the signal. Some PHYSICAL devices (measured: an
+/// Android 14 phone of a vendor that reports `status=0` for every native crash) do not fill the
+/// status in: with [statusMayBeUnreported] a 0 is accepted, ONLY because the caller has the kernel's
+/// own `Fatal signal 11` for the same pid from logcat, and the reason must still be a native crash.
+/// Any other status (a different signal, an app exit) is a failure either way.
+List<String> exitRecordProblems(
+  ExitInfo? exit,
+  int pid, {
+  bool statusMayBeUnreported = false,
+}) {
+  if (exit == null) return ['no ApplicationExitInfo for pid $pid'];
+  final unreported = statusMayBeUnreported && exit.status == 0;
+  if (!exit.isNativeCrash || (exit.status != 11 && !unreported)) {
+    return ['exit record ${exit.reason} status ${exit.status}'];
+  }
+  return const [];
+}
+
 ExitInfo? parseExitInfo(String dumpsys, int pid) {
   ExitInfo? best;
   for (final block in dumpsys.split(RegExp(r'ApplicationExitInfo #\d+:'))) {

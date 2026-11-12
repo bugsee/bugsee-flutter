@@ -140,8 +140,8 @@ Future<AndroidBuild> buildAndroid(
     '$buildNumber',
     '--build-name',
     '1.0.$buildNumber',
-    '--dart-define=VERIFY_SERVER=10.0.2.2:$port',
-    '--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:$port',
+    '--dart-define=VERIFY_SERVER=$verifyHost:$port',
+    '--dart-define=BUGSEE_ENDPOINT=http://$verifyHost:$port',
     for (final d in extraDefines) '--dart-define=$d',
     if (obfuscate) ...['--obfuscate', '--split-debug-info=$symbols'],
   ];

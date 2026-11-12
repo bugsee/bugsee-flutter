@@ -31,6 +31,16 @@ android {
         versionName = flutter.versionName
     }
 
+    // Device verification only (scripts/device, doc/verification.md): a phone without root cannot read
+    // the private data of a non-debuggable app, so the harness may ask for android:debuggable on the
+    // RELEASE build (still AOT, R8, obfuscation and the Gradle plugin) with an overlay manifest and
+    // lint's HardcodedDebugMode off. Not `isDebuggable` on the build type: Flutter's Gradle plugin
+    // builds a debuggable type in DEBUG mode. Never set in a normal build; the report says when it was.
+    if (System.getenv("BUGSEE_VERIFY_DEBUGGABLE_RELEASE") == "1") {
+        sourceSets.getByName("release").manifest.srcFile("src/verifyDebuggable/AndroidManifest.xml")
+        lint { disable += "HardcodedDebugMode" }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

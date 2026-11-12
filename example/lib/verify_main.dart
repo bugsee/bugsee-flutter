@@ -10,6 +10,7 @@
 // Everything it learns goes two ways: one `VERIFY|<json>` line on the console (logcat / the system
 // log) and a POST to the mock API (`/__event`), whichever is reachable (airplane mode cuts the
 // second). Nothing here is part of the plugin: it is built from the example app's sources.
+import 'crash_lab.dart' as crash_lab;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -176,6 +177,8 @@ Future<void> _command(String command) async {
         }
       case 'log-unhandled':
         await Bugsee.logUnhandledException(StateError('verify unhandled $arg'));
+      case 'crash':
+        await crash_lab.crash(arg);
       case 'throw-async':
         // Nobody awaits it: it reaches the installed error handlers.
         unawaited(

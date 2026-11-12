@@ -288,26 +288,23 @@ void main() {
 
     Future<void> settle() => Future<void>.delayed(Duration.zero);
 
-    test(
-      'the native listener is installed on the first listen and removed on the last cancel',
-      () async {
-        final a = runtime.messagesReceived.listen((_) {});
-        await settle();
-        expect(native.calls, ['attach', 'listener:true']);
-        final b = runtime.messagesSent.listen((_) {});
-        await settle();
-        expect(native.calls, [
-          'attach',
-          'listener:true',
-        ], reason: 'already installed');
-        await a.cancel();
-        await settle();
-        expect(native.calls.last, 'listener:true', reason: 'one listener left');
-        await b.cancel();
-        await settle();
-        expect(native.calls, ['attach', 'listener:true', 'listener:false']);
-      },
-    );
+    test('the native listener is installed on the first listen and removed on the last cancel', () async {
+      final a = runtime.messagesReceived.listen((_) {});
+      await settle();
+      expect(native.calls, ['attach', 'listener:true']);
+      final b = runtime.messagesSent.listen((_) {});
+      await settle();
+      expect(native.calls, [
+        'attach',
+        'listener:true',
+      ], reason: 'already installed');
+      await a.cancel();
+      await settle();
+      expect(native.calls.last, 'listener:true', reason: 'one listener left');
+      await b.cancel();
+      await settle();
+      expect(native.calls, ['attach', 'listener:true', 'listener:false']);
+    });
 
     test(
       'received batches arrive in order, empty ones never, and unmodifiable',
@@ -368,28 +365,22 @@ void main() {
       await b.cancel();
     });
 
-    test(
-      'a listener that cannot be installed is an error event for the subscribers',
-      () async {
-        native.failListener = PlatformException(
-          code: 'not-registered',
-          message: 'none',
-        );
-        final errors = <Object>[];
-        final sub = runtime.messagesReceived.listen(
-          (_) {},
-          onError: errors.add,
-        );
-        await settle();
-        await settle();
-        expect(errors, hasLength(1));
-        expect(
-          (errors.single as BugseeFeedbackException).reason,
-          BugseeFeedbackFailure.notRegistered,
-        );
-        await sub.cancel();
-      },
-    );
+    test('a listener that cannot be installed is an error event for the subscribers', () async {
+      native.failListener = PlatformException(
+        code: 'not-registered',
+        message: 'none',
+      );
+      final errors = <Object>[];
+      final sub = runtime.messagesReceived.listen((_) {}, onError: errors.add);
+      await settle();
+      await settle();
+      expect(errors, hasLength(1));
+      expect(
+        (errors.single as BugseeFeedbackException).reason,
+        BugseeFeedbackFailure.notRegistered,
+      );
+      await sub.cancel();
+    });
 
     test(
       'the last cancel removes the listener whichever stream it is',
@@ -452,19 +443,22 @@ void main() {
       },
     );
 
-    test('a new isolate attaches again and installs its own listener', () async {
-      final first = runtimeOn(native);
-      final sub = first.messagesReceived.listen((_) {});
-      await settle();
-      await sub.cancel();
-      await settle();
-      // A fresh isolate: a new runtime, native still thinks the old one is installed.
-      native.calls.clear();
-      final second = runtimeOn(native);
-      final again = second.messagesReceived.listen((_) {});
-      await settle();
-      expect(native.calls, ['attach', 'listener:true']);
-      await again.cancel();
-    });
+    test(
+      'a new isolate attaches again and installs its own listener',
+      () async {
+        final first = runtimeOn(native);
+        final sub = first.messagesReceived.listen((_) {});
+        await settle();
+        await sub.cancel();
+        await settle();
+        // A fresh isolate: a new runtime, native still thinks the old one is installed.
+        native.calls.clear();
+        final second = runtimeOn(native);
+        final again = second.messagesReceived.listen((_) {});
+        await settle();
+        expect(native.calls, ['attach', 'listener:true']);
+        await again.cancel();
+      },
+    );
   });
 }

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Files, an annotated screenshot and `Bugsee.createReport`, one button each. Attachments are PATH-first:
 /// the plugin copies or moves the file natively, nothing is read into Dart.

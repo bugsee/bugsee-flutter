@@ -26,7 +26,7 @@ Use **the same version of both** (this package's `bugsee_flutter` constraint is 
 checks at run time that the core is the same major and minor): the two are released together and pin the same
 native SDK versions.
 
-Everything `bugsee_flutter` needs applies unchanged (see [its README](https://github.com/bugsee/bugsee-flutter/blob/nextgen/README.md)): Flutter 3.41.0 or newer, the
+Everything `bugsee_flutter` needs applies unchanged (see [its README](https://github.com/bugsee/bugsee-flutter/blob/nextgen/README.md)): Flutter 3.50.0 or newer, the
 `com.bugsee.android.gradle` Gradle plugin applied in your app, iOS 15.0 or newer, and Swift Package Manager
 for iOS (there is no CocoaPods pod: `flutter config --enable-swift-package-manager` where it is not the default).
 

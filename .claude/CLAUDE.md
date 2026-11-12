@@ -17,7 +17,7 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
 - `native-versions.json` is the single source for every native pin. Each place that must repeat a value is compared to it by
   `test/native_versions_test.dart`. Do not hardcode a version elsewhere; update the guard when CI content changes.
 - iOS is SwiftPM-only. There is deliberately no podspec (Bugsee publishes no pod). CI runs on macOS so SwiftPM can be enabled. Do not add a podspec.
-- Flutter floor is 3.41.0 / Dart 3.11 (the SwiftPM-only plugin fails `pub get` on Linux/Windows earlier; measured, PLAN.md D5).
+- Flutter floor is 3.50.0 / Dart 3.14 (moved from 3.41.0 for the 10.0 major: Direct Interop, AGP 9, `material_ui`; PLAN.md D5). The SwiftPM-only plugin needs 3.41.0 at least.
 - Android builds need JDK 17 or 21. JDK 25 breaks the Gradle version in use. The app applies Bugsee Gradle plugin 4.1.0 (mandatory).
 - The Android initialization provider must never be named `Bugsee*InitProvider` (the Gradle plugin deletes it).
 - The wrapper type (`flutter`) and version (pubspec `version:`) are repeated in Dart, Android and iOS because native registers before Dart
@@ -85,7 +85,7 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
 ## Checks
 
 ```bash
-flutter analyze && flutter test                      # Flutter 3.41.0 (the floor); the default 3.38 cannot read the pubspec
+flutter analyze && flutter test                      # Flutter 3.50.0 (the floor); an older default cannot read the pubspec
 dart scripts/generate_pigeon.dart --check            # bridge outputs current (add --package packages/bugsee_flutter_feedback)
 dart scripts/generate_options.dart --check           # option registry + BugseeOptions current (offline)
 dart scripts/sync_option_manifests.dart --check      # network: the vendored manifests are the SDKs' published ones

@@ -31,7 +31,7 @@ jobs:
       # The script uses only dart:io, so no `pub get` and no Flutter are needed.
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: '3.11.0'
+          sdk: '3.14.0'
       - run: dart scripts/check_native_pins.dart
       # The vendored option manifests (test/fixtures/option_manifests) are the SDKs' published ones.
       - run: dart scripts/sync_option_manifests.dart --check

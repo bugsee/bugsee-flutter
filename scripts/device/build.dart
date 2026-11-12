@@ -228,9 +228,9 @@ Future<AndroidBuild> inspectAndroid(
   );
   String? uuid;
   if (idEntry.isNotEmpty) {
-    uuid = RegExp(
-      r'bugsee\.build_id=(\S+)',
-    ).firstMatch(String.fromCharCodes(zipRead(bytes, idEntry.first)))?.group(1);
+    uuid = RegExp(r'bugsee\.build_id=(\S+)')
+        .firstMatch(String.fromCharCodes(zipRead(bytes, idEntry.first)))
+        ?.group(1);
   }
   return AndroidBuild(
     name: name,

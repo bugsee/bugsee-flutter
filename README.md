@@ -16,14 +16,14 @@ errors.
 
 | | |
 |---|---|
-| Flutter / Dart | 3.41.0 or newer / 3.11 or newer |
+| Flutter / Dart | 3.50.0 or newer / 3.14 or newer |
 | Android | `minSdk` 21; JDK 17 or 21 for the build (JDK 25 breaks the Gradle 8.14 of the Flutter template); the Bugsee Gradle plugin **4.1.0** (mandatory, see below) |
 | iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
 | Native SDKs | Android `7.5.0`, iOS `7.0.1` (pinned in [`native-versions.json`](native-versions.json)) |
 | Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
 
-The Flutter floor is 3.41.0 because the plugin is SwiftPM-only: `flutter pub get` fails on Linux and Windows with
-"only Swift Package Manager compatible" on older Flutter (measured on CI from 3.27 to 3.38).
+The Flutter floor is 3.50.0 (Dart 3.14): the 10.0 major builds on the release that ships Direct Interop, Android Gradle
+Plugin 9 and `material_ui`. The plugin is also SwiftPM-only, so `flutter pub get` fails on Linux and Windows before 3.41.0.
 
 ## Install
 
@@ -32,7 +32,7 @@ dependencies:
   bugsee_flutter: ^10.0.0-dev.1
 ```
 
-That resolves once the version is published. **Until then**, depend on the repository (checked with Flutter 3.41.0):
+That resolves once the version is published. **Until then**, depend on the repository (checked with Flutter 3.50.0):
 
 ```yaml
 dependencies:
@@ -383,7 +383,7 @@ Know these limits:
 | Android extensions (e.g. the feedback chat) silently never register | The Gradle plugin is older than 4.0.7 (4.0.6 strips the extension providers and injects nothing): use 4.1.0 |
 | `Bugsee.launch` answers `alreadyRunning` and options are ignored | Android auto-init: the manifest has `com.bugsee.app-token`; see "Launching twice" |
 | Wrapper identity missing from a report recovered after a crash | The wrapper must be registered natively before the SDK launches, which this plugin does from a content provider (initOrder 200). Do not add a provider of your own named `Bugsee<Anything>InitProvider`: the Gradle plugin deletes it from the APK |
-| `flutter pub get` fails with "only Swift Package Manager compatible" | Flutter older than 3.41.0 |
+| `flutter pub get` fails with "only Swift Package Manager compatible" | Flutter older than 3.50.0 (3.41.0 for the SwiftPM check alone) |
 | iOS: package resolution or deployment target error | Raise the deployment target to 15.0; run `flutter config --enable-swift-package-manager` where it is not the default |
 | Gradle cannot parse the JDK version | JDK 25 (Android Studio's bundled JBR): use 17 or 21 |
 | Black Android report screenshot | Android SDK older than 7.5.0 (bugsee-android#316: it skipped Flutter's default `SurfaceView`); 7.5.0 captures it, with the secure regions redacted (measured) |

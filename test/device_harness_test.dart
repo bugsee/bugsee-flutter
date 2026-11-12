@@ -134,43 +134,34 @@ void main() {
       expect(expectation().iosProblems(b, w), isEmpty);
     });
 
-    test(
-      'the build under test is accepted, and every way of testing another one is refused',
-      () {
-        final e = expectation();
-        final banner = parseAndroidBanner(androidLog);
-        final w = parseWrapperLog(androidLog);
-        expect(e.androidProblems(banner, w), isEmpty);
-        // The same version string, another build of it (a range outranking a snapshot).
-        expect(
-          e.androidProblems(
-            const SdkBanner('android', '7.5.0', 'deadbeef0'),
-            w,
-          ),
-          contains(contains('banner build deadbeef0')),
-        );
-        expect(
-          e.androidProblems(
-            const SdkBanner('android', '7.4.3', '8f459d745'),
-            w,
-          ),
-          contains(contains('banner version 7.4.3')),
-        );
-        expect(
-          e.androidProblems(null, w),
-          contains(contains('no Android SDK banner')),
-        );
-        // The wrapper: not registered, a version of another package, a build mode that is not this build's.
-        expect(
-          e.androidProblems(banner, const WrapperLog()),
-          contains(contains('wrapper registered as null')),
-        );
-        expect(
-          expectation(mode: 'release').androidProblems(banner, w),
-          contains(contains('build-configuration is debug, expected release')),
-        );
-      },
-    );
+    test('the build under test is accepted, and every way of testing another one is refused', () {
+      final e = expectation();
+      final banner = parseAndroidBanner(androidLog);
+      final w = parseWrapperLog(androidLog);
+      expect(e.androidProblems(banner, w), isEmpty);
+      // The same version string, another build of it (a range outranking a snapshot).
+      expect(
+        e.androidProblems(const SdkBanner('android', '7.5.0', 'deadbeef0'), w),
+        contains(contains('banner build deadbeef0')),
+      );
+      expect(
+        e.androidProblems(const SdkBanner('android', '7.4.3', '8f459d745'), w),
+        contains(contains('banner version 7.4.3')),
+      );
+      expect(
+        e.androidProblems(null, w),
+        contains(contains('no Android SDK banner')),
+      );
+      // The wrapper: not registered, a version of another package, a build mode that is not this build's.
+      expect(
+        e.androidProblems(banner, const WrapperLog()),
+        contains(contains('wrapper registered as null')),
+      );
+      expect(
+        expectation(mode: 'release').androidProblems(banner, w),
+        contains(contains('build-configuration is debug, expected release')),
+      );
+    });
 
     test('the wrapper identity in a report is compared field by field', () {
       final e = expectation();
@@ -384,29 +375,26 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
   });
 
   group('artefacts (1.2.2, 1.4.1)', () {
-    test(
-      'Gradle dependencies: the NDK artefact is found, and its absence is reported',
-      () {
-        const deps = '''
+    test('Gradle dependencies: the NDK artefact is found, and its absence is reported', () {
+      const deps = '''
 +--- project :bugsee_flutter
 |    +--- com.bugsee:bugsee-android:7.5.0
 |    +--- com.bugsee:bugsee-android-ndk:7.5.0
 |    |    \\--- com.bugsee:bugsee-android:7.5.0
 ''';
-        expect(parseGradleBugseeArtefacts(deps), {
+      expect(parseGradleBugseeArtefacts(deps), {
+        'bugsee-android': {'7.5.0'},
+        'bugsee-android-ndk': {'7.5.0'},
+      });
+      expect(
+        parseGradleBugseeArtefacts(
+          '+--- com.bugsee:bugsee-android:7.4.1 -> 7.5.0',
+        ),
+        {
           'bugsee-android': {'7.5.0'},
-          'bugsee-android-ndk': {'7.5.0'},
-        });
-        expect(
-          parseGradleBugseeArtefacts(
-            '+--- com.bugsee:bugsee-android:7.4.1 -> 7.5.0',
-          ),
-          {
-            'bugsee-android': {'7.5.0'},
-          },
-        );
-      },
-    );
+        },
+      );
+    });
 
     test('the merged manifest\'s providers', () {
       const xml = '''
@@ -502,9 +490,8 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
           contains(contains('Gradle plugin versions in use {4.0.6}')),
         );
         expect(
-          fakeBuild(
-            plugin: {'4.1.0', '4.0.6'},
-          ).artefactProblems(p, 'arm64-v8a'),
+          fakeBuild(plugin: {'4.1.0', '4.0.6'})
+              .artefactProblems(p, 'arm64-v8a'),
           isNotEmpty,
         );
         expect(
@@ -513,52 +500,47 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
         );
         expect(
           fakeBuild(
-            manifest:
-                '<provider android:name="com.bugsee.library.BugseeInitProvider" android:initOrder="100"/>',
+            manifest: '<provider android:name="com.bugsee.library.BugseeInitProvider" android:initOrder="100"/>',
           ).artefactProblems(p, 'arm64-v8a'),
           contains(contains('was stripped')),
         );
         expect(
           fakeBuild(
-            manifest:
-                '<provider android:name="com.bugsee.flutter.FlutterWrapperInitProvider" android:initOrder="50"/><provider android:name="com.bugsee.library.BugseeInitProvider" android:initOrder="100"/>',
+            manifest: '<provider android:name="com.bugsee.flutter.FlutterWrapperInitProvider" android:initOrder="50"/><provider android:name="com.bugsee.library.BugseeInitProvider" android:initOrder="100"/>',
           ).artefactProblems(p, 'arm64-v8a'),
           contains(contains('initOrder 50, expected 200')),
         );
       },
     );
 
-    test(
-      'the iOS build must have resolved the pinned revision, not a path or another tag',
-      () {
-        final p = pins();
-        IosBuild b(Map<String, String> resolved) => IosBuild(
-          name: 'd',
-          mode: 'debug',
-          app: 'x.app',
-          buildNumber: 1,
-          resolved: resolved,
-          sdkFrameworkVersion: '7.0.1',
-        );
-        final ok = {
-          'spm': '${p.iosSdk}@${p.iosSpmRevision}',
-          'feedback-spm': '${p.iosSdk}@${p.iosFeedbackSpmRevision}',
-        };
-        expect(b(ok).artefactProblems(p), isEmpty);
-        expect(
-          b({...ok, 'spm': '${p.iosSdk}@${'0' * 40}'}).artefactProblems(p),
-          isNotEmpty,
-        );
-        expect(
-          b({...ok, 'spm': 'fileSystem:/tmp/spm'}).artefactProblems(p),
-          isNotEmpty,
-        );
-        expect(
-          b({'feedback-spm': ok['feedback-spm']!}).artefactProblems(p),
-          isNotEmpty,
-        );
-      },
-    );
+    test('the iOS build must have resolved the pinned revision, not a path or another tag', () {
+      final p = pins();
+      IosBuild b(Map<String, String> resolved) => IosBuild(
+        name: 'd',
+        mode: 'debug',
+        app: 'x.app',
+        buildNumber: 1,
+        resolved: resolved,
+        sdkFrameworkVersion: '7.0.1',
+      );
+      final ok = {
+        'spm': '${p.iosSdk}@${p.iosSpmRevision}',
+        'feedback-spm': '${p.iosSdk}@${p.iosFeedbackSpmRevision}',
+      };
+      expect(b(ok).artefactProblems(p), isEmpty);
+      expect(
+        b({...ok, 'spm': '${p.iosSdk}@${'0' * 40}'}).artefactProblems(p),
+        isNotEmpty,
+      );
+      expect(
+        b({...ok, 'spm': 'fileSystem:/tmp/spm'}).artefactProblems(p),
+        isNotEmpty,
+      );
+      expect(
+        b({'feedback-spm': ok['feedback-spm']!}).artefactProblems(p),
+        isNotEmpty,
+      );
+    });
   });
 
   group('verification app output', () {
@@ -643,13 +625,10 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(b.attributes.keys, ['verify.before']);
     });
 
-    test(
-      'a recovered report WITHOUT the wrapper is caught (the relaunch-after-crash trap)',
-      () {
-        final b = bundle(wrapper: null);
-        expect(expectation().wrapperInReport(b.wrapper), isNotEmpty);
-      },
-    );
+    test('a recovered report WITHOUT the wrapper is caught (the relaunch-after-crash trap)', () {
+      final b = bundle(wrapper: null);
+      expect(expectation().wrapperInReport(b.wrapper), isNotEmpty);
+    });
 
     test('a zip that is not a bundle is refused', () {
       expect(
@@ -692,51 +671,38 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
 
     const region = Rect(20, 30, 80, 70);
 
-    test(
-      'the region is found by its colour and the redaction check passes when it is black',
-      () {
-        final off = image(
-          100,
-          100,
-          (x, y, p) => box(x, y, p, region, [255, 0, 255]),
-        );
-        final on = image(
-          100,
-          100,
-          (x, y, p) => box(x, y, p, region, [0, 0, 0]),
-        );
-        expect(
-          off.boundingBoxOf(const Rgb(255, 0, 255)).toString(),
-          '[20,30,80,70]',
-        );
-        expect(on.fractionOf(region, const Rgb(0, 0, 0)), 1.0);
-        expect(on.fractionOf(region, const Rgb(255, 0, 255)), 0.0);
-      },
-    );
+    test('the region is found by its colour and the redaction check passes when it is black', () {
+      final off = image(
+        100,
+        100,
+        (x, y, p) => box(x, y, p, region, [255, 0, 255]),
+      );
+      final on = image(100, 100, (x, y, p) => box(x, y, p, region, [0, 0, 0]));
+      expect(
+        off.boundingBoxOf(const Rgb(255, 0, 255)).toString(),
+        '[20,30,80,70]',
+      );
+      expect(on.fractionOf(region, const Rgb(0, 0, 0)), 1.0);
+      expect(on.fractionOf(region, const Rgb(255, 0, 255)), 0.0);
+    });
 
-    test(
-      'a redaction that is too small leaves the region showing, and the numbers say so',
-      () {
-        const small = Rect(
-          20,
-          30,
-          40,
-          50,
-        ); // a third of the area: the "wrong unit" failure
-        final on = image(100, 100, (x, y, p) {
-          box(x, y, p, region, [255, 0, 255]);
-          box(x, y, p, small, [0, 0, 0]);
-        });
-        expect(on.fractionOf(region, const Rgb(0, 0, 0)), lessThan(0.97));
-        expect(
-          on.fractionOf(region, const Rgb(255, 0, 255)),
-          greaterThan(0.01),
-        );
-        final cover = Coverage(region, small);
-        expect(cover.areaRatio, closeTo(20 * 20 / (60 * 40), 1e-9));
-        expect(cover.uncovered['right'], 40);
-      },
-    );
+    test('a redaction that is too small leaves the region showing, and the numbers say so', () {
+      const small = Rect(
+        20,
+        30,
+        40,
+        50,
+      ); // a third of the area: the "wrong unit" failure
+      final on = image(100, 100, (x, y, p) {
+        box(x, y, p, region, [255, 0, 255]);
+        box(x, y, p, small, [0, 0, 0]);
+      });
+      expect(on.fractionOf(region, const Rgb(0, 0, 0)), lessThan(0.97));
+      expect(on.fractionOf(region, const Rgb(255, 0, 255)), greaterThan(0.01));
+      final cover = Coverage(region, small);
+      expect(cover.areaRatio, closeTo(20 * 20 / (60 * 40), 1e-9));
+      expect(cover.uncovered['right'], 40);
+    });
 
     test(
       'a frame with no such colour has no box, and a flat frame is flat',
@@ -771,74 +737,65 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
   });
 
   group('the guards are the default (9.1.5)', () {
-    test(
-      'an invalid guard ends the scenario as invalid, never as a pass or a product failure',
-      () async {
-        final lines = <String>[];
-        final r = await runScenario(1, 't', lines.add, (run) async {
-          run.expect('before', true, '');
-          run.guard('build', ['banner build deadbeef0, pinned 8f459d745'], '');
-          run.expect('after the guard: never reached', true, '');
-        });
-        expect(r.status, Status.invalid);
-        expect(r.checks.map((c) => c.name), ['before', '[9.1] build']);
-        expect(r.reason, contains('deadbeef0'));
-      },
-    );
+    test('an invalid guard ends the scenario as invalid, never as a pass or a product failure', () async {
+      final lines = <String>[];
+      final r = await runScenario(1, 't', lines.add, (run) async {
+        run.expect('before', true, '');
+        run.guard('build', ['banner build deadbeef0, pinned 8f459d745'], '');
+        run.expect('after the guard: never reached', true, '');
+      });
+      expect(r.status, Status.invalid);
+      expect(r.checks.map((c) => c.name), ['before', '[9.1] build']);
+      expect(r.reason, contains('deadbeef0'));
+    });
 
-    test(
-      'a failed result is a failure; a thrown error is a failure; a scenario that asserts nothing is a failure',
-      () async {
-        expect(
-          (await runScenario(
-            1,
-            't',
-            (_) {},
-            (run) async => run.expect('x', false, 'e'),
-          )).status,
-          Status.fail,
-        );
-        expect(
-          (await runScenario(
-            1,
-            't',
-            (_) {},
-            (run) async => throw StateError('boom'),
-          )).status,
-          Status.fail,
-        );
-        expect(
-          (await runScenario(1, 't', (_) {}, (run) async {})).status,
-          Status.fail,
-        );
-        expect(
-          (await runScenario(
-            1,
-            't',
-            (_) {},
-            (run) async => run.expect('x', true, ''),
-          )).status,
-          Status.pass,
-        );
-      },
-    );
+    test('a failed result is a failure; a thrown error is a failure; a scenario that asserts nothing is a failure', () async {
+      expect(
+        (await runScenario(
+          1,
+          't',
+          (_) {},
+          (run) async => run.expect('x', false, 'e'),
+        )).status,
+        Status.fail,
+      );
+      expect(
+        (await runScenario(
+          1,
+          't',
+          (_) {},
+          (run) async => throw StateError('boom'),
+        )).status,
+        Status.fail,
+      );
+      expect(
+        (await runScenario(1, 't', (_) {}, (run) async {})).status,
+        Status.fail,
+      );
+      expect(
+        (await runScenario(
+          1,
+          't',
+          (_) {},
+          (run) async => run.expect('x', true, ''),
+        )).status,
+        Status.pass,
+      );
+    });
 
-    test(
-      'not possible is its own status, and a failure measured on the way still fails it',
-      () async {
-        final r = await runScenario(2, 't', (_) {}, (run) async {
-          run.expect('control', true, '');
-          throw NotPossible('no crash reporter in the simulator slice');
-        });
-        expect(r.status, Status.notPossible);
-        expect(r.reason, contains('simulator slice'));
-        final failed = await runScenario(2, 't', (_) {}, (run) async {
-          run.expect('control', false, 'the control did not work');
-          throw NotPossible('x');
-        });
-        expect(failed.status, Status.fail);
-      },
-    );
+    test('not possible is its own status, and a failure measured on the way still fails it', () async {
+      final r = await runScenario(2, 't', (_) {}, (run) async {
+        run.expect('control', true, '');
+        throw NotPossible('no crash reporter in the simulator slice');
+      });
+      expect(r.status, Status.notPossible);
+      expect(r.reason, contains('simulator slice'));
+      final failed = await runScenario(2, 't', (_) {}, (run) async {
+        run.expect('control', false, 'the control did not work');
+        throw NotPossible('x');
+      });
+      expect(failed.status, Status.fail);
+    });
   });
 
   test('the report is JSON a person and a tool can read', () async {
@@ -857,47 +814,41 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
   group('drift: what the harness repeats is compared to its source', () {
     String read(String p) => File(p).readAsStringSync();
 
-    test(
-      'the application id and bundle id the harness drives are the example app\'s',
-      () {
-        final gradle = read('example/android/app/build.gradle.kts');
-        final android = read('scripts/device/android_scenarios.dart');
-        final id = RegExp(
-          r'''applicationId = "([^"]+)"''',
-        ).firstMatch(gradle)!.group(1);
-        expect(android, contains("const pkg = '$id'"));
-        final pbx = read('example/ios/Runner.xcodeproj/project.pbxproj');
-        final bundle = RegExp(
-          r'PRODUCT_BUNDLE_IDENTIFIER = (com\.bugsee\.bugseeFlutterExample);',
-        ).firstMatch(pbx)!.group(1);
-        expect(
-          read('scripts/device/ios_scenarios.dart'),
-          contains("const bundleId = '$bundle'"),
-        );
-      },
-    );
+    test('the application id and bundle id the harness drives are the example app\'s', () {
+      final gradle = read('example/android/app/build.gradle.kts');
+      final android = read('scripts/device/android_scenarios.dart');
+      final id = RegExp(r'''applicationId = "([^"]+)"''')
+          .firstMatch(gradle)!
+          .group(1);
+      expect(android, contains("const pkg = '$id'"));
+      final pbx = read('example/ios/Runner.xcodeproj/project.pbxproj');
+      final bundle = RegExp(
+        r'PRODUCT_BUNDLE_IDENTIFIER = (com\.bugsee\.bugseeFlutterExample);',
+      ).firstMatch(pbx)!.group(1);
+      expect(
+        read('scripts/device/ios_scenarios.dart'),
+        contains("const bundleId = '$bundle'"),
+      );
+    });
 
-    test(
-      'the build flags the harness passes are the ones the verification app reads',
-      () {
-        final app = read('example/lib/verify_main.dart');
-        final android = read('scripts/device/build.dart');
-        final ios = read('scripts/device/ios_build.dart');
-        for (final define in ['VERIFY_SERVER', 'BUGSEE_ENDPOINT']) {
-          expect(app, contains("fromEnvironment('$define'"));
-          expect(android, contains('--dart-define=$define='));
-          expect(ios, contains('--dart-define=$define='));
-        }
-        final builds = read('scripts/device/builds.dart');
-        for (final m in RegExp(r'VERIFY_[A-Z]+(?==)').allMatches(builds)) {
-          expect(
-            app,
-            contains("fromEnvironment('${m.group(0)}'"),
-            reason: m.group(0),
-          );
-        }
-      },
-    );
+    test('the build flags the harness passes are the ones the verification app reads', () {
+      final app = read('example/lib/verify_main.dart');
+      final android = read('scripts/device/build.dart');
+      final ios = read('scripts/device/ios_build.dart');
+      for (final define in ['VERIFY_SERVER', 'BUGSEE_ENDPOINT']) {
+        expect(app, contains("fromEnvironment('$define'"));
+        expect(android, contains('--dart-define=$define='));
+        expect(ios, contains('--dart-define=$define='));
+      }
+      final builds = read('scripts/device/builds.dart');
+      for (final m in RegExp(r'VERIFY_[A-Z]+(?==)').allMatches(builds)) {
+        expect(
+          app,
+          contains("fromEnvironment('${m.group(0)}'"),
+          reason: m.group(0),
+        );
+      }
+    });
 
     test(
       'every command the scenarios send is one the verification app handles',
@@ -1019,9 +970,9 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       // The scan itself can fail: a synthetic importer of an excluded path is caught.
       expect(
         isExcluded(
-          Uri.parse(
-            'test/x_test.dart',
-          ).resolve('../scripts/device/core/zip.dart').path,
+          Uri.parse('test/x_test.dart')
+              .resolve('../scripts/device/core/zip.dart')
+              .path,
         ),
         isTrue,
       );
@@ -1067,17 +1018,14 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect((await redaction(on, off)).status, Status.pass);
     });
 
-    test(
-      'a frame blacked out WHOLE fails (the box is black, so the box test alone would pass)',
-      () async {
-        final r = await redaction(frame(200, 200, (x, y) => true), off);
-        expect(r.status, Status.fail);
-        expect(
-          r.checks.where((c) => !c.ok).map((c) => c.name).join(),
-          contains('not blacked out whole'),
-        );
-      },
-    );
+    test('a frame blacked out WHOLE fails (the box is black, so the box test alone would pass)', () async {
+      final r = await redaction(frame(200, 200, (x, y) => true), off);
+      expect(r.status, Status.fail);
+      expect(
+        r.checks.where((c) => !c.ok).map((c) => c.name).join(),
+        contains('not blacked out whole'),
+      );
+    });
 
     test('a redaction that spills over a large ring fails', () async {
       final on = frame(
@@ -1089,54 +1037,46 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(r.status, Status.fail);
     });
 
-    test(
-      'a box near the frame edge is judged on the clamped ring (no spurious failure)',
-      () async {
-        // The box starts 5 px from the left edge: the 14 px ring runs off the frame.
-        RawImage edge(bool secured) {
-          final rgb = Uint8List(200 * 200 * 3)
-            ..fillRange(0, 200 * 200 * 3, 255);
-          for (var y = 50; y < 90; y++) {
-            for (var x = 5; x < 65; x++) {
-              final i = (y * 200 + x) * 3;
-              rgb.setRange(i, i + 3, secured ? [0, 0, 0] : [255, 0, 255]);
-            }
+    test('a box near the frame edge is judged on the clamped ring (no spurious failure)', () async {
+      // The box starts 5 px from the left edge: the 14 px ring runs off the frame.
+      RawImage edge(bool secured) {
+        final rgb = Uint8List(200 * 200 * 3)..fillRange(0, 200 * 200 * 3, 255);
+        for (var y = 50; y < 90; y++) {
+          for (var x = 5; x < 65; x++) {
+            final i = (y * 200 + x) * 3;
+            rgb.setRange(i, i + 3, secured ? [0, 0, 0] : [255, 0, 255]);
           }
-          return RawImage(200, 200, rgb);
         }
+        return RawImage(200, 200, rgb);
+      }
 
-        expect((await redaction(edge(true), edge(false))).status, Status.pass);
-        final c = edge(
-          true,
-        ).countOf(const Rect(-9, 36, 79, 104), const Rgb(0, 0, 0));
-        expect(c.total, (79 - 0) * (104 - 36));
-        expect(
-          edge(
-            true,
-          ).countOf(const Rect(190, 190, 230, 230), const Rgb(0, 0, 0)).total,
-          100,
-        );
-      },
-    );
+      expect((await redaction(edge(true), edge(false))).status, Status.pass);
+      final c = edge(true)
+          .countOf(const Rect(-9, 36, 79, 104), const Rgb(0, 0, 0));
+      expect(c.total, (79 - 0) * (104 - 36));
+      expect(
+        edge(true)
+            .countOf(const Rect(190, 190, 230, 230), const Rgb(0, 0, 0))
+            .total,
+        100,
+      );
+    });
 
-    test(
-      'the dart next to flutter is found from its directory, not by editing the path',
-      () {
-        Toolchain tc(String flutter) => Toolchain(
-          repoRoot: '.',
-          workDir: '.',
-          flutter: flutter,
-          javaHome: null,
-          gradleHome: '.',
-          androidHome: '.',
-        );
-        expect(
-          tc('/Users/x/flutter/bin/flutter').dartExecutable,
-          '/Users/x/flutter/bin/dart',
-        );
-        expect(tc('flutter').dartExecutable, 'dart');
-      },
-    );
+    test('the dart next to flutter is found from its directory, not by editing the path', () {
+      Toolchain tc(String flutter) => Toolchain(
+        repoRoot: '.',
+        workDir: '.',
+        flutter: flutter,
+        javaHome: null,
+        gradleHome: '.',
+        androidHome: '.',
+      );
+      expect(
+        tc('/Users/x/flutter/bin/flutter').dartExecutable,
+        '/Users/x/flutter/bin/dart',
+      );
+      expect(tc('flutter').dartExecutable, 'dart');
+    });
 
     test('an unredacted box fails', () async {
       expect(
@@ -1148,98 +1088,86 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       );
     });
 
-    test(
-      'an empty rectangle has no pixels of the colour (a mutation returning 1 is caught)',
-      () {
-        final img = frame(10, 10, (x, y) => true);
-        expect(img.fractionOf(const Rect(5, 5, 5, 5), const Rgb(0, 0, 0)), 0);
-        expect(
-          img.fractionOf(const Rect(50, 50, 60, 60), const Rgb(0, 0, 0)),
-          0,
-        );
-        expect(
-          img.agreementOutside(
-            frame(9, 9, (x, y) => true),
-            const Rect(0, 0, 1, 1),
-          ),
-          0,
-        );
-      },
-    );
+    test('an empty rectangle has no pixels of the colour (a mutation returning 1 is caught)', () {
+      final img = frame(10, 10, (x, y) => true);
+      expect(img.fractionOf(const Rect(5, 5, 5, 5), const Rgb(0, 0, 0)), 0);
+      expect(img.fractionOf(const Rect(50, 50, 60, 60), const Rgb(0, 0, 0)), 0);
+      expect(
+        img.agreementOutside(
+          frame(9, 9, (x, y) => true),
+          const Rect(0, 0, 1, 1),
+        ),
+        0,
+      );
+    });
 
-    test(
-      'a mapping of ANOTHER apk at an offset inside base.apk\'s library range is not a library',
-      () {
-        final entries = [
-          const ZipEntry(
-            name: 'lib/arm64-v8a/libbugsee-native.so',
-            method: 0,
-            dataStart: 0x26cc000,
-            compressedSize: 497744,
-            size: 497744,
-          ),
-        ];
-        const base = '/data/app/~~x==/pkg-y==/base.apk';
-        const other = '/system/framework/framework-res.apk';
-        const framework = '7000000000-7000100000 r--p 026cc000 fd:00 10 $other';
-        const own =
-            '76c9717000-76c978f000 r-xp 026cc000 fd:04 40963                          $base';
-        expect(
-          mappedBugseeLibs(framework, entries, 'arm64-v8a', apkPath: base),
-          isEmpty,
-        );
-        expect(
-          mappedBugseeLibs(
-            '$framework\n$own',
-            entries,
-            'arm64-v8a',
-            apkPath: base,
-          ),
-          {'libbugsee-native.so'},
-        );
-      },
-    );
+    test('a mapping of ANOTHER apk at an offset inside base.apk\'s library range is not a library', () {
+      final entries = [
+        const ZipEntry(
+          name: 'lib/arm64-v8a/libbugsee-native.so',
+          method: 0,
+          dataStart: 0x26cc000,
+          compressedSize: 497744,
+          size: 497744,
+        ),
+      ];
+      const base = '/data/app/~~x==/pkg-y==/base.apk';
+      const other = '/system/framework/framework-res.apk';
+      const framework = '7000000000-7000100000 r--p 026cc000 fd:00 10 $other';
+      const own =
+          '76c9717000-76c978f000 r-xp 026cc000 fd:04 40963                          $base';
+      expect(
+        mappedBugseeLibs(framework, entries, 'arm64-v8a', apkPath: base),
+        isEmpty,
+      );
+      expect(
+        mappedBugseeLibs(
+          '$framework\n$own',
+          entries,
+          'arm64-v8a',
+          apkPath: base,
+        ),
+        {'libbugsee-native.so'},
+      );
+    });
 
-    test(
-      'the iOS banner build, the refined identity and each context field are all compared',
-      () {
-        final e = expectation();
-        final w = parseWrapperLog(
-          'wrapper registered type=flutter version=10.0.0-dev.1\n'
-          'wrapper refined type=flutter version=10.0.0-dev.1 context={dart=3.11.0, flutter=3.41.0, flutter-engine=3452d735bd, build-configuration=debug}',
-        );
-        final good = SdkBanner('ios', pins().iosSdk, pins().iosSdkBuild);
-        expect(e.iosProblems(good, w), isEmpty);
-        expect(
-          e.iosProblems(SdkBanner('ios', pins().iosSdk, 'other-1'), w),
-          contains(contains('banner build other-1')),
-        );
-        expect(
-          e.iosProblems(
-            good,
-            WrapperLog(
-              registered: w.registered,
-              refined: 'flutter/0.0.1',
-              context: w.context,
-            ),
+    test('the iOS banner build, the refined identity and each context field are all compared', () {
+      final e = expectation();
+      final w = parseWrapperLog(
+        'wrapper registered type=flutter version=10.0.0-dev.1\n'
+        'wrapper refined type=flutter version=10.0.0-dev.1 context={dart=3.11.0, flutter=3.41.0, flutter-engine=3452d735bd, build-configuration=debug}',
+      );
+      final good = SdkBanner('ios', pins().iosSdk, pins().iosSdkBuild);
+      expect(e.iosProblems(good, w), isEmpty);
+      expect(
+        e.iosProblems(SdkBanner('ios', pins().iosSdk, 'other-1'), w),
+        contains(contains('banner build other-1')),
+      );
+      expect(
+        e.iosProblems(
+          good,
+          WrapperLog(
+            registered: w.registered,
+            refined: 'flutter/0.0.1',
+            context: w.context,
           ),
-          contains(contains('wrapper refined as flutter/0.0.1')),
+        ),
+        contains(contains('wrapper refined as flutter/0.0.1')),
+      );
+      final ctx = e.wrapper['context']! as Map;
+      for (final key in ctx.keys) {
+        final changed = {...ctx, key: 'x'};
+        expect(
+          e.wrapperInReport({
+            'type': 'flutter',
+            'version': e.wrapperVersion,
+            'context': changed,
+          }),
+          contains(contains('wrapper context $key is x')),
+          reason: key as String,
         );
-        final ctx = e.wrapper['context']! as Map;
-        for (final key in ctx.keys) {
-          final changed = {...ctx, key: 'x'};
-          expect(
-            e.wrapperInReport({
-              'type': 'flutter',
-              'version': e.wrapperVersion,
-              'context': changed,
-            }),
-            contains(contains('wrapper context $key is x')),
-            reason: key as String,
-          );
-        }
-      },
-    );
+      }
+    });
 
     test(
       'exit codes: a skipped run is not a pass, a known gap is not a failure',

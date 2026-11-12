@@ -53,51 +53,45 @@ void main() {
       expect(objcStrings(objcOps).values.toSet(), wire);
     });
 
-    test(
-      'Java has every string it answers with (it never answers "deferred": iOS only)',
-      () {
-        expect(
-          javaStrings(javaOps).values.toSet(),
-          wire.difference({LaunchWire.deferred}).union({LaunchWire.deferred}),
-        );
-        final answered = {
-          for (final name in [
-            'LAUNCHED',
-            'ALREADY_RUNNING',
-            'REFUSED',
-            'INVALID_TOKEN',
-            'STOPPING',
-            'FAILED',
-            'ERROR_CODE',
-          ])
-            javaStrings(javaOps)[name],
-        };
-        expect(answered, wire.difference({LaunchWire.deferred}));
-      },
-    );
+    test('Java has every string it answers with (it never answers "deferred": iOS only)', () {
+      expect(
+        javaStrings(javaOps).values.toSet(),
+        wire.difference({LaunchWire.deferred}).union({LaunchWire.deferred}),
+      );
+      final answered = {
+        for (final name in [
+          'LAUNCHED',
+          'ALREADY_RUNNING',
+          'REFUSED',
+          'INVALID_TOKEN',
+          'STOPPING',
+          'FAILED',
+          'ERROR_CODE',
+        ])
+          javaStrings(javaOps)[name],
+      };
+      expect(answered, wire.difference({LaunchWire.deferred}));
+    });
 
-    test(
-      'the pairing of names to values is the same (a swap would still be "all there")',
-      () {
-        final j = javaStrings(javaOps);
-        final o = objcStrings(objcOps);
-        expect(j['LAUNCHED'], LaunchWire.launched);
-        expect(j['ALREADY_RUNNING'], LaunchWire.alreadyRunning);
-        expect(j['REFUSED'], LaunchWire.refused);
-        expect(j['INVALID_TOKEN'], LaunchWire.invalidToken);
-        expect(j['STOPPING'], LaunchWire.stopping);
-        expect(j['FAILED'], LaunchWire.failed);
-        expect(j['ERROR_CODE'], LaunchWire.errorCode);
-        expect(o['kLaunched'], LaunchWire.launched);
-        expect(o['kAlreadyRunning'], LaunchWire.alreadyRunning);
-        expect(o['kDeferred'], LaunchWire.deferred);
-        expect(o['kRefused'], LaunchWire.refused);
-        expect(o['kInvalidToken'], LaunchWire.invalidToken);
-        expect(o['kStopping'], LaunchWire.stopping);
-        expect(o['kFailed'], LaunchWire.failed);
-        expect(o['kErrorCode'], LaunchWire.errorCode);
-      },
-    );
+    test('the pairing of names to values is the same (a swap would still be "all there")', () {
+      final j = javaStrings(javaOps);
+      final o = objcStrings(objcOps);
+      expect(j['LAUNCHED'], LaunchWire.launched);
+      expect(j['ALREADY_RUNNING'], LaunchWire.alreadyRunning);
+      expect(j['REFUSED'], LaunchWire.refused);
+      expect(j['INVALID_TOKEN'], LaunchWire.invalidToken);
+      expect(j['STOPPING'], LaunchWire.stopping);
+      expect(j['FAILED'], LaunchWire.failed);
+      expect(j['ERROR_CODE'], LaunchWire.errorCode);
+      expect(o['kLaunched'], LaunchWire.launched);
+      expect(o['kAlreadyRunning'], LaunchWire.alreadyRunning);
+      expect(o['kDeferred'], LaunchWire.deferred);
+      expect(o['kRefused'], LaunchWire.refused);
+      expect(o['kInvalidToken'], LaunchWire.invalidToken);
+      expect(o['kStopping'], LaunchWire.stopping);
+      expect(o['kFailed'], LaunchWire.failed);
+      expect(o['kErrorCode'], LaunchWire.errorCode);
+    });
 
     test(
       'the Swift plugin takes the error code from Objective-C, not a literal',
@@ -134,21 +128,18 @@ void main() {
   });
 
   group('status crosses by name', () {
-    test(
-      'iOS answers exactly the Dart names, and the Dart names are the lower-cased SDK ones',
-      () {
-        final names = {
-          for (final m in RegExp(r'return @"(\w+)";').allMatches(
-            objcOps
-                .split('@implementation BGSFlutterRealBugsee')[1]
-                .split('@end')
-                .first,
-          ))
-            m.group(1)!,
-        };
-        expect(names, BugseeStatus.values.map((s) => s.name).toSet());
-      },
-    );
+    test('iOS answers exactly the Dart names, and the Dart names are the lower-cased SDK ones', () {
+      final names = {
+        for (final m in RegExp(r'return @"(\w+)";').allMatches(
+          objcOps
+              .split('@implementation BGSFlutterRealBugsee')[1]
+              .split('@end')
+              .first,
+        ))
+          m.group(1)!,
+      };
+      expect(names, BugseeStatus.values.map((s) => s.name).toSet());
+    });
 
     test('Android lower-cases the SDK constant NAME, never the ordinal', () {
       expect(javaOps, contains('status.name().toLowerCase(Locale.ROOT)'));
@@ -215,25 +206,22 @@ void main() {
       }
     });
 
-    test(
-      'the hidden endpoint key is spelled once in Dart lib code (comments aside)',
-      () {
-        final hits = <String>{};
-        for (final f
-            in Directory('lib')
-                .listSync(recursive: true)
-                .whereType<File>()
-                .where((f) => f.path.endsWith('.dart'))) {
-          if (f.path.endsWith('.g.dart')) continue;
-          for (final line in f.readAsLinesSync()) {
-            if (!line.trimLeft().startsWith('//') &&
-                RegExp(r'\\?\$\\?\$ENDPOINT').hasMatch(line)) {
-              hits.add(f.path.split('/').last);
-            }
+    test('the hidden endpoint key is spelled once in Dart lib code (comments aside)', () {
+      final hits = <String>{};
+      for (final f
+          in Directory('lib')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.dart'))) {
+        if (f.path.endsWith('.g.dart')) continue;
+        for (final line in f.readAsLinesSync()) {
+          if (!line.trimLeft().startsWith('//') &&
+              RegExp(r'\\?\$\\?\$ENDPOINT').hasMatch(line)) {
+            hits.add(f.path.split('/').last);
           }
         }
-        expect(hits, {'endpoint.dart'});
-      },
-    );
+      }
+      expect(hits, {'endpoint.dart'});
+    });
   });
 }

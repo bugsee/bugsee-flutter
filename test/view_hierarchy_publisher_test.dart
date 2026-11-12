@@ -6,7 +6,7 @@ import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/publisher.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show PlatformException;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 HierarchySnapshot fake(String tag, {double ratio = 3}) => HierarchySnapshot(
@@ -393,27 +393,27 @@ void main() {
       expect(r.sent.last.segments, isEmpty);
     });
 
-    rigTest('a send that fails is retried with a growing delay, never flooding', (
-      tester,
-      r,
-    ) async {
-      r.failSends = 1 << 30; // down for good
-      r.publisher.activate();
-      await r.frame();
-      // Frames every 16 ms for 5 s, as an animation would.
-      for (var i = 0; i < 300; i++) {
-        await r.frame(const Duration(milliseconds: 16));
-      }
-      // 300 ms, 600 ms, 1.2 s, 2.4 s, ...: a handful, not one per frame.
-      expect(r.sent.length, lessThan(10));
-      expect(r.sent.length, greaterThan(2));
-      // And it never gives up: a minute later it is still trying, at most every 30 s.
-      final at5s = r.sent.length;
-      await tester.pump(const Duration(seconds: 60));
-      await tester.pump(const Duration(seconds: 60));
-      expect(r.sent.length, greaterThan(at5s));
-      expect(r.sent.length - at5s, lessThan(8));
-    });
+    rigTest(
+      'a send that fails is retried with a growing delay, never flooding',
+      (tester, r) async {
+        r.failSends = 1 << 30; // down for good
+        r.publisher.activate();
+        await r.frame();
+        // Frames every 16 ms for 5 s, as an animation would.
+        for (var i = 0; i < 300; i++) {
+          await r.frame(const Duration(milliseconds: 16));
+        }
+        // 300 ms, 600 ms, 1.2 s, 2.4 s, ...: a handful, not one per frame.
+        expect(r.sent.length, lessThan(10));
+        expect(r.sent.length, greaterThan(2));
+        // And it never gives up: a minute later it is still trying, at most every 30 s.
+        final at5s = r.sent.length;
+        await tester.pump(const Duration(seconds: 60));
+        await tester.pump(const Duration(seconds: 60));
+        expect(r.sent.length, greaterThan(at5s));
+        expect(r.sent.length - at5s, lessThan(8));
+      },
+    );
 
     rigTest('after a failed send the next success resends the same tree', (
       tester,
@@ -494,57 +494,54 @@ void main() {
       expect(r.builds, before + 1);
     });
 
-    rigTest(
-      'never hangs on a frame that does not come',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        final before = r.builds;
-        tester.binding.scheduleFrame();
-        // Real time: the frame is never pumped, the wait gives up after frameWait.
-        await tester.runAsync(() => r.publisher.flush());
-        expect(r.builds, before + 1);
-      },
-      frameWait: const Duration(milliseconds: 60),
-    );
+    rigTest('never hangs on a frame that does not come', (tester, r) async {
+      r.publisher.activate();
+      await r.frame();
+      final before = r.builds;
+      tester.binding.scheduleFrame();
+      // Real time: the frame is never pumped, the wait gives up after frameWait.
+      await tester.runAsync(() => r.publisher.flush());
+      expect(r.builds, before + 1);
+    }, frameWait: const Duration(milliseconds: 60));
 
-    testWidgets('a pushed route is in the capture asked for right after the push', (
-      tester,
-    ) async {
-      final sent = <String>[];
-      final publisher = ViewHierarchyPublisher(
-        send: (m) async {
-          sent.add(m.segments.join());
-          return true;
-        },
-        epoch: 1,
-        minInterval: const Duration(hours: 1),
-        // This test runs on the real clock under fake timers, where "quiet" never passes;
-        // it is about the capture, not about when the walks come.
-        busyGap: Duration.zero,
-      );
-      final navigator = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(
-        MaterialApp(navigatorKey: navigator, home: const SizedBox()),
-      );
-      publisher.activate();
-      await tester.pump();
-      expect(sent, hasLength(1));
-      expect(sent.last, isNot(contains('SecondPageMarker')));
-      navigator.currentState!.push(
-        MaterialPageRoute<void>(builder: (_) => const SecondPageMarker()),
-      );
-      final flushed = publisher.flush();
-      // The route is built off stage in the first frame and shown by the next: frames 16 ms apart.
-      for (var i = 0; i < 4; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      await flushed;
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(sent.last, contains('SecondPageMarker'));
-      await publisher.deactivate();
-      publisher.dispose();
-    });
+    testWidgets(
+      'a pushed route is in the capture asked for right after the push',
+      (tester) async {
+        final sent = <String>[];
+        final publisher = ViewHierarchyPublisher(
+          send: (m) async {
+            sent.add(m.segments.join());
+            return true;
+          },
+          epoch: 1,
+          minInterval: const Duration(hours: 1),
+          // This test runs on the real clock under fake timers, where "quiet" never passes;
+          // it is about the capture, not about when the walks come.
+          busyGap: Duration.zero,
+        );
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(navigatorKey: navigator, home: const SizedBox()),
+        );
+        publisher.activate();
+        await tester.pump();
+        expect(sent, hasLength(1));
+        expect(sent.last, isNot(contains('SecondPageMarker')));
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const SecondPageMarker()),
+        );
+        final flushed = publisher.flush();
+        // The route is built off stage in the first frame and shown by the next: frames 16 ms apart.
+        for (var i = 0; i < 4; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await flushed;
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(sent.last, contains('SecondPageMarker'));
+        await publisher.deactivate();
+        publisher.dispose();
+      },
+    );
   });
 
   group('a walk waits for the app to be quiet', () {
@@ -565,130 +562,119 @@ void main() {
       deferWhileBusy: true,
     );
 
-    rigTest(
-      'nor is the first one after a resume, which cleared native',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        await tester.pump(quiet);
-        await r.publisher.deactivate();
-        r.publisher.activate();
-        await r.frame();
-        expect(r.builds, 2);
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('nor is the first one after a resume, which cleared native', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      await tester.pump(quiet);
+      await r.publisher.deactivate();
+      r.publisher.activate();
+      await r.frame();
+      expect(r.builds, 2);
+    }, deferWhileBusy: true);
 
-    rigTest(
-      'a later frame is walked after the quiet, not inside its frame',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        await tester.pump(quiet);
-        expect(r.builds, 1);
-        r.result = fake('B');
-        await r.frame(const Duration(milliseconds: 400)); // past the throttle
-        expect(r.builds, 1, reason: 'not next to the frame that just ended');
-        await tester.pump(quiet);
-        expect(r.builds, 2);
-        expect(r.phases.last, isNot(SchedulerPhase.persistentCallbacks));
-        expect(r.tags.last, 'B');
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('a later frame is walked after the quiet, not inside its frame', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      await tester.pump(quiet);
+      expect(r.builds, 1);
+      r.result = fake('B');
+      await r.frame(const Duration(milliseconds: 400)); // past the throttle
+      expect(r.builds, 1, reason: 'not next to the frame that just ended');
+      await tester.pump(quiet);
+      expect(r.builds, 2);
+      expect(r.phases.last, isNot(SchedulerPhase.persistentCallbacks));
+      expect(r.tags.last, 'B');
+    }, deferWhileBusy: true);
 
-    rigTest(
-      'no walk lands in a scroll; one is taken when it stops',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        await tester.pump(quiet);
-        expect(r.builds, 1);
-        for (var i = 0; i < 100; i++) {
-          r.result = fake('S$i');
-          await r.frame(vsync); // 1.6 s of frames 16 ms apart
-        }
-        expect(
-          r.builds,
-          1,
-          reason: 'nothing built while the frames keep coming',
-        );
-        await tester.pump(quiet);
-        expect(r.builds, 2, reason: 'one after they stop');
-        expect(r.tags.last, 'S99', reason: 'of the screen as it ended');
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('no walk lands in a scroll; one is taken when it stops', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      await tester.pump(quiet);
+      expect(r.builds, 1);
+      for (var i = 0; i < 100; i++) {
+        r.result = fake('S$i');
+        await r.frame(vsync); // 1.6 s of frames 16 ms apart
+      }
+      expect(r.builds, 1, reason: 'nothing built while the frames keep coming');
+      await tester.pump(quiet);
+      expect(r.builds, 2, reason: 'one after they stop');
+      expect(r.tags.last, 'S99', reason: 'of the screen as it ended');
+    }, deferWhileBusy: true);
 
-    rigTest(
-      'frames with gaps shorter than the quiet are one stretch',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        await tester.pump(quiet);
-        expect(r.builds, 1);
-        for (var i = 0; i < 6; i++) {
-          r.result = fake('T$i');
-          await r.frame(const Duration(milliseconds: 90)); // taps, say
-        }
-        expect(r.builds, 1);
-        await tester.pump(quiet);
-        expect(r.builds, 2);
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('frames with gaps shorter than the quiet are one stretch', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      await tester.pump(quiet);
+      expect(r.builds, 1);
+      for (var i = 0; i < 6; i++) {
+        r.result = fake('T$i');
+        await r.frame(const Duration(milliseconds: 90)); // taps, say
+      }
+      expect(r.builds, 1);
+      await tester.pump(quiet);
+      expect(r.builds, 2);
+    }, deferWhileBusy: true);
 
-    rigTest(
-      'an endless animation is walked once per busyCap, no oftener',
-      (tester, r) async {
-        r.publisher.activate();
-        for (var i = 0; i < 400; i++) {
-          r.result = fake('A$i');
-          await r.frame(vsync); // 6.4 s
-        }
-        // The first at once (nothing held), then one per 3 s of continuous frames.
-        expect(r.buildTimes, hasLength(3));
-        expect(r.buildTimes.first, lessThan(const Duration(milliseconds: 50)));
-        for (var i = 1; i < r.buildTimes.length; i++) {
-          final gap = r.buildTimes[i] - r.buildTimes[i - 1];
-          expect(gap, greaterThanOrEqualTo(const Duration(seconds: 3)));
-          expect(gap, lessThan(const Duration(milliseconds: 3100)));
-        }
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('an endless animation is walked once per busyCap, no oftener', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      for (var i = 0; i < 400; i++) {
+        r.result = fake('A$i');
+        await r.frame(vsync); // 6.4 s
+      }
+      // The first at once (nothing held), then one per 3 s of continuous frames.
+      expect(r.buildTimes, hasLength(3));
+      expect(r.buildTimes.first, lessThan(const Duration(milliseconds: 50)));
+      for (var i = 1; i < r.buildTimes.length; i++) {
+        final gap = r.buildTimes[i] - r.buildTimes[i - 1];
+        expect(gap, greaterThanOrEqualTo(const Duration(seconds: 3)));
+        expect(gap, lessThan(const Duration(milliseconds: 3100)));
+      }
+    }, deferWhileBusy: true);
 
-    rigTest(
-      'an explicit capture is taken even in the middle of a stretch',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        for (var i = 0; i < 20; i++) {
-          await r.frame(vsync);
-        }
-        expect(r.builds, 1);
-        r.result = fake('NOW');
-        await r.publisher.flush();
-        expect(r.builds, 2);
-        expect(r.tags.last, 'NOW');
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('an explicit capture is taken even in the middle of a stretch', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      for (var i = 0; i < 20; i++) {
+        await r.frame(vsync);
+      }
+      expect(r.builds, 1);
+      r.result = fake('NOW');
+      await r.publisher.flush();
+      expect(r.builds, 2);
+      expect(r.tags.last, 'NOW');
+    }, deferWhileBusy: true);
 
-    rigTest(
-      'turning it off while a walk is waiting leaves nothing pending',
-      (tester, r) async {
-        r.publisher.activate();
-        await r.frame();
-        for (var i = 0; i < 20; i++) {
-          await r.frame(vsync);
-        }
-        await r.publisher.deactivate();
-        await tester.pump(const Duration(seconds: 2));
-        expect(r.builds, 1);
-      },
-      deferWhileBusy: true,
-    );
+    rigTest('turning it off while a walk is waiting leaves nothing pending', (
+      tester,
+      r,
+    ) async {
+      r.publisher.activate();
+      await r.frame();
+      for (var i = 0; i < 20; i++) {
+        await r.frame(vsync);
+      }
+      await r.publisher.deactivate();
+      await tester.pump(const Duration(seconds: 2));
+      expect(r.builds, 1);
+    }, deferWhileBusy: true);
   });
 
   group('the walk budget follows the frame', () {

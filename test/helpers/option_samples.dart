@@ -49,8 +49,8 @@ import '../../scripts/generate_options.dart' as gen;
 }
 
 /// A BugseeOptions with only [spec]'s typed field set, to [value].
-BugseeOptions withField(OptionSpec spec, Object value) =>
-    Function.apply(BugseeOptions.new, [], {
-          Symbol(gen.fieldName(spec.key)): value,
-        })
-        as BugseeOptions;
+BugseeOptions withField(OptionSpec spec, Object value) => Function.apply(
+  BugseeOptions.new,
+  [],
+  {Symbol(gen.fieldName(spec.key)): value},
+) as BugseeOptions;

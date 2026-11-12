@@ -10,7 +10,7 @@ import 'package:bugsee_flutter/src/secure/secure_region.dart';
 // `cacheExtent` is deprecated on stable, but the floor (3.41.0) has no
 // `scrollCacheExtent` yet.
 // ignore_for_file: deprecated_member_use
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 

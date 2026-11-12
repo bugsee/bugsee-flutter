@@ -4,7 +4,7 @@
 // (The measuring rules themselves are tested in secure_region_test.dart.)
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter/src/bridge/messages.g.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

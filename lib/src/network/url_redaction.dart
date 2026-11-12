@@ -39,9 +39,9 @@ final RegExp _urlQuery = RegExp(
 
 /// An error text can carry the URL of the request (`HttpException`'s `uri = ...`): userinfo and
 /// query go. The SDK's sanitizer redacts a URL field, not the middle of a message.
-String scrubErrorText(String text) => stripUserInfo(
-  text,
-).replaceAllMapped(_urlQuery, (m) => '${m[1]}?<redacted>');
+String scrubErrorText(String text) =>
+    stripUserInfo(text)
+        .replaceAllMapped(_urlQuery, (m) => '${m[1]}?<redacted>');
 
 /// [text] without any `#fragment`. A fragment never goes on the wire, but a redirect's `Location`
 /// can carry one (OAuth callbacks put tokens there), and no SDK looks at it.

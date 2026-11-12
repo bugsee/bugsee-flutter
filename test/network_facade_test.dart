@@ -162,22 +162,19 @@ void main() {
     expect(host.sent.where((m) => m.stage == 'before'), hasLength(1));
   });
 
-  test(
-    'nothing is recorded before launch, and recording starts when the SDK launches',
-    () async {
-      host.statusName = 'stopped';
-      Bugsee.installNetworkCapture();
-      await settle();
-      await get('/before-launch');
-      expect(host.sent, isEmpty);
-      await Bugsee.launch('token');
-      await settle();
-      await get('/after-launch');
-      expect(host.sent.map((m) => m.url).toSet(), {
-        url('/after-launch').toString(),
-      });
-    },
-  );
+  test('nothing is recorded before launch, and recording starts when the SDK launches', () async {
+    host.statusName = 'stopped';
+    Bugsee.installNetworkCapture();
+    await settle();
+    await get('/before-launch');
+    expect(host.sent, isEmpty);
+    await Bugsee.launch('token');
+    await settle();
+    await get('/after-launch');
+    expect(host.sent.map((m) => m.url).toSet(), {
+      url('/after-launch').toString(),
+    });
+  });
 
   test(
     'a lifecycle event moves the policy too (a launch the app did not make)',
@@ -314,33 +311,30 @@ void main() {
   );
 
   group('the filter', () {
-    test(
-      'runs before native: it can drop and redact, and native never sees the raw value',
-      () async {
-        Bugsee.setNetworkFilter((event) {
-          if (event.url.contains('/drop')) return null;
-          event.headers.remove('authorization');
-          event.url = event.url.replaceAll('secret-token', 'REDACTED');
-          return event;
-        });
-        Bugsee.installNetworkCapture();
-        await settle();
-        await get('/drop');
-        await get(
-          '/keep?t=secret-token',
-          headers: {'authorization': 'Bearer abc'},
-        );
-        expect(host.sent.every((m) => !m.url.contains('/drop')), isTrue);
-        final before = host.sent.singleWhere((m) => m.stage == 'before');
-        expect(before.url, endsWith('/keep?t=REDACTED'));
-        expect(before.headers!.containsKey('authorization'), isFalse);
-        expect(
-          host.sent.map((m) => m.url).join(),
-          isNot(contains('secret-token')),
-        );
-        expect(Bugsee.networkCaptureStats.droppedByFilter, 2);
-      },
-    );
+    test('runs before native: it can drop and redact, and native never sees the raw value', () async {
+      Bugsee.setNetworkFilter((event) {
+        if (event.url.contains('/drop')) return null;
+        event.headers.remove('authorization');
+        event.url = event.url.replaceAll('secret-token', 'REDACTED');
+        return event;
+      });
+      Bugsee.installNetworkCapture();
+      await settle();
+      await get('/drop');
+      await get(
+        '/keep?t=secret-token',
+        headers: {'authorization': 'Bearer abc'},
+      );
+      expect(host.sent.every((m) => !m.url.contains('/drop')), isTrue);
+      final before = host.sent.singleWhere((m) => m.stage == 'before');
+      expect(before.url, endsWith('/keep?t=REDACTED'));
+      expect(before.headers!.containsKey('authorization'), isFalse);
+      expect(
+        host.sent.map((m) => m.url).join(),
+        isNot(contains('secret-token')),
+      );
+      expect(Bugsee.networkCaptureStats.droppedByFilter, 2);
+    });
 
     test(
       'a throwing filter drops the event, never the app\'s request',

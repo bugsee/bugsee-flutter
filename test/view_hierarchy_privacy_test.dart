@@ -5,7 +5,7 @@ import 'dart:convert';
 
 import 'package:bugsee_flutter/src/secure/bugsee_secure_view.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -313,9 +313,9 @@ void main() {
       (tester) async {
         await tester.pumpWidget(app());
         await tester.pump();
-        final root =
-            jsonDecode(buildViewHierarchy(clock: frozenClock)!.render())
-                as Map<String, Object?>;
+        final root = jsonDecode(
+          buildViewHierarchy(clock: frozenClock)!.render(),
+        ) as Map<String, Object?>;
         final identifier = RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$');
         const keys = {
           'id',

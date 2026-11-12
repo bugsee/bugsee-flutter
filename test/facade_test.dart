@@ -172,46 +172,43 @@ void main() {
       }
     });
 
-    test(
-      'the SDK\'s own rejection is not an argument exception (`on BugseeArgumentException` means refused before the SDK)',
-      () async {
-        native.failNext = refusal(FacadeWire.attributeRejected);
-        Object? caught;
-        try {
-          await Bugsee.setAttribute('k', 'v');
-        } on BugseeArgumentException catch (e) {
-          caught = e;
-        } on BugseeAttributeException catch (e) {
-          expect(e.reason, AttributeFailure.rejected);
-        }
-        expect(caught, isNull);
-        // Dart-side findings are attribute exceptions too, not argument exceptions.
-        await expectLater(
-          Bugsee.setAttribute('', 'v'),
-          throwsA(
-            allOf(
-              isA<BugseeAttributeException>(),
-              isNot(isA<BugseeArgumentException>()),
-            ),
+    test('the SDK\'s own rejection is not an argument exception (`on BugseeArgumentException` means refused before the SDK)', () async {
+      native.failNext = refusal(FacadeWire.attributeRejected);
+      Object? caught;
+      try {
+        await Bugsee.setAttribute('k', 'v');
+      } on BugseeArgumentException catch (e) {
+        caught = e;
+      } on BugseeAttributeException catch (e) {
+        expect(e.reason, AttributeFailure.rejected);
+      }
+      expect(caught, isNull);
+      // Dart-side findings are attribute exceptions too, not argument exceptions.
+      await expectLater(
+        Bugsee.setAttribute('', 'v'),
+        throwsA(
+          allOf(
+            isA<BugseeAttributeException>(),
+            isNot(isA<BugseeArgumentException>()),
           ),
-        );
-        // Native defending again (invalid-argument) is still an attribute exception.
-        native.failNext = refusal(FacadeWire.invalidArgument);
-        await expectLater(
-          Bugsee.setAttribute('k', 'v'),
-          throwsA(
-            allOf(
-              isA<BugseeAttributeException>().having(
-                (e) => e.reason,
-                'reason',
-                AttributeFailure.invalidValue,
-              ),
-              isNot(isA<BugseeArgumentException>()),
+        ),
+      );
+      // Native defending again (invalid-argument) is still an attribute exception.
+      native.failNext = refusal(FacadeWire.invalidArgument);
+      await expectLater(
+        Bugsee.setAttribute('k', 'v'),
+        throwsA(
+          allOf(
+            isA<BugseeAttributeException>().having(
+              (e) => e.reason,
+              'reason',
+              AttributeFailure.invalidValue,
             ),
+            isNot(isA<BugseeArgumentException>()),
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
     test(
       'a native rejection (size limit) is BugseeAttributeException(rejected)',
@@ -350,47 +347,44 @@ void main() {
       );
     });
 
-    test(
-      'params outside the accepted domain are refused with the path of the bad value',
-      () async {
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.event('e', {
-            'a': {
-              'b': [1, DateTime(2026)],
-            },
-          }),
-          argument: 'params.a.b[1]',
-        );
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.event('e', {'x': double.nan}),
-          argument: 'params.x',
-        );
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.event('e', {'x': double.infinity}),
-          argument: 'params.x',
-        );
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.event('e', {'x': 9.3e18}),
-          argument: 'params.x',
-        );
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.event('e', {'x': Object()}),
-          argument: 'params.x',
-        );
-        await expectRefusedInDart(
-          native,
-          () => Bugsee.event('e', {
-            'm': <Object?, Object?>{1: 'x'},
-          }),
-          argument: 'params.m',
-        );
-      },
-    );
+    test('params outside the accepted domain are refused with the path of the bad value', () async {
+      await expectRefusedInDart(
+        native,
+        () => Bugsee.event('e', {
+          'a': {
+            'b': [1, DateTime(2026)],
+          },
+        }),
+        argument: 'params.a.b[1]',
+      );
+      await expectRefusedInDart(
+        native,
+        () => Bugsee.event('e', {'x': double.nan}),
+        argument: 'params.x',
+      );
+      await expectRefusedInDart(
+        native,
+        () => Bugsee.event('e', {'x': double.infinity}),
+        argument: 'params.x',
+      );
+      await expectRefusedInDart(
+        native,
+        () => Bugsee.event('e', {'x': 9.3e18}),
+        argument: 'params.x',
+      );
+      await expectRefusedInDart(
+        native,
+        () => Bugsee.event('e', {'x': Object()}),
+        argument: 'params.x',
+      );
+      await expectRefusedInDart(
+        native,
+        () => Bugsee.event('e', {
+          'm': <Object?, Object?>{1: 'x'},
+        }),
+        argument: 'params.m',
+      );
+    });
 
     test('a cycle and excessive nesting are refused', () async {
       final cyclic = <String, Object?>{};
@@ -492,42 +486,33 @@ void main() {
   });
 
   group('breadcrumbs', () {
-    test(
-      'crosses with the level NAME and the data copy, and says whether the SDK took it',
-      () async {
-        final accepted = await Bugsee.addBreadcrumb(
-          const BugseeBreadcrumb(
-            category: 'nav',
-            message: 'opened cart',
-            level: BreadcrumbLevel.warning,
-            type: 'navigation',
-            data: {'items': 3, 'n': null},
-          ),
-        );
-        expect(accepted, isTrue);
-        expect(native.last['addBreadcrumb'], [
-          'nav',
-          'warning',
-          'opened cart',
-          'navigation',
-          {'items': 3, 'n': null},
-        ]);
-        native.breadcrumbAccepted = false;
-        expect(
-          await Bugsee.addBreadcrumb(
-            const BugseeBreadcrumb(category: 'c', message: 'm'),
-          ),
-          isFalse,
-        );
-        expect(native.last['addBreadcrumb'], [
-          'c',
-          'info',
-          'm',
-          'default',
-          null,
-        ]);
-      },
-    );
+    test('crosses with the level NAME and the data copy, and says whether the SDK took it', () async {
+      final accepted = await Bugsee.addBreadcrumb(
+        const BugseeBreadcrumb(
+          category: 'nav',
+          message: 'opened cart',
+          level: BreadcrumbLevel.warning,
+          type: 'navigation',
+          data: {'items': 3, 'n': null},
+        ),
+      );
+      expect(accepted, isTrue);
+      expect(native.last['addBreadcrumb'], [
+        'nav',
+        'warning',
+        'opened cart',
+        'navigation',
+        {'items': 3, 'n': null},
+      ]);
+      native.breadcrumbAccepted = false;
+      expect(
+        await Bugsee.addBreadcrumb(
+          const BugseeBreadcrumb(category: 'c', message: 'm'),
+        ),
+        isFalse,
+      );
+      expect(native.last['addBreadcrumb'], ['c', 'info', 'm', 'default', null]);
+    });
 
     test('every level crosses by name', () async {
       for (final l in BreadcrumbLevel.values) {
@@ -690,42 +675,39 @@ void main() {
   });
 
   group('error mapping', () {
-    test(
-      'invalid-argument, sdk-error and not-attached map to BugseeException subclasses',
-      () async {
-        native.failNext = refusal(FacadeWire.invalidArgument, 'bad');
-        await expectLater(
-          Bugsee.trace('t', 1),
-          throwsA(
-            isA<BugseeArgumentException>().having(
-              (e) => e.message,
-              'message',
-              contains('bad'),
-            ),
+    test('invalid-argument, sdk-error and not-attached map to BugseeException subclasses', () async {
+      native.failNext = refusal(FacadeWire.invalidArgument, 'bad');
+      await expectLater(
+        Bugsee.trace('t', 1),
+        throwsA(
+          isA<BugseeArgumentException>().having(
+            (e) => e.message,
+            'message',
+            contains('bad'),
           ),
-        );
-        native.failNext = refusal(FacadeWire.sdkError, 'SDK threw');
-        await expectLater(
-          Bugsee.event('e'),
-          throwsA(
-            isA<BugseeException>()
-                .having(
-                  (e) => e,
-                  'not an argument error',
-                  isNot(isA<BugseeArgumentException>()),
-                )
-                .having((e) => e.message, 'message', contains('SDK threw')),
-          ),
-        );
-        native.failNext = refusal(FacadeWire.notAttached, 'no engine');
-        await expectLater(Bugsee.isBlackout(), throwsA(isA<BugseeException>()));
-        native.failNext = refusal('something-new');
-        await expectLater(
-          Bugsee.startBlackout(),
-          throwsA(isA<BugseeException>()),
-        );
-      },
-    );
+        ),
+      );
+      native.failNext = refusal(FacadeWire.sdkError, 'SDK threw');
+      await expectLater(
+        Bugsee.event('e'),
+        throwsA(
+          isA<BugseeException>()
+              .having(
+                (e) => e,
+                'not an argument error',
+                isNot(isA<BugseeArgumentException>()),
+              )
+              .having((e) => e.message, 'message', contains('SDK threw')),
+        ),
+      );
+      native.failNext = refusal(FacadeWire.notAttached, 'no engine');
+      await expectLater(Bugsee.isBlackout(), throwsA(isA<BugseeException>()));
+      native.failNext = refusal('something-new');
+      await expectLater(
+        Bugsee.startBlackout(),
+        throwsA(isA<BugseeException>()),
+      );
+    });
 
     test('every facade method maps a native failure', () async {
       final calls = <String, Future<Object?> Function()>{
@@ -842,96 +824,84 @@ void main() {
       },
     );
 
-    test(
-      'overlapping handler changes run in order: a failed first does not undo the second',
-      () async {
-        final seen = <String>[];
-        native.failPhaseCalls.add(1);
-        native.firstPhasesGate = Completer<void>();
-        final h1 = BugseeReportHandler(
-          onAfterReportCreated: (r) async => seen.add('h1'),
-        );
-        final h2 = BugseeReportHandler(
-          onAfterReportCreated: (r) async => seen.add('h2'),
-        );
-        await Bugsee.isBlackout(); // started, as in an app
-        native.phasesArmed = true;
-        final first = Bugsee.setReportHandler(h1);
-        final firstOutcome = expectLater(
-          first,
-          throwsA(isA<BugseeException>()),
-        );
-        final second = Bugsee.setReportHandler(h2);
-        await Future<void>.delayed(Duration.zero);
-        native.firstPhasesGate!.complete();
-        await firstOutcome;
-        await second;
-        expect(Bugsee.reportHandler, same(h2));
-        expect(native.phases.toString(), 'Phases(false, true)');
-        _deliver(runtime, seen);
-        await Future<void>.delayed(Duration.zero);
-        expect(seen, ['h2'], reason: 'Dart and native agree on h2');
-      },
-    );
+    test('overlapping handler changes run in order: a failed first does not undo the second', () async {
+      final seen = <String>[];
+      native.failPhaseCalls.add(1);
+      native.firstPhasesGate = Completer<void>();
+      final h1 = BugseeReportHandler(
+        onAfterReportCreated: (r) async => seen.add('h1'),
+      );
+      final h2 = BugseeReportHandler(
+        onAfterReportCreated: (r) async => seen.add('h2'),
+      );
+      await Bugsee.isBlackout(); // started, as in an app
+      native.phasesArmed = true;
+      final first = Bugsee.setReportHandler(h1);
+      final firstOutcome = expectLater(first, throwsA(isA<BugseeException>()));
+      final second = Bugsee.setReportHandler(h2);
+      await Future<void>.delayed(Duration.zero);
+      native.firstPhasesGate!.complete();
+      await firstOutcome;
+      await second;
+      expect(Bugsee.reportHandler, same(h2));
+      expect(native.phases.toString(), 'Phases(false, true)');
+      _deliver(runtime, seen);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, ['h2'], reason: 'Dart and native agree on h2');
+    });
 
-    test(
-      'overlapping handler changes that both fail leave the old handler in effect',
-      () async {
-        final seen = <String>[];
-        final old = BugseeReportHandler(
-          onAfterReportCreated: (r) async => seen.add('old'),
-        );
-        await Bugsee.setReportHandler(old);
-        native.phasesArmed = true;
-        native.failPhaseCalls.addAll([1, 2]);
-        native.firstPhasesGate = Completer<void>();
-        BugseeReportHandler mk(String n) =>
-            BugseeReportHandler(onAfterReportCreated: (r) async => seen.add(n));
-        final a = expectLater(
-          Bugsee.setReportHandler(mk('a')),
-          throwsA(isA<BugseeException>()),
-        );
-        final b = expectLater(
-          Bugsee.setReportHandler(mk('b')),
-          throwsA(isA<BugseeException>()),
-        );
-        await Future<void>.delayed(Duration.zero);
-        native.firstPhasesGate!.complete();
-        await a;
-        await b;
-        expect(Bugsee.reportHandler, same(old));
-        _deliver(runtime, seen);
-        await Future<void>.delayed(Duration.zero);
-        expect(seen, ['old']);
-      },
-    );
+    test('overlapping handler changes that both fail leave the old handler in effect', () async {
+      final seen = <String>[];
+      final old = BugseeReportHandler(
+        onAfterReportCreated: (r) async => seen.add('old'),
+      );
+      await Bugsee.setReportHandler(old);
+      native.phasesArmed = true;
+      native.failPhaseCalls.addAll([1, 2]);
+      native.firstPhasesGate = Completer<void>();
+      BugseeReportHandler mk(String n) =>
+          BugseeReportHandler(onAfterReportCreated: (r) async => seen.add(n));
+      final a = expectLater(
+        Bugsee.setReportHandler(mk('a')),
+        throwsA(isA<BugseeException>()),
+      );
+      final b = expectLater(
+        Bugsee.setReportHandler(mk('b')),
+        throwsA(isA<BugseeException>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      native.firstPhasesGate!.complete();
+      await a;
+      await b;
+      expect(Bugsee.reportHandler, same(old));
+      _deliver(runtime, seen);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, ['old']);
+    });
 
-    test(
-      'equal handlers: the first fails, the second succeeds, and it is in effect',
-      () async {
-        final seen = <String>[];
-        final same1 = BugseeReportHandler(
-          onAfterReportCreated: (r) async => seen.add('same'),
-        );
-        await Bugsee.isBlackout();
-        native.phasesArmed = true;
-        native.failPhaseCalls.add(1);
-        native.firstPhasesGate = Completer<void>();
-        final a = expectLater(
-          Bugsee.setReportHandler(same1),
-          throwsA(isA<BugseeException>()),
-        );
-        final b = Bugsee.setReportHandler(same1);
-        await Future<void>.delayed(Duration.zero);
-        native.firstPhasesGate!.complete();
-        await a;
-        await b;
-        expect(Bugsee.reportHandler, same(same1));
-        _deliver(runtime, seen);
-        await Future<void>.delayed(Duration.zero);
-        expect(seen, ['same']);
-      },
-    );
+    test('equal handlers: the first fails, the second succeeds, and it is in effect', () async {
+      final seen = <String>[];
+      final same1 = BugseeReportHandler(
+        onAfterReportCreated: (r) async => seen.add('same'),
+      );
+      await Bugsee.isBlackout();
+      native.phasesArmed = true;
+      native.failPhaseCalls.add(1);
+      native.firstPhasesGate = Completer<void>();
+      final a = expectLater(
+        Bugsee.setReportHandler(same1),
+        throwsA(isA<BugseeException>()),
+      );
+      final b = Bugsee.setReportHandler(same1);
+      await Future<void>.delayed(Duration.zero);
+      native.firstPhasesGate!.complete();
+      await a;
+      await b;
+      expect(Bugsee.reportHandler, same(same1));
+      _deliver(runtime, seen);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, ['same']);
+    });
 
     test(
       'a handler the native call refused is not the handler in effect',

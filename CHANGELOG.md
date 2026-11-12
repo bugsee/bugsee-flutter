@@ -46,7 +46,7 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 
 ### Requirements
 
-* Flutter 3.41.0 or newer, Dart 3.11 or newer (the plugin is SwiftPM-only).
+* Flutter 3.50.0 or newer, Dart 3.14 or newer (the 10.0 major moves the floor to the release with Direct Interop, Android Gradle Plugin 9 and `material_ui`; it was 3.41.0 / 3.11, the first where a SwiftPM-only plugin resolves on Linux and Windows).
 * Android: `minSdk` 21, JDK 17 or 21, the Bugsee Gradle plugin 4.1.0 applied by the app (mandatory; no Gradle ordering workaround any more,
   [bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33) is fixed in 4.1.0).
 * iOS: 15.0 or newer, Swift Package Manager only (no CocoaPods).

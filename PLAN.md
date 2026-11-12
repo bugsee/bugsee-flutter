@@ -37,7 +37,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 | D2 | **iOS is SwiftPM only**, no podspec | Bugsee publishes no CocoaPods pod |
 | D3 | **Compatibility with the 9.x Dart API: deferred** to the owner (see below). The facade is isolated in `lib/src/bugsee.dart` / `bugsee_runtime.dart` so a layer could sit beside it | |
 | D4 | **The feedback chat is a separate package**, mirroring the native split and React Native | apps that never show it do not carry SwiftUI / Compose |
-| D5 | **Flutter floor 3.41.0 / Dart 3.11.0.** The plugin is SwiftPM-only, so `flutter pub get` fails on Linux and Windows with "only Swift Package Manager compatible" before 3.41.0. Measured on CI (Linux): 3.27.0/3.27.4, 3.29.0/3.29.3, 3.32.0/3.32.8, 3.35.0/3.35.7, 3.38.0/3.38.9/3.38.10 fail; 3.41.0, 3.41.9, 3.44.0, 3.44.9, 3.47.7 pass (no stable 3.39 or 3.40). Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase and Datadog >=3.27, Bugsnag, Shake and Embrace >=3.10, Instabug >=1.17. macOS developers on older Flutter could enable SwiftPM by hand; unsupported | the floor is a consequence of D2, not a choice |
+| D5 | **Flutter floor 3.50.0 / Dart 3.14.0** (moved from 3.41.0 / 3.11.0 on 2026-11-12, user decision for the 10.0 major: Direct Interop, AGP 9, `material_ui`; the rest of this row is the measurement behind the old floor, which is now the lowest the SwiftPM-only plugin could have). The plugin is SwiftPM-only, so `flutter pub get` fails on Linux and Windows with "only Swift Package Manager compatible" before 3.41.0. Measured on CI (Linux): 3.27.0/3.27.4, 3.29.0/3.29.3, 3.32.0/3.32.8, 3.35.0/3.35.7, 3.38.0/3.38.9/3.38.10 fail; 3.41.0, 3.41.9, 3.44.0, 3.44.9, 3.47.7 pass (no stable 3.39 or 3.40). Competitor floors (pub.dev, 2026-10-20): Sentry >=3.44, Firebase and Datadog >=3.27, Bugsnag, Shake and Embrace >=3.10, Instabug >=1.17. macOS developers on older Flutter could enable SwiftPM by hand; unsupported | the floor is a consequence of D2, not a choice |
 | D6 | **A clean break from 9.x**: a new facade, typed `BugseeOptions`, `LaunchResult`; migration guide instead of a shim ([doc/migration-from-9x.md](doc/migration-from-9x.md)) | the 9.x API wraps 6.x SDK concepts (pause/resume, appearance, flat option keys) |
 | D7 | **Pigeon** for the bridge (typed host API, Dart/Java/Swift committed, version pinned); **no Pigeon enum**: enums cross by SDK value or name | Pigeon sends ordinals; workbook 7.4 |
 | D8 | **The app applies the Bugsee Gradle plugin** (4.1.0, mandatory, not autolinkable), no ordering workaround is needed (upstream #33 is fixed in 4.1.0) | a Flutter plugin cannot apply a plugin to the app |
@@ -110,7 +110,7 @@ Nothing in this repository publishes, tags or deploys by itself; a maintainer do
 4. **Verify on real hardware** at least one Android and one iOS device (the harness: `doc/verification.md`; iOS recovery and exception bundles
    need a device), then update `doc/verification.md`.
 5. **CI green** on the release commit: `format`, codegen checks, `analyze + test` on the floor and stable legs, `build apk`, `pub publish dry-run`, `ci-ok`.
-6. **Dry runs, clean tree, Flutter 3.41.0** (the floor):
+6. **Dry runs, clean tree, Flutter 3.50.0** (the floor):
    ```sh
    flutter pub get --enforce-lockfile
    flutter pub publish --dry-run              # the core: 0 warnings

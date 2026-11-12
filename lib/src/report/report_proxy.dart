@@ -94,10 +94,9 @@ final class ReportProxy {
     required this.id,
     required this.typeName,
     required this.deliveryId,
-    required String handle,
-    required BugseeBridgeHostApi host,
-  }) : _handle = handle,
-       _host = host;
+    required this._handle,
+    required this._host,
+  });
 
   /// The SDK's id of this report. Stable across a re-delivery.
   final String id;

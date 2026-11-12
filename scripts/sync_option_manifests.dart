@@ -77,9 +77,9 @@ Future<String> fetch(String url) async {
 
 Future<void> main(List<String> args) async {
   final root = File.fromUri(Platform.script).parent.parent.path;
-  final pins =
-      jsonDecode(File('$root/native-versions.json').readAsStringSync())
-          as Map<String, dynamic>;
+  final pins = jsonDecode(
+    File('$root/native-versions.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
   final config = pins['optionsManifest'] as Map<String, dynamic>;
   final check = args.contains('--check');
   var failed = false;

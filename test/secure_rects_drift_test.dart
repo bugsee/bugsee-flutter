@@ -6,10 +6,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-String code(String path) => File(path)
-    .readAsStringSync()
-    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+String code(String path) =>
+    File(path)
+        .readAsStringSync()
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .replaceAll(RegExp(r'//[^\n]*'), '');
 
 const java = 'android/src/main/java/com/bugsee/flutter';
 const objc = 'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper';

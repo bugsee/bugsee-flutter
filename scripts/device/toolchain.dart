@@ -146,6 +146,11 @@ class Toolchain {
 bool get debuggableRelease =>
     Platform.environment['BUGSEE_VERIFY_DEBUGGABLE_RELEASE'] == '1';
 
+/// The address the mock API binds and the harness talks to: loopback by default; the LAN address of
+/// the Mac for a physical iPhone (`BUGSEE_VERIFY_MOCK_BIND`, one address, never all interfaces).
+String get mockHost =>
+    Platform.environment['BUGSEE_VERIFY_MOCK_BIND'] ?? '127.0.0.1';
+
 /// The host the app's own `dart:io` request goes to in the network check. Bugsee's own traffic is never
 /// captured and is told apart BY HOST (not port), so it must differ from the endpoint's: on an emulator
 /// that is 10.0.2.2 against 127.0.0.1; on a phone both would be 127.0.0.1 (adb reverse), so `localhost`.

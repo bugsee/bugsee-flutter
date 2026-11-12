@@ -16,6 +16,7 @@ import 'android_scenarios.dart';
 import 'build.dart';
 import 'builds.dart';
 import 'ios_build.dart';
+import 'ios_physical.dart';
 import 'ios_scenarios.dart';
 import 'toolchain.dart';
 
@@ -40,7 +41,10 @@ Future<void> main(List<String> args) async {
   }
   final work = opt('--work') ?? '$root/build/device-verify';
   Directory(work).createSync(recursive: true);
-  final isIos = (args.first == 'build' ? args[1] : args.first) == 'ios';
+  final isIos = const {
+    'ios',
+    'ios-device',
+  }.contains(args.first == 'build' ? args[1] : args.first);
   // One port per platform, so both can run at once against their own mock API.
   final port = int.parse(opt('--port') ?? (isIos ? '8732' : '8731'));
   final tc = Toolchain.detect(root, work);
@@ -89,6 +93,19 @@ Future<void> main(List<String> args) async {
       stdout.writeln(b.describe('arm64-v8a'));
     }
     return;
+  }
+  if (platform == 'ios-device') {
+    exit(
+      await runIosDevice(
+        tc: tc,
+        udid: opt('--udid') ?? '',
+        port: port,
+        wanted: wanted,
+        reuse: args.contains('--reuse'),
+        allowDirty: args.contains('--allow-dirty'),
+        allowNotPossible: args.contains('--allow-not-possible'),
+      ),
+    );
   }
   if (platform == 'android') {
     exit(

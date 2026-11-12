@@ -31,6 +31,10 @@ const crashKinds = <String>[
   'java-main',
   'java-thread',
   'java-nested',
+  // iOS: an uncaught Objective-C exception on the main thread and on a worker, a Swift runtime trap.
+  'objc-main',
+  'objc-thread',
+  'swift-trap',
   // Dart: nothing dies; each reaches the installed handlers (or not, by design).
   'dart-sync-framework',
   'dart-async',
@@ -61,6 +65,12 @@ Future<void> crash(String kind) async {
       await _native.invokeMethod<void>('javaThread');
     case 'java-nested':
       await _native.invokeMethod<void>('nested');
+    case 'objc-main':
+      await _native.invokeMethod<void>('objcMain');
+    case 'objc-thread':
+      await _native.invokeMethod<void>('objcThread');
+    case 'swift-trap':
+      await _native.invokeMethod<void>('swiftTrap');
     case 'dart-sync-framework':
       // The framework's own error path: FlutterError.onError.
       FlutterError.reportError(

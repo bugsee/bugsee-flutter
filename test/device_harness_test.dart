@@ -837,9 +837,11 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
           expect(k.signal, isNotNull, reason: k.name);
         } else {
           expect(k.marker, isNotNull, reason: k.name);
-          final source = k.layer == CrashLayer.platform
+          final source = k.layer != CrashLayer.platform
+              ? 'example/lib/crash_lab.dart'
+              : k.platforms.contains('android')
               ? 'example/android/app/src/main/java/com/bugsee/bugsee_flutter_example/MainActivity.java'
-              : 'example/lib/crash_lab.dart';
+              : 'example/ios/Runner/AppDelegate.swift';
           // `verify-java-main` etc: the app throws the text the harness looks for.
           expect(
             File(source).readAsStringSync(),

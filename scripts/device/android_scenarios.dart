@@ -11,6 +11,7 @@ import 'build.dart';
 import 'builds.dart';
 import 'checks.dart';
 import 'core/bundle.dart';
+import 'core/crash_kinds.dart';
 import 'core/experiment.dart';
 import 'core/expectations.dart';
 import 'core/log_parsers.dart';
@@ -53,6 +54,9 @@ Future<int> runAndroid(
     'abi': abi,
     'density': '${await dev.currentDensity()}',
     'root': '$rooted',
+    // True: the release builds were made debuggable to be readable without root; they are not
+    // what a store ships (see toolchain.dart).
+    'releaseDebuggable': '$debuggableRelease',
   };
   final reporter = Reporter(
     'android',
@@ -134,6 +138,7 @@ Future<int> runAndroid(
     7: () => ctx.secureDensity(),
     8: () => ctx.hotRestart(),
     9: () => ctx.screenshotGap(),
+    10: () => ctx.crashMatrix(),
   };
   try {
     for (final e in scenarios.entries) {
@@ -248,6 +253,170 @@ class AndroidCtx {
     );
     return b;
   }
+
+  // ---- 10 -------------------------------------------------------------------------------------
+
+  /// Every layer's failures: native signals raised in-process, uncaught Java on the main thread, on a
+  /// worker and with a cause chain, and the Dart error routes. Fatal ones: the process must really die
+  /// (proved from logcat), and the NEXT launch must produce the recovered crash report.
+  Future<ScenarioResult>
+  crashMatrix() => runScenario(10, 'Crash and error matrix: native signals, Java, Dart routes', say, (
+    run,
+  ) async {
+    final b = await build('debug');
+    for (final k in crashKindTable.where((k) => k.fatal)) {
+      run.note('--- ${k.name} (${k.layer.name})');
+      await s.install(run, b);
+      final l = await s.launch(run, b);
+      await delay(5);
+      await dev.clearBundles();
+      await s.command('crash ${k.name}');
+      final gone = await until<bool>(
+        () async => (await dev.pid()) != l.pid ? true : null,
+        timeout: const Duration(seconds: 30),
+        every: const Duration(seconds: 1),
+      );
+      await delay(2);
+      final log = await dev.logcat();
+      final signal = parseFatalSignal(log, l.pid);
+      final fatalJava = RegExp(
+        r'FATAL EXCEPTION[^\n]*\n[^\n]*'
+        '${RegExp.escape(k.marker ?? '@')}',
+      ).hasMatch(log);
+      run.guard(
+        'event: the process died of ${k.layer == CrashLayer.native ? 'signal ${k.signal}' : 'an uncaught ${k.marker}'}',
+        [
+          if (gone != true) 'pid ${l.pid} is still running after 30 s',
+          if (k.layer == CrashLayer.native && signal == null)
+            'logcat has no "Fatal signal" for pid ${l.pid}',
+          if (k.layer == CrashLayer.native &&
+              signal != null &&
+              signal.number != k.signal)
+            'signal ${signal.number}, expected ${k.signal}',
+          if (k.layer == CrashLayer.platform && !fatalJava)
+            'logcat has no FATAL EXCEPTION naming ${k.marker}',
+        ],
+        'pid ${l.pid} gone; logcat: ${signal != null ? 'Fatal signal ${signal.number} (${signal.name})' : (fatalJava ? 'FATAL EXCEPTION ${k.marker}' : 'nothing')}',
+      );
+      await s.airplane(run, true);
+      final l2 = await s.launch(run, b);
+      final bundle = await s.newBundle(
+        where: (x) {
+          if (x.type != 'crash') return false;
+          final c = x.crash;
+          if (k.layer == CrashLayer.native) {
+            return (c?['signal'] as Map?)?['number'] == k.signal;
+          }
+          return c.toString().contains(k.marker!);
+        },
+        timeout: const Duration(seconds: 90),
+      );
+      await delay(2);
+      await s.airplane(run, false);
+      run.expect(
+        '[${k.name}] the next launch produced the recovered crash report',
+        bundle != null,
+        bundle == null
+            ? 'none after 90 s (pid ${l2.pid})'
+            : '${bundle.source} ${bundle.type}',
+      );
+      if (bundle == null) continue;
+      final crash = bundle.crash;
+      final types = bundle.entries.map((e) => e['type']).toList();
+      run.note(
+        '[${k.name}] crash.json keys ${crash?.keys.toList()}; exception_type=${crash?['exception_type']}; entries $types',
+      );
+      if (k.layer == CrashLayer.native) {
+        final sig = crash?['signal'] as Map?;
+        run.expect(
+          '[${k.name}] crash.json records signal ${k.signal} as native, with a minidump',
+          crash?['ndkCrash'] == true &&
+              sig?['number'] == k.signal &&
+              crash?['exception_type'] == 'native' &&
+              types.contains('minidump'),
+          'ndkCrash=${crash?['ndkCrash']} signal=$sig exception_type=${crash?['exception_type']} entries $types',
+        );
+      } else {
+        final text = crash.toString();
+        run.expect(
+          '[${k.name}] crash.json is a Java crash naming ${k.marker}${k.alsoContains.isEmpty ? '' : ' and ${k.alsoContains}'}',
+          crash?['ndkCrash'] != true &&
+              text.contains(k.marker!) &&
+              k.alsoContains.every(text.contains),
+          'ndkCrash=${crash?['ndkCrash']} exception_type=${crash?['exception_type']}',
+        );
+      }
+      run.expect(
+        '[${k.name}] crash.json uuid is the Gradle plugin build id of THIS apk',
+        crash?['uuid'] == b.buildUuid,
+        'bundle ${crash?['uuid']} apk ${b.buildUuid}',
+      );
+      final problems = (await s.expectation(
+        b.mode,
+      )).wrapperInReport(bundle.wrapper);
+      run.expect(
+        '[${k.name}] sdk.wrapper identity is on the recovered report',
+        problems.isEmpty,
+        problems.isEmpty ? jsonEncode(bundle.wrapper) : problems.join('; '),
+      );
+      run.expect(
+        '[${k.name}] report type crash, app build is the crashed build',
+        bundle.type == 'crash' && bundle.app['build'] == '${b.buildNumber}',
+        'type ${bundle.type}, build ${bundle.app['build']}',
+      );
+    }
+    // The Dart routes: nothing dies; each reaches the handlers installed by installErrorHandlers.
+    run.note('--- Dart routes');
+    await s.install(run, b);
+    await s.launch(run, b);
+    await delay(4);
+    for (final k in crashKindTable.where((k) => k.layer == CrashLayer.dart)) {
+      if (!k.expectReport) continue;
+      final bundle = await _product(
+        run,
+        k.name,
+        'crash ${k.name}',
+        where: (x) => x.crash != null && x.crash.toString().contains(k.marker!),
+      );
+      if (bundle == null) continue;
+      checkExceptionReport(
+        run,
+        k.name,
+        bundle,
+        carrierName: 'com.bugsee.flutter.FlutterManagedException',
+        unhandled: false,
+      );
+    }
+    for (final k in crashKindTable.where(
+      (k) => k.layer == CrashLayer.dart && !k.expectReport,
+    )) {
+      await s.command('crash ${k.name}');
+      final bundle = await s.newBundle(
+        where: (x) => x.crash != null && x.crash.toString().contains(k.marker!),
+        timeout: const Duration(seconds: 25),
+      );
+      // 9.2: an absence needs a positive control in the same setup.
+      final control = await _product(
+        run,
+        '${k.name} control',
+        'crash dart-async',
+        where: (x) =>
+            x.crash != null && x.crash.toString().contains('verify-dart-async'),
+      );
+      run.expect(
+        '[${k.name}] by design nothing reports an error in an isolate the app did not listen to (positive control: a Dart error right after DID)',
+        bundle == null && control != null,
+        bundle == null
+            ? 'no report in 25 s; control ${control != null ? 'arrived' : 'missing'}'
+            : 'a report appeared: ${bundle.summary}',
+      );
+    }
+    run.result.notCovered.addAll([
+      'ANR (detect.exit.not_responding) and hang detection: not triggered here',
+      'a Java crash during launch (early crash) and in the background',
+      'native crash symbolication (needs the unstripped libraries uploaded: a release build)',
+    ]);
+  });
 
   // ---- 1 --------------------------------------------------------------------------------------
 
@@ -1223,8 +1392,8 @@ class AndroidCtx {
         dev.serial,
         '-t',
         'lib/verify_main.dart',
-        '--dart-define=VERIFY_SERVER=10.0.2.2:${mock.port}',
-        '--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:${mock.port}',
+        '--dart-define=VERIFY_SERVER=$verifyHost:${mock.port}',
+        '--dart-define=BUGSEE_ENDPOINT=http://$verifyHost:${mock.port}',
       ],
       cwd: example,
       env: tc.buildEnv,

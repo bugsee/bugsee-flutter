@@ -36,6 +36,11 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Device verification only (scripts/device, doc/verification.md): a phone without root
+            // cannot read the private data of a non-debuggable app, so the harness may build the
+            // release type debuggable (still R8, obfuscation and the Gradle plugin). Never set in a
+            // normal build; the report says when it was.
+            isDebuggable = System.getenv("BUGSEE_VERIFY_DEBUGGABLE_RELEASE") == "1"
         }
     }
 }

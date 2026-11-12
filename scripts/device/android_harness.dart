@@ -91,6 +91,16 @@ class AndroidSession {
         '${build.name} is not debuggable and the emulator shell is not root: the app data cannot be read',
       );
     }
+    if (debuggableRelease && build.mode == 'release') {
+      // Asked for at build time: prove the build really is what the report will say it is.
+      run.guard(
+        'build: the release build is debuggable (BUGSEE_VERIFY_DEBUGGABLE_RELEASE)',
+        dev.useRunAs
+            ? []
+            : ['${build.name} is not debuggable although it was asked to be'],
+        '${build.name}: release, debuggable, via ${dev.via}',
+      );
+    }
     run.guard(
       'access: the app data is readable (${dev.via})',
       (await dev.inApp(['ls', dev.useRunAs ? '.' : dev.dataDir])).ok
@@ -262,9 +272,12 @@ class AndroidSession {
         if (signal == null) 'logcat has no "Fatal signal" for pid $pid',
         if (signal != null && signal!.number != 11) 'signal ${signal!.number}',
         if (alive == pid) 'pid $pid is still running',
-        if (exit == null) 'no ApplicationExitInfo for pid $pid',
-        if (exit != null && (!exit.isNativeCrash || exit.status != 11))
-          'exit record ${exit.reason} status ${exit.status}',
+        ...exitRecordProblems(
+          exit,
+          pid,
+          // A physical device may leave the status 0; the signal is proven by logcat above.
+          statusMayBeUnreported: !dev.serial.startsWith('emulator-'),
+        ),
       ],
       'killed pid $pid via ${dev.via}; logcat: Fatal signal ${signal?.number} (${signal?.name}), code ${signal?.code}; '
           'ApplicationExitInfo: reason=${exit?.reason} status=${exit?.status}',

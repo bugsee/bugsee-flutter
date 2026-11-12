@@ -137,3 +137,18 @@ class Toolchain {
     );
   }
 }
+
+/// `BUGSEE_VERIFY_DEBUGGABLE_RELEASE=1` while BUILDING: the release builds are made debuggable so a
+/// device without root can be read with `run-as`. Everything else about them is the release build
+/// (R8, `--obfuscate`, the Gradle plugin), but they are not what an app store ships, so a result
+/// taken with it says so (the report's `releaseDebuggable`) and the harness proves the build is
+/// debuggable when asked for it.
+bool get debuggableRelease =>
+    Platform.environment['BUGSEE_VERIFY_DEBUGGABLE_RELEASE'] == '1';
+
+/// Where the app reaches the host's mock API. The emulator's alias for the host is the default; a
+/// PHYSICAL device has none: set `BUGSEE_VERIFY_HOST=127.0.0.1` and the harness's `adb reverse`
+/// (it already forwards the port) carries it. Baked into the build, so a build made for one is
+/// not reusable for the other.
+String get verifyHost =>
+    Platform.environment['BUGSEE_VERIFY_HOST'] ?? '10.0.2.2';

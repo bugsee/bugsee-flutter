@@ -1,0 +1,49 @@
+import Flutter
+import UIKit
+
+@main
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SpikeApi") {
+      SpikeApiSetup.register(api: Impl(), registrar: registrar)
+      SpikeTriggerSetup.register(api: Trig(), registrar: registrar)
+      let ch = FlutterMethodChannel(name: "spike/chan", binaryMessenger: registrar.messenger())
+      ch.setMethodCallHandler { call, result in
+        switch call.method {
+        case "ping", "publishInts": result(nil)
+        case "echo": result(call.arguments)
+        case "thread": result(Thread.isMainThread ? "main" : Thread.current.description)
+        default: result(FlutterMethodNotImplemented)
+        }
+      }
+    }
+  }
+}
+
+private class Impl: SpikeApi {
+  func ping() throws {}
+  func echo(value: Int64) throws -> Int64 { value }
+  func publishInts(rects: [Int32]) throws {}
+  func publishList(rects: [Int64]) throws {}
+  func thread() throws -> String { Thread.isMainThread ? "main" : Thread.current.description }
+}
+
+private class Trig: SpikeTrigger {
+  func fire(name: String) throws {
+    let send = {
+      let t = DispatchTime.now().uptimeNanoseconds
+      let regs = SpikeEventsRegistrar.registeredSpikeEvents[SpikePigeonInternal.defaultInstanceName] ?? []
+      for r in regs { try? r.onEvent(event: Evt(name: "\(name)@\(Thread.isMainThread ? "main" : "bg")", data: nil)) }
+      NSLog("SPIKE native fire(\(name)) returned in \((DispatchTime.now().uptimeNanoseconds - t) / 1000) us regs=\(regs.count)")
+    }
+    if name.hasPrefix("worker") { DispatchQueue.global().async(execute: send) } else { send() }
+  }
+}

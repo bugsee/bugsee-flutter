@@ -1,0 +1,72 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'src/spike.g.dart';
+
+const _chan = MethodChannel('spike/chan');
+
+double _us(Stopwatch s, int n) => s.elapsedMicroseconds / n;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final out = StringBuffer();
+  void say(String l) {
+    out.writeln(l);
+    File('${Directory.systemTemp.path}/spike.txt').writeAsStringSync(out.toString());
+    // ignore: avoid_print
+    print('SPIKE $l');
+  }
+
+  say('A start');
+  final api = SpikeApi.createWithNativeInteropApi();
+  say('B api');
+  SpikeEvents.setUp(_Sink(say));
+  say('C setUp');
+  final trig = SpikeTrigger.createWithNativeInteropApi();
+  say('D trig');
+  say('firing worker');
+  await trig.fire('worker');
+  await Future<void>.delayed(const Duration(milliseconds: 500));
+  say('events after worker fire: ${_Sink.seen}');
+  final ints = Int32List.fromList(List.generate(64 * 4, (i) => i));
+  final list = List<int>.generate(64 * 4, (i) => i);
+  say('thread(native-interop)=${await api.thread()}');
+  say('thread(channel)=${await _chan.invokeMethod('thread')}');
+  const n = 2000;
+  for (var round = 0; round < 2; round++) {
+    Future<void> bench(String name, Future<void> Function() f) async {
+      for (var i = 0; i < 200; i++) {
+        await f();
+      }
+      final s = Stopwatch()..start();
+      for (var i = 0; i < n; i++) {
+        await f();
+      }
+      say('r$round $name ${_us(s, n).toStringAsFixed(1)} us/call');
+    }
+
+    await bench('chan ping', () async => _chan.invokeMethod('ping'));
+    await bench('chan echo', () async => _chan.invokeMethod('echo', 42));
+    await bench('chan publish256ints', () async => _chan.invokeMethod('publishInts', ints));
+    await bench('interop ping', () => api.ping());
+    await bench('interop echo', () => api.echo(42));
+    await bench('interop publishInts(Int32List 256)', () => api.publishInts(ints));
+    await bench('interop publishList(List<int> 256)', () => api.publishList(list));
+  }
+  say('DONE ${Platform.operatingSystem}');
+  File('${Directory.systemTemp.path}/spike.txt').writeAsStringSync(out.toString());
+  runApp(const SizedBox());
+}
+
+class _Sink implements SpikeEvents {
+  _Sink(this.say);
+  final void Function(String) say;
+  static final seen = <String>[];
+  @override
+  void onEvent(Evt event) {
+    seen.add(event.name);
+    say('Dart got ${event.name}');
+  }
+}

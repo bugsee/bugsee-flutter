@@ -24,6 +24,7 @@ The pages below go deeper.
 | [design-rules.md](design-rules.md) | The detailed invariants per area (secure rectangles, report handlers, view hierarchy, options, facade, network, logs, exceptions, attachments, feedback, harness) with the guards that hold them |
 | [workbook-conformance.md](workbook-conformance.md) | Each step, trap and minimum-viable-wrapper item of the wrapper workbook mapped to its implementation, guard and device scenario, with the gaps |
 | [verification.md](verification.md) | The device verification harness, its default guards, the environment, results per scenario, findings and what was not covered |
+| [direct-interop-spike.md](direct-interop-spike.md) | Whether to replace the Pigeon channel bridge with Direct Interop (Flutter 3.50): measurements on the phone and iPhone, findings, decision |
 | [../PLAN.md](../PLAN.md) | Project status, decisions, open questions, known gaps and the release checklist |
 | [../CHANGELOG.md](../CHANGELOG.md) | Release notes |
 | [../.github/CI.md](../.github/CI.md) | The CI jobs and check names, the option registry, bridge codegen, the pub workspace, branch protection |

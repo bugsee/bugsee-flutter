@@ -1,12 +1,13 @@
 // The loopback mock API (example/integration_test/support/mock_api.py) the apps talk to: it carries the
 // harness's commands to the verification app and the app's events back, and stores every bundle an SDK
-// uploads. It binds 127.0.0.1 only; the Android emulator reaches it as 10.0.2.2, the iOS simulator as
+// uploads. It binds 127.0.0.1 only (one LAN address for a physical iPhone, `mockHost`); the Android emulator reaches it as 10.0.2.2, the iOS simulator as
 // localhost.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'shell.dart';
+import 'toolchain.dart';
 
 class Mock {
   Mock._(this.port, this.child, this.dumpDir, this.logFile);
@@ -25,11 +26,11 @@ class Mock {
     // The port must be free: a stray server on it (a manual run, another harness) would answer the
     // readiness probe and the harness would talk to the wrong one.
     try {
-      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+      final probe = await ServerSocket.bind(InternetAddress(mockHost), port);
       await probe.close();
     } on SocketException {
       throw StateError(
-        '127.0.0.1:$port is already in use: stop whatever listens there, or pass --port',
+        '$mockHost:$port is already in use: stop whatever listens there, or pass --port',
       );
     }
     // iOS bundles are zstd zips (method 93), which Python's zipfile reads from 3.14 on: with an older
@@ -60,6 +61,7 @@ class Mock {
         'ISSUE_OK': '1',
         'UPLOAD_STATUS': '$uploadStatus',
         'DUMP_DIR': dump,
+        'MOCK_BIND': mockHost,
       },
     );
     final mock = Mock._(port, child, dump, log);
@@ -71,7 +73,7 @@ class Mock {
     if (up == null) {
       await child.stop();
       throw StateError(
-        'the mock API did not start on 127.0.0.1:$port: ${child.output}',
+        'the mock API did not start on $mockHost:$port: ${child.output}',
       );
     }
     return mock;
@@ -81,7 +83,7 @@ class Mock {
     final c = HttpClient();
     try {
       final r = await (await c.getUrl(
-        Uri.parse('http://127.0.0.1:$port$path'),
+        Uri.parse('http://$mockHost:$port$path'),
       )).close();
       return await utf8.decodeStream(r);
     } on Object {
@@ -94,7 +96,7 @@ class Mock {
   Future<void> _post(String path, [String body = '']) async {
     final c = HttpClient();
     try {
-      final r = await c.postUrl(Uri.parse('http://127.0.0.1:$port$path'));
+      final r = await c.postUrl(Uri.parse('http://$mockHost:$port$path'));
       final bytes = utf8.encode(body);
       r.contentLength = bytes.length;
       r.add(bytes);
@@ -145,7 +147,7 @@ class Mock {
     try {
       final r = await (await c.getUrl(
         Uri.parse(
-          'http://127.0.0.1:$port/__plain?file=${Uri.encodeQueryComponent(name)}',
+          'http://$mockHost:$port/__plain?file=${Uri.encodeQueryComponent(name)}',
         ),
       )).close();
       if (r.statusCode != 200) return null;

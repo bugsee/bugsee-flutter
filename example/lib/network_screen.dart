@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
+// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
 import 'package:flutter/material.dart';
 
 /// Network capture (`Bugsee.installNetworkCapture`, called in `main`): ordinary `dart:io` requests

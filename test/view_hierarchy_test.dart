@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:bugsee_flutter/src/secure/bugsee_secure_view.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
+// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';

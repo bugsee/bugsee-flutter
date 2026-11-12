@@ -129,6 +129,12 @@ Android builds need JDK 17 or 21 (`native-versions.json` `android.jdk`). CI uses
 JDK 25 (Android Studio's bundled JBR) breaks the Gradle 8.14 in the Flutter template.
 Locally, point `JAVA_HOME` and `GRADLE_OPTS=-Dorg.gradle.java.home=...` at a 17 or 21 JDK.
 
+The example's build is one setup for both channels: Gradle 9.3.1, Android Gradle Plugin 9.1.1, no `kotlin-android` plugin (Flutter 3.50 requires
+AGP 9; the 3.41 floor builds on it too). `example/android/gradle.properties` keeps the two opt-outs Flutter's migrator writes
+(`android.builtInKotlin=false`, `android.newDsl=false`) and `android.uniquePackageNames=false`: the floor's `integration_test` pulls two espresso
+artifacts with one namespace, which AGP 9 refuses. The example and its tests import `package:flutter/material.dart` with an `ignore` for
+`deprecated_member_use`: its replacement `material_ui` needs Flutter 3.47, the floor is 3.41. Drop both when the floor moves.
+
 ## Runner capacity
 
 The `test` job uses GitHub-hosted `macos-latest`, the scarcest and slowest runner (two

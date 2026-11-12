@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
+// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
 import 'package:flutter/material.dart';
 
 import 'attachments_screen.dart';

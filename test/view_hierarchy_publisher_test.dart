@@ -6,6 +6,7 @@ import 'package:bugsee_flutter/src/view_hierarchy/hierarchy_builder.dart';
 import 'package:bugsee_flutter/src/view_hierarchy/publisher.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show PlatformException;
+// ignore: deprecated_member_use -- material_ui needs Flutter 3.47, the floor is 3.41
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

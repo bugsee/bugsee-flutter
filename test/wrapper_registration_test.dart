@@ -183,4 +183,51 @@ void main() {
       expect(manifest, contains('"BugseeFlutterWrapper"\n'));
     });
   });
+
+  group('Android startup hold (SDK 7.5.x wrapper-hold)', () {
+    test('the manifest asks for it, the code ends it, and a cap bounds it', () {
+      expect(
+        live,
+        contains(
+          RegExp(
+            r'<meta-data\s+android:name="com\.bugsee\.wrapper-hold"\s+android:value="true"\s*/>',
+          ),
+        ),
+      );
+      final hold = code(
+        'android/src/main/java/com/bugsee/flutter/WrapperHold.java',
+      );
+      // It ends through the SDK's channel, never by a blocking wait.
+      expect(hold, contains('channel.onWrapperReady()'));
+      expect(hold, isNot(contains('.wait(')));
+      expect(hold, isNot(contains('Thread.sleep')));
+      // Started at process start, by the provider that registers the wrapper.
+      expect(
+        code(
+          'android/src/main/java/com/bugsee/flutter/FlutterWrapperInitProvider.java',
+        ),
+        contains('WrapperHold.shared().start()'),
+      );
+      // Ended by the first displayed Flutter frame.
+      expect(
+        code(
+          'android/src/main/java/com/bugsee/flutter/BugseeFlutterPlugin.java',
+        ),
+        contains('WrapperHold.shared().uiDisplayed()'),
+      );
+      // Both caps exist and the one that counts from the engine is the shorter.
+      int ms(String name) => int.parse(
+        RegExp(
+          '$name\\s*=\\s*([\\d_]+)',
+        ).firstMatch(hold)!.group(1)!.replaceAll('_', ''),
+      );
+      expect(ms('CAP_MS'), lessThan(ms('PROCESS_CAP_MS')));
+      expect(
+        code(
+          'android/src/main/java/com/bugsee/flutter/BugseeFlutterPlugin.java',
+        ),
+        contains('WrapperHold.shared().engineAttached()'),
+      );
+    });
+  });
 }

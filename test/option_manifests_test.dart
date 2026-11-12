@@ -75,8 +75,8 @@ void main() {
     test('a manifest for another version, platform or format is refused', () {
       final text = File('$dir/android.json').readAsStringSync();
       expect(
-        sync.manifestProblems(text, sdk: 'android', version: '7.5.1'),
-        contains(contains('sdkVersion is 7.5.0, the pin is 7.5.1')),
+        sync.manifestProblems(text, sdk: 'android', version: '7.5.0'),
+        contains(contains('sdkVersion is 7.5.1, the pin is 7.5.0')),
       );
       expect(
         sync.manifestProblems(text, sdk: 'ios', version: '7.5.0'),

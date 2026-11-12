@@ -17,9 +17,9 @@ errors.
 | | |
 |---|---|
 | Flutter / Dart | 3.41.0 or newer / 3.11 or newer |
-| Android | `minSdk` 21; JDK 17 or 21 for the build (JDK 25 breaks the Gradle 8.14 of the Flutter template); the Bugsee Gradle plugin **4.1.0** (mandatory, see below) |
+| Android | `minSdk` 21; JDK 17 or 21 for the build (JDK 25 breaks the Gradle 8.14 of the Flutter template); the Bugsee Gradle plugin **4.1.1** (mandatory, see below) |
 | iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
-| Native SDKs | Android `7.5.0`, iOS `7.0.1` (pinned in [`native-versions.json`](native-versions.json)) |
+| Native SDKs | Android `7.5.1`, iOS `7.0.1` (pinned in [`native-versions.json`](native-versions.json)) |
 | Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
 
 The Flutter floor is 3.41.0 because the plugin is SwiftPM-only: `flutter pub get` fails on Linux and Windows with
@@ -56,7 +56,7 @@ while the core is unpublished.
        id("dev.flutter.flutter-plugin-loader") version "1.0.0"
        id("com.android.application") version "8.11.1" apply false
        id("org.jetbrains.kotlin.android") version "2.2.20" apply false
-       id("com.bugsee.android.gradle") version "4.1.0" apply false   // the version this release is tested with
+       id("com.bugsee.android.gradle") version "4.1.1" apply false   // the version this release is tested with
    }
    ```
 
@@ -71,13 +71,13 @@ while the core is unpublished.
    }
    ```
 
-   (Groovy: `id 'com.bugsee.android.gradle' version '4.1.0' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
+   (Groovy: `id 'com.bugsee.android.gradle' version '4.1.1' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
 
 2. Build with a JDK 17 or 21 (`JAVA_HOME`, and `org.gradle.java.home` in `gradle.properties` if Android Studio's bundled JDK is 25).
 
    Plugin 4.1.0 declares its task ordering itself ([bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33),
    fixed): the ordering snippet that 4.0.x needed on Gradle 8.14 is gone (debug, release and profile builds of the example were measured
-   without it). On an older plugin the build fails Gradle task validation on `injectBugsee<Variant>BuildId`: use 4.1.0.
+   without it). On an older plugin the build fails Gradle task validation on `injectBugsee<Variant>BuildId`: use 4.1.1.
 
 Nothing else is needed: the plugin declares `bugsee-android` **and** the separate `bugsee-android-ndk` artefact (native crash
 detection), registers its wrapper from a content provider that runs before the SDK can launch, and ships consumer ProGuard
@@ -378,9 +378,9 @@ Know these limits:
 
 | Symptom | Cause and fix |
 |---|---|
-| Android build fails Gradle task validation on `injectBugsee...BuildId` | The Gradle plugin is older than 4.1.0: use 4.1.0 (4.0.x needed an ordering workaround, `mustRunAfter("copyFlutterAssets<Variant>")` on each `injectBugsee<Variant>BuildId` task) |
+| Android build fails Gradle task validation on `injectBugsee...BuildId` | The Gradle plugin is older than 4.1.0: use 4.1.1 (4.0.x needed an ordering workaround, `mustRunAfter("copyFlutterAssets<Variant>")` on each `injectBugsee<Variant>BuildId` task) |
 | No native crashes on Android, build green | The `bugsee-android-ndk` artefact is not on the classpath (this plugin declares it: check `./gradlew :app:dependencies \| grep bugsee-android-ndk`) or `detect.crash-ndk` is off |
-| Android extensions (e.g. the feedback chat) silently never register | The Gradle plugin is older than 4.0.7 (4.0.6 strips the extension providers and injects nothing): use 4.1.0 |
+| Android extensions (e.g. the feedback chat) silently never register | The Gradle plugin is older than 4.0.7 (4.0.6 strips the extension providers and injects nothing): use 4.1.1 |
 | `Bugsee.launch` answers `alreadyRunning` and options are ignored | Android auto-init: the manifest has `com.bugsee.app-token`; see "Launching twice" |
 | Wrapper identity missing from a report recovered after a crash | The wrapper must be registered natively before the SDK launches, which this plugin does from a content provider (initOrder 200). Do not add a provider of your own named `Bugsee<Anything>InitProvider`: the Gradle plugin deletes it from the APK |
 | `flutter pub get` fails with "only Swift Package Manager compatible" | Flutter older than 3.41.0 |

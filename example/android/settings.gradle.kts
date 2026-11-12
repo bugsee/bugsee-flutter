@@ -24,7 +24,7 @@ plugins {
     // Mandatory for Android 7.x and not autolinkable: the app applies it. Version
     // is the pin in ../../native-versions.json (android.gradlePlugin); the drift
     // guard asserts they agree.
-    id("com.bugsee.android.gradle") version "4.1.0" apply false
+    id("com.bugsee.android.gradle") version "4.1.1" apply false
 }
 
 include(":app")

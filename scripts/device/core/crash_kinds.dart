@@ -90,12 +90,9 @@ const crashKindTable = <CrashKind>[
     marker: 'verify-objc-thread',
     platforms: {'ios'},
   ),
-  CrashKind(
-    'swift-trap',
-    CrashLayer.platform,
-    marker: 'verify-swift-trap',
-    platforms: {'ios'},
-  ),
+  // A Swift runtime trap (`fatalError`) is a SIGTRAP, not an exception: the report holds the signal and
+  // the stack, not the message (which Swift prints to stderr), so there is no marker to look for.
+  CrashKind('swift-trap', CrashLayer.native, signal: 5, platforms: {'ios'}),
   CrashKind(
     'dart-sync-framework',
     CrashLayer.dart,

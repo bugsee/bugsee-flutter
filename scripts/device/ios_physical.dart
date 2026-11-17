@@ -127,7 +127,16 @@ Future<int> runIosDevice({
     allowNotPossible: allowNotPossible,
   );
   final say = reporter.say;
-  final mock = await Mock.start(tc.repoRoot, tc.workDir, port);
+  // The recovered crash report is ACCEPTED (200): a refused one stays pending in the SDK, and a pending
+  // report makes iOS stop a later launch of the same install (CLAUDE.md), which would end every kind
+  // after the first as INVALID. The LAN address is passed here only: no other run leaves the loopback.
+  final mock = await Mock.start(
+    tc.repoRoot,
+    tc.workDir,
+    port,
+    host: mockHost,
+    uploadStatus: 200,
+  );
   final app = '${tc.repoRoot}/example/build/ios/iphoneos/Runner.app';
   try {
     if (!(reuse && Directory(app).existsSync())) {
@@ -178,6 +187,25 @@ class _Ctx {
   final String app;
   final void Function(String) say;
   final Set<String> _seen = {};
+  final List<Child> _live = [];
+
+  /// Stops every console child that is still running and removes the app: a guard that fails in the
+  /// middle of the matrix must not leave `devicectl` processes, a running app or an install behind.
+  Future<void> cleanup() async {
+    for (final c in _live) {
+      try {
+        await c.stop();
+      } on Object {
+        // already gone
+      }
+    }
+    _live.clear();
+    try {
+      await dev.uninstall();
+    } on Object {
+      // not installed
+    }
+  }
 
   Future<Bundle?> newBundle({
     bool Function(Bundle)? where,
@@ -226,6 +254,7 @@ class _Ctx {
   Future<Child> launch(Run run, {required bool first}) async {
     await mock.reset();
     final child = await dev.launch();
+    _live.add(child);
     if (first) {
       say(
         '  >>> the iPhone shows "Allow Bugsee... to find devices on your local network": tap ALLOW within 3 minutes',
@@ -239,7 +268,7 @@ class _Ctx {
       'SDK launched',
       launched == null
           ? [
-              'no launch event reached the mock (Local Network not allowed, or the Mac is not on the phone\'s network)',
+              'no launch event reached the mock (Local Network not allowed, or the Mac is not on the phone\'s network, or a report still pending from the previous kind stopped this launch)',
             ]
           : launched['result'] == 'launched'
           ? []
@@ -261,64 +290,75 @@ class _Ctx {
         r.ok ? [] : ['install failed: ${r.stdout}\n${r.stderr}'],
         'devicectl install ${app.split('/').last}',
       );
-      var first = true;
-      final seenBanner = <String>{};
-      for (final k in crashKindTable.where(
-        (k) => k.fatal && k.platforms.contains('ios'),
-      )) {
-        run.note('--- ${k.name} (${k.layer.name})');
-        final c1 = await launch(run, first: first);
-        first = false;
-        await delay(5);
-        await mock.command('crash ${k.name}');
-        final code = await c1.process.exitCode.timeout(
-          const Duration(seconds: 45),
-          onTimeout: () => -999,
-        );
-        final out = c1.output.toString();
-        run.guard(
-          'event: the process ended after crash ${k.name}',
-          code == -999 ? ['the app is still running after 45 s'] : [],
-          'devicectl exit $code; last console lines: ${out.split('\n').where((l) => l.trim().isNotEmpty).toList().reversed.take(3).toList().reversed.join(' | ')}',
-        );
-        final banner = parseIosBanner(out);
-        if (banner != null) seenBanner.add('${banner.version} ${banner.build}');
-        final c2 = await launch(run, first: false);
-        final bundle = await newBundle(
-          where: (x) => x.type == 'crash',
-          timeout: const Duration(seconds: 120),
-        );
-        run.expect(
-          '[${k.name}] the next launch produced the recovered crash report',
-          bundle != null,
-          bundle == null
-              ? 'none in 120 s'
-              : '${bundle.source} ${bundle.type} "${bundle.summary}"',
-        );
-        if (bundle != null) {
-          final crash = bundle.crash;
-          final text = jsonEncode(crash ?? bundle.request);
-          run.note(
-            '[${k.name}] crash.json keys ${crash?.keys.toList()}; entries ${bundle.entries.map((e) => e['type']).toList()}',
+      try {
+        var first = true;
+        final seenBanner = <String>{};
+        for (final k in crashKindTable.where(
+          (k) => k.fatal && k.platforms.contains('ios'),
+        )) {
+          run.note('--- ${k.name} (${k.layer.name})');
+          final c1 = await launch(run, first: first);
+          first = false;
+          await delay(5);
+          await mock.command('crash ${k.name}');
+          final code = await c1.process.exitCode.timeout(
+            const Duration(seconds: 45),
+            onTimeout: () => -999,
           );
-          run.note(
-            '[${k.name}] sdk ${jsonEncode(bundle.sdk)}; summary "${bundle.summary}"; excerpt ${text.substring(0, text.length < 400 ? text.length : 400)}',
+          final out = c1.output.toString();
+          run.guard(
+            'event: the process ended after crash ${k.name}',
+            code == -999 ? ['the app is still running after 45 s'] : [],
+            'devicectl exit $code; last console lines: ${out.split('\n').where((l) => l.trim().isNotEmpty).toList().reversed.take(3).toList().reversed.join(' | ')}',
           );
-          if (k.marker != null) {
-            run.expect(
-              '[${k.name}] the report names ${k.marker}',
-              text.contains(k.marker!) ||
-                  jsonEncode(bundle.request).contains(k.marker!),
-              'looked in crash.json and the request',
-            );
+          final banner = parseIosBanner(out);
+          if (banner != null) {
+            seenBanner.add('${banner.version} ${banner.build}');
           }
+          final c2 = await launch(run, first: false);
+          final bundle = await newBundle(
+            where: (x) => x.type == 'crash',
+            timeout: const Duration(seconds: 120),
+          );
+          run.expect(
+            '[${k.name}] the next launch produced the recovered crash report',
+            bundle != null,
+            bundle == null
+                ? 'none in 120 s'
+                : '${bundle.source} ${bundle.type} "${bundle.summary}"',
+          );
+          if (bundle != null) {
+            final crash = bundle.crash;
+            final text = jsonEncode(crash ?? bundle.request);
+            run.note(
+              '[${k.name}] crash.json keys ${crash?.keys.toList()}; entries ${bundle.entries.map((e) => e['type']).toList()}',
+            );
+            run.note(
+              '[${k.name}] sdk ${jsonEncode(bundle.sdk)}; summary "${bundle.summary}"; excerpt ${text.substring(0, text.length < 400 ? text.length : 400)}',
+            );
+            if (k.layer == CrashLayer.native) {
+              // Measured, not asserted, until a first real report shows what iOS records.
+              run.note(
+                '[${k.name}] the report says signal ${jsonEncode((crash?['signal'] as Map?)?['number'])}, the kind expects ${k.signal}',
+              );
+            }
+            if (k.marker != null) {
+              run.expect(
+                '[${k.name}] the report names ${k.marker}',
+                text.contains(k.marker!) ||
+                    jsonEncode(bundle.request).contains(k.marker!),
+                'looked in crash.json and the request',
+              );
+            }
+          }
+          await c2.stop();
+          await mock.reset();
+          _seen.clear();
         }
-        await c2.stop();
-        await mock.reset();
-        _seen.clear();
+        run.note('console banners seen: $seenBanner');
+      } finally {
+        await cleanup();
       }
-      run.note('console banners seen: $seenBanner');
-      await dev.uninstall();
       run.result.notCovered.addAll([
         'Dart routes on iOS (run on the simulator by scenarios 4 and 8)',
         'symbolication of the iOS report (needs the dSYM uploaded)',

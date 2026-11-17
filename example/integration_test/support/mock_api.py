@@ -50,8 +50,16 @@ def bundles():
         out.append({'file': os.path.basename(path), 'entries': entries, 'request': request, 'manifest': manifest})
     return out
 
+MAX_BODY = 256 * 1024 * 1024
+
 class H(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
+    def _too_large(self):
+        self.send_response(413)
+        self.send_header('content-length', '0')
+        self.send_header('connection', 'close')
+        self.end_headers()
+        self.close_connection = True
     def _do(self):
         if (self.headers.get('transfer-encoding') or '').lower() == 'chunked':
             body = b''
@@ -60,10 +68,14 @@ class H(BaseHTTPRequestHandler):
                 if size == 0:
                     self.rfile.readline()
                     break
+                if len(body) + size > MAX_BODY:
+                    return self._too_large()
                 body += self.rfile.read(size)
                 self.rfile.readline()
         else:
             n = int(self.headers.get('content-length') or 0)
+            if n > MAX_BODY:
+                return self._too_large()
             body = self.rfile.read(n) if n else b''
         path = self.path.split('?')[0]
         with open(LOG, 'a') as f:
@@ -123,8 +135,10 @@ class H(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = do_PATCH = _do
     def log_message(self, *a): pass
 
-# Loopback only: the server stores whatever is PUT to it. The Android emulator reaches it as 10.0.2.2 and
-# the iOS simulator as localhost, both of which arrive on the loopback interface of the host.
-# Loopback unless told otherwise: a PHYSICAL iPhone reaches the Mac only over the LAN, so the device
-# harness may bind the one LAN address it prints (MOCK_BIND), never all interfaces.
+# The server stores whatever is PUT to it and obeys the commands it is POSTed, with no authentication.
+# Loopback by default: the Android emulator reaches it as 10.0.2.2 and the iOS simulator as localhost,
+# both of which arrive on the loopback interface of the host. A PHYSICAL iPhone reaches the Mac only over
+# the LAN, so the device harness may bind the one LAN address it is given (MOCK_BIND), never all
+# interfaces: any host on that network can then queue commands (`crash`, `net <url>`), forge events
+# and uploads and wipe the evidence, so use it on a network you trust. Bodies are capped (MAX_BODY).
 ThreadingHTTPServer((os.environ.get('MOCK_BIND', '127.0.0.1'), int(sys.argv[1])), H).serve_forever()

@@ -26,7 +26,11 @@ class Toolchain {
   static Toolchain detect(String repoRoot, String workDir) {
     final env = Platform.environment;
     final home = env['HOME'] ?? '';
-    final fvm = '$home/fvm/versions/3.41.0/bin/flutter';
+    // The floor of native-versions.json (flutter.min) under fvm, the version the harness is pinned to.
+    final floor = (jsonDecode(
+      File('$repoRoot/native-versions.json').readAsStringSync(),
+    ) as Map)['flutter']['min'];
+    final fvm = '$home/fvm/versions/$floor/bin/flutter';
     final flutter =
         env['VERIFY_FLUTTER'] ?? (File(fvm).existsSync() ? fvm : 'flutter');
     final androidHome =

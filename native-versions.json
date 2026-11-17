@@ -8,9 +8,9 @@
   "android": {
     "sdk": "7.6.0",
     "gradlePlugin": "4.1.1",
-    "sdkBuild": "2a88ea7fb",
+    "sdkBuild": "2a88ea7fbf",
     "minSdk": 21,
-    "provenance": "Maven Central latest, 2026-11-17 (moved from 7.5.1; the plugin stays 4.1.1, the latest, tag v4.1.1). 7.6.0 changes behaviour, not the wrapper SPI: ReportingTriggerByShake and ReportingTriggerByNotification default to false, the HttpURLConnection response body arrives as a later event, the binary and JSON serializers and the logcat reader are hardened. Gradle plugin must be >= 4.0.7 (workbook 1.4). sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.6.0 [2a88ea7fb]`, tag v7.6.0; read from the tag, not yet from a run): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
+    "provenance": "Maven Central latest, 2026-11-17 (moved from 7.5.1; the plugin stays 4.1.1, the latest, tag v4.1.1). 7.6.0 changes behaviour, not the wrapper SPI: ReportingTriggerByShake and ReportingTriggerByNotification default to false, the HttpURLConnection response body arrives as a later event, the binary and JSON serializers and the logcat reader are hardened. Gradle plugin must be >= 4.0.7 (workbook 1.4). sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.6.0 [2a88ea7fbf]`: 10 characters, the tag v7.6.0 is 2a88ea7fb; read from a run on a physical phone, 2026-11-17): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
     "jdk": {
       "supported": [
         17,

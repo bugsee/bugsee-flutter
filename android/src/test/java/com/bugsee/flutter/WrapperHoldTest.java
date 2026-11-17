@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-/** The startup hold must end on the first frame and can never outlive a runtime that cannot end it. */
+/** The startup hold ends on the first frame or by a cap that makes the wrapper try to release it; only a delivered signal ends it. */
 public class WrapperHoldTest {
 
     /** A virtual clock: tasks run in due order when time advances. */

@@ -16,7 +16,7 @@
         17,
         21
       ],
-      "provenance": "Gradle 8.14 in the Flutter template cannot parse JDK 25 (Android Studio's bundled JBR); use 17 or 21."
+      "provenance": "The supported set is what CI runs (Zulu 21) and the SDK documents. Gradle 8.14 (the old Flutter template) could not parse JDK 25; the example on Gradle 9.3.1 built a debug APK with JDK 25 (measured 2026-11-17), which does not make 25 supported."
     }
   },
   "ios": {
@@ -38,7 +38,7 @@
   },
   "pigeon": {
     "version": "29.0.7",
-    "provenance": "pub.dev, published 2026-10-07 (latest at the time was 29.0.11, 2026-10-20); needs Dart ^3.11.0. Not a dependency of the plugin (it requires meta >=1.18, Flutter 3.41.0 ships 1.17.0): it runs from the pure-Dart package in pigeons/, locked by pigeons/pubspec.lock."
+    "provenance": "pub.dev, published 2026-10-07 (latest at the time was 29.0.11, 2026-10-20); needs Dart ^3.11.0. Not a dependency of the plugin (it requires meta >=1.18; Flutter 3.41.0, the floor when this was decided, shipped 1.17.0, the 3.50.0 floor ships 1.19.0, so it could be a dev_dependency now and has not been moved): it runs from the pure-Dart package in pigeons/, locked by pigeons/pubspec.lock."
   },
   "optionsManifest": {
     "urlTemplate": "https://download.bugsee.com/sdk/options/{sdk}/{version}.json",

@@ -3,9 +3,9 @@
 // `--check` verifies the committed files are current). Nothing here is public
 // API: the generated Dart is not exported from package:bugsee_flutter.
 //
-// Run from this directory's package (pigeons/pubspec.yaml pins pigeon, which
-// cannot be a dependency of the plugin itself: it needs a newer `meta` than
-// Flutter 3.41.0 ships).
+// Run from this directory's package (pigeons/pubspec.yaml pins pigeon, kept out of
+// the plugin's dependencies: it needed a newer `meta` than Flutter 3.41.0 shipped; the
+// 3.50.0 floor ships meta 1.19.0, so that reason is gone and nothing moved yet).
 import 'package:pigeon/pigeon.dart';
 
 @ConfigurePigeon(

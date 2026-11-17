@@ -37,7 +37,7 @@ class Toolchain {
         env['ANDROID_HOME'] ??
         env['ANDROID_SDK_ROOT'] ??
         '$home/Library/Android/sdk';
-    // Gradle 8.14 (the Flutter template's) cannot read JDK 25: 17 or 21 only (native-versions.json).
+    // 17 or 21 only (native-versions.json android.jdk): what CI runs and the SDK documents.
     var java = env['VERIFY_JAVA_HOME'] ?? env['JAVA_HOME'];
     if (java == null || !_javaOk(java)) {
       final r = Process.runSync('/usr/libexec/java_home', ['-v', '21']);

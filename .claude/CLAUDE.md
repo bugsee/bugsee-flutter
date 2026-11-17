@@ -18,7 +18,7 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
   `test/native_versions_test.dart`. Do not hardcode a version elsewhere; update the guard when CI content changes.
 - iOS is SwiftPM-only. There is deliberately no podspec (Bugsee publishes no pod). CI runs on macOS so SwiftPM can be enabled. Do not add a podspec.
 - Flutter floor is 3.50.0 / Dart 3.14 (moved from 3.41.0 for the 10.0 major: Direct Interop, AGP 9, `material_ui`; PLAN.md D5). The SwiftPM-only plugin needs 3.41.0 at least.
-- Android builds need JDK 17 or 21. JDK 25 breaks the Gradle version in use. The app applies Bugsee Gradle plugin 4.1.0 (mandatory).
+- Android builds need JDK 17 or 21. JDK 25 is not in the supported set (the example built with it, unsupported). The app applies Bugsee Gradle plugin 4.1.0 (mandatory).
 - The Android initialization provider must never be named `Bugsee*InitProvider` (the Gradle plugin deletes it).
 - The wrapper type (`flutter`) and version (pubspec `version:`) are repeated in Dart, Android and iOS because native registers before Dart
   exists; `test/wrapper_identity_test.dart` compares every copy. Bump the iOS `BGSFlutterWrapper.m`, Dart `wrapper_identity.dart` and the

@@ -17,7 +17,7 @@ errors.
 | | |
 |---|---|
 | Flutter / Dart | 3.50.0 or newer / 3.14 or newer |
-| Android | `minSdk` 21; JDK 17 or 21 for the build (JDK 25 breaks the Gradle 8.14 of the Flutter template); the Bugsee Gradle plugin **4.1.0** (mandatory, see below) |
+| Android | `minSdk` 21; JDK 17 or 21 for the build (what CI runs and the SDK documents; the example also built a debug APK with JDK 25 on Gradle 9.3.1, measured, not a supported set); the Bugsee Gradle plugin **4.1.0** (mandatory, see below) |
 | iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
 | Native SDKs | Android `7.5.0`, iOS `7.0.1` (pinned in [`native-versions.json`](native-versions.json)) |
 | Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
@@ -54,8 +54,7 @@ while the core is unpublished.
    ```kotlin
    plugins {
        id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-       id("com.android.application") version "8.11.1" apply false
-       id("org.jetbrains.kotlin.android") version "2.2.20" apply false
+       id("com.android.application") version "9.1.1" apply false   // Flutter 3.50 requires AGP 9
        id("com.bugsee.android.gradle") version "4.1.0" apply false   // the version this release is tested with
    }
    ```
@@ -65,7 +64,6 @@ while the core is unpublished.
    ```kotlin
    plugins {
        id("com.android.application")
-       id("kotlin-android")
        id("dev.flutter.flutter-gradle-plugin")
        id("com.bugsee.android.gradle")
    }
@@ -73,10 +71,10 @@ while the core is unpublished.
 
    (Groovy: `id 'com.bugsee.android.gradle' version '4.1.0' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
 
-2. Build with a JDK 17 or 21 (`JAVA_HOME`, and `org.gradle.java.home` in `gradle.properties` if Android Studio's bundled JDK is 25).
+2. Build with a JDK 17 or 21 (`JAVA_HOME`, and `org.gradle.java.home` in `gradle.properties` to pin it; JDK 25 is not part of the supported set).
 
    Plugin 4.1.0 declares its task ordering itself ([bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33),
-   fixed): the ordering snippet that 4.0.x needed on Gradle 8.14 is gone (debug, release and profile builds of the example were measured
+   fixed): the ordering snippet that 4.0.x needed on Gradle 8.14 (the old Flutter template) is gone (debug, release and profile builds of the example were measured
    without it). On an older plugin the build fails Gradle task validation on `injectBugsee<Variant>BuildId`: use 4.1.0.
 
 Nothing else is needed: the plugin declares `bugsee-android` **and** the separate `bugsee-android-ndk` artefact (native crash
@@ -385,7 +383,7 @@ Know these limits:
 | Wrapper identity missing from a report recovered after a crash | The wrapper must be registered natively before the SDK launches, which this plugin does from a content provider (initOrder 200). Do not add a provider of your own named `Bugsee<Anything>InitProvider`: the Gradle plugin deletes it from the APK |
 | `flutter pub get` fails with "only Swift Package Manager compatible" | Flutter older than 3.50.0 (3.41.0 for the SwiftPM check alone) |
 | iOS: package resolution or deployment target error | Raise the deployment target to 15.0; run `flutter config --enable-swift-package-manager` where it is not the default |
-| Gradle cannot parse the JDK version | JDK 25 (Android Studio's bundled JBR): use 17 or 21 |
+| Gradle cannot parse the JDK version | A JDK newer than the Gradle in use understands: use 17 or 21 |
 | Black Android report screenshot | Android SDK older than 7.5.0 (bugsee-android#316: it skipped Flutter's default `SurfaceView`); 7.5.0 captures it, with the secure regions redacted (measured) |
 | Events, traces, logs, notifications or uploads vanish | They are dropped before `launch` and after `stop`; nothing is queued |
 | Dart errors are not reported | `installErrorHandlers` was called before Crashlytics (it replaced the handlers): check `Bugsee.errorHandlersActive`; or the call was before launch |

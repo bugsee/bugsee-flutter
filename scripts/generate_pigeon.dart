@@ -9,8 +9,8 @@
 //
 // Pigeon is pinned in native-versions.json (`pigeon.version`) and in
 // pigeons/pubspec.yaml; test/native_versions_test.dart compares both. It lives
-// in its own pure-Dart package because pigeon needs a newer `meta` than the
-// Flutter floor (3.50.0) ships, so it cannot be a dev_dependency of the plugin.
+// in its own pure-Dart package: pigeon needed a newer `meta` than Flutter 3.41.0
+// shipped; the 3.50.0 floor ships meta 1.19.0, so it could be a dev_dependency now (not moved).
 // The generated Dart is then formatted with the `dart` on PATH, so run this on
 // the floor Dart (CI does) or the result differs from what CI expects.
 import 'dart:convert';

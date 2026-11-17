@@ -53,8 +53,8 @@ WrapperLog parseWrapperLog(String log) {
   ).allMatches(log)) {
     registered = '${m.group(1)}/${m.group(2)}';
   }
-  // Android: `context={dart=3.11.0, flutter=3.41.0}`; iOS prints the NSDictionary:
-  // `context={\n    "build-configuration" = debug;\n    dart = "3.11.0";\n }`.
+  // Android: `context={dart=3.14.0, flutter=3.50.0}`; iOS prints the NSDictionary:
+  // `context={\n    "build-configuration" = debug;\n    dart = "3.14.0";\n }`.
   for (final m in RegExp(
     r'wrapper refined type=(\S+) version=(\S+) context=\{([^}]*)\}',
   ).allMatches(log)) {

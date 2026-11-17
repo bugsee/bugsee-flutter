@@ -138,8 +138,9 @@ jobs:
     name: build apk (${{ matrix.channel }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # 3.50.0 is the first Flutter where a SwiftPM-only plugin resolves on Linux
-    # (measured across 3.27-3.38; see native-versions.json flutter.provenance).
+    # 3.50.0 is the floor (native-versions.json flutter.min); 3.41.0 was the first where a
+    # SwiftPM-only plugin resolves on Linux (measured across 3.27-3.38; see flutter.provenance).
+    # The stable leg is the same Flutter until stable moves past 3.50.
     strategy:
       fail-fast: false
       matrix:

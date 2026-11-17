@@ -44,6 +44,10 @@ class CrashKind {
   bool get fatal => layer != CrashLayer.dart;
 }
 
+/// The positive control of the absence check (`crash control-async` in the app): not a kind of the
+/// matrix, so the matrix never runs it, and a marker no kind's marker contains.
+const crashControlMarker = 'verify-control-async';
+
 const crashKindTable = <CrashKind>[
   CrashKind('ffi-segv', CrashLayer.native, signal: 11),
   CrashKind('ffi-abort', CrashLayer.native, signal: 6),
@@ -65,7 +69,11 @@ const crashKindTable = <CrashKind>[
   ),
   CrashKind('dart-async', CrashLayer.dart, marker: 'verify-dart-async'),
   CrashKind('dart-zone', CrashLayer.dart, marker: 'verify-dart-zone'),
-  CrashKind('dart-isolate', CrashLayer.dart, marker: 'verify-dart-isolate'),
+  CrashKind(
+    'dart-isolate',
+    CrashLayer.dart,
+    marker: 'verify-dart-isolate-listened',
+  ),
   CrashKind(
     'dart-isolate-unlistened',
     CrashLayer.dart,

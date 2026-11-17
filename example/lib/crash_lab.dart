@@ -113,12 +113,19 @@ Future<void> crash(String kind) async {
       final c = StreamController<int>();
       c.stream.listen((_) {});
       c.addError(StateError('verify-dart-stream'), StackTrace.current);
+    case 'control-async':
+      // The positive control of the absence check: its own throw site and message, so the error
+      // limiter (a repeat fingerprint is dropped for 30 s) cannot swallow it after `dart-async`.
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 10))
+            .then((_) => throw StateError('verify-control-async')),
+      );
     default:
       throw ArgumentError('unknown crash kind $kind');
   }
 }
 
-void _boomListened(void _) => throw StateError('verify-dart-isolate');
+void _boomListened(void _) => throw StateError('verify-dart-isolate-listened');
 
 void _boomUnlistened(void _) =>
     throw StateError('verify-dart-isolate-unlistened');

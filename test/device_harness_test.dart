@@ -309,6 +309,33 @@ void main() {
       );
     });
 
+    test(
+      'an uncaught Java exception is matched to the process and the marker',
+      () {
+        const log = '''
+11-12 10:00:00.000  500  500 E AndroidRuntime: FATAL EXCEPTION: main
+11-12 10:00:00.000  500  500 E AndroidRuntime: Process: com.bugsee.bugsee_flutter_example, PID: 500
+11-12 10:00:00.000  500  500 E AndroidRuntime: java.lang.IllegalStateException: verify-java-outer
+11-12 10:00:00.000  500  500 E AndroidRuntime: \tat com.bugsee.Main.run(MainActivity.kt:1)
+11-12 10:00:00.000  500  500 E AndroidRuntime: Caused by: java.lang.RuntimeException: verify-java-cause
+''';
+        expect(parseFatalException(log, 500, 'verify-java-outer'), isTrue);
+        expect(parseFatalException(log, 500, 'verify-java-cause'), isTrue);
+        // another process (an earlier run in the same logcat), a marker that is not there
+        expect(parseFatalException(log, 501, 'verify-java-outer'), isFalse);
+        expect(parseFatalException(log, 500, 'verify-java-main'), isFalse);
+        // the old shape: the exception on the line right after FATAL EXCEPTION is not this layout
+        expect(
+          parseFatalException(
+            'E AndroidRuntime: FATAL EXCEPTION: main\nE AndroidRuntime: verify-java-main\n',
+            500,
+            'verify-java-main',
+          ),
+          isFalse,
+        );
+      },
+    );
+
     test('the exit record must say native crash, status 11', () {
       const dump = '''
         ApplicationExitInfo #1:
@@ -798,6 +825,31 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         for (final k in appKinds) {
           expect(app, contains("case '$k':"));
         }
+      },
+    );
+
+    test('no marker is a substring of another, the control included', () {
+      final markers = [
+        for (final k in crashKindTable)
+          if (k.marker != null) k.marker!,
+        crashControlMarker,
+      ];
+      for (final a in markers) {
+        for (final b in markers) {
+          if (a != b) {
+            expect(b.contains(a), isFalse, reason: '$a is inside $b');
+          }
+        }
+      }
+      expect(markers.toSet().length, markers.length);
+    });
+
+    test(
+      'the control the harness sends exists in the app and throws its marker',
+      () {
+        final app = File('example/lib/crash_lab.dart').readAsStringSync();
+        expect(app, contains("case 'control-async':"));
+        expect(app, contains("StateError('$crashControlMarker')"));
       },
     );
 

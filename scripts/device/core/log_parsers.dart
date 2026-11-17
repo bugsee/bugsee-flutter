@@ -194,6 +194,21 @@ ExitInfo? parseExitInfo(String dumpsys, int pid) {
   return null;
 }
 
+/// Whether logcat says [pid] died of an uncaught Java exception that names [marker]:
+/// `E AndroidRuntime: FATAL EXCEPTION: <thread>`, then `E AndroidRuntime: Process: <package>, PID: <pid>`,
+/// then the exception (and its causes) within the next 600 characters. The pid is the process's, so a
+/// crash of an earlier run in the same logcat does not count.
+bool parseFatalException(String log, int pid, String marker) {
+  for (final m in RegExp(
+    r'FATAL EXCEPTION[^\n]*\n[^\n]*Process:[^\n]*PID:\s*(\d+)[^\n]*\n([\s\S]{0,600})',
+  ).allMatches(log)) {
+    if (int.parse(m.group(1)!) == pid && m.group(2)!.contains(marker)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Resolved versions of `com.bugsee:*` artefacts in a `./gradlew :app:dependencies` report
 /// (`+--- com.bugsee:bugsee-android-ndk:7.4.2`, `-> 7.4.2` when resolved to another).
 Map<String, Set<String>> parseGradleBugseeArtefacts(String report) {

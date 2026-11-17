@@ -46,8 +46,15 @@ import androidx.annotation.NonNull;
  * the SDK's channel; while there is none the release is retried every {@link #RETRY_MS} for
  * {@link #PROCESS_CAP_MS} and then every {@link #SLOW_RETRY_MS}, without end: a channel that
  * arrives late (the registration failed at process start and succeeded when Dart refined the
- * identity) must still end the hold. Everything runs on the main thread except {@link #start} and
- * {@link #uiDisplayed}, which only post.
+ * identity) must still end the hold.
+ *
+ * <p>Known limit: the only release is {@code onWrapperReady()}; the SDK (7.6.0, {@code BugseeInternal})
+ * has no timeout of its own and only logs a warning after 15 s. When the wrapper never gets an SDK
+ * channel (its registration failed at process start and never succeeds later; the log says "could not
+ * register"), the caps cannot end the hold: they can only try to deliver, and the displays stay held
+ * for the process. There is no other release to fall back on; the retries are the whole remedy.
+ *
+ * <p>Everything runs on the main thread except {@link #start} and {@link #uiDisplayed}, which only post.
  */
 final class WrapperHold {
 

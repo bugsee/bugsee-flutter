@@ -1,6 +1,6 @@
 {
   "buildConfiguration" : "release",
-  "generatedAt" : "2026-11-03T15:48:34Z",
+  "generatedAt" : "2026-11-16T19:43:51Z",
   "manifestVersion" : 1,
   "options" : [
     {
@@ -524,7 +524,7 @@
       "type" : "boolean"
     },
     {
-      "default" : true,
+      "default" : false,
       "hidden" : false,
       "key" : "com.bugsee.option.reporting.triggers.shake",
       "module" : "Bugsee",
@@ -590,5 +590,5 @@
     }
   ],
   "sdk" : "ios",
-  "sdkVersion" : "7.0.1"
+  "sdkVersion" : "7.1.0"
 }

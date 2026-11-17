@@ -533,6 +533,12 @@ final class BugseeOptions {
   /// manifest. Redacts values for known sensitive keys in URL query parameters, HTTP headers, and
   /// JSON request/response bodies.
   ///
+  /// The same option governs the `http` breadcrumbs (`CaptureBreadcrumbs`): their URL is redacted
+  /// (userinfo and sensitive query values) before it reaches the breadcrumb filter or the report.
+  /// That redaction applies regardless of whether a breadcrumb filter is set, but not to
+  /// breadcrumbs added with `requiresFiltering` set to `false`: those are recorded as given and
+  /// the caller is responsible for redacting them.
+  ///
   /// - Option key: `com.bugsee.option.capture.network.default-sanitizer`.
   /// - SDK default: `true`.
   /// - Available on: Android and iOS.
@@ -1215,7 +1221,7 @@ final class BugseeOptions {
   /// Allow triggering report from notification bar.
   ///
   /// - Option key: `com.bugsee.option.reporting.triggers.notification-bar`.
-  /// - SDK default: `true`.
+  /// - SDK default: `false`.
   /// - Available on: Android only. On iOS the option is ignored (a debug-mode warning says so).
   final bool? reportingTriggersNotificationBar;
 
@@ -1229,7 +1235,7 @@ final class BugseeOptions {
   /// Allow triggering report by device shake.
   ///
   /// - Option key: `com.bugsee.option.reporting.triggers.shake`.
-  /// - SDK default: `true`.
+  /// - SDK default: `false`.
   /// - Available on: Android and iOS.
   final bool? reportingTriggersShake;
 

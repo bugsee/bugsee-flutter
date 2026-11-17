@@ -16,7 +16,7 @@ let package = Package(
         .library(name: "bugsee-flutter", targets: ["bugsee_flutter"])
     ],
     dependencies: [
-        .package(url: "https://github.com/bugsee/spm", exact: "7.0.1")
+        .package(url: "https://github.com/bugsee/spm", exact: "7.1.0")
     ],
     targets: [
         // Objective-C so `+load` can register the wrapper at image load, before

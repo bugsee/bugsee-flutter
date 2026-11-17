@@ -92,7 +92,7 @@ BuildExpectation expectation({String mode = 'debug'}) => BuildExpectation(
 const androidLog = '''
 10-22 11:46:48.777  7138  7138 I BugseeFlutter: wrapper registered type=flutter version=10.0.0-dev.1
 10-22 11:46:50.229  7138  7138 I BugseeFlutter: wrapper refined type=flutter version=10.0.0-dev.1 context={dart=3.11.0, flutter=3.41.0, flutter-engine=3452d735bd, build-configuration=debug}
-10-22 11:46:50.276  7138  7138 D Bugsee  : Bugsee Android SDK 7.5.0 [8f459d745]
+10-22 11:46:50.276  7138  7138 D Bugsee  : Bugsee Android SDK 7.6.0 [2a88ea7fb]
 10-22 11:44:41.228  6080  6080 W linker64: type=1400 audit(0.0:89): avc: granted { execute } for path="/data/data/x/no_backup/bugsee_crashpad_handler/1792647760186/libbugsee-crashpad-trampoline.so" dev="dm-4"
 10-22 11:44:41.228  6080  6080 W linker64: type=1400 audit(0.0:90): avc: granted { execute } for path="/data/data/x/no_backup/bugsee_crashpad_handler/1792647760186/libbugsee-crashpad-handler.so" dev="dm-4"
 10-22 11:44:42.228  6080  6080 W linker64: type=1400 audit(0.0:91): avc: granted { execute } for path="/data/data/x/no_backup/bugsee_crashpad_handler/1792647760186/libbugsee-crashpad-trampoline.so" dev="dm-4"
@@ -103,7 +103,7 @@ void main() {
   group('banners and wrapper identity (9.1.1)', () {
     test('the Android banner and the wrapper lines parse', () {
       final b = parseAndroidBanner(androidLog)!;
-      expect([b.version, b.build], ['7.5.0', '8f459d745']);
+      expect([b.version, b.build], ['7.6.0', '2a88ea7fb']);
       final w = parseWrapperLog(androidLog);
       expect(w.registered, 'flutter/10.0.0-dev.1');
       expect(w.refined, 'flutter/10.0.0-dev.1');
@@ -124,10 +124,10 @@ void main() {
     flutter = "3.41.0";
     "flutter-engine" = 3452d735bd;
 }
-2026-10-22 11:19:15.375 Df Runner[60233:9e1d3b5] (Bugsee) Bugsee IOS SDK ver:7.0.1 build:5c6b9d9db-8
+2026-10-22 11:19:15.375 Df Runner[60233:9e1d3b5] (Bugsee) Bugsee IOS SDK ver:7.1.0 build:b65bdca06-9
 ''';
       final b = parseIosBanner(log)!;
-      expect([b.version, b.build], ['7.0.1', '5c6b9d9db-8']);
+      expect([b.version, b.build], ['7.1.0', 'b65bdca06-9']);
       final w = parseWrapperLog(log);
       expect(w.context['build-configuration'], 'debug');
       expect(w.context['flutter-engine'], '3452d735bd');
@@ -141,11 +141,11 @@ void main() {
       expect(e.androidProblems(banner, w), isEmpty);
       // The same version string, another build of it (a range outranking a snapshot).
       expect(
-        e.androidProblems(const SdkBanner('android', '7.5.0', 'deadbeef0'), w),
+        e.androidProblems(const SdkBanner('android', '7.6.0', 'deadbeef0'), w),
         contains(contains('banner build deadbeef0')),
       );
       expect(
-        e.androidProblems(const SdkBanner('android', '7.4.3', '8f459d745'), w),
+        e.androidProblems(const SdkBanner('android', '7.4.3', '2a88ea7fb'), w),
         contains(contains('banner version 7.4.3')),
       );
       expect(
@@ -378,20 +378,20 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
     test('Gradle dependencies: the NDK artefact is found, and its absence is reported', () {
       const deps = '''
 +--- project :bugsee_flutter
-|    +--- com.bugsee:bugsee-android:7.5.0
-|    +--- com.bugsee:bugsee-android-ndk:7.5.0
-|    |    \\--- com.bugsee:bugsee-android:7.5.0
+|    +--- com.bugsee:bugsee-android:7.6.0
+|    +--- com.bugsee:bugsee-android-ndk:7.6.0
+|    |    \\--- com.bugsee:bugsee-android:7.6.0
 ''';
       expect(parseGradleBugseeArtefacts(deps), {
-        'bugsee-android': {'7.5.0'},
-        'bugsee-android-ndk': {'7.5.0'},
+        'bugsee-android': {'7.6.0'},
+        'bugsee-android-ndk': {'7.6.0'},
       });
       expect(
         parseGradleBugseeArtefacts(
-          '+--- com.bugsee:bugsee-android:7.4.1 -> 7.5.0',
+          '+--- com.bugsee:bugsee-android:7.4.1 -> 7.6.0',
         ),
         {
-          'bugsee-android': {'7.5.0'},
+          'bugsee-android': {'7.6.0'},
         },
       );
     });
@@ -453,10 +453,10 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
         gradleDependencies:
             deps ??
             {
-              'bugsee-android': {'7.5.0'},
-              'bugsee-android-ndk': {'7.5.0'},
+              'bugsee-android': {'7.6.0'},
+              'bugsee-android-ndk': {'7.6.0'},
             },
-        gradlePluginVersions: plugin ?? {'4.1.0'},
+        gradlePluginVersions: plugin ?? {'4.1.1'},
         buildUuid: 'id',
       );
     }
@@ -469,7 +469,7 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
         expect(
           fakeBuild(
             deps: {
-              'bugsee-android': {'7.5.0'},
+              'bugsee-android': {'7.6.0'},
             },
           ).artefactProblems(p, 'arm64-v8a'),
           contains(
@@ -479,7 +479,7 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
         expect(
           fakeBuild(
             deps: {
-              'bugsee-android': {'7.5.0'},
+              'bugsee-android': {'7.6.0'},
               'bugsee-android-ndk': {'7.4.1'},
             },
           ).artefactProblems(p, 'arm64-v8a'),
@@ -490,7 +490,7 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
           contains(contains('Gradle plugin versions in use {4.0.6}')),
         );
         expect(
-          fakeBuild(plugin: {'4.1.0', '4.0.6'})
+          fakeBuild(plugin: {'4.1.1', '4.0.6'})
               .artefactProblems(p, 'arm64-v8a'),
           isNotEmpty,
         );
@@ -521,7 +521,7 @@ Contents of (__DATA_CONST,__objc_nlclslist) section
         app: 'x.app',
         buildNumber: 1,
         resolved: resolved,
-        sdkFrameworkVersion: '7.0.1',
+        sdkFrameworkVersion: '7.1.0',
       );
       final ok = {
         'spm': '${p.iosSdk}@${p.iosSpmRevision}',
@@ -576,8 +576,8 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         'environment': {
           'app': {'build': '1', 'version': '1.0.1'},
           'sdk': {
-            'version': '7.5.0',
-            'build': '8f459d745',
+            'version': '7.6.0',
+            'build': '2a88ea7fb',
             'wrapper': ?wrapper,
           },
           'identity_source': ?identitySource,
@@ -741,7 +741,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       final lines = <String>[];
       final r = await runScenario(1, 't', lines.add, (run) async {
         run.expect('before', true, '');
-        run.guard('build', ['banner build deadbeef0, pinned 8f459d745'], '');
+        run.guard('build', ['banner build deadbeef0, pinned 2a88ea7fb'], '');
         run.expect('after the guard: never reached', true, '');
       });
       expect(r.status, Status.invalid);

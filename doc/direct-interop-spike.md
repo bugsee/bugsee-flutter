@@ -49,3 +49,36 @@ once per frame or per event, and the native SDK work dominates.
   could be per API and reversible.
 * Re-run this spike (the files in `doc/interop-spike/`) when Pigeon's interop mode is stable, on the Android phone and the iPhone, and
   add the multi-engine and report-handler cases before deciding.
+
+## Second spike: the stable generators, without Pigeon (2026-11-17)
+
+JNIgen 1.0.1 on a Java class and FFIgen 23 on an Objective-C class, each a process-wide static store with the shape of ours
+(`ping`, `echo`, a 256-int publish, a listener); sources in `doc/interop-spike/stable/` (`.txt`). Release builds on the same phone and iPhone XS.
+
+| | Android phone (WOD-LX1) | iPhone XS |
+|---|---|---|
+| empty call / echo | 0.6 / 0.8 us | 0.01 / 0.01 us |
+| 256 ints, array built per call | 13 us | 0.12 us (copied to native memory per call) |
+| 256 ints, array or pointer reused | 0.7 us | 0.02 us |
+| `NSData` of 1024 bytes built per call | n/a | 1.1 to 1.4 us |
+| the channel for comparison (section above) | 315 to 776 us | 30 to 39 us |
+
+Synchronous, so these are calls that return with the work done, not futures. What the run showed:
+
+* **Dart to native is a plain static call:** no engine routing (a process-wide store has none), the same thread as Dart (`main`), a Java exception
+  arrives as a `JThrowable`, a background isolate can call it (no setup), and the call works from the main thread inside the same frame.
+* **Native to Dart, blocking:** the main thread inside a Dart call took 1 ms (Android) and worked on iOS; a **worker thread blocked 219 ms** on the phone
+  waiting for the idle main isolate (1.2 ms on an emulator). A blocking callback has no usable bound. Both generators also have a non-blocking mode
+  (JNIgen `onEvent$async: true`, 0.4 ms on the phone; FFIgen `listener` blocks, which ran on a background thread on the iPhone) and that is the one to use.
+* **Build facts:** a release build strips the Java class without a keep rule (`ClassNotFoundException` at the first call; a `-keep` rule fixed it);
+  FFIgen parses Xcode 27.1's Foundation only with `-isysroot <SDK>` and `-target arm64-apple-ios15.0`, and needs `objectiveC: const ObjectiveC()`
+  (without it the output is empty and nothing says why); jnigen 1.0 changed its API and deprecates the YAML config; FFIgen emits an Objective-C file for
+  blocks that the Runner must compile.
+
+### Decision input
+
+A synchronous call removes the queue hop: the native store is current when Dart's call returns. For secure rectangles that could shorten the
+first-frame exposure our docs list as a known limit, if Dart registers during layout or paint rather than after the frame. That is a hypothesis: nothing
+here measured frames. A synchronous call into Dart cannot help the calls the SDK makes on the main thread (the view-hierarchy answer, the iOS report
+handler): Dart's isolate is that thread, so a helper thread waiting for it deadlocks. The next measurement, if wanted: capture frames of a newly
+appearing secure view on the phone and count the unredacted ones, with the channel and with a direct call.

@@ -1,0 +1,16 @@
+#import <Foundation/Foundation.h>
+
+NS_ASSUME_NONNULL_BEGIN
+
+/// A process-wide store like the wrapper's: class methods, thread-safe, no engine.
+@interface SpikeStore : NSObject
++ (void)ping;
++ (int32_t)echo:(int32_t)v;
++ (void)publishInts:(const int32_t *)rects count:(int32_t)count;
++ (void)publishData:(NSData *)rects;
++ (int32_t)last;
++ (NSString *)threadName;
++ (void)fire:(NSString *)name onWorker:(BOOL)worker listener:(void (^)(NSString *))listener;
+@end
+
+NS_ASSUME_NONNULL_END

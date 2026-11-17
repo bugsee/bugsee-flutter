@@ -1,0 +1,20 @@
+#import "SpikeStore.h"
+
+static _Atomic int32_t gLast;
+
+@implementation SpikeStore
++ (void)ping {}
++ (int32_t)echo:(int32_t)v { return v; }
++ (void)publishInts:(const int32_t *)rects count:(int32_t)count { gLast = count; }
++ (void)publishData:(NSData *)rects { gLast = (int32_t)(rects.length / 4); }
++ (int32_t)last { return gLast; }
++ (NSString *)threadName { return [NSThread isMainThread] ? @"main" : @"bg"; }
++ (void)fire:(NSString *)name onWorker:(BOOL)worker listener:(void (^)(NSString *))listener {
+  void (^send)(void) = ^{
+    uint64_t t = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    listener([NSString stringWithFormat:@"%@@%@", name, [NSThread isMainThread] ? @"main" : @"bg"]);
+    NSLog(@"SPIKE2 native fire(%@) returned in %llu us", name, (clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t) / 1000);
+  };
+  if (worker) dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), send); else send();
+}
+@end

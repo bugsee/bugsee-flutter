@@ -10,7 +10,7 @@
 // printed in the stack's header must be inside the symbols file (that is how the backend finds the
 // symbols), and every `--expect` name must come out of the symbolizer. `--tool` is the worker's
 // `dart_symbolize` (stack on stdin, symbols file as the argument; dart-symbolize repository, `dist/`);
-// without it `flutter symbolize` is used, which decodes the same format.
+// without it `package:native_stack_traces` is used, which decodes the same format.
 //
 // The symbols file is NOT committed (it holds the build machine's paths): produce it with
 // `flutter build apk --release --obfuscate --split-debug-info=<dir>`. Exit code 0 when it checks out.
@@ -69,9 +69,14 @@ Future<void> main(List<String> args) async {
   }
   stdout.writeln('build id $buildId is in the symbols file');
 
+  // Without --tool: `package:native_stack_traces` (a dev dependency), the decoder `flutter symbolize` wraps.
+  // Flutter 3.50's own `flutter symbolize` fails on the symbols of a 3.50 build ("Cannot locate isolate
+  // instructions section in snapshot", measured), the package (0.7.1) decodes the same file.
   final process = await Process.start(
-    tool ?? 'flutter',
-    tool != null ? [symbols] : ['symbolize', '-d', symbols],
+    tool ?? Platform.resolvedExecutable,
+    tool != null
+        ? [symbols]
+        : ['run', 'native_stack_traces:decode', 'translate', '-d', symbols],
   );
   process.stdin.write(stack);
   await process.stdin.close();

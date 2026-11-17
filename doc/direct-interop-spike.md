@@ -90,7 +90,10 @@ Synchronous, so these are calls that return with the work done, not futures. Wha
 
 A synchronous call removes the queue hop: the native store is current when Dart's call returns. For secure rectangles that could shorten the
 first-frame exposure our docs list as a known limit, if Dart registers during layout or paint rather than after the frame. That is a hypothesis: nothing
-here measured frames. A synchronous call into Dart cannot help the calls the SDK makes on the main thread (the view-hierarchy answer, the iOS report
-handler): Dart's isolate is that thread, so a helper thread waiting for it deadlocks. **Decided:** the stable generators are not used in 10.0
+here measured frames. A synchronous call into Dart from the SDK's main thread is not ruled out by anything measured (a blocking call made from the main thread
+ran inline on the isolate's thread: 1 ms on Android, worked on iOS). What rules it out for the calls the SDK makes on the main thread (the
+view-hierarchy answer, the iOS report handler) is that the Dart side would have to answer SYNCHRONOUSLY: our report handlers are async and their
+reply needs that same thread, and a helper thread waiting for Dart while the main thread waits for the helper would deadlock (read from our rules,
+not measured). **Decided:** the stable generators are not used in 10.0
 either, and stay a candidate for the secure-rectangle store only. The next measurement, if wanted: capture frames of a newly
 appearing secure view on the phone and count the unredacted ones, with the channel and with a direct call.

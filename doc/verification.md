@@ -370,6 +370,15 @@ one failed pixel check in an earlier run and passed in the full one, and scenari
 null", "alreadyRunning"; the harness refuses to count that experiment, and the same scenarios passed on the next run). No product failure was found. The startup
 hold (`WrapperHold`) was in the build for all of this.
 
+**Re-run on the same phone at Android SDK 7.6.0 (2026-11-17, plugin 4.1.1, Flutter 3.50.0, banner `Bugsee Android SDK 7.6.0 [2a88ea7fbf]`):** scenarios 1 to 10
+all PASSED (the full run: 1, 2, 3, 5 to 10; scenario 4 after a harness fix, 49/49; the scenario 10 crash matrix 180/180). Two things were found by the
+harness itself, and neither is a product defect. (1) The first full run was INVALID everywhere: the pin held `2a88ea7fb` (9 characters, read from the tag) and the
+banner prints 10 (`2a88ea7fbf`); the build guard refused the runs, and the pin now comes from a run. (2) Scenario 4's offline symbolization check failed:
+Flutter 3.50's own `flutter symbolize` answers "Cannot locate isolate instructions section in snapshot" on the symbols of a 3.50 build, while
+`package:native_stack_traces` 0.7.1 decodes the same file and stack to the app frames (`Bugsee.logUnhandledException`, `_command`, `_poll`); the harness now uses
+the package. The backend's `dart_symbolize` against Dart 3.14 snapshots was NOT run: it is the tool this check stands in for, and it is unverified. The iOS
+7.1.0 crash matrix was not run (the iPhone's Local Network prompt was not answered in time, see the Physical iPhone paragraph).
+
 ## Findings
 
 ### Defects

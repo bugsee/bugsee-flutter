@@ -30,7 +30,9 @@ import androidx.annotation.NonNull;
  *       slow cold start (a debug build on a slow phone took 10 s to reach Dart) would otherwise end
  *       the hold before the runtime exists, which is when it matters. Every engine that attaches
  *       before a frame was displayed restarts it, so a headless engine (a push or WorkManager
- *       isolate) that attached first does not release the hold before the UI engine exists;
+ *       isolate) that attached first does not release the hold before a UI engine that attaches
+ *       within {@link #CAP_MS} of it. A UI engine that comes later finds the hold released (the SDK's
+ *       release is sticky) and its first frames are not held: a known limit;
  *   <li>{@link #PROCESS_CAP_MS} after process start, for a process that never attaches an engine
  *       at all (the SDK warns after 15 s that a hold is still on, and records nothing meanwhile);
  *   <li>{@link #HARD_CAP_MS} after process start, whatever else happened: the restarts above are

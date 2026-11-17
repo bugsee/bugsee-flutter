@@ -64,7 +64,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 
 ## Known gaps and filed issues
 
-State checked with `gh issue view` on 2026-11-06 (the Android pins moved to 7.5.0 / plugin 4.1.0 that day to 7.5.1 / 4.1.1 on 2026-11-12 and to 7.6.0 / 4.1.1 (iOS 7.1.0) on 2026-11-17; the closed rows are kept with how each was verified).
+State re-checked with `gh issue view` on 2026-11-17 (no state changed since 2026-11-06). The pins moved to Android 7.5.0 / plugin 4.1.0 on 2026-11-06, to 7.5.1 / 4.1.1 on 2026-11-12, and to Android 7.6.0 / plugin 4.1.1 / iOS 7.1.0 on 2026-11-17; the closed rows are kept with how each was verified, at the version it was verified on.
 
 | Issue | State | What |
 |---|---|---|
@@ -72,7 +72,7 @@ State checked with `gh issue view` on 2026-11-06 (the Android pins moved to 7.5.
 | [bugsee-android#316](https://github.com/bugsee/bugsee-android/issues/316) | **closed, fixed in 7.5.0** | the report screenshot in a `SurfaceView` (Flutter's default): device-verified (scenario 9, both render modes: content, the secure box black, the rest equal to the unsecured frame) |
 | [bugsee-android#309](https://github.com/bugsee/bugsee-android/issues/309) | **closed, fixed in 7.5.0** (`ca76e4eb4`; #324 `11d21c1a6`, #355 `9b45e488e` cover screenshot/clear/updateFrom) | stage re-check after `importFile`, atomic under the stage lock, a rejected `move` keeps its source. Read from source and covered by scenario 3 and the attachments test; the race itself was NOT re-measured on a device. The wrapper's own undo of a late add stays as defence in depth (its JUnit model still passes) |
 | [bugsee-cocoa#291](https://github.com/bugsee/bugsee-cocoa/issues/291) | **closed**, `8ab24e8f9` is in `release@5c6b9d9db` (7.0.1) | `BugseeFeedback.setListener` ordering. The wrapper still never sets nil (kept; not re-measured on iOS) |
-| [bugsee-cocoa#265](https://github.com/bugsee/bugsee-cocoa/issues/265) / [bugsee-android#299](https://github.com/bugsee/bugsee-android/issues/299) | **closed, in both pins** (iOS 7.0.1, Android 7.5.1) | the wrapper channel's `log` timestamp: implemented (`ageMs` on the bridge, `now - ageMs` on the SDK clock); measured on a device, Android: a line delayed 3 s by a filter is recorded 1 ms after the one printed before it and 4005 ms before the next. iOS is covered by XCTest only (no iOS run) |
+| [bugsee-cocoa#265](https://github.com/bugsee/bugsee-cocoa/issues/265) / [bugsee-android#299](https://github.com/bugsee/bugsee-android/issues/299) | **closed, in both pins** (fixed before iOS 7.0.1 / Android 7.5.1; the pins are 7.1.0 / 7.6.0 now, device-measured at the older ones) | the wrapper channel's `log` timestamp: implemented (`ageMs` on the bridge, `now - ageMs` on the SDK clock); measured on a device, Android: a line delayed 3 s by a filter is recorded 1 ms after the one printed before it and 4005 ms before the next. iOS is covered by XCTest only (no iOS run) |
 | [specs#61](https://github.com/bugsee/specs/issues/61) | open | workbook 7.1: the Android recovered-report row disagrees with 7.4.2 (measured: not main, edits land) |
 | [specs#63](https://github.com/bugsee/specs/issues/63) | open | the wrapper-channel README says "not implemented"; both SDKs ship it |
 | [specs#64](https://github.com/bugsee/specs/issues/64) | open | `vh` spec and workbook 6.7 still call the Android wait unfixed; PR #120 is in 7.4.2 |

@@ -77,6 +77,10 @@ Future<void> main(List<String> args) async {
     tool != null
         ? [symbols]
         : ['run', 'native_stack_traces:decode', 'translate', '-d', symbols],
+    // `dart run` resolves the package through the workspace of the working directory: the repository root.
+    workingDirectory: tool != null
+        ? null
+        : File.fromUri(Platform.script).parent.parent.path,
   );
   process.stdin.write(stack);
   await process.stdin.close();

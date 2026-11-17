@@ -225,8 +225,8 @@ Measured: a release arm64 build of a probe app (`--obfuscate --split-debug-info`
 `Bugsee.logException` and the root-zone hook on the emulator; the bundle was read; its `originalStackTrace` (vendored:
 `test/fixtures/exceptions/real_obfuscated_android_arm64_trace.txt`, the whole entry in
 `android_7_4_2_obfuscated_entry.json`) has build id `7a3ef930...`, which is inside that build's `.symbols` file, and
-both `dart_symbolize` (worker's tool) and `flutter symbolize` turn it into `level3 / level2 / level1 (obf_main.dart:12..14)`.
-The same script fails (`build id ... is another build's symbols`) with another build's symbols file. The symbols file
+both `dart_symbolize` (worker's tool) and `flutter symbolize` turned it into `level3 / level2 / level1 (obf_main.dart:12..14)`.
+(Measured again at Flutter 3.50 / Android 7.6.0: `flutter symbolize` 3.50 fails on the symbols of a 3.50 build, "Cannot locate isolate instructions section in snapshot"; `package:native_stack_traces` 0.7.1, which the harness uses now, decodes them; the worker's `dart_symbolize` against Dart 3.14 snapshots is not verified.) The same script fails (`build id ... is another build's symbols`) with another build's symbols file. The symbols file
 is not committed (it holds the build machine's paths).
 
 ## 6. Limits (known, not bugs)

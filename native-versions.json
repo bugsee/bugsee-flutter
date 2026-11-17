@@ -34,7 +34,7 @@
     "dir": "packages/bugsee_flutter_feedback",
     "androidArtifact": "com.bugsee:bugsee-android-feedback",
     "iosProduct": "BugseeFeedback",
-    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, 2026-11-12: bugsee-android-feedback 7.5.1, which depends on bugsee-android 7.5.1); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
+    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, published 2026-11-16: bugsee-android-feedback 7.6.0, which depends on bugsee-android 7.6.0); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
   },
   "pigeon": {
     "version": "29.0.7",
@@ -43,6 +43,6 @@
   "optionsManifest": {
     "urlTemplate": "https://download.bugsee.com/sdk/options/{sdk}/{version}.json",
     "fixtureDir": "test/fixtures/option_manifests",
-    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.5.1.json (generatedAt 2026-11-11) and ios/7.0.1.json (generatedAt 2026-11-03), android fetched 2026-11-12, ios 2026-11-03, vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
+    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.6.0.json (generatedAt 2026-11-16) and ios/7.1.0.json (generatedAt 2026-11-16), both fetched 2026-11-17, vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
   }
 }

@@ -88,8 +88,8 @@ while the core is unpublished.
    The native crash detector itself is always present (this package depends on the separate `bugsee-android-ndk` artefact), but a
    crash in `libflutter.so` or any other `.so` is only readable (function and file:line) when the backend has that build's
    native symbols. With `ndk.enabled` the plugin uploads the unstripped libraries of every **non-debuggable** build (task
-   `upload<Variant>Native`, for example `uploadBugseeReleaseNative`) with the app token (`bugsee.properties` at the root of the
-   Android project, or `appToken("...")` in the `bugsee { }` block); without a token it skips quietly. The R8 mapping upload
+   `upload<Variant>Native`, for example `uploadBugseeReleaseNative`) with the app token (`bugsee.properties` in the Gradle root directory, the
+   `android/` folder of a Flutter app, or `appToken("...")` in the `bugsee { }` block); without a token it skips quietly. The R8 mapping upload
    needs no setting. See [Debug symbols](#debug-symbols) for the Dart and iOS symbols too.
 
 Besides that, the plugin registers this package's wrapper from a content provider that runs before the SDK can launch and the
@@ -362,7 +362,7 @@ every build you ship.
 | Android Java/Kotlin frames (R8 mapping) | the Bugsee Gradle plugin | automatic, on every minified build (`upload<Variant>Mapping`) |
 | Android native frames (`libflutter.so`, your `.so` files) | the Bugsee Gradle plugin | **only with `bugsee { ndk { enabled.set(true) } }`** (see Install, Android); non-debuggable builds |
 | Dart frames of a release build made with `--split-debug-info` (and `--obfuscate`) | `build/symbols/*.symbols` | **manual**: [doc/exceptions.md](doc/exceptions.md) section 5 (the 9.x `symbols.py` script; `bugsee-cli` has no Flutter type yet) |
-| iOS native frames (the app, `Flutter.framework`) | the build's dSYMs | **manual in a Flutter app**: a Run Script phase after "Embed Frameworks" running `bugsee-cli xcode upload-dsyms --app-token "$BUGSEE_APP_TOKEN"` ([Bugsee CLI, Xcode](https://docs.bugsee.com/cli/xcode/)), or `bugsee-cli debug-files upload <archive>/dSYMs --type dsym --version <v> --build <n>` in CI; with Xcode 15 and newer set `ENABLE_USER_SCRIPT_SANDBOXING = NO` on the target |
+| iOS native frames (the app, `Flutter.framework`) | the build's dSYMs | **manual in a Flutter app**: a Run Script phase after "Embed Frameworks" running `bugsee-cli xcode upload-dsyms --app-token "$BUGSEE_APP_TOKEN"` ([Bugsee CLI, Xcode](https://docs.bugsee.com/cli/xcode/)), or `bugsee-cli debug-files upload <archive>/dSYMs --type dsym --version <v> --build <n>` in CI; with Xcode 15 and newer set `ENABLE_USER_SCRIPT_SANDBOXING = NO` on the target; `$BUGSEE_APP_TOKEN` must exist in the script's environment (a user-defined build setting of the target named `BUGSEE_APP_TOKEN` does that), and the CLI fails the build, exit code 20, when it is missing or empty |
 
 Dart symbols and iOS dSYMs are not uploaded for you by this package: nothing in a Flutter build calls the Bugsee uploader. The iOS
 row is taken from Bugsee's CLI documentation and has not been measured with a Flutter build here.

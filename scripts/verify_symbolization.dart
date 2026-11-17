@@ -23,7 +23,9 @@ Future<void> main(List<String> args) async {
     return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
   }
 
-  final symbols = option('--symbols');
+  // Absolute, because the decoder runs in the repository root: a relative path would mean two places.
+  final symbolsArg = option('--symbols');
+  final symbols = symbolsArg == null ? null : File(symbolsArg).absolute.path;
   final entry = option('--entry');
   final expected = (option('--expect') ?? '')
       .split(',')
@@ -85,14 +87,16 @@ Future<void> main(List<String> args) async {
   process.stdin.write(stack);
   await process.stdin.close();
   final out = await process.stdout.transform(utf8.decoder).join();
-  await process.stderr.drain<void>();
+  final err = await process.stderr.transform(utf8.decoder).join();
   stdout.write(out);
   final missing = [
     for (final name in expected)
       if (!out.contains(name)) name,
   ];
   if (await process.exitCode != 0 || missing.isNotEmpty) {
-    stderr.writeln('FAIL: missing from the symbolized stack: $missing');
+    stderr.writeln(
+      'FAIL: missing from the symbolized stack: $missing${err.trim().isEmpty ? '' : '\ndecoder said: ${err.trim()}'}',
+    );
     exit(1);
   }
   stdout.writeln('OK: ${expected.length} expected names symbolized');

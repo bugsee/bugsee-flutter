@@ -177,6 +177,23 @@ public class WrapperHoldTest {
     }
 
     @Test
+    public void aUiEngineThatComesAfterTheCapFindsTheHoldAlreadyReleased() {
+        // The documented limit: a headless engine attached, the cap passed, a UI engine comes later.
+        final Clock clock = new Clock();
+        final Sdk sdk = new Sdk();
+        final WrapperHold hold = new WrapperHold(clock, sdk);
+        hold.start();
+        hold.engineAttached();
+        clock.advance(WrapperHold.CAP_MS);
+        assertEquals("the cap released it", 1, sdk.delivered);
+        hold.engineAttached();
+        hold.uiDisplayed();
+        clock.advance(WrapperHold.SETTLE_MS);
+        assertEquals("the SDK was already told, nothing is held for the UI engine", 1, sdk.delivered);
+        assertTrue(hold.isReleased());
+    }
+
+    @Test
     public void engineAttachesCannotKeepTheHoldPastTheHardCap() {
         final Clock clock = new Clock();
         final Sdk sdk = new Sdk();
@@ -209,7 +226,7 @@ public class WrapperHoldTest {
     }
 
     @Test
-    public void withoutAChannelItRetriesAndThenGivesUp() {
+    public void withoutAChannelItKeepsRetryingUntilOneExists() {
         final Clock clock = new Clock();
         final Sdk sdk = new Sdk();
         sdk.hasChannel = false;

@@ -59,7 +59,8 @@ public final class FlutterWrapperInitProvider extends BugseeExtensionInitProvide
         }
         try {
             // The manifest asks the SDK to hold capture until the wrapper is ready: start the
-            // time cap that guarantees it is released (WrapperHold).
+            // time cap that makes the wrapper try to release it (WrapperHold; only a delivered
+            // signal ends it).
             WrapperHold.shared().start();
         } catch (Throwable t) {
             Log.e(TAG, "could not start the startup-hold cap: " + t.getClass().getName());

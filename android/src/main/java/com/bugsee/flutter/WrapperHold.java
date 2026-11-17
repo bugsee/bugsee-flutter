@@ -17,8 +17,9 @@ import androidx.annotation.NonNull;
  * empty", so without the hold the first seconds of a session, in which a secure view may already
  * be on screen, are recorded in the clear.
  *
- * <p>The hold must NEVER outlive a runtime that cannot end it, because a held display records
- * nothing. These end it, the first one wins:
+ * <p>The hold should not outlive a runtime that cannot end it, because a held display records
+ * nothing. The caps below only decide WHEN the wrapper tries to deliver the ready signal; only a
+ * delivered signal ends the hold (see the known limit below). These end it, the first one wins:
  *
  * <ul>
  *   <li>the first frame the Flutter engine displays, plus {@link #SETTLE_MS}: the secure views of

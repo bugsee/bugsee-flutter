@@ -147,16 +147,48 @@ public class WrapperHoldTest {
     }
 
     @Test
-    public void theEngineCapDoesNotMoveWhenASecondEngineAttaches() {
+    public void aSecondEngineBeforeAnyFrameRestartsTheCap() {
+        // A push wakes the process, a headless engine attaches; the UI engine comes 8 s later.
         final Clock clock = new Clock();
         final Sdk sdk = new Sdk();
         final WrapperHold hold = new WrapperHold(clock, sdk);
         hold.start();
         hold.engineAttached();
-        clock.advance(WrapperHold.CAP_MS - 100);
+        clock.advance(WrapperHold.CAP_MS - 2000);
+        hold.engineAttached();
+        clock.advance(WrapperHold.CAP_MS - 1);
+        assertEquals("the first engine's cap did not release the hold", 0, sdk.delivered);
+        clock.advance(1);
+        assertEquals(1, sdk.delivered);
+    }
+
+    @Test
+    public void anEngineAfterTheFirstFrameDoesNotMoveTheSettle() {
+        final Clock clock = new Clock();
+        final Sdk sdk = new Sdk();
+        final WrapperHold hold = new WrapperHold(clock, sdk);
+        hold.start();
+        hold.engineAttached();
+        hold.uiDisplayed();
+        clock.advance(WrapperHold.SETTLE_MS - 100);
         hold.engineAttached();
         clock.advance(100);
         assertEquals(1, sdk.delivered);
+    }
+
+    @Test
+    public void engineAttachesCannotKeepTheHoldPastTheHardCap() {
+        final Clock clock = new Clock();
+        final Sdk sdk = new Sdk();
+        final WrapperHold hold = new WrapperHold(clock, sdk);
+        hold.start();
+        // One engine every 5 s: each restarts the cap, none shows a frame.
+        for (long t = 0; t < WrapperHold.HARD_CAP_MS; t += 5_000) {
+            hold.engineAttached();
+            clock.advance(5_000);
+        }
+        assertEquals(1, sdk.delivered);
+        assertTrue(hold.isReleased());
     }
 
     @Test
@@ -164,6 +196,7 @@ public class WrapperHoldTest {
         // The SDK logs, at 15 s, that a hold is still on.
         assertTrue(WrapperHold.SETTLE_MS < WrapperHold.CAP_MS);
         assertTrue(WrapperHold.CAP_MS < WrapperHold.PROCESS_CAP_MS);
+        assertTrue(WrapperHold.PROCESS_CAP_MS < WrapperHold.HARD_CAP_MS);
     }
 
     @Test
@@ -172,7 +205,7 @@ public class WrapperHoldTest {
         final WrapperHold hold = new WrapperHold(clock, new Sdk());
         hold.start();
         hold.start();
-        assertEquals(1, clock.items.size());
+        assertEquals("the cap and the hard cap, once each", 2, clock.items.size());
     }
 
     @Test
@@ -195,7 +228,8 @@ public class WrapperHoldTest {
     }
 
     @Test
-    public void itStopsRetryingAfterTheCap() {
+    public void aChannelThatArrivesAfterTheRetryBudgetStillEndsTheHold() {
+        // The registration failed at process start; it succeeded when Dart refined the identity, late.
         final Clock clock = new Clock();
         final Sdk sdk = new Sdk();
         sdk.hasChannel = false;
@@ -203,8 +237,14 @@ public class WrapperHoldTest {
         hold.start();
         clock.advance(WrapperHold.PROCESS_CAP_MS * 3);
         assertFalse(hold.isReleased());
-        assertTrue("no retry left running", clock.items.isEmpty());
-        assertTrue(sdk.attempts <= WrapperHold.PROCESS_CAP_MS / WrapperHold.RETRY_MS + 3);
+        final int before = sdk.attempts;
+        clock.advance(WrapperHold.SLOW_RETRY_MS * 5);
+        assertTrue("it keeps trying, slowly", sdk.attempts > before && sdk.attempts - before <= 6);
+        sdk.hasChannel = true;
+        clock.advance(WrapperHold.SLOW_RETRY_MS);
+        assertEquals(1, sdk.delivered);
+        assertTrue(hold.isReleased());
+        assertTrue("nothing left running", clock.items.isEmpty());
     }
 
     @Test

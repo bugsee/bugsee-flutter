@@ -18,27 +18,33 @@ import androidx.annotation.NonNull;
  * be on screen, are recorded in the clear.
  *
  * <p>The hold must NEVER outlive a runtime that cannot end it, because a held display records
- * nothing. Three things end it, the first one wins:
+ * nothing. These end it, the first one wins:
  *
  * <ul>
  *   <li>the first frame the Flutter engine displays, plus {@link #SETTLE_MS}: the secure views of
  *       that frame are measured and published right after it by Dart (no Bugsee call from the app
  *       is needed);
- *   <li>{@link #CAP_MS} after a Flutter engine attached ({@link #engineAttached}): an engine that
- *       never shows a frame (a background isolate, a failed start) must not black out the
- *       recording. It counts from the ENGINE, not the process: a slow cold start (a debug build
- *       on a slow phone took 10 s to reach Dart) would otherwise end the hold before the runtime
- *       exists, which is when it matters;
+ *   <li>{@link #CAP_MS} after the LAST Flutter engine attached ({@link #engineAttached}) that has
+ *       not shown a frame yet: an engine that never shows a frame (a background isolate, a failed
+ *       start) must not black out the recording. It counts from the ENGINE, not the process: a
+ *       slow cold start (a debug build on a slow phone took 10 s to reach Dart) would otherwise end
+ *       the hold before the runtime exists, which is when it matters. Every engine that attaches
+ *       before a frame was displayed restarts it, so a headless engine (a push or WorkManager
+ *       isolate) that attached first does not release the hold before the UI engine exists;
  *   <li>{@link #PROCESS_CAP_MS} after process start, for a process that never attaches an engine
  *       at all (the SDK warns after 15 s that a hold is still on, and records nothing meanwhile);
+ *   <li>{@link #HARD_CAP_MS} after process start, whatever else happened: the restarts above are
+ *       bounded;
  *   <li>nothing else: there is no Dart signal, so the hold does not depend on the app calling
  *       any Bugsee API.
  * </ul>
  *
  * <p>The SDK's release is sticky (a ready signal given before the hold or before launch also
  * counts), so a second engine, a hot restart or a relaunch is not held again. The signal needs
- * the SDK's channel; while there is none the release is retried every {@link #RETRY_MS} until
- * {@link #CAP_MS} has passed. Everything runs on the main thread except {@link #start} and
+ * the SDK's channel; while there is none the release is retried every {@link #RETRY_MS} for
+ * {@link #PROCESS_CAP_MS} and then every {@link #SLOW_RETRY_MS}, without end: a channel that
+ * arrives late (the registration failed at process start and succeeded when Dart refined the
+ * identity) must still end the hold. Everything runs on the main thread except {@link #start} and
  * {@link #uiDisplayed}, which only post.
  */
 final class WrapperHold {
@@ -51,7 +57,11 @@ final class WrapperHold {
     static final long CAP_MS = 10_000;
     /** A process that never attaches an engine; the SDK warns at 15 s (only a log line). */
     static final long PROCESS_CAP_MS = 20_000;
+    /** Whatever happens, a hold is not kept longer than this after process start. */
+    static final long HARD_CAP_MS = 60_000;
     static final long RETRY_MS = 250;
+    /** After {@link #PROCESS_CAP_MS} of retries: a late channel is still caught, cheaply. */
+    static final long SLOW_RETRY_MS = 2_000;
 
     /** Posts to the main thread; a seam for tests (and for {@code java.util.function} at API 21). */
     interface Scheduler {
@@ -85,12 +95,14 @@ final class WrapperHold {
 
     private boolean started;
     private boolean settleArmed;
-    private boolean engineSeen;
+    private boolean engineLogged;
     private boolean released;
     private int attempts;
+    private boolean slowRetryLogged;
 
     private final Runnable settleTask = () -> release("the first frame was displayed");
     private final Runnable capTask = () -> release("the time cap passed");
+    private final Runnable hardCapTask = () -> release("the hard cap passed");
     private final Runnable retryTask = () -> release(null);
 
     WrapperHold(@NonNull final Scheduler scheduler, @NonNull final Signal signal) {
@@ -105,15 +117,21 @@ final class WrapperHold {
         }
         started = true;
         scheduler.postDelayed(capTask, PROCESS_CAP_MS);
+        scheduler.postDelayed(hardCapTask, HARD_CAP_MS);
     }
 
-    /** A Flutter engine attached: the cap now counts from here. Idempotent. */
+    /**
+     * A Flutter engine attached: the cap now counts from here, again for every engine that attaches
+     * before a frame was displayed (a headless one must not end the hold for the UI engine).
+     */
     synchronized void engineAttached() {
-        if (released || engineSeen) {
+        if (released || settleArmed) {
             return;
         }
-        engineSeen = true;
-        Log.i(TAG, "wrapper-hold: a Flutter engine attached; the cap counts from here");
+        if (!engineLogged) {
+            engineLogged = true;
+            Log.i(TAG, "wrapper-hold: a Flutter engine attached; the cap counts from here");
+        }
         scheduler.cancel(capTask);
         scheduler.postDelayed(capTask, CAP_MS);
     }
@@ -144,18 +162,26 @@ final class WrapperHold {
             Log.e(TAG, "wrapper-hold: the ready signal failed: " + t.getClass().getName());
         }
         if (!delivered) {
-            // No channel (yet). Try again shortly, but not forever: the SDK warns at 15 s.
+            // No channel (yet). Try again shortly and then slowly, without end: a channel that arrives
+            // late must still end the hold, and a retry costs nothing.
             attempts++;
+            // One retry chain: a cap or a frame that fails while one is already waiting must not add another.
+            scheduler.cancel(retryTask);
             if (attempts * RETRY_MS <= PROCESS_CAP_MS) {
                 scheduler.postDelayed(retryTask, RETRY_MS);
             } else {
-                Log.w(TAG, "wrapper-hold: no SDK channel to release the hold through");
+                if (!slowRetryLogged) {
+                    slowRetryLogged = true;
+                    Log.w(TAG, "wrapper-hold: no SDK channel yet; retrying every " + SLOW_RETRY_MS + " ms");
+                }
+                scheduler.postDelayed(retryTask, SLOW_RETRY_MS);
             }
             return;
         }
         released = true;
         scheduler.cancel(settleTask);
         scheduler.cancel(capTask);
+        scheduler.cancel(hardCapTask);
         scheduler.cancel(retryTask);
         if (why != null) {
             Log.i(TAG, "wrapper-hold released: " + why);

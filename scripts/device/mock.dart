@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'core/lan_host.dart';
 import 'shell.dart';
 
 class Mock {
@@ -26,12 +27,9 @@ class Mock {
     int uploadStatus = 503,
     String host = '127.0.0.1',
   }) async {
-    if (InternetAddress.tryParse(host) == null) {
-      throw ArgumentError.value(
-        host,
-        'host',
-        'the mock binds one IP address, not a name',
-      );
+    final hostProblem = bindHostProblem(host);
+    if (hostProblem != null) {
+      throw ArgumentError.value(host, 'host', hostProblem);
     }
     // One directory and one log per port: the platforms run side by side.
     // The port must be free: a stray server on it (a manual run, another harness) would answer the

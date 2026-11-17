@@ -17,6 +17,7 @@ import 'dart:typed_data';
 import 'core/bundle.dart';
 import 'core/crash_kinds.dart';
 import 'core/experiment.dart';
+import 'core/lan_host.dart';
 import 'core/log_parsers.dart';
 import 'mock.dart';
 import 'report.dart';
@@ -90,9 +91,10 @@ Future<int> runIosDevice({
     stderr.writeln('--udid <device> is required (the harness never picks one)');
     return 64;
   }
-  if (mockHost == '127.0.0.1') {
+  final hostProblem = lanHostProblem(mockHost);
+  if (hostProblem != null) {
     stderr.writeln(
-      'a physical iPhone cannot reach the loopback: set BUGSEE_VERIFY_MOCK_BIND to the Mac\'s LAN address',
+      'BUGSEE_VERIFY_MOCK_BIND must be the Mac\'s LAN IPv4 address for a physical iPhone: $hostProblem',
     );
     return 64;
   }
@@ -315,6 +317,14 @@ class _Ctx {
           if (banner != null) {
             seenBanner.add('${banner.version} ${banner.build}');
           }
+          // The build under test is the one the pins name (workbook 9.1.1): a banner of another version
+          // or build, or a wrapper that is not this one, makes the experiment INVALID, as on every other path.
+          final wrapperLog = parseWrapperLog(out);
+          run.guard(
+            'build: SDK banner and wrapper identity',
+            (await tc.expectation('release')).iosProblems(banner, wrapperLog),
+            '$banner; wrapper ${wrapperLog.registered}',
+          );
           final c2 = await launch(run, first: false);
           final bundle = await newBundle(
             where: (x) => x.type == 'crash',

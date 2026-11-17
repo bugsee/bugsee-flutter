@@ -14,6 +14,7 @@ import '../scripts/device/report.dart';
 import '../scripts/device/toolchain.dart';
 import '../scripts/device/core/bundle.dart';
 import '../scripts/device/core/experiment.dart';
+import '../scripts/device/core/lan_host.dart';
 import '../scripts/device/core/expectations.dart';
 import '../scripts/device/core/image.dart';
 import '../scripts/device/core/crash_kinds.dart';
@@ -801,6 +802,30 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         ),
         throwsFormatException,
       );
+    });
+  });
+
+  group('the mock host', () {
+    test('one IPv4 address of the Mac for a phone; never every interface', () {
+      expect(lanHostProblem('192.168.31.104'), isNull);
+      for (final bad in [
+        '0.0.0.0',
+        '::',
+        '127.0.0.1',
+        '127.0.0.2',
+        '::1',
+        'fe80::1',
+        'localhost',
+        '',
+      ]) {
+        expect(lanHostProblem(bad), isNotNull, reason: bad);
+      }
+      // The mock itself binds the loopback by default, and still refuses every interface and a name.
+      expect(bindHostProblem('127.0.0.1'), isNull);
+      expect(bindHostProblem('::1'), isNull);
+      expect(bindHostProblem('0.0.0.0'), isNotNull);
+      expect(bindHostProblem('::'), isNotNull);
+      expect(bindHostProblem('my-mac.local'), isNotNull);
     });
   });
 

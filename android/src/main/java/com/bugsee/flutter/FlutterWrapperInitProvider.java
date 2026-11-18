@@ -57,6 +57,14 @@ public final class FlutterWrapperInitProvider extends BugseeExtensionInitProvide
             Log.e(TAG, "could not register the Flutter wrapper at process start: "
                     + t.getClass().getName());
         }
+        try {
+            // The manifest asks the SDK to hold capture until the wrapper is ready: start the
+            // time cap that makes the wrapper try to release it (WrapperHold; only a delivered
+            // signal ends it).
+            WrapperHold.shared().start();
+        } catch (Throwable t) {
+            Log.e(TAG, "could not start the startup-hold cap: " + t.getClass().getName());
+        }
     }
 
     /**

@@ -2,6 +2,18 @@
 
     <application>
         <!--
+          Asks the SDK (7.5.x) to hold capture, blacked out, from process start until this wrapper
+          says it is ready (WrapperHold, ended by the first Flutter frame plus a settle time, or by
+          a time cap that makes the wrapper try to release it; only a delivered signal ends it,
+          see the known limit in WrapperHold). Until Dart has
+          published its secure rectangles the SDK would record whatever a secure view shows.
+          test/wrapper_registration_test.dart guards this and the code that ends it.
+        -->
+        <meta-data
+            android:name="com.bugsee.wrapper-hold"
+            android:value="true" />
+
+        <!--
           Registers the Flutter wrapper with the SDK before the SDK can launch.
 
           A ContentProvider runs BEFORE Application.onCreate, before any app code

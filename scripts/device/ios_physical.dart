@@ -288,7 +288,8 @@ class _Ctx {
       'SDK launched',
       launched == null
           ? [
-              'no launch event reached the mock (Local Network not allowed, or the Mac is not on the phone\'s network, or a report still pending from the previous kind stopped this launch)',
+              'no launch event reached the mock (Local Network not allowed, or the Mac is not on the phone\'s network, or a report still pending from the previous kind stopped this launch); '
+                  'the app console says: ${child.output.toString().split('\n').where((l) => l.contains('VERIFY|') || l.contains('Bugsee')).take(12).join(' | ')}',
             ]
           : launched['result'] == 'launched'
           ? []

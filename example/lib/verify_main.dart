@@ -55,11 +55,27 @@ void _emit(String kind, [Map<String, Object?> data = const {}]) {
   // ignore: avoid_print
   print('VERIFY|$line');
   if (_server.isNotEmpty) {
-    unawaited(_post('/__event', line));
+    unawaited(_sendEvent(line));
   }
 }
 
-Future<void> _post(String path, String body) async {
+/// Lines the mock did not take (the iOS Local Network prompt blocks the first seconds, airplane mode
+/// cuts the network): kept in order and sent again by the poll loop, so a one-shot event such as `launch`
+/// is not lost for good. The console line stays the primary record.
+final List<String> _unsent = [];
+
+Future<void> _sendEvent(String line) async {
+  if (_unsent.isNotEmpty || !await _post('/__event', line)) _unsent.add(line);
+}
+
+Future<void> _flushUnsent() async {
+  while (_unsent.isNotEmpty) {
+    if (!await _post('/__event', _unsent.first)) return;
+    _unsent.removeAt(0);
+  }
+}
+
+Future<bool> _post(String path, String body) async {
   try {
     final request = await _control
         .postUrl(Uri.parse('http://$_server$path'))
@@ -70,8 +86,10 @@ Future<void> _post(String path, String body) async {
     request.add(bytes);
     final response = await request.close().timeout(const Duration(seconds: 2));
     await response.drain<void>();
+    return true;
   } on Object {
     // Offline (airplane mode) or the server is gone: the console line is the record.
+    return false;
   }
 }
 
@@ -259,6 +277,7 @@ void _emitGeometry() {
 
 Future<void> _poll() async {
   while (true) {
+    await _flushUnsent();
     final command = await _nextCommand();
     if (command != null) {
       await _command(command);

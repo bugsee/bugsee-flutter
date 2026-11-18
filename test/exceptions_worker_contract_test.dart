@@ -158,6 +158,46 @@ void main() {
     });
   });
 
+  group('a stack from a real Dart 3.14 release build (Flutter 3.50.0, Android 7.6.0, arm64)', () {
+    // Dart 3.14 prints `_kDartSnapshotText+0x..` and `vm_instructions: 0` (one instructions section;
+    // older Dart printed `_kDartIsolateSnapshotInstructions+0x..`). The header must not be needed to
+    // decode it: the worker strips it (symbolfiles/flutter.py) and decodes by the `virt` address.
+    // Verified against the backend's dart_symbolize: doc/exceptions.md, "Verifying a build's symbols".
+    final stack = File(
+      'test/fixtures/exceptions/real_obfuscated_android_arm64_dart_3_14_trace.txt',
+    ).readAsStringSync();
+
+    test('the worker finds the build id and the frames', () {
+      expect(buildIdFromStackTrace(stack), 'a579af9d76c8acd8528219258f174ae5');
+      final frames = obfuscatedFrameLines(stack)!;
+      expect(frames.first, startsWith('#00 abs '));
+      expect(frames.length, 4);
+      expect(frames.last, '<asynchronous suspension>');
+    });
+
+    test(
+      'every frame has the virtual address the header-less decode needs',
+      () {
+        final frames = obfuscatedFrameLines(stack)!;
+        final withAddress = RegExp(
+          r'^#\d+ abs [\da-f]+ virt [\da-f]+ _kDartSnapshotText\+0x[\da-f]+$',
+        );
+        expect(
+          frames.where((f) => f.startsWith('#')).every(withAddress.hasMatch),
+          isTrue,
+        );
+      },
+    );
+
+    test('is sent untouched, header included', () {
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString(stack),
+      );
+      expect(parseReason(p.json)!['originalStackTrace'], stack);
+    });
+  });
+
   group(
     'an entry from a real obfuscated release build (Android 7.4.2, arm64)',
     () {

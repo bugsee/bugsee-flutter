@@ -136,6 +136,16 @@ void main() {
       expect(expectation().iosProblems(b, w), isEmpty);
     });
 
+    test('devicectl\'s terminating signal parses, and only that', () {
+      expect(
+        parseTerminatedSignal('x\nApp terminated due to signal 11.\n'),
+        11,
+      );
+      expect(parseTerminatedSignal('App terminated due to signal 6.'), 6);
+      expect(parseTerminatedSignal('Process exited with status 0'), isNull);
+      expect(parseTerminatedSignal('signal 11'), isNull);
+    });
+
     test('the build under test is accepted, and every way of testing another one is refused', () {
       final e = expectation();
       final banner = parseAndroidBanner(androidLog);

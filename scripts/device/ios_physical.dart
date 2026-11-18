@@ -334,6 +334,17 @@ class _Ctx {
             code == -999 ? ['the app is still running after 45 s'] : [],
             'devicectl exit $code; last console lines: ${out.split('\n').where((l) => l.trim().isNotEmpty).toList().reversed.take(3).toList().reversed.join(' | ')}',
           );
+          // The kernel's verdict as devicectl prints it: a native kind dies of its own signal; an
+          // uncaught Objective-C exception ends in abort (6).
+          final died = parseTerminatedSignal(out);
+          run.note('[${k.name}] the process died of signal $died');
+          if (k.signal != null) {
+            run.expect(
+              '[${k.name}] the process died of signal ${k.signal}',
+              died == k.signal,
+              'devicectl: App terminated due to signal $died',
+            );
+          }
           final banner = parseIosBanner(out);
           if (banner != null) {
             seenBanner.add('${banner.version} ${banner.build}');
@@ -367,12 +378,16 @@ class _Ctx {
             run.note(
               '[${k.name}] sdk ${jsonEncode(bundle.sdk)}; summary "${bundle.summary}"; excerpt ${text.substring(0, text.length < 400 ? text.length : 400)}',
             );
-            if (k.layer == CrashLayer.native) {
-              // Measured, not asserted, until a first real report shows what iOS records.
-              run.note(
-                '[${k.name}] the report says signal ${jsonEncode((crash?['signal'] as Map?)?['number'])}, the kind expects ${k.signal}',
-              );
-            }
+            // What iOS records, compactly; the whole crash.json is saved beside the report.
+            File('${tc.workDir}/ios-crash-${k.name}.json').writeAsStringSync(
+              const JsonEncoder.withIndent('  ')
+                  .convert(crash ?? bundle.request),
+            );
+            run.note(
+              '[${k.name}] recorded: ${jsonEncode({
+                for (final key in const ['signal', 'exception_type', 'code_type', 'handled', 'exception']) key: crash?[key],
+              })}; threads ${(crash?['threads'] as List?)?.length}',
+            );
             if (k.marker != null) {
               run.expect(
                 '[${k.name}] the report names ${k.marker}',

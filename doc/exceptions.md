@@ -222,7 +222,7 @@ dart scripts/verify_symbolization.dart --symbols build/symbols/app.android-arm64
 ```
 
 Without `--tool` the script decodes with `package:native_stack_traces` (0.7.1); with `--tool` it runs the backend's `dart_symbolize` on the
-input the worker gives it.
+stack from the first `#00` with a leading empty line dropped and every line trimmed (the rule of the worker port in `test/exceptions_worker_contract_test.dart`).
 
 What the backend does (read from the code, 2026-11-18): the worker (`crash/managed/dart.py` and `symbolfiles/flutter.py` in the private
 `bugsee-background-worker`) takes the build id from `build_id: '...'` in `originalStackTrace`, looks that id up among the symbols files the
@@ -246,8 +246,10 @@ Dart 3.14 (Flutter 3.50.0, Android SDK 7.6.0, measured 2026-11-18 on the stack o
 | `dart_symbolize` as the backend builds it (aux source, Dart 2.19.6) | FAILS (`Bad state: Future already completed` after the header lines) | symbolized (`Bugsee.logUnhandledException`, `_command`, `_poll` with file:line) |
 | the same source built with Dart 3.14 | FAILS the same way | symbolized |
 | `flutter symbolize` of Flutter 3.50.0 (`native_stack_traces` 0.6.1) | FAILS: "Cannot locate isolate instructions section in snapshot" | symbolized |
-| `native_stack_traces` 0.7.1 (`0.7.0`: "adjusts snapshot readers for the removal of the VM isolate") | symbolized | symbolized |
+| `native_stack_traces` 0.7.1 (its 0.7.0 changelog: "Adjusts snapshot readers for the removal of the VM isolate." 0.7.0 itself was not run) | symbolized | symbolized |
 | `dart_symbolize` with its vendored copy replaced by 0.7.1 | symbolized | symbolized |
+
+The "from `#00`" column was measured with both forms: the untrimmed text `symbolfiles/flutter.py` passes (a leading newline and the 4-space indent of each frame) and the trimmed lines; all three builds (Dart 2.19.6, Dart 3.14, 0.7.1 vendored) give the same frames for both.
 
 So the backend decodes a Dart 3.14 stack because it strips the header and the frames carry a `virt` address (the decoder falls back to it when it cannot
 map the symbol name), not because it understands the new layout. That holds as long as the worker keeps stripping the header and the

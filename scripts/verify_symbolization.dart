@@ -78,11 +78,18 @@ Future<void> main(List<String> args) async {
 
   // Without --tool: `package:native_stack_traces` (a dev dependency, 0.7.1). The decoder `flutter symbolize` wraps
   // is 0.6.1 in Flutter 3.50 and fails on a 3.50 build's symbols with the header ("Cannot locate isolate
-  // instructions section in snapshot", measured); 0.7.0 adjusted the readers to Dart 3.12+ snapshots.
-  // With --tool: the worker's input, the stack from the first `#00` on.
+  // instructions section in snapshot", measured); the 0.7.0 changelog reads
+  // "Adjusts snapshot readers for the removal of the VM isolate."; 0.7.1 decodes it (0.7.0 itself was not run).
+  // With --tool: the stack from the first `#00` on, as the worker port `obfuscatedFrameLines`
+  // (test/exceptions_worker_contract_test.dart) reads it: a leading empty line dropped, every line trimmed.
+  // (symbolfiles/flutter.py itself passes the untrimmed text; measured: both forms decode the same.)
   if (tool != null) {
     final m = RegExp(r'^(.*?)(\s*#00.*)', dotAll: true).firstMatch(stack);
-    if (m != null) stack = m.group(2)!;
+    if (m != null) {
+      var lines = const LineSplitter().convert(m.group(2)!);
+      if (lines.isNotEmpty && lines.first.isEmpty) lines = lines.sublist(1);
+      stack = [for (final l in lines) l.trim()].join('\n');
+    }
   }
   final process = await Process.start(
     tool ?? Platform.resolvedExecutable,

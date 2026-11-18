@@ -381,11 +381,11 @@ the package. The backend's `dart_symbolize` was run on 2026-11-18 (see the next 
 
 **Backend symbolizer against a Dart 3.14 build (2026-11-18, offline, no device):** the real `exception` entry and `app.android-arm64.symbols` of the Flutter 3.50.0
 release build above, run through `dart_symbolize` built from `bugsee-symbolication-aux` `dart-symbolize/` (commit `06db90f`, Dart SDK 2.19.6 as in its `version.txt`,
-and also Dart 3.14). Fed what the worker feeds it (`symbolfiles/flutter.py` of `bugsee-background-worker` cuts everything before the first `#00`), it
+and also Dart 3.14). Fed what the worker feeds it (`symbolfiles/flutter.py` of `bugsee-background-worker` cuts everything before the first `#00`; untrimmed and trimmed lines both tried, same result), it
 returns `Bugsee.logUnhandledException (.../bugsee.dart:638:30)`, `_command`, `_poll`. Fed the stack WITH its header it crashes (`Bad state: Future already
 completed`), as `flutter symbolize` 3.50 (`native_stack_traces` 0.6.1) does ("Cannot locate isolate instructions section in snapshot"). Cause: Dart 3.14
 symbols have `_kDartSnapshotText`, not `_kDartIsolateSnapshotInstructions` (`llvm-objdump --syms`), which the header-based path of the older decoders needs;
-`native_stack_traces` 0.7.0 ("adjusts snapshot readers for the removal of the VM isolate") fixed it, and `dart_symbolize` with 0.7.1 in place of its vendored
+the `native_stack_traces` 0.7.0 changelog reads "Adjusts snapshot readers for the removal of the VM isolate." (0.7.0 itself was not run; 0.6.1 fails, 0.7.1 works), and `dart_symbolize` with 0.7.1 in place of its vendored
 copy decodes both forms. The backend works today only because it strips the header and the frames carry a `virt` address. The full table is in
 `doc/exceptions.md`. The regression fixture is `test/fixtures/exceptions/real_obfuscated_android_arm64_dart_3_14_trace.txt`.
 iOS: a Flutter 3.50 `--release --obfuscate --split-debug-info` build (`example`, `lib/verify_main.dart`, no codesign) writes `app.ios-arm64.symbols`, a Mach-O

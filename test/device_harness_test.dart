@@ -827,6 +827,16 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(bindHostProblem('::'), isNotNull);
       expect(bindHostProblem('my-mac.local'), isNotNull);
     });
+
+    test('the Local Network prompt wait: 3 minutes by default, bounded, never silent', () {
+      expect(parsePromptWait(null).wait, const Duration(minutes: 3));
+      expect(parsePromptWait('30').wait, const Duration(minutes: 30));
+      for (final bad in ['0', '-1', '241', 'x', '', '2.5']) {
+        final r = parsePromptWait(bad);
+        expect(r.wait, isNull, reason: bad);
+        expect(r.problem, contains('--prompt-wait-minutes'), reason: bad);
+      }
+    });
   });
 
   group('the crash lab and the harness agree', () {

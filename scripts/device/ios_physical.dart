@@ -8,7 +8,7 @@
 // of Bugsee.xcframework, so a recovered iOS crash report, an uncaught Objective-C exception and a
 // Swift trap are only measurable here. The first launch after an install shows iOS's Local Network
 // prompt ("Allow"): it cannot be answered by a script, so the first launch waits for it (the run says
-// so). One scenario only (10, the crash and error matrix); scenarios 1 to 9 are written for the
+// so; `--prompt-wait-minutes N` sets how long, `--keep-install` keeps an install that already has the permission). One scenario only (10, the crash and error matrix); scenarios 1 to 9 are written for the
 // simulator and need its filesystem and `simctl`.
 import 'dart:convert';
 import 'dart:io';
@@ -86,6 +86,8 @@ Future<int> runIosDevice({
   required bool reuse,
   required bool allowDirty,
   required bool allowNotPossible,
+  Duration promptWait = const Duration(minutes: 3),
+  bool keepInstall = false,
 }) async {
   if (udid.isEmpty) {
     stderr.writeln('--udid <device> is required (the harness never picks one)');
@@ -167,7 +169,7 @@ Future<int> runIosDevice({
         return 1;
       }
     }
-    final ctx = _Ctx(tc, dev, mock, app, say);
+    final ctx = _Ctx(tc, dev, mock, app, say, promptWait, keepInstall);
     final scenarios = <int, Future<ScenarioResult> Function()>{
       10: ctx.crashMatrix,
     };
@@ -182,12 +184,27 @@ Future<int> runIosDevice({
 }
 
 class _Ctx {
-  _Ctx(this.tc, this.dev, this.mock, this.app, this.say);
+  _Ctx(
+    this.tc,
+    this.dev,
+    this.mock,
+    this.app,
+    this.say,
+    this.promptWait,
+    this.keepInstall,
+  );
   final Toolchain tc;
   final IosPhysical dev;
   final Mock mock;
   final String app;
   final void Function(String) say;
+
+  /// How long the first launch waits for the Local Network prompt (`--prompt-wait-minutes`).
+  final Duration promptWait;
+
+  /// `--keep-install`: neither remove the app first nor at the end, so an install that already holds the
+  /// Local Network permission keeps it. Off by default: the clean install is the guarded precondition.
+  final bool keepInstall;
   final Set<String> _seen = {};
   final List<Child> _live = [];
 
@@ -202,6 +219,7 @@ class _Ctx {
       }
     }
     _live.clear();
+    if (keepInstall) return;
     try {
       await dev.uninstall();
     } on Object {
@@ -259,12 +277,12 @@ class _Ctx {
     _live.add(child);
     if (first) {
       say(
-        '  >>> the iPhone shows "Allow Bugsee... to find devices on your local network": tap ALLOW within 3 minutes',
+        '  >>> PROMPT EXPECTED NOW: the iPhone shows "Allow Bugsee... to find devices on your local network": tap ALLOW within ${promptWait.inMinutes} minutes (phone on the same Wi-Fi as the Mac)',
       );
     }
     final launched = await waitEvent(
       (e) => e.kind == 'launch',
-      timeout: Duration(minutes: first ? 3 : 2),
+      timeout: first ? promptWait : const Duration(minutes: 2),
     );
     run.guard(
       'SDK launched',
@@ -285,10 +303,12 @@ class _Ctx {
     'Crash and error matrix: native signals, Objective-C, Swift, Dart routes',
     say,
     (run) async {
-      if (await dev.isInstalled()) await dev.uninstall();
+      if (!keepInstall && await dev.isInstalled()) await dev.uninstall();
       final r = await dev.install(app);
       run.guard(
-        'precondition: the release build is installed on a clean device',
+        keepInstall
+            ? 'precondition: the release build is installed over the existing install (--keep-install)'
+            : 'precondition: the release build is installed on a clean device',
         r.ok ? [] : ['install failed: ${r.stdout}\n${r.stderr}'],
         'devicectl install ${app.split('/').last}',
       );

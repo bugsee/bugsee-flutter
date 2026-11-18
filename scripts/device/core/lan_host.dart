@@ -31,3 +31,18 @@ String? lanHostProblem(String host) {
   }
   return null;
 }
+
+/// The Local Network prompt wait of `--prompt-wait-minutes`: [raw] is the option's text (or `null`, the
+/// default of 3 minutes). A value that is not a whole number from 1 to 240 is an error, never a silent default.
+({Duration? wait, String? problem}) parsePromptWait(String? raw) {
+  if (raw == null) return (wait: const Duration(minutes: 3), problem: null);
+  final n = int.tryParse(raw);
+  if (n == null || n < 1 || n > 240) {
+    return (
+      wait: null,
+      problem:
+          '--prompt-wait-minutes must be a whole number from 1 to 240, got "$raw"',
+    );
+  }
+  return (wait: Duration(minutes: n), problem: null);
+}

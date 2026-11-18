@@ -139,6 +139,25 @@ class ExitInfo {
   bool get isNativeCrash => reason.startsWith('5 ');
 }
 
+/// What is wrong with the exit record of a process the harness killed with SIGSEGV (9.1.4); empty
+/// when it proves a native crash. [status] 11 is the signal. Some PHYSICAL devices (measured: an
+/// Android 14 phone of a vendor that reports `status=0` for every native crash) do not fill the
+/// status in: with [statusMayBeUnreported] a 0 is accepted, ONLY because the caller has the kernel's
+/// own `Fatal signal 11` for the same pid from logcat, and the reason must still be a native crash.
+/// Any other status (a different signal, an app exit) is a failure either way.
+List<String> exitRecordProblems(
+  ExitInfo? exit,
+  int pid, {
+  bool statusMayBeUnreported = false,
+}) {
+  if (exit == null) return ['no ApplicationExitInfo for pid $pid'];
+  final unreported = statusMayBeUnreported && exit.status == 0;
+  if (!exit.isNativeCrash || (exit.status != 11 && !unreported)) {
+    return ['exit record ${exit.reason} status ${exit.status}'];
+  }
+  return const [];
+}
+
 ExitInfo? parseExitInfo(String dumpsys, int pid) {
   ExitInfo? best;
   for (final block in dumpsys.split(RegExp(r'ApplicationExitInfo #\d+:'))) {
@@ -173,6 +192,21 @@ ExitInfo? parseExitInfo(String dumpsys, int pid) {
     }
   }
   return null;
+}
+
+/// Whether logcat says [pid] died of an uncaught Java exception that names [marker]:
+/// `E AndroidRuntime: FATAL EXCEPTION: <thread>`, then `E AndroidRuntime: Process: <package>, PID: <pid>`,
+/// then the exception (and its causes) within the next 600 characters. The pid is the process's, so a
+/// crash of an earlier run in the same logcat does not count.
+bool parseFatalException(String log, int pid, String marker) {
+  for (final m in RegExp(
+    r'FATAL EXCEPTION[^\n]*\n[^\n]*Process:[^\n]*PID:\s*(\d+)[^\n]*\n([\s\S]{0,600})',
+  ).allMatches(log)) {
+    if (int.parse(m.group(1)!) == pid && m.group(2)!.contains(marker)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// Resolved versions of `com.bugsee:*` artefacts in a `./gradlew :app:dependencies` report

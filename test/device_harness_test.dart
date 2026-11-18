@@ -16,6 +16,7 @@ import '../scripts/device/core/bundle.dart';
 import '../scripts/device/core/experiment.dart';
 import '../scripts/device/core/expectations.dart';
 import '../scripts/device/core/image.dart';
+import '../scripts/device/core/crash_kinds.dart';
 import '../scripts/device/core/log_parsers.dart';
 import '../scripts/device/core/symbols.dart';
 import '../scripts/device/core/zip.dart';
@@ -308,6 +309,33 @@ void main() {
       );
     });
 
+    test(
+      'an uncaught Java exception is matched to the process and the marker',
+      () {
+        const log = '''
+11-12 10:00:00.000  500  500 E AndroidRuntime: FATAL EXCEPTION: main
+11-12 10:00:00.000  500  500 E AndroidRuntime: Process: com.bugsee.bugsee_flutter_example, PID: 500
+11-12 10:00:00.000  500  500 E AndroidRuntime: java.lang.IllegalStateException: verify-java-outer
+11-12 10:00:00.000  500  500 E AndroidRuntime: \tat com.bugsee.Main.run(MainActivity.kt:1)
+11-12 10:00:00.000  500  500 E AndroidRuntime: Caused by: java.lang.RuntimeException: verify-java-cause
+''';
+        expect(parseFatalException(log, 500, 'verify-java-outer'), isTrue);
+        expect(parseFatalException(log, 500, 'verify-java-cause'), isTrue);
+        // another process (an earlier run in the same logcat), a marker that is not there
+        expect(parseFatalException(log, 501, 'verify-java-outer'), isFalse);
+        expect(parseFatalException(log, 500, 'verify-java-main'), isFalse);
+        // the old shape: the exception on the line right after FATAL EXCEPTION is not this layout
+        expect(
+          parseFatalException(
+            'E AndroidRuntime: FATAL EXCEPTION: main\nE AndroidRuntime: verify-java-main\n',
+            500,
+            'verify-java-main',
+          ),
+          isFalse,
+        );
+      },
+    );
+
     test('the exit record must say native crash, status 11', () {
       const dump = '''
         ApplicationExitInfo #1:
@@ -325,6 +353,46 @@ void main() {
       expect(parseExitInfo(dump, 100)!.isNativeCrash, isFalse);
       expect(parseExitInfo(dump, 7), isNull);
     });
+
+    test(
+      'a physical device may leave the status 0, nothing else is relaxed',
+      () {
+        ExitInfo e(String reason, int status) =>
+            ExitInfo(pid: 9, reason: reason, status: status);
+        const native = '5 (APP CRASH(NATIVE))';
+        // The strict rule (emulators): native crash AND status 11.
+        expect(exitRecordProblems(e(native, 11), 9), isEmpty);
+        expect(exitRecordProblems(e(native, 0), 9), isNotEmpty);
+        expect(exitRecordProblems(null, 9), isNotEmpty);
+        // The physical-device rule: status 0 is "not reported", measured on a phone that does it
+        // for every native crash; the caller holds the kernel's `Fatal signal 11` for the pid.
+        expect(
+          exitRecordProblems(e(native, 0), 9, statusMayBeUnreported: true),
+          isEmpty,
+        );
+        expect(
+          exitRecordProblems(e(native, 11), 9, statusMayBeUnreported: true),
+          isEmpty,
+        );
+        // Still a failure: another signal, an app exit that is not a native crash, no record.
+        expect(
+          exitRecordProblems(e(native, 6), 9, statusMayBeUnreported: true),
+          isNotEmpty,
+        );
+        expect(
+          exitRecordProblems(
+            e('10 (USER REQUESTED)', 0),
+            9,
+            statusMayBeUnreported: true,
+          ),
+          isNotEmpty,
+        );
+        expect(
+          exitRecordProblems(null, 9, statusMayBeUnreported: true),
+          isNotEmpty,
+        );
+      },
+    );
 
     test('launchd\'s account of an iOS simulator process', () {
       const log =
@@ -733,6 +801,78 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         ),
         throwsFormatException,
       );
+    });
+  });
+
+  group('the crash lab and the harness agree', () {
+    test(
+      'every kind the harness runs exists in the app, and no kind is unused',
+      () {
+        final app = File('example/lib/crash_lab.dart').readAsStringSync();
+        final listed = RegExp(
+          r"const crashKinds = <String>\[(.*?)\];",
+          dotAll: true,
+        ).firstMatch(app)!.group(1)!;
+        final appKinds = RegExp(r"'([a-z-]+)'")
+            .allMatches(listed)
+            .map((m) => m.group(1)!)
+            .toList();
+        expect(
+          crashKindTable.map((k) => k.name).toList()..sort(),
+          appKinds.toList()..sort(),
+        );
+        // Each one has a branch in the switch (a listed kind with no case would throw).
+        for (final k in appKinds) {
+          expect(app, contains("case '$k':"));
+        }
+      },
+    );
+
+    test('no marker is a substring of another, the control included', () {
+      final markers = [
+        for (final k in crashKindTable)
+          if (k.marker != null) k.marker!,
+        crashControlMarker,
+      ];
+      for (final a in markers) {
+        for (final b in markers) {
+          if (a != b) {
+            expect(b.contains(a), isFalse, reason: '$a is inside $b');
+          }
+        }
+      }
+      expect(markers.toSet().length, markers.length);
+    });
+
+    test(
+      'the control the harness sends exists in the app and throws its marker',
+      () {
+        final app = File('example/lib/crash_lab.dart').readAsStringSync();
+        expect(app, contains("case 'control-async':"));
+        expect(app, contains("StateError('$crashControlMarker')"));
+      },
+    );
+
+    test('native kinds carry a signal, platform and Dart kinds a marker', () {
+      for (final k in crashKindTable) {
+        if (k.layer == CrashLayer.native) {
+          expect(k.signal, isNotNull, reason: k.name);
+        } else {
+          expect(k.marker, isNotNull, reason: k.name);
+          final source = k.layer == CrashLayer.platform
+              ? 'example/android/app/src/main/java/com/bugsee/bugsee_flutter_example/MainActivity.java'
+              : 'example/lib/crash_lab.dart';
+          // `verify-java-main` etc: the app throws the text the harness looks for.
+          expect(
+            File(source).readAsStringSync(),
+            contains(k.marker!),
+            reason: '${k.name}: the app throws the text the harness looks for',
+          );
+          for (final more in k.alsoContains) {
+            expect(File(source).readAsStringSync(), contains(more));
+          }
+        }
+      }
     });
   });
 

@@ -898,6 +898,16 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       },
     );
 
+    test('every iOS native kind has a report signal name, the known gaps name real kinds', () {
+      for (final k in crashKindTable.where(
+        (k) => k.platforms.contains('ios') && k.signal != null,
+      )) {
+        expect(iosReportSignalNames[k.signal], isNotNull, reason: k.name);
+      }
+      final names = crashKindTable.map((k) => k.name).toSet();
+      expect(names.containsAll(iosKnownNoReport), isTrue);
+    });
+
     test('native kinds carry a signal, platform and Dart kinds a marker', () {
       for (final k in crashKindTable) {
         if (k.layer == CrashLayer.native) {

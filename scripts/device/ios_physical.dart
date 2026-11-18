@@ -362,13 +362,22 @@ class _Ctx {
             where: (x) => x.type == 'crash',
             timeout: const Duration(seconds: 120),
           );
-          run.expect(
-            '[${k.name}] the next launch produced the recovered crash report',
-            bundle != null,
-            bundle == null
-                ? 'none in 120 s'
-                : '${bundle.source} ${bundle.type} "${bundle.summary}"',
-          );
+          final reportEvidence = bundle == null
+              ? 'none in 120 s'
+              : '${bundle.source} ${bundle.type} "${bundle.summary}"';
+          if (iosKnownNoReport.contains(k.name)) {
+            run.knownGap(
+              '[${k.name}] the next launch produced the recovered crash report (SDK 7.1.0 records none for this signal)',
+              bundle != null,
+              reportEvidence,
+            );
+          } else {
+            run.expect(
+              '[${k.name}] the next launch produced the recovered crash report',
+              bundle != null,
+              reportEvidence,
+            );
+          }
           if (bundle != null) {
             final crash = bundle.crash;
             final text = jsonEncode(crash ?? bundle.request);
@@ -388,6 +397,32 @@ class _Ctx {
                 for (final key in const ['signal', 'exception_type', 'code_type', 'handled', 'exception']) key: crash?[key],
               })}; threads ${(crash?['threads'] as List?)?.length}',
             );
+            // Measured on a device (doc/verification.md, 2026-11-18): every kind records the signal it died of
+            // by name, as a native exception that nobody handled; the Objective-C kinds record SIGABRT plus
+            // an `exception` block whose `reason` is the NSException's reason.
+            final reportSignal = (crash?['signal'] as Map?)?['name'];
+            final wantSignal = iosReportSignalNames[k.signal ?? 6];
+            run.expect(
+              '[${k.name}] the report records $wantSignal, exception_type native, not handled',
+              reportSignal == wantSignal &&
+                  crash?['exception_type'] == 'native' &&
+                  crash?['handled'] == false,
+              'signal $reportSignal, exception_type ${crash?['exception_type']}, handled ${crash?['handled']}',
+            );
+            if (k.layer == CrashLayer.platform) {
+              final ex = crash?['exception'] as Map?;
+              run.expect(
+                '[${k.name}] the exception block carries the NSException reason ${k.marker}',
+                ex?['reason'] == k.marker,
+                'exception name ${ex?['name']}, reason ${ex?['reason']}',
+              );
+            } else {
+              run.expect(
+                '[${k.name}] a native signal has no exception block',
+                crash?['exception'] == null,
+                'exception ${crash?['exception']}',
+              );
+            }
             if (k.marker != null) {
               run.expect(
                 '[${k.name}] the report names ${k.marker}',

@@ -22,6 +22,7 @@ class CrashKind {
     this.marker,
     this.expectReport = true,
     this.alsoContains = const [],
+    this.platforms = const {'android', 'ios'},
   });
 
   /// The `crash <name>` command.
@@ -41,6 +42,9 @@ class CrashKind {
   /// More text the report must hold (a cause chain).
   final List<String> alsoContains;
 
+  /// Where the kind exists (Java is Android's, Objective-C and Swift iOS's).
+  final Set<String> platforms;
+
   bool get fatal => layer != CrashLayer.dart;
 }
 
@@ -54,14 +58,41 @@ const crashKindTable = <CrashKind>[
   CrashKind('ffi-fpe', CrashLayer.native, signal: 8),
   CrashKind('ffi-bus', CrashLayer.native, signal: 7),
   CrashKind('ffi-ill', CrashLayer.native, signal: 4),
-  CrashKind('java-main', CrashLayer.platform, marker: 'verify-java-main'),
-  CrashKind('java-thread', CrashLayer.platform, marker: 'verify-java-thread'),
+  CrashKind(
+    'java-main',
+    CrashLayer.platform,
+    marker: 'verify-java-main',
+    platforms: {'android'},
+  ),
+  CrashKind(
+    'java-thread',
+    CrashLayer.platform,
+    marker: 'verify-java-thread',
+    platforms: {'android'},
+  ),
   CrashKind(
     'java-nested',
     CrashLayer.platform,
     marker: 'verify-java-outer',
     alsoContains: ['verify-java-cause'],
+    platforms: {'android'},
   ),
+  // iOS: an uncaught Objective-C exception on the main thread and on a worker, and a Swift runtime trap.
+  CrashKind(
+    'objc-main',
+    CrashLayer.platform,
+    marker: 'verify-objc-main',
+    platforms: {'ios'},
+  ),
+  CrashKind(
+    'objc-thread',
+    CrashLayer.platform,
+    marker: 'verify-objc-thread',
+    platforms: {'ios'},
+  ),
+  // A Swift runtime trap (`fatalError`) is a SIGTRAP, not an exception: the report holds the signal and
+  // the stack, not the message (which Swift prints to stderr), so there is no marker to look for.
+  CrashKind('swift-trap', CrashLayer.native, signal: 5, platforms: {'ios'}),
   CrashKind(
     'dart-sync-framework',
     CrashLayer.dart,

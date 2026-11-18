@@ -39,6 +39,14 @@ not an emulator a status of 0 is accepted, ONLY with the kernel's `Fatal signal 
 reason (`exitRecordProblems`, tested to still fail for any other status or reason). Run with
 `--serial <adb serial> --allow-dirty --allow-not-possible`.
 
+**Physical iPhone.** `dart scripts/device/verify.dart ios-device --udid <device> --scenarios 10` (with `BUGSEE_VERIFY_MOCK_BIND=<the Mac's LAN
+address>`, one address) installs the signed release build with `devicectl`, launches it with its console attached (the child's exit is the proof the
+process ended; the console also carries the SDK banner, e.g. `Bugsee IOS SDK ver:7.0.1 build:5c6b9d9db-8`, measured on an iPhone XS) and runs the crash
+matrix of scenario 10 against the mock API on the LAN. Only scenario 10 exists for a device (1 to 9 need the simulator's filesystem and `simctl`). The first
+launch after an install shows iOS's Local Network prompt, which a script cannot answer: the run says so and waits 3 minutes for a tap. **Status: written and
+tested up to the install and launch on an iPhone XS (iOS 18.7.9); the matrix itself has NOT run** (the first attempt ended INVALID at "SDK launched": the
+phone reported "The Internet connection appears to be offline" because nobody was there to allow the prompt, or the phone is not on the Mac's network).
+
 **What it drives.** `example/lib/verify_main.dart` is the example app's second entry point: it launches the SDK
 from build flags (`--dart-define=VERIFY_SERVER`, `BUGSEE_ENDPOINT`), registers a report handler that records what
 it saw (into the report itself: an attribute, a label, an attached file) and polls `GET /__cmd` on the loopback
@@ -361,6 +369,15 @@ the check to `localhost`; and two profile-build pixel checks that did not repeat
 one failed pixel check in an earlier run and passed in the full one, and scenarios 2 and 5 were twice INVALID at their first launch ("wrapper registered as
 null", "alreadyRunning"; the harness refuses to count that experiment, and the same scenarios passed on the next run). No product failure was found. The startup
 hold (`WrapperHold`) was in the build for all of this.
+
+**Re-run on the same phone at Android SDK 7.6.0 (2026-11-17, plugin 4.1.1, Flutter 3.50.0, banner `Bugsee Android SDK 7.6.0 [2a88ea7fbf]`):** scenarios 1 to 10
+all PASSED (the full run: 1, 2, 3, 5 to 10; scenario 4 after a harness fix, 49/49; the scenario 10 crash matrix 180/180). Two things were found by the
+harness itself, and neither is a product defect. (1) The first full run was INVALID everywhere: the pin held `2a88ea7fb` (9 characters, read from the tag) and the
+banner prints 10 (`2a88ea7fbf`); the build guard refused the runs, and the pin now comes from a run. (2) Scenario 4's offline symbolization check failed:
+Flutter 3.50's own `flutter symbolize` answers "Cannot locate isolate instructions section in snapshot" on the symbols of a 3.50 build, while
+`package:native_stack_traces` 0.7.1 decodes the same file and stack to the app frames (`Bugsee.logUnhandledException`, `_command`, `_poll`); the harness now uses
+the package. The backend's `dart_symbolize` against Dart 3.14 snapshots was NOT run: it is the tool this check stands in for, and it is unverified. The iOS
+7.1.0 crash matrix was not run (the iPhone's Local Network prompt was not answered in time, see the Physical iPhone paragraph).
 
 ## Findings
 

@@ -1,15 +1,20 @@
-// The loopback mock API (example/integration_test/support/mock_api.py) the apps talk to: it carries the
+// The mock API (example/integration_test/support/mock_api.py) the apps talk to: it carries the
 // harness's commands to the verification app and the app's events back, and stores every bundle an SDK
-// uploads. It binds 127.0.0.1 only; the Android emulator reaches it as 10.0.2.2, the iOS simulator as
-// localhost.
+// uploads. It binds the loopback by default (the Android emulator reaches it as 10.0.2.2, the iOS
+// simulator as localhost); a physical iPhone needs the Mac's LAN address, which only `runIosDevice`
+// passes, as `host`. A LAN bind has no authentication: run it on a network you trust.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'core/lan_host.dart';
 import 'shell.dart';
 
 class Mock {
-  Mock._(this.port, this.child, this.dumpDir, this.logFile);
+  Mock._(this.host, this.port, this.child, this.dumpDir, this.logFile);
+
+  /// The address it listens on and the harness talks to.
+  final String host;
   final int port;
   final Child child;
   final String dumpDir;
@@ -20,16 +25,21 @@ class Mock {
     String workDir,
     int port, {
     int uploadStatus = 503,
+    String host = '127.0.0.1',
   }) async {
+    final hostProblem = bindHostProblem(host);
+    if (hostProblem != null) {
+      throw ArgumentError.value(host, 'host', hostProblem);
+    }
     // One directory and one log per port: the platforms run side by side.
     // The port must be free: a stray server on it (a manual run, another harness) would answer the
     // readiness probe and the harness would talk to the wrong one.
     try {
-      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+      final probe = await ServerSocket.bind(InternetAddress(host), port);
       await probe.close();
     } on SocketException {
       throw StateError(
-        '127.0.0.1:$port is already in use: stop whatever listens there, or pass --port',
+        '$host:$port is already in use: stop whatever listens there, or pass --port',
       );
     }
     // iOS bundles are zstd zips (method 93), which Python's zipfile reads from 3.14 on: with an older
@@ -60,9 +70,10 @@ class Mock {
         'ISSUE_OK': '1',
         'UPLOAD_STATUS': '$uploadStatus',
         'DUMP_DIR': dump,
+        'MOCK_BIND': host,
       },
     );
-    final mock = Mock._(port, child, dump, log);
+    final mock = Mock._(host, port, child, dump, log);
     final up = await until(
       () async => await mock._get('/__events') != null ? true : null,
       timeout: const Duration(seconds: 15),
@@ -71,7 +82,7 @@ class Mock {
     if (up == null) {
       await child.stop();
       throw StateError(
-        'the mock API did not start on 127.0.0.1:$port: ${child.output}',
+        'the mock API did not start on $host:$port: ${child.output}',
       );
     }
     return mock;
@@ -80,7 +91,7 @@ class Mock {
   Future<String?> _get(String path) async {
     final c = HttpClient();
     try {
-      final r = await (await c.getUrl(Uri.parse('http://127.0.0.1:$port$path')))
+      final r = await (await c.getUrl(Uri.parse('http://$host:$port$path')))
           .close();
       return await utf8.decodeStream(r);
     } on Object {
@@ -93,7 +104,7 @@ class Mock {
   Future<void> _post(String path, [String body = '']) async {
     final c = HttpClient();
     try {
-      final r = await c.postUrl(Uri.parse('http://127.0.0.1:$port$path'));
+      final r = await c.postUrl(Uri.parse('http://$host:$port$path'));
       final bytes = utf8.encode(body);
       r.contentLength = bytes.length;
       r.add(bytes);
@@ -144,7 +155,7 @@ class Mock {
     try {
       final r = await (await c.getUrl(
         Uri.parse(
-          'http://127.0.0.1:$port/__plain?file=${Uri.encodeQueryComponent(name)}',
+          'http://$host:$port/__plain?file=${Uri.encodeQueryComponent(name)}',
         ),
       )).close();
       if (r.statusCode != 200) return null;

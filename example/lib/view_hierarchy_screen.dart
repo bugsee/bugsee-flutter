@@ -1,5 +1,5 @@
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// What the managed view hierarchy looks like for a screen with ordinary widgets, text the user
 /// typed, and a [BugseeSecureView]. The SDK asks the plugin for the Flutter tree when it builds a

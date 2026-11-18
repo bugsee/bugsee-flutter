@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The rest of the API in one place: attributes and identity, events and traces, logs and
 /// breadcrumbs, notifications, blackout, secure views, reports and the lifecycle events. Every

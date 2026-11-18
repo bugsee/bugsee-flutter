@@ -17,8 +17,7 @@ import 'package:pigeon/pigeon.dart';
       package: 'com.bugsee.flutter.feedback',
       className: 'Messages',
     ),
-    swiftOut:
-        '../ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback/Messages.g.swift',
+    swiftOut: '../ios/bugsee_flutter_feedback/Sources/bugsee_flutter_feedback/Messages.g.swift',
     dartPackageName: 'bugsee_flutter_feedback',
   ),
 )

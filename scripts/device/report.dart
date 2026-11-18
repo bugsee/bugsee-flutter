@@ -53,9 +53,8 @@ class Reporter {
         'scenarios': [for (final r in results) r.toJson()],
       }),
     );
-    File(
-      '$workDir/report-$platform$tag.log',
-    ).writeAsStringSync(_log.toString());
+    File('$workDir/report-$platform$tag.log')
+        .writeAsStringSync(_log.toString());
     final bad = results.any(
       (r) => r.status == Status.fail || r.status == Status.invalid,
     );

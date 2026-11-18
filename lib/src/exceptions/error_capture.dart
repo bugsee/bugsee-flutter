@@ -24,8 +24,10 @@ import 'package:meta/meta.dart' show visibleForTesting;
 import 'exception_payload.dart';
 
 /// What the capture hands on for each error it lets through.
-typedef ErrorReporter =
-    Future<void> Function(ExceptionPayload payload, {required bool handled});
+typedef ErrorReporter = Future<void> Function(
+  ExceptionPayload payload, {
+  required bool handled,
+});
 
 /// A monotonic clock: time since something fixed, never going backwards (a wall clock does, when it
 /// is set). Injectable for tests.
@@ -136,15 +138,12 @@ final class IsolateErrorListener {
 
 final class ErrorCapture {
   ErrorCapture({
-    required ErrorReporter report,
-    required bool Function() enabled,
+    required this._report,
+    required this._enabled,
     ReportLimiter? limiter,
-    PlatformDispatcher? dispatcher,
+    this._dispatcher,
     void Function(String message)? warn,
-  }) : _report = report,
-       _enabled = enabled,
-       _limiter = limiter ?? ReportLimiter(),
-       _dispatcher = dispatcher,
+  }) : _limiter = limiter ?? ReportLimiter(),
        _warn = warn ?? ((_) {});
 
   final ErrorReporter _report;

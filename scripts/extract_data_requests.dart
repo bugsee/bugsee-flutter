@@ -41,8 +41,7 @@ Map<String, Object?> extract({
   final ap = stripComments(androidProvider);
   final ip = stripComments(iosProvider);
   return {
-    '_comment':
-        'Extracted from the native SDK sources by scripts/extract_data_requests.dart; do not edit by hand. Compared by test/view_hierarchy_drift_test.dart.',
+    '_comment': 'Extracted from the native SDK sources by scripts/extract_data_requests.dart; do not edit by hand. Compared by test/view_hierarchy_drift_test.dart.',
     'pins': pins,
     'android': {
       'vhType': _one(
@@ -120,9 +119,9 @@ void main(List<String> args) {
     );
     exit(64);
   }
-  final versions =
-      jsonDecode(File('native-versions.json').readAsStringSync())
-          as Map<String, Object?>;
+  final versions = jsonDecode(
+    File('native-versions.json').readAsStringSync(),
+  ) as Map<String, Object?>;
   final pins = {
     'android': (versions['android']! as Map<String, Object?>)['sdk'],
     'ios': (versions['ios']! as Map<String, Object?>)['sdk'],

@@ -47,8 +47,9 @@ final class BugseeLogEvent {
 /// given to `Bugsee.setLogFilter` DROPS the line: a redaction boundary fails closed. Runs on the
 /// isolate that printed, one line at a time and in order, never inside the `print` call. Anything
 /// the filter itself prints is not captured.
-typedef BugseeLogFilter =
-    FutureOr<BugseeLogEvent?> Function(BugseeLogEvent event);
+typedef BugseeLogFilter = FutureOr<BugseeLogEvent?> Function(
+  BugseeLogEvent event,
+);
 
 /// The SDK [LogLevel] for a `package:logging` `Level.value` (or any severity on its scale).
 ///

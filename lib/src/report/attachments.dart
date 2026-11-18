@@ -165,8 +165,7 @@ ReportAttachmentException attachmentFailure(String what, String code) {
   final reason = ReportWire.failures[code] ?? ReportAttachmentFailure.rejected;
   final text = switch (reason) {
     ReportAttachmentFailure.fileNotFound => 'there is no file at that path',
-    ReportAttachmentFailure.notAFile =>
-      'the path is not a regular file (a directory, or a URL instead of a file path)',
+    ReportAttachmentFailure.notAFile => 'the path is not a regular file (a directory, or a URL instead of a file path)',
     ReportAttachmentFailure.unreadable =>
       'the file cannot be read by this app (permissions or storage rules)',
     ReportAttachmentFailure.tooLarge =>

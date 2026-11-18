@@ -186,63 +186,54 @@ void main() {
       },
     );
 
-    test(
-      'an option that cannot be honoured is an ArgumentError before anything native',
-      () async {
-        await expectLater(
-          Bugsee.launch(
-            'tok',
-            options: const BugseeOptions(
-              custom: {'com.bugsee.option.typo': true},
-            ),
+    test('an option that cannot be honoured is an ArgumentError before anything native', () async {
+      await expectLater(
+        Bugsee.launch(
+          'tok',
+          options: const BugseeOptions(
+            custom: {'com.bugsee.option.typo': true},
           ),
-          throwsArgumentError,
-        );
-        await expectLater(
-          Bugsee.launch(
-            'tok',
-            options: const BugseeOptions(endpoint: 'nonsense'),
-          ),
-          throwsArgumentError,
-        );
-        expect(native.calls, isEmpty);
-      },
-    );
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        Bugsee.launch(
+          'tok',
+          options: const BugseeOptions(endpoint: 'nonsense'),
+        ),
+        throwsArgumentError,
+      );
+      expect(native.calls, isEmpty);
+    });
 
-    test(
-      'a platform without an SDK is a typed exception, nothing native is touched',
-      () async {
-        platform = null;
-        await expectLater(
-          Bugsee.launch('tok'),
-          throwsA(
-            isA<BugseeLaunchException>().having(
-              (e) => e.reason,
-              'reason',
-              LaunchFailure.unsupportedPlatform,
-            ),
+    test('a platform without an SDK is a typed exception, nothing native is touched', () async {
+      platform = null;
+      await expectLater(
+        Bugsee.launch('tok'),
+        throwsA(
+          isA<BugseeLaunchException>().having(
+            (e) => e.reason,
+            'reason',
+            LaunchFailure.unsupportedPlatform,
           ),
-        );
-        expect(native.calls, isEmpty);
-      },
-    );
+        ),
+      );
+      expect(native.calls, isEmpty);
+    });
 
     group('what native answers', () {
-      test(
-        'already running: a result, not an error, and the dropped options are said so',
-        () async {
-          native.outcome = LaunchOutcomeMessage(
-            outcome: LaunchWire.alreadyRunning,
-          );
-          final result = await Bugsee.launch(
-            'tok',
-            options: const BugseeOptions(captureLogs: false),
-          );
-          expect(result, LaunchResult.alreadyRunning);
-          expect(warnings.single, contains('NOT applied'));
-          expect(warnings.single, contains('com.bugsee.auto-init'));
-        },
-      );
+      test('already running: a result, not an error, and the dropped options are said so', () async {
+        native.outcome = LaunchOutcomeMessage(
+          outcome: LaunchWire.alreadyRunning,
+        );
+        final result = await Bugsee.launch(
+          'tok',
+          options: const BugseeOptions(captureLogs: false),
+        );
+        expect(result, LaunchResult.alreadyRunning);
+        expect(warnings.single, contains('NOT applied'));
+        expect(warnings.single, contains('com.bugsee.auto-init'));
+      });
 
       test('already running with no options says nothing', () async {
         native.outcome = LaunchOutcomeMessage(
@@ -316,44 +307,38 @@ void main() {
         },
       );
 
-      test(
-        'an exception the SDK threw crosses as a typed exception carrying the cause',
-        () async {
-          native.launchThrows = PlatformException(
-            code: LaunchWire.errorCode,
-            message: 'java.lang.IllegalStateException: boom',
-          );
-          await expectLater(
-            Bugsee.launch('tok'),
-            throwsA(
-              isA<BugseeLaunchException>()
-                  .having((e) => e.reason, 'reason', LaunchFailure.nativeError)
-                  .having((e) => e.message, 'message', contains('boom'))
-                  .having((e) => e.cause, 'cause', isA<PlatformException>()),
-            ),
-          );
-        },
-      );
-    });
-
-    test(
-      'a failure to attach to native is a launch error, nothing is launched, and the next call retries',
-      () async {
-        native.failAttach = 1;
+      test('an exception the SDK threw crosses as a typed exception carrying the cause', () async {
+        native.launchThrows = PlatformException(
+          code: LaunchWire.errorCode,
+          message: 'java.lang.IllegalStateException: boom',
+        );
         await expectLater(
           Bugsee.launch('tok'),
           throwsA(
-            isA<BugseeLaunchException>().having(
-              (e) => e.reason,
-              'reason',
-              LaunchFailure.nativeError,
-            ),
+            isA<BugseeLaunchException>()
+                .having((e) => e.reason, 'reason', LaunchFailure.nativeError)
+                .having((e) => e.message, 'message', contains('boom'))
+                .having((e) => e.cause, 'cause', isA<PlatformException>()),
           ),
         );
-        expect(native.calls, isNot(contains('launch')));
-        expect(await Bugsee.launch('tok'), LaunchResult.launched);
-      },
-    );
+      });
+    });
+
+    test('a failure to attach to native is a launch error, nothing is launched, and the next call retries', () async {
+      native.failAttach = 1;
+      await expectLater(
+        Bugsee.launch('tok'),
+        throwsA(
+          isA<BugseeLaunchException>().having(
+            (e) => e.reason,
+            'reason',
+            LaunchFailure.nativeError,
+          ),
+        ),
+      );
+      expect(native.calls, isNot(contains('launch')));
+      expect(await Bugsee.launch('tok'), LaunchResult.launched);
+    });
   });
 
   group('waitUntilLaunched (the answer to deferred and to launching)', () {
@@ -546,15 +531,12 @@ void main() {
       );
     });
 
-    test(
-      'a status this version does not know, or a native failure, is an exception',
-      () async {
-        native.statusName = 'hibernating';
-        await expectLater(Bugsee.getStatus(), throwsA(isA<BugseeException>()));
-        native.statusThrows = PlatformException(code: 'x');
-        await expectLater(Bugsee.getStatus(), throwsA(isA<BugseeException>()));
-      },
-    );
+    test('a status this version does not know, or a native failure, is an exception', () async {
+      native.statusName = 'hibernating';
+      await expectLater(Bugsee.getStatus(), throwsA(isA<BugseeException>()));
+      native.statusThrows = PlatformException(code: 'x');
+      await expectLater(Bugsee.getStatus(), throwsA(isA<BugseeException>()));
+    });
 
     test('statusChanges carries only the four transitions, in order', () async {
       final seen = <BugseeStatus>[];
@@ -596,15 +578,12 @@ void main() {
       );
     });
 
-    test(
-      'reading the status attaches to native, so a launch made natively is heard',
-      () async {
-        Bugsee.status;
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-        expect(native.calls, contains('attach'));
-      },
-    );
+    test('reading the status attaches to native, so a launch made natively is heard', () async {
+      Bugsee.status;
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(native.calls, contains('attach'));
+    });
 
     test('so does subscribing to the transitions', () async {
       final sub = Bugsee.statusChanges.listen((_) {});

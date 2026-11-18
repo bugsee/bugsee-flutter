@@ -507,9 +507,9 @@ class AndroidCtx {
             .where((e) => e.kind == 'handler')
             .map((e) => e['phase']),
       };
-      final fullLog = parseVerifyEvents(
-        c.allLogs,
-      ).where((e) => e.kind == 'handler').toList();
+      final fullLog = parseVerifyEvents(c.allLogs)
+          .where((e) => e.kind == 'handler')
+          .toList();
       final before = fullLog.where((e) => e['phase'] == 'before').toList();
       final after = fullLog.where((e) => e['phase'] == 'after').toList();
       run.expect(
@@ -551,9 +551,10 @@ class AndroidCtx {
             .map((m) => 'tid ${m.group(2)} vs pid ${m.group(1)}')
             .join(', '),
       );
-      final windows = RegExp(
-        r'report handler rh-\d+ phase=\w+ deadline=(\d+)',
-      ).allMatches(c.allLogs).map((m) => int.parse(m.group(1)!)).toList();
+      final windows = RegExp(r'report handler rh-\d+ phase=\w+ deadline=(\d+)')
+          .allMatches(c.allLogs)
+          .map((m) => int.parse(m.group(1)!))
+          .toList();
       run.expect(
         '[$name] the wrapper gave the recovered report the LIVE window (20 s), which it grants only to the SDK\'s BugseeReportHandlerThread: a native-crash report recovered after a normal session is dispatched like a live one, not on the bounded early-crash thread',
         windows.isNotEmpty && windows.every((w) => w == 20000),
@@ -769,9 +770,10 @@ class AndroidCtx {
     String entry, {
     List<String> expect = const [],
   }) {
-    final file = Directory(symbolsDir).listSync().whereType<File>().firstWhere(
-      (f) => f.path.endsWith('.symbols'),
-    );
+    final file = Directory(symbolsDir)
+        .listSync()
+        .whereType<File>()
+        .firstWhere((f) => f.path.endsWith('.symbols'));
     return sh(
       [
         tc.dartExecutable,
@@ -887,98 +889,99 @@ class AndroidCtx {
 
   // ---- 6 --------------------------------------------------------------------------------------
 
-  Future<ScenarioResult>
-  crashAcrossUpdate() => runScenario(6, 'Crash across an app update (workbook 9.3.4)', say, (
-    run,
-  ) async {
-    final a = await build('releaseA');
-    final bb = await build('releaseB');
-    final shaA = a.apkBytes.length, shaB = bb.apkBytes.length;
-    run.guard(
-      'precondition: the two builds differ',
-      [
-        if (a.buildNumber == bb.buildNumber) 'same versionCode',
-        if (_sameBytes(a.apkBytes, bb.apkBytes))
-          'the two APKs are byte-identical',
-      ],
-      'N: versionCode ${a.buildNumber} ($shaA bytes); N+1: versionCode ${bb.buildNumber} ($shaB bytes)',
-    );
-    run.note(
-      'the Gradle build id is ${a.buildUuid == bb.buildUuid ? 'the SAME' : 'different'} for the two builds (${a.buildUuid} / ${bb.buildUuid}): it identifies the compiled Java/Kotlin code, which these two builds share, so it cannot tell them apart; the app build (versionCode) does',
-    );
-    await s.install(run, a);
-    final l = await s.launch(run, a);
-    await delay(6);
-    await dev.clearBundles();
-    await s.crash(run, l.pid);
-    // Update WITHOUT wiping data.
-    await s.install(run, bb, wipe: false);
-    final ndk = (await dev.inApp([
-      'ls',
-      dev.useRunAs
-          ? 'files/bugsee_data/ndk'
-          : '${dev.dataDir}/files/bugsee_data/ndk',
-    ])).stdout.trim();
-    run.guard(
-      'precondition: the crash data of build N survived the update',
-      ndk.isEmpty
-          ? ['files/bugsee_data/ndk is empty: the update wiped data']
-          : [],
-      'ndk dir: $ndk',
-    );
-    await s.airplane(run, true);
-    final l2 = await s.launch(run, bb);
-    final recovered = await s.newBundle(
-      where: (x) => x.type == 'crash',
-      timeout: const Duration(seconds: 90),
-    );
-    run.expect(
-      '[N crash -> N+1 relaunch] a recovered report was produced',
-      recovered != null,
-      recovered == null ? 'none' : recovered.source,
-    );
-    await s.airplane(run, false);
-    if (recovered != null) {
-      run.expect(
-        'the recovered report carries build N (the crashed build), not N+1',
-        recovered.app['build'] == '${a.buildNumber}' &&
-            recovered.app['version'] == '1.0.${a.buildNumber}',
-        'app ${recovered.app['version']} (${recovered.app['build']}); installed now: ${bb.buildNumber}',
-      );
-      run.expect(
-        'identity_source is "session" (the persisted identity of the producing session)',
-        recovered.identitySource == 'session',
-        '${recovered.identitySource}',
+  Future<ScenarioResult> crashAcrossUpdate() => runScenario(
+    6,
+    'Crash across an app update (workbook 9.3.4)',
+    say,
+    (run) async {
+      final a = await build('releaseA');
+      final bb = await build('releaseB');
+      final shaA = a.apkBytes.length, shaB = bb.apkBytes.length;
+      run.guard(
+        'precondition: the two builds differ',
+        [
+          if (a.buildNumber == bb.buildNumber) 'same versionCode',
+          if (_sameBytes(a.apkBytes, bb.apkBytes))
+            'the two APKs are byte-identical',
+        ],
+        'N: versionCode ${a.buildNumber} ($shaA bytes); N+1: versionCode ${bb.buildNumber} ($shaB bytes)',
       );
       run.note(
-        'crash.json uuid ${recovered.crash?['uuid']} (N ${a.buildUuid}, N+1 ${bb.buildUuid}): the two builds share it, so it cannot discriminate here; app.build does',
+        'the Gradle build id is ${a.buildUuid == bb.buildUuid ? 'the SAME' : 'different'} for the two builds (${a.buildUuid} / ${bb.buildUuid}): it identifies the compiled Java/Kotlin code, which these two builds share, so it cannot tell them apart; the app build (versionCode) does',
       );
-      final wp = (await s.expectation(
-        'release',
-      )).wrapperInReport(recovered.wrapper);
+      await s.install(run, a);
+      final l = await s.launch(run, a);
+      await delay(6);
+      await dev.clearBundles();
+      await s.crash(run, l.pid);
+      // Update WITHOUT wiping data.
+      await s.install(run, bb, wipe: false);
+      final ndk = (await dev.inApp([
+        'ls',
+        dev.useRunAs
+            ? 'files/bugsee_data/ndk'
+            : '${dev.dataDir}/files/bugsee_data/ndk',
+      ])).stdout.trim();
+      run.guard(
+        'precondition: the crash data of build N survived the update',
+        ndk.isEmpty
+            ? ['files/bugsee_data/ndk is empty: the update wiped data']
+            : [],
+        'ndk dir: $ndk',
+      );
+      await s.airplane(run, true);
+      final l2 = await s.launch(run, bb);
+      final recovered = await s.newBundle(
+        where: (x) => x.type == 'crash',
+        timeout: const Duration(seconds: 90),
+      );
       run.expect(
-        'sdk.wrapper identity is on the recovered report',
-        wp.isEmpty,
-        wp.isEmpty ? jsonEncode(recovered.wrapper) : wp.join('; '),
+        '[N crash -> N+1 relaunch] a recovered report was produced',
+        recovered != null,
+        recovered == null ? 'none' : recovered.source,
       );
-    }
-    await s.waitCommandChannel();
-    final live = await _report(
-      run,
-      'upload live-n1',
-      where: (x) => x.summary == 'verify upload live-n1',
-    );
-    run.expect(
-      'a live report of N+1 carries build N+1 and no identity_source (the two halves differ)',
-      live.app['build'] == '${bb.buildNumber}' && live.identitySource == null,
-      'app ${live.app['version']} (${live.app['build']}) identity_source ${live.identitySource}',
-    );
-    run.note('process of N+1: pid ${l2.pid}');
-    run.result.notCovered.addAll([
-      'iOS: crash -> update -> relaunch (see the iOS section: the SDK discards or restamps; spec says the iOS side is not implemented)',
-      'an update that ALSO changes the SDK version (both builds pin the same SDK here)',
-    ]);
-  });
+      await s.airplane(run, false);
+      if (recovered != null) {
+        run.expect(
+          'the recovered report carries build N (the crashed build), not N+1',
+          recovered.app['build'] == '${a.buildNumber}' &&
+              recovered.app['version'] == '1.0.${a.buildNumber}',
+          'app ${recovered.app['version']} (${recovered.app['build']}); installed now: ${bb.buildNumber}',
+        );
+        run.expect(
+          'identity_source is "session" (the persisted identity of the producing session)',
+          recovered.identitySource == 'session',
+          '${recovered.identitySource}',
+        );
+        run.note(
+          'crash.json uuid ${recovered.crash?['uuid']} (N ${a.buildUuid}, N+1 ${bb.buildUuid}): the two builds share it, so it cannot discriminate here; app.build does',
+        );
+        final wp = (await s.expectation('release'))
+            .wrapperInReport(recovered.wrapper);
+        run.expect(
+          'sdk.wrapper identity is on the recovered report',
+          wp.isEmpty,
+          wp.isEmpty ? jsonEncode(recovered.wrapper) : wp.join('; '),
+        );
+      }
+      await s.waitCommandChannel();
+      final live = await _report(
+        run,
+        'upload live-n1',
+        where: (x) => x.summary == 'verify upload live-n1',
+      );
+      run.expect(
+        'a live report of N+1 carries build N+1 and no identity_source (the two halves differ)',
+        live.app['build'] == '${bb.buildNumber}' && live.identitySource == null,
+        'app ${live.app['version']} (${live.app['build']}) identity_source ${live.identitySource}',
+      );
+      run.note('process of N+1: pid ${l2.pid}');
+      run.result.notCovered.addAll([
+        'iOS: crash -> update -> relaunch (see the iOS section: the SDK discards or restamps; spec says the iOS side is not implemented)',
+        'an update that ALSO changes the SDK version (both builds pin the same SDK here)',
+      ]);
+    },
+  );
 
   // ---- 7 --------------------------------------------------------------------------------------
 
@@ -1136,9 +1139,7 @@ class AndroidCtx {
           'precondition: the app renders in $mode mode',
           hasSurface == !texture
               ? []
-              : [
-                  'SurfaceFlinger ${hasSurface ? 'has' : 'has no'} a SurfaceView layer for the app',
-                ],
+              : ['SurfaceFlinger ${hasSurface ? 'has' : 'has no'} a SurfaceView layer for the app'],
           'SurfaceView layer present: $hasSurface',
         );
         // The device's own screen has content (the screenshot cannot be black because the screen is).
@@ -1206,174 +1207,178 @@ class AndroidCtx {
 
   // ---- 8 --------------------------------------------------------------------------------------
 
-  Future<ScenarioResult>
-  hotRestart() => runScenario(8, 'Hot restart: lifecycle, handlers and the report-handler sweep', say, (
-    run,
-  ) async {
-    final b = await build('debug');
-    await s.install(run, b);
-    await dev.clearLogcat();
-    // `flutter run` installs and launches its own debug build of the same source.
-    final example = '${tc.repoRoot}/example';
-    final run1 = await Child.start(
-      [
-        tc.flutter,
-        'run',
-        '-d',
-        dev.serial,
-        '-t',
-        'lib/verify_main.dart',
-        '--dart-define=VERIFY_SERVER=10.0.2.2:${mock.port}',
-        '--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:${mock.port}',
-      ],
-      cwd: example,
-      env: tc.buildEnv,
-    );
-    try {
-      final up = await run1.waitFor(
-        'Flutter run key commands',
-        timeout: const Duration(minutes: 8),
+  Future<ScenarioResult> hotRestart() => runScenario(
+    8,
+    'Hot restart: lifecycle, handlers and the report-handler sweep',
+    say,
+    (run) async {
+      final b = await build('debug');
+      await s.install(run, b);
+      await dev.clearLogcat();
+      // `flutter run` installs and launches its own debug build of the same source.
+      final example = '${tc.repoRoot}/example';
+      final run1 = await Child.start(
+        [
+          tc.flutter,
+          'run',
+          '-d',
+          dev.serial,
+          '-t',
+          'lib/verify_main.dart',
+          '--dart-define=VERIFY_SERVER=10.0.2.2:${mock.port}',
+          '--dart-define=BUGSEE_ENDPOINT=http://10.0.2.2:${mock.port}',
+        ],
+        cwd: example,
+        env: tc.buildEnv,
       );
-      run.guard(
-        'precondition: flutter run is up with a debug session',
-        up
-            ? []
-            : ['flutter run did not reach the key-commands banner: ${run1.output}'],
-        'flutter run attached',
-      );
-      // The artefact guard looks at the APK that RUNS (the one `flutter run` installed), pulled from the
-      // device, not at the pre-built one it replaced.
-      final runningApk = '${tc.workDir}/apks/flutter-run.apk';
-      final pulled = await dev.adb(['pull', await dev.apkPath(), runningApk]);
-      run.guard(
-        'precondition: the running APK was pulled from the device',
-        pulled.ok ? [] : ['adb pull failed: $pulled'],
-        'flutter run\'s own install of ${dev.pkg}',
-      );
-      final running = await inspectAndroid(
-        tc,
-        name: 'flutter-run',
-        mode: 'debug',
-        apk: runningApk,
-        buildNumber: b.buildNumber,
-        obfuscated: false,
-      );
-      final l = await s.launch(run, running, freshLog: false, restart: false);
-      final mainEvents1 = l.events.where((e) => e.kind == 'main').toList();
-      await s.command('upload before-restart');
-      await s.newBundle();
-      final before = parseVerifyEvents(await dev.logcat());
-      final handlersBefore = before.where((e) => e.kind == 'handler').length;
-      run.guard(
-        'precondition: a handler pair ran before the restart',
-        handlersBefore == 2
-            ? []
-            : ['expected 2 handler events before the restart, saw $handlersBefore'],
-        '$handlersBefore handler events',
-      );
-      final mainsBefore = parseVerifyEvents(
-        await dev.logcat(),
-      ).where((e) => e.kind == 'main').length;
-      run1.write('R');
-      final restarted = await run1.waitFor(
-        'Performing hot restart',
-        timeout: const Duration(minutes: 2),
-      );
-      run.guard(
-        'event: a hot restart was performed',
-        restarted
-            ? []
-            : ['flutter run never reported "Performing hot restart"'],
-        'flutter run: ${run1.output.toString().split('\n').where((x) => x.contains('hot restart')).take(2).join(' | ')}',
-      );
-      // The restarted isolate prints a new `main` event (its clock restarts too): what follows the LAST
-      // `main` in the log is what the new isolate did.
-      final reMain = await until<VerifyEvent>(
-        () async {
-          final mains = parseVerifyEvents(
-            await dev.logcat(),
-          ).where((e) => e.kind == 'main').toList();
-          return mains.length > mainsBefore ? mains.last : null;
-        },
-        timeout: const Duration(seconds: 60),
-        every: const Duration(seconds: 2),
-      );
-      run.expect(
-        'the Dart isolate restarted inside the SAME process (same pid, a new main())',
-        reMain != null && reMain['pid'] == mainEvents1.last['pid'],
-        'main before: pid ${mainEvents1.last['pid']}; after: pid ${reMain?['pid']}',
-      );
-      await delay(6);
-      final post = afterLastMain(parseVerifyEvents(await dev.logcat()));
-      final launchAfter = post.where((e) => e.kind == 'launch').toList();
-      run.expect(
-        'the SDK was not launched twice: the new isolate finds it running (alreadyRunning)',
-        launchAfter.isNotEmpty &&
-            launchAfter.every((e) => e['result'] == 'alreadyRunning'),
-        'launch events after the restart: ${launchAfter.map((e) => e['result']).toList()}',
-      );
-      final status = post.where((e) => e.kind == 'status').toList();
-      run.expect(
-        'the status is replayed to the new isolate: launched',
-        status.isNotEmpty && status.last['status'] == 'launched',
-        '${status.map((e) => e['status']).toList()}',
-      );
-      final replayed = [
-        for (final e in post)
-          if (e.kind == 'lifecycle') '${e['event']}',
-      ];
-      final sync = post.where((x) => x.kind == 'status-sync').toList();
-      run.expect(
-        'the new isolate\'s synchronous Bugsee.status is launched (the SDK was launched before the restart)',
-        sync.isNotEmpty && sync.last['status'] == 'launched',
-        'status-sync after the restart: ${sync.map((x) => x['status']).toList()}; lifecycle events the new isolate saw before any report: $replayed',
-      );
-      await s.command('upload after-restart');
-      final bundle = await s.newBundle(
-        where: (x) => x.summary == 'verify upload after-restart',
-      );
-      await delay(3);
-      final after = afterLastMain(parseVerifyEvents(await dev.logcat()));
-      final handlers = after.where((e) => e.kind == 'handler').toList();
-      run.expect(
-        'handlers still flow after the restart, exactly one before and one after (no duplicate registration)',
-        handlers.where((e) => e['phase'] == 'before').length == 1 &&
-            handlers.where((e) => e['phase'] == 'after').length == 1,
-        'before x${handlers.where((e) => e['phase'] == 'before').length}, after x${handlers.where((e) => e['phase'] == 'after').length}',
-      );
-      final lifecycle = after
-          .where((e) => e.kind == 'lifecycle')
-          .map((e) => e['event'])
-          .toList();
-      run.expect(
-        'lifecycle events flow after the restart (assembled, uploaded) to the new isolate once each',
-        lifecycle.where((e) => '$e'.contains('BeforeReportAssembled')).length ==
-            1,
-        '$lifecycle',
-      );
-      run.expect(
-        'the report built after the restart carries the Dart enrichment',
-        bundle != null && bundle.attributes.containsKey('verify.before'),
-        bundle == null ? 'no bundle' : '${bundle.attributes.keys.toList()}',
-      );
-      final log = await dev.logcat();
-      run.note(
-        'native report-handler log after the restart: ${RegExp(r'BugseeFlutter: report handler[^\n]*').allMatches(log).map((m) => m.group(0)).take(8).toList()}',
-      );
-      run.note(
-        'registrations in the process log since the restart: "wrapper registered" x${'wrapper registered'.allMatches(log).length} (it registers once per process, before launch)',
-      );
-    } finally {
-      run1.write('q');
-      await delay(2);
-      await run1.stop();
-    }
-    run.result.notCovered.addAll([
-      'hot RELOAD (no isolate restart); only restart is exercised',
-      'a hot restart while a report handler delivery is in flight (the sweep of outstanding deliveries is unit-tested; not provoked on a device)',
-      'iOS hot restart is covered by the iOS run',
-    ]);
-  });
+      try {
+        final up = await run1.waitFor(
+          'Flutter run key commands',
+          timeout: const Duration(minutes: 8),
+        );
+        run.guard(
+          'precondition: flutter run is up with a debug session',
+          up
+              ? []
+              : ['flutter run did not reach the key-commands banner: ${run1.output}'],
+          'flutter run attached',
+        );
+        // The artefact guard looks at the APK that RUNS (the one `flutter run` installed), pulled from the
+        // device, not at the pre-built one it replaced.
+        final runningApk = '${tc.workDir}/apks/flutter-run.apk';
+        final pulled = await dev.adb(['pull', await dev.apkPath(), runningApk]);
+        run.guard(
+          'precondition: the running APK was pulled from the device',
+          pulled.ok ? [] : ['adb pull failed: $pulled'],
+          'flutter run\'s own install of ${dev.pkg}',
+        );
+        final running = await inspectAndroid(
+          tc,
+          name: 'flutter-run',
+          mode: 'debug',
+          apk: runningApk,
+          buildNumber: b.buildNumber,
+          obfuscated: false,
+        );
+        final l = await s.launch(run, running, freshLog: false, restart: false);
+        final mainEvents1 = l.events.where((e) => e.kind == 'main').toList();
+        await s.command('upload before-restart');
+        await s.newBundle();
+        final before = parseVerifyEvents(await dev.logcat());
+        final handlersBefore = before.where((e) => e.kind == 'handler').length;
+        run.guard(
+          'precondition: a handler pair ran before the restart',
+          handlersBefore == 2
+              ? []
+              : ['expected 2 handler events before the restart, saw $handlersBefore'],
+          '$handlersBefore handler events',
+        );
+        final mainsBefore = parseVerifyEvents(await dev.logcat())
+            .where((e) => e.kind == 'main')
+            .length;
+        run1.write('R');
+        final restarted = await run1.waitFor(
+          'Performing hot restart',
+          timeout: const Duration(minutes: 2),
+        );
+        run.guard(
+          'event: a hot restart was performed',
+          restarted
+              ? []
+              : ['flutter run never reported "Performing hot restart"'],
+          'flutter run: ${run1.output.toString().split('\n').where((x) => x.contains('hot restart')).take(2).join(' | ')}',
+        );
+        // The restarted isolate prints a new `main` event (its clock restarts too): what follows the LAST
+        // `main` in the log is what the new isolate did.
+        final reMain = await until<VerifyEvent>(
+          () async {
+            final mains = parseVerifyEvents(await dev.logcat())
+                .where((e) => e.kind == 'main')
+                .toList();
+            return mains.length > mainsBefore ? mains.last : null;
+          },
+          timeout: const Duration(seconds: 60),
+          every: const Duration(seconds: 2),
+        );
+        run.expect(
+          'the Dart isolate restarted inside the SAME process (same pid, a new main())',
+          reMain != null && reMain['pid'] == mainEvents1.last['pid'],
+          'main before: pid ${mainEvents1.last['pid']}; after: pid ${reMain?['pid']}',
+        );
+        await delay(6);
+        final post = afterLastMain(parseVerifyEvents(await dev.logcat()));
+        final launchAfter = post.where((e) => e.kind == 'launch').toList();
+        run.expect(
+          'the SDK was not launched twice: the new isolate finds it running (alreadyRunning)',
+          launchAfter.isNotEmpty &&
+              launchAfter.every((e) => e['result'] == 'alreadyRunning'),
+          'launch events after the restart: ${launchAfter.map((e) => e['result']).toList()}',
+        );
+        final status = post.where((e) => e.kind == 'status').toList();
+        run.expect(
+          'the status is replayed to the new isolate: launched',
+          status.isNotEmpty && status.last['status'] == 'launched',
+          '${status.map((e) => e['status']).toList()}',
+        );
+        final replayed = [
+          for (final e in post)
+            if (e.kind == 'lifecycle') '${e['event']}',
+        ];
+        final sync = post.where((x) => x.kind == 'status-sync').toList();
+        run.expect(
+          'the new isolate\'s synchronous Bugsee.status is launched (the SDK was launched before the restart)',
+          sync.isNotEmpty && sync.last['status'] == 'launched',
+          'status-sync after the restart: ${sync.map((x) => x['status']).toList()}; lifecycle events the new isolate saw before any report: $replayed',
+        );
+        await s.command('upload after-restart');
+        final bundle = await s.newBundle(
+          where: (x) => x.summary == 'verify upload after-restart',
+        );
+        await delay(3);
+        final after = afterLastMain(parseVerifyEvents(await dev.logcat()));
+        final handlers = after.where((e) => e.kind == 'handler').toList();
+        run.expect(
+          'handlers still flow after the restart, exactly one before and one after (no duplicate registration)',
+          handlers.where((e) => e['phase'] == 'before').length == 1 &&
+              handlers.where((e) => e['phase'] == 'after').length == 1,
+          'before x${handlers.where((e) => e['phase'] == 'before').length}, after x${handlers.where((e) => e['phase'] == 'after').length}',
+        );
+        final lifecycle = after
+            .where((e) => e.kind == 'lifecycle')
+            .map((e) => e['event'])
+            .toList();
+        run.expect(
+          'lifecycle events flow after the restart (assembled, uploaded) to the new isolate once each',
+          lifecycle
+                  .where((e) => '$e'.contains('BeforeReportAssembled'))
+                  .length ==
+              1,
+          '$lifecycle',
+        );
+        run.expect(
+          'the report built after the restart carries the Dart enrichment',
+          bundle != null && bundle.attributes.containsKey('verify.before'),
+          bundle == null ? 'no bundle' : '${bundle.attributes.keys.toList()}',
+        );
+        final log = await dev.logcat();
+        run.note(
+          'native report-handler log after the restart: ${RegExp(r'BugseeFlutter: report handler[^\n]*').allMatches(log).map((m) => m.group(0)).take(8).toList()}',
+        );
+        run.note(
+          'registrations in the process log since the restart: "wrapper registered" x${'wrapper registered'.allMatches(log).length} (it registers once per process, before launch)',
+        );
+      } finally {
+        run1.write('q');
+        await delay(2);
+        await run1.stop();
+      }
+      run.result.notCovered.addAll([
+        'hot RELOAD (no isolate restart); only restart is exercised',
+        'a hot restart while a report handler delivery is in flight (the sweep of outstanding deliveries is unit-tested; not provoked on a device)',
+        'iOS hot restart is covered by the iOS run',
+      ]);
+    },
+  );
 }
 
 bool _sameBytes(List<int> x, List<int> y) {

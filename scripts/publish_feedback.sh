@@ -14,7 +14,7 @@
 # The copy is made from the TRACKED files only (`git ls-files`): outside git pub no longer applies
 # the root .gitignore, so copying the working tree would publish whatever an editor or a build left
 # in it (an Android Studio local.properties, logs). The archive is checked once more
-# (scripts/check_pub_archive.sh). Needs Flutter on PATH (the floor, 3.41.0, as in CI) and rsync.
+# (scripts/check_pub_archive.sh). Needs Flutter on PATH (the floor, 3.50.0, as in CI) and rsync.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

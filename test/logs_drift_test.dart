@@ -81,22 +81,19 @@ void main() {
       expect(LogWire.maxLineLength, fixture['maxLineLength']);
     });
 
-    test(
-      'the filter timeout is the SDK\'s 10 seconds in the constant and in the public signature',
-      () {
-        expect(
-          LogWire.defaultFilterTimeout,
-          Duration(seconds: fixture['filterTimeoutSeconds'] as int),
-        );
-        expect(
-          read('lib/src/bugsee.dart'),
-          contains(
-            'Duration timeout = const Duration(seconds: ${fixture['filterTimeoutSeconds']}),',
-          ),
-        );
-        expect(LogWire.maxFilterTimeout, const Duration(minutes: 5));
-      },
-    );
+    test('the filter timeout is the SDK\'s 10 seconds in the constant and in the public signature', () {
+      expect(
+        LogWire.defaultFilterTimeout,
+        Duration(seconds: fixture['filterTimeoutSeconds'] as int),
+      );
+      expect(
+        read('lib/src/bugsee.dart'),
+        contains(
+          'Duration timeout = const Duration(seconds: ${fixture['filterTimeoutSeconds']}),',
+        ),
+      );
+      expect(LogWire.maxFilterTimeout, const Duration(minutes: 5));
+    });
   });
 
   group('the source attribution', () {
@@ -141,29 +138,25 @@ void main() {
       },
     );
 
-    test(
-      'the oldest age native will subtract is the same in Dart, Java and Objective-C',
-      () {
-        final expected = fixture['maxAgeMs'] as int;
-        expect(LogWire.maxAgeMs, expected);
-        final m = RegExp(
-          r'MAX_AGE_MS = (\d+)L \* (\d+)L \* (\d+)L;',
-        ).firstMatch(javaOps)!;
-        expect(
-          int.parse(m.group(1)!) *
-              int.parse(m.group(2)!) *
-              int.parse(m.group(3)!),
-          expected,
-        );
-        expect(
-          RegExp(r'kMaxAgeMs = 60LL \* 60LL \* 1000LL;').hasMatch(objcOps),
-          isTrue,
-        );
-        // The seam reads the SDK's clock, never the device's, and uses the timestamp overload.
-        expect(javaSdk, contains('channel.currentTimeMillis()'));
-        expect(javaSdk, isNot(contains('System.currentTimeMillis()')));
-      },
-    );
+    test('the oldest age native will subtract is the same in Dart, Java and Objective-C', () {
+      final expected = fixture['maxAgeMs'] as int;
+      expect(LogWire.maxAgeMs, expected);
+      final m = RegExp(r'MAX_AGE_MS = (\d+)L \* (\d+)L \* (\d+)L;')
+          .firstMatch(javaOps)!;
+      expect(
+        int.parse(m.group(1)!) *
+            int.parse(m.group(2)!) *
+            int.parse(m.group(3)!),
+        expected,
+      );
+      expect(
+        RegExp(r'kMaxAgeMs = 60LL \* 60LL \* 1000LL;').hasMatch(objcOps),
+        isTrue,
+      );
+      // The seam reads the SDK's clock, never the device's, and uses the timestamp overload.
+      expect(javaSdk, contains('channel.currentTimeMillis()'));
+      expect(javaSdk, isNot(contains('System.currentTimeMillis()')));
+    });
 
     test('Dart tags are the two routes and nothing the SDK reserves', () {
       expect(LogTags.print, 'print');
@@ -171,55 +164,48 @@ void main() {
     });
   });
 
-  group(
-    'the option keys the policy reads exist in both SDKs, with these types and defaults',
-    () {
-      Map<String, Map<String, dynamic>> manifest(String sdk) {
-        final data =
-            jsonDecode(read('test/fixtures/option_manifests/$sdk.json'))
-                as Map<String, dynamic>;
-        return {
-          for (final o
-              in (data['options'] as List).cast<Map<String, dynamic>>())
-            o['key'] as String: o,
-        };
-      }
+  group('the option keys the policy reads exist in both SDKs, with these types and defaults', () {
+    Map<String, Map<String, dynamic>> manifest(String sdk) {
+      final data = jsonDecode(
+        read('test/fixtures/option_manifests/$sdk.json'),
+      ) as Map<String, dynamic>;
+      return {
+        for (final o in (data['options'] as List).cast<Map<String, dynamic>>())
+          o['key'] as String: o,
+      };
+    }
 
-      test('the keys are the fixture\'s', () {
-        expect(LogOptionKeys.capture, (fixture['options'] as Map)['capture']);
-        expect(LogOptionKeys.level, (fixture['options'] as Map)['level']);
+    test('the keys are the fixture\'s', () {
+      expect(LogOptionKeys.capture, (fixture['options'] as Map)['capture']);
+      expect(LogOptionKeys.level, (fixture['options'] as Map)['level']);
+    });
+
+    for (final sdk in ['android', 'ios']) {
+      test(sdk, () {
+        final options = manifest(sdk);
+        expect(
+          options[LogOptionKeys.capture],
+          allOf(containsPair('type', 'boolean'), containsPair('default', true)),
+        );
+        final level = options[LogOptionKeys.level]!;
+        expect(level, containsPair('type', 'enum'));
+        expect(level, containsPair('default', 'Verbose'));
+        final values = (level['enum'] as Map)['values'] as Map;
+        // The same numbers on both SDKs (the breadcrumb levels are not).
+        expect({
+          for (final e in values.entries)
+            (e.key as String).toLowerCase(): e.value,
+        }, fixture['levels']);
       });
+    }
 
-      for (final sdk in ['android', 'ios']) {
-        test(sdk, () {
-          final options = manifest(sdk);
-          expect(
-            options[LogOptionKeys.capture],
-            allOf(
-              containsPair('type', 'boolean'),
-              containsPair('default', true),
-            ),
-          );
-          final level = options[LogOptionKeys.level]!;
-          expect(level, containsPair('type', 'enum'));
-          expect(level, containsPair('default', 'Verbose'));
-          final values = (level['enum'] as Map)['values'] as Map;
-          // The same numbers on both SDKs (the breadcrumb levels are not).
-          expect({
-            for (final e in values.entries)
-              (e.key as String).toLowerCase(): e.value,
-          }, fixture['levels']);
-        });
-      }
-
-      test(
-        'the default level is the most verbose, so nothing is cut by default',
-        () {
-          expect(const LogPolicy().maxLevel, LogLevel.verbose);
-        },
-      );
-    },
-  );
+    test(
+      'the default level is the most verbose, so nothing is cut by default',
+      () {
+        expect(const LogPolicy().maxLevel, LogLevel.verbose);
+      },
+    );
+  });
 
   group('no blocking on the platform thread beyond what the SDK does', () {
     test('the injection files do not wait, sleep or take a lock', () {

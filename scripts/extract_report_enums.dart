@@ -74,27 +74,24 @@ String _javaEnumBody(String clean, String enumName) {
 
 /// `NAME = 3000L;` / `NAME = 60_000L;` in Java.
 int javaLong(String source, String name) {
-  final m = RegExp(
-    '$name\\s*=\\s*([\\d_]+)L',
-  ).firstMatch(stripComments(source));
+  final m = RegExp('$name\\s*=\\s*([\\d_]+)L')
+      .firstMatch(stripComments(source));
   if (m == null) throw FormatException('no constant $name');
   return int.parse(m.group(1)!.replaceAll('_', ''));
 }
 
 /// The default of `OptionDescriptor.createAndRegister(Options.NAME, Integer.class, 30)`.
 int javaOptionDefault(String source, String option) {
-  final m = RegExp(
-    'Options\\.$option\\s*,\\s*Integer\\.class\\s*,\\s*(\\d+)',
-  ).firstMatch(stripComments(source));
+  final m = RegExp('Options\\.$option\\s*,\\s*Integer\\.class\\s*,\\s*(\\d+)')
+      .firstMatch(stripComments(source));
   if (m == null) throw FormatException('no option $option');
   return int.parse(m.group(1)!);
 }
 
 /// `static const NSTimeInterval NAME = 30.0;` in Objective-C.
 num objcSeconds(String source, String name) {
-  final m = RegExp(
-    '$name\\s*=\\s*([\\d.]+)\\s*;',
-  ).firstMatch(stripComments(source));
+  final m = RegExp('$name\\s*=\\s*([\\d.]+)\\s*;')
+      .firstMatch(stripComments(source));
   if (m == null) throw FormatException('no constant $name');
   return num.parse(m.group(1)!);
 }
@@ -110,18 +107,16 @@ int javaInt(String source, String name) {
 
 /// `static const NSUInteger NAME = 1000;` in Objective-C.
 int objcInt(String source, String name) {
-  final m = RegExp(
-    '$name\\s*=\\s*(\\d+)\\s*;',
-  ).firstMatch(stripComments(source));
+  final m = RegExp('$name\\s*=\\s*(\\d+)\\s*;')
+      .firstMatch(stripComments(source));
   if (m == null) throw FormatException('no constant $name');
   return int.parse(m.group(1)!);
 }
 
 /// `#define NAME 3` or `#define NAME (3*1024*1024)` in a header: the product of the integers.
 int objcDefine(String source, String name) {
-  final m = RegExp(
-    '#define\\s+$name\\s+\\(?([\\d*\\s]+)\\)?',
-  ).firstMatch(stripComments(source));
+  final m = RegExp('#define\\s+$name\\s+\\(?([\\d*\\s]+)\\)?')
+      .firstMatch(stripComments(source));
   if (m == null) throw FormatException('no #define $name');
   return m
       .group(1)!
@@ -162,9 +157,8 @@ Map<String, int> objcEnum(String source, String enumName) {
 /// The strings iOS's `BGSReportContract.type` documents (`@"bug"`, ...), read from the
 /// doc comment on the property, which is where the SDK states them.
 List<String> iosTypeStrings(String contractsHeader) {
-  final line = RegExp(
-    r'///\s*The issue type:[^\n]*',
-  ).firstMatch(contractsHeader);
+  final line = RegExp(r'///\s*The issue type:[^\n]*')
+      .firstMatch(contractsHeader);
   if (line == null) throw const FormatException('no "The issue type" comment');
   return [
     for (final m in RegExp(r'`@"(\w+)"`').allMatches(line.group(0)!))
@@ -265,18 +259,16 @@ void main(List<String> args) {
     androidType: File(arg(args, '--android-type')).readAsStringSync(),
     iosConstants: File(arg(args, '--ios-constants')).readAsStringSync(),
     iosContracts: File(arg(args, '--ios-contracts')).readAsStringSync(),
-    androidCoordinator: File(
-      arg(args, '--android-coordinator'),
-    ).readAsStringSync(),
+    androidCoordinator: File(arg(args, '--android-coordinator'))
+        .readAsStringSync(),
     androidChain: File(arg(args, '--android-chain')).readAsStringSync(),
     androidOptions: File(arg(args, '--android-options')).readAsStringSync(),
     iosCoordinator: File(arg(args, '--ios-coordinator')).readAsStringSync(),
     androidReport: File(arg(args, '--android-report')).readAsStringSync(),
     iosReport: File(arg(args, '--ios-report')).readAsStringSync(),
     iosAttachment: File(arg(args, '--ios-attachment')).readAsStringSync(),
-    iosOptionsPrivate: File(
-      arg(args, '--ios-options-private'),
-    ).readAsStringSync(),
+    iosOptionsPrivate: File(arg(args, '--ios-options-private'))
+        .readAsStringSync(),
     iosSourceRef: arg(args, '--ios-source-ref'),
     pins: {
       'android': (versions['android'] as Map)['sdk'],

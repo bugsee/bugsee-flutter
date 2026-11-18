@@ -51,8 +51,9 @@ import '../bridge/epoch.dart';
 import '../bridge/messages.g.dart';
 
 /// Sends one whole-state message to native. Returns whether it was applied.
-typedef SecureRectanglesPublisher =
-    Future<bool> Function(SecureRectanglesMessage state);
+typedef SecureRectanglesPublisher = Future<bool> Function(
+  SecureRectanglesMessage state,
+);
 
 /// One region's measured box: logical pixels, relative to its view.
 @immutable
@@ -528,11 +529,7 @@ class SecureRegionRegistry {
 
 /// The render object behind [BugseeSecureRegion].
 class RenderSecureRegion extends RenderProxyBox {
-  RenderSecureRegion({
-    required bool enabled,
-    required SecureRegionRegistry registry,
-  }) : _enabled = enabled,
-       _registry = registry;
+  RenderSecureRegion({required this._enabled, required this._registry});
 
   bool _enabled;
   SecureRegionRegistry _registry;

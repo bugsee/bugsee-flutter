@@ -9,6 +9,6 @@ The first version, released in lock-step with `bugsee_flutter` (same version num
 * Replaces the 9.x `Bugsee.showFeedbackUI`, `setDefaultFeedbackGreeting` and `setNewFeedbackMessagesCallback`.
 * Nothing to configure beyond adding the package next to `bugsee_flutter` at the same version: the module registers itself (Android through the
   SDK's own provider or the Gradle plugin's injected call, iOS through its own `+load` registrar).
-* Requirements are those of `bugsee_flutter` (Flutter 3.41.0, the Bugsee Gradle plugin on Android, iOS 15.0 with Swift Package Manager).
+* Requirements are those of `bugsee_flutter` (Flutter 3.50.0, the Bugsee Gradle plugin on Android, iOS 15.0 with Swift Package Manager).
 * Known gaps: verified on an Android emulator and an iOS simulator only (no real token: sending and receiving messages was not exercised);
   the chat's appearance is not exposed; bugsee-cocoa#291 (listener ordering in the add-on) is worked around.

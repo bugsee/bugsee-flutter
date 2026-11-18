@@ -23,7 +23,7 @@ import 'dart:ui' as ui;
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:bugsee_flutter_example/main.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Colors;
+import 'package:material_ui/material_ui.dart' show Colors;
 import 'package:flutter/painting.dart' show Offset, Paint, Rect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -552,11 +552,10 @@ void main() {
             'size=${content.size} sha256=${content.sha256}',
           );
         }
-        expect(
-          attachments.map((e) => e['name']).toSet(),
-          {'created note', 'created raw'},
-          reason: 'the forgotten report\'s file is not in this one',
-        );
+        expect(attachments.map((e) => e['name']).toSet(), {
+          'created note',
+          'created raw',
+        }, reason: 'the forgotten report\'s file is not in this one');
         final byName = {for (final e in attachments) e['name'] as String: e};
         expect(
           createdBundle.file(byName['created note']!).sha256,

@@ -76,9 +76,8 @@ bool workerIsHiddenFrame(String trace) =>
     (name: 'FlutterManagedException', reason: document);
 
 void main() {
-  final obfuscated = File(
-    'test/fixtures/exceptions/obfuscated_stack_trace.txt',
-  ).readAsStringSync();
+  final obfuscated = File('test/fixtures/exceptions/obfuscated_stack_trace.txt')
+      .readAsStringSync();
 
   /// 9.x worker test (test_crash_flutter.py): the first frame and the build id of this very file.
   const workerFirstFrame =
@@ -104,26 +103,20 @@ void main() {
       },
     );
 
-    test(
-      'an ordinary exception does not route to Flutter (the check is not vacuous)',
-      () {
-        expect(
-          routesToFlutter(name: 'java.lang.IllegalStateException', reason: 'x'),
-          isFalse,
-        );
-      },
-    );
+    test('an ordinary exception does not route to Flutter (the check is not vacuous)', () {
+      expect(
+        routesToFlutter(name: 'java.lang.IllegalStateException', reason: 'x'),
+        isFalse,
+      );
+    });
   });
 
   group('an entry the real Android 7.4.2 SDK wrote', () {
     // crash.json of a report built on an emulator from an unhandled Dart error (see the fixture).
-    final entry =
-        jsonDecode(
-              File(
-                'test/fixtures/exceptions/android_7_4_2_crash_entry.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, Object?>;
+    final entry = jsonDecode(
+      File('test/fixtures/exceptions/android_7_4_2_crash_entry.json')
+          .readAsStringSync(),
+    ) as Map<String, Object?>;
     final exception = entry['exception']! as Map<String, Object?>;
 
     test('routes to Flutter and parses with the worker\'s rules', () {
@@ -145,14 +138,12 @@ void main() {
 
     test('is what this version builds, key for key', () {
       final doc = parseReason(exception['reason']! as String)!;
-      final mine =
-          jsonDecode(
-                buildExceptionPayload(
-                  StateError('x'),
-                  StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
-                ).json,
-              )
-              as Map<String, Object?>;
+      final mine = jsonDecode(
+        buildExceptionPayload(
+          StateError('x'),
+          StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
+        ).json,
+      ) as Map<String, Object?>;
       expect(doc.keys.toSet(), mine.keys.toSet());
       expect(doc['signature'], matches(RegExp(r'^[0-9a-f]{40}$')));
       // What the SDK made of it: its own signature, a hash that includes the document's.
@@ -170,13 +161,10 @@ void main() {
   group(
     'an entry from a real obfuscated release build (Android 7.4.2, arm64)',
     () {
-      final entry =
-          jsonDecode(
-                File(
-                  'test/fixtures/exceptions/android_7_4_2_obfuscated_entry.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, Object?>;
+      final entry = jsonDecode(
+        File('test/fixtures/exceptions/android_7_4_2_obfuscated_entry.json')
+            .readAsStringSync(),
+      ) as Map<String, Object?>;
       final exception = entry['exception']! as Map<String, Object?>;
 
       test('the worker finds the build id and the frames it symbolizes', () {
@@ -195,14 +183,12 @@ void main() {
       test('is exactly what this version sends for the same stack', () {
         final doc = parseReason(exception['reason']! as String)!;
         final stack = doc['originalStackTrace']! as String;
-        final mine =
-            jsonDecode(
-                  buildExceptionPayload(
-                    StateError('x'),
-                    StackTrace.fromString(stack),
-                  ).json,
-                )
-                as Map<String, Object?>;
+        final mine = jsonDecode(
+          buildExceptionPayload(
+            StateError('x'),
+            StackTrace.fromString(stack),
+          ).json,
+        ) as Map<String, Object?>;
         expect(mine['originalStackTrace'], stack);
         expect(
           [for (final f in (mine['frames']! as List)) (f as Map)['trace']],
@@ -265,99 +251,84 @@ void main() {
       },
     );
 
-    test(
-      'the worker\'s own frames come out of originalStackTrace: the first is its test frame',
-      () {
-        final p = buildExceptionPayload(
-          StateError('x'),
-          StackTrace.fromString(obfuscated),
-        );
-        final frames = obfuscatedFrameLines(
-          parseReason(p.json)!['originalStackTrace']! as String,
-        )!;
-        expect(frames.first, workerFirstFrame);
-        // Every line the worker would feed to dart_symbolize is in the file we were given.
-        expect(frames.length, greaterThan(100));
-      },
-    );
+    test('the worker\'s own frames come out of originalStackTrace: the first is its test frame', () {
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString(obfuscated),
+      );
+      final frames = obfuscatedFrameLines(
+        parseReason(p.json)!['originalStackTrace']! as String,
+      )!;
+      expect(frames.first, workerFirstFrame);
+      // Every line the worker would feed to dart_symbolize is in the file we were given.
+      expect(frames.length, greaterThan(100));
+    });
 
-    test(
-      'the header lines the symbolizer needs travel with it (nothing rewritten)',
-      () {
-        final p = buildExceptionPayload(
-          StateError('x'),
-          StackTrace.fromString(obfuscated),
-        );
-        final raw = parseReason(p.json)!['originalStackTrace']! as String;
-        for (final line in const LineSplitter().convert(obfuscated).take(6)) {
-          expect(raw, contains(line));
-        }
-        expect(raw, startsWith('*** *** ***'));
-      },
-    );
+    test('the header lines the symbolizer needs travel with it (nothing rewritten)', () {
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString(obfuscated),
+      );
+      final raw = parseReason(p.json)!['originalStackTrace']! as String;
+      for (final line in const LineSplitter().convert(obfuscated).take(6)) {
+        expect(raw, contains(line));
+      }
+      expect(raw, startsWith('*** *** ***'));
+    });
 
-    test(
-      'a symbolic (debug) stack has no #00: the worker uses the frames of the document',
-      () {
-        final p = buildExceptionPayload(
-          StateError('x'),
-          StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
-        );
-        final parsed = parseReason(p.json)!;
-        expect(
-          obfuscatedFrameLines(parsed['originalStackTrace']! as String),
-          isNull,
-        );
-        expect(
-          buildIdFromStackTrace(parsed['originalStackTrace'] as String?),
-          isNull,
-        );
-        final frames = (parsed['frames']! as List).cast<Map>();
-        expect(frames.single['trace'], 'f (package:app/a.dart:1)');
-      },
-    );
+    test('a symbolic (debug) stack has no #00: the worker uses the frames of the document', () {
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString('#0      f (package:app/a.dart:1:1)\n'),
+      );
+      final parsed = parseReason(p.json)!;
+      expect(
+        obfuscatedFrameLines(parsed['originalStackTrace']! as String),
+        isNull,
+      );
+      expect(
+        buildIdFromStackTrace(parsed['originalStackTrace'] as String?),
+        isNull,
+      );
+      final frames = (parsed['frames']! as List).cast<Map>();
+      expect(frames.single['trace'], 'f (package:app/a.dart:1)');
+    });
 
-    test(
-      'the build id is in the first frames too (the worker\'s fallback, dart.py:_get_build_id_from_frames)',
-      () {
-        // 9.x sent the header lines as frames; the worker looks at the first nine for
-        // "build_id: '...'". We send the header in originalStackTrace, which the worker tries first.
-        final p = buildExceptionPayload(
-          StateError('x'),
-          StackTrace.fromString(obfuscated),
-        );
-        expect(
-          (parseReason(p.json)!['originalStackTrace']! as String).contains(
-            "build_id: '$workerBuildId'",
-          ),
-          isTrue,
-        );
-      },
-    );
+    test('the build id is in the first frames too (the worker\'s fallback, dart.py:_get_build_id_from_frames)', () {
+      // 9.x sent the header lines as frames; the worker looks at the first nine for
+      // "build_id: '...'". We send the header in originalStackTrace, which the worker tries first.
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString(obfuscated),
+      );
+      expect(
+        (parseReason(p.json)!['originalStackTrace']! as String).contains(
+          "build_id: '$workerBuildId'",
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('frames', () {
-    test(
-      'the worker\'s user/hidden verdict agrees with ours for framework and core frames',
-      () {
-        final p = buildExceptionPayload(
-          StateError('x'),
-          StackTrace.fromString(
-            '#0      app (package:app/a.dart:1:1)\n'
-            '#1      build (package:flutter/src/widgets/framework.dart:2:1)\n'
-            '#2      run (dart:async/zone.dart:3:1)\n',
-          ),
+    test('the worker\'s user/hidden verdict agrees with ours for framework and core frames', () {
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString(
+          '#0      app (package:app/a.dart:1:1)\n'
+          '#1      build (package:flutter/src/widgets/framework.dart:2:1)\n'
+          '#2      run (dart:async/zone.dart:3:1)\n',
+        ),
+      );
+      final frames = (parseReason(p.json)!['frames']! as List).cast<Map>();
+      for (final f in frames) {
+        expect(
+          workerIsUserFrame(f['trace'] as String),
+          f['user'],
+          reason: '${f['trace']}',
         );
-        final frames = (parseReason(p.json)!['frames']! as List).cast<Map>();
-        for (final f in frames) {
-          expect(
-            workerIsUserFrame(f['trace'] as String),
-            f['user'],
-            reason: '${f['trace']}',
-          );
-        }
-      },
-    );
+      }
+    });
 
     test('the plugin\'s own entry point is a frame the worker hides', () {
       expect(
@@ -368,17 +339,14 @@ void main() {
       );
     });
 
-    test(
-      'a frame trace is "member (location)": what the worker hashes into the signature',
-      () {
-        final p = buildExceptionPayload(
-          StateError('x'),
-          StackTrace.fromString('#0      Foo.bar (package:app/a.dart:12:3)\n'),
-        );
-        final frames = (parseReason(p.json)!['frames']! as List).cast<Map>();
-        expect(frames.single['trace'], 'Foo.bar (package:app/a.dart:12)');
-        expect(frames.single['data']['member'], 'Foo.bar');
-      },
-    );
+    test('a frame trace is "member (location)": what the worker hashes into the signature', () {
+      final p = buildExceptionPayload(
+        StateError('x'),
+        StackTrace.fromString('#0      Foo.bar (package:app/a.dart:12:3)\n'),
+      );
+      final frames = (parseReason(p.json)!['frames']! as List).cast<Map>();
+      expect(frames.single['trace'], 'Foo.bar (package:app/a.dart:12)');
+      expect(frames.single['data']['member'], 'Foo.bar');
+    });
   });
 }

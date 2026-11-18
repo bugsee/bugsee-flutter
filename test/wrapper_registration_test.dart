@@ -7,9 +7,10 @@ String read(String path) => File(path).readAsStringSync();
 
 /// Source with `//` and `/* */` comments removed, so a registration call that
 /// has only been commented out does not satisfy a guard.
-String code(String path) => read(path)
-    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+String code(String path) =>
+    read(path)
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .replaceAll(RegExp(r'//[^\n]*'), '');
 
 /// The pattern the Bugsee Gradle plugin strips from the merged manifest.
 final strippedByGradlePlugin = RegExp(r'^.*\.Bugsee[A-Za-z0-9_]+InitProvider$');
@@ -42,9 +43,9 @@ void main() {
     });
 
     test('class name is not one the Gradle plugin strips', () {
-      final name = RegExp(
-        r'android:name="([^"]+)"',
-      ).firstMatch(provider.single.group(0)!)!.group(1)!;
+      final name = RegExp(r'android:name="([^"]+)"')
+          .firstMatch(provider.single.group(0)!)!
+          .group(1)!;
       expect(strippedByGradlePlugin.hasMatch(name), isFalse);
       // The regex does catch the trap name (guards the guard).
       expect(
@@ -62,35 +63,40 @@ void main() {
       );
     });
 
-    test('class exists, extends the SDK base and registers in onExtensionCreate', () {
-      final java = code(
-        'android/src/main/java/com/bugsee/flutter/FlutterWrapperInitProvider.java',
-      );
-      expect(
-        java,
-        contains(
-          'public final class FlutterWrapperInitProvider extends BugseeExtensionInitProviderBase',
-        ),
-      );
-      expect(
-        java,
-        contains('import com.bugsee.library.BugseeExtensionInitProviderBase;'),
-      );
-      // Comments are stripped, so a commented-out call fails these.
-      expect(java, contains('sdkSetter = Bugsee::setWrapper;'));
-      expect(
-        RegExp(
-          r'protected boolean onExtensionCreate\(\) \{[^}]*registerEarly\(sdkSetter\)',
-        ).hasMatch(java),
-        isTrue,
-      );
-      expect(
-        RegExp(
-          r'registerEarly\([^)]*\) \{\s*try \{\s*register\.set\(FlutterWrapper\.atProcessStart\(\)\)',
-        ).hasMatch(java),
-        isTrue,
-      );
-    });
+    test(
+      'class exists, extends the SDK base and registers in onExtensionCreate',
+      () {
+        final java = code(
+          'android/src/main/java/com/bugsee/flutter/FlutterWrapperInitProvider.java',
+        );
+        expect(
+          java,
+          contains(
+            'public final class FlutterWrapperInitProvider extends BugseeExtensionInitProviderBase',
+          ),
+        );
+        expect(
+          java,
+          contains(
+            'import com.bugsee.library.BugseeExtensionInitProviderBase;',
+          ),
+        );
+        // Comments are stripped, so a commented-out call fails these.
+        expect(java, contains('sdkSetter = Bugsee::setWrapper;'));
+        expect(
+          RegExp(
+            r'protected boolean onExtensionCreate\(\) \{[^}]*registerEarly\(sdkSetter\)',
+          ).hasMatch(java),
+          isTrue,
+        );
+        expect(
+          RegExp(
+            r'registerEarly\([^)]*\) \{\s*try \{\s*register\.set\(FlutterWrapper\.atProcessStart\(\)\)',
+          ).hasMatch(java),
+          isTrue,
+        );
+      },
+    );
 
     test('no other provider or Bugsee-named InitProvider class ships', () {
       final files = Directory('android/src/main/java')
@@ -130,9 +136,8 @@ void main() {
         r'\+ \(void\)ensureRegistered \{(.*?)\n\}',
         dotAll: true,
       ).firstMatch(m)!.group(1)!;
-      final guard = RegExp(
-        r'if \(gWrapper != nil\) \{\s*return;',
-      ).firstMatch(body);
+      final guard = RegExp(r'if \(gWrapper != nil\) \{\s*return;')
+          .firstMatch(body);
       expect(guard, isNotNull, reason: 'guard missing inside ensureRegistered');
       expect(
         guard!.start,
@@ -147,21 +152,18 @@ void main() {
       );
     });
 
-    test(
-      'secure rectangles come from the process-wide store, never-published display is [0, 0]',
-      () {
-        final m = code('$base/bugsee_flutter_wrapper/BGSFlutterWrapper.m');
-        expect(
-          m,
-          contains('[_secureRectangles pullForDisplay:display]'),
-          reason: 'the set must not live in the replaceable wrapper (5.4.2)',
-        );
-        final store = code(
-          '$base/bugsee_flutter_wrapper/BGSFlutterSecureRectangleStore.m',
-        );
-        expect(store, contains('int32_t empty[2] = {kUnknownVersion, 0};'));
-      },
-    );
+    test('secure rectangles come from the process-wide store, never-published display is [0, 0]', () {
+      final m = code('$base/bugsee_flutter_wrapper/BGSFlutterWrapper.m');
+      expect(
+        m,
+        contains('[_secureRectangles pullForDisplay:display]'),
+        reason: 'the set must not live in the replaceable wrapper (5.4.2)',
+      );
+      final store = code(
+        '$base/bugsee_flutter_wrapper/BGSFlutterSecureRectangleStore.m',
+      );
+      expect(store, contains('int32_t empty[2] = {kUnknownVersion, 0};'));
+    });
 
     test('Swift plugin class stays thin and references the wrapper target', () {
       final swift = code('$base/bugsee_flutter/BugseeFlutterPlugin.swift');

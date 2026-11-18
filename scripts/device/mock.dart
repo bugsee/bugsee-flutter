@@ -80,9 +80,8 @@ class Mock {
   Future<String?> _get(String path) async {
     final c = HttpClient();
     try {
-      final r = await (await c.getUrl(
-        Uri.parse('http://127.0.0.1:$port$path'),
-      )).close();
+      final r = await (await c.getUrl(Uri.parse('http://127.0.0.1:$port$path')))
+          .close();
       return await utf8.decodeStream(r);
     } on Object {
       return null;

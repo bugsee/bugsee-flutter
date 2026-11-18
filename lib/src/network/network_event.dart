@@ -171,5 +171,6 @@ final class BugseeNetworkEvent {
 /// a returned future that does not complete within the timeout given to `setNetworkFilter`, DROPS
 /// the event: a redaction boundary fails closed. Runs on the isolate that made the request, one
 /// event at a time and in order; see `Bugsee.setNetworkFilter`.
-typedef BugseeNetworkFilter =
-    FutureOr<BugseeNetworkEvent?> Function(BugseeNetworkEvent event);
+typedef BugseeNetworkFilter = FutureOr<BugseeNetworkEvent?> Function(
+  BugseeNetworkEvent event,
+);

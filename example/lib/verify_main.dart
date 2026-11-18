@@ -18,7 +18,7 @@ import 'dart:ui' as ui;
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 
 const _server = String.fromEnvironment('VERIFY_SERVER');
@@ -179,9 +179,8 @@ Future<void> _command(String command) async {
       case 'throw-async':
         // Nobody awaits it: it reaches the installed error handlers.
         unawaited(
-          Future<void>.delayed(
-            const Duration(milliseconds: 10),
-          ).then((_) => throw StateError('verify async $arg')),
+          Future<void>.delayed(const Duration(milliseconds: 10))
+              .then((_) => throw StateError('verify async $arg')),
         );
       case 'upload':
         await Bugsee.upload(

@@ -74,15 +74,11 @@ class AndroidSession {
     }
     final r = await dev.install(build.apk);
     final v = await dev.packageVersion();
-    run.guard(
-      'precondition: ${build.name} installed',
-      [
-        if (!r.ok || !r.stdout.contains('Success')) 'install failed: $r',
-        if (v.code != '${build.buildNumber}')
-          'versionCode ${v.code}, expected ${build.buildNumber}',
-      ],
-      'versionCode ${v.code}, versionName ${v.name}',
-    );
+    run.guard('precondition: ${build.name} installed', [
+      if (!r.ok || !r.stdout.contains('Success')) 'install failed: $r',
+      if (v.code != '${build.buildNumber}')
+        'versionCode ${v.code}, expected ${build.buildNumber}',
+    ], 'versionCode ${v.code}, versionName ${v.name}');
     // How the app's private directory is reached: `run-as` for a debuggable build (the workbook recipe),
     // the root shell for a release build, which `run-as` cannot enter.
     dev.useRunAs = await dev.isDebuggable();

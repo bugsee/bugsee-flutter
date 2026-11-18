@@ -58,7 +58,7 @@ Nothing in the repository is modified by a run: the app is configured with build
 | | |
 |---|---|
 | Host | macOS 26.6.2 (25G83), Darwin 25.6.0, arm64 |
-| Flutter / Dart | 3.41.0 stable (engine `3452d735bd`) / Dart 3.11.0 (the pinned floor) |
+| Flutter / Dart | 3.41.0 stable (engine `3452d735bd`) / Dart 3.11.0 (the floor when these results were made; it is 3.50.0 now) |
 | Android toolchain | JDK 21.0.11 (Zulu), Gradle 8.14 (the template's wrapper), Android Gradle Plugin 8.11.1, Bugsee Gradle plugin 4.0.8, private `GRADLE_USER_HOME`, `--no-daemon` |
 | Android SDK under test | `com.bugsee:bugsee-android` and `-ndk` 7.4.2 (banner build `3b7af6371`) |
 | Android device | AVD `phase7_api30`: Pixel 4 profile, API 30 (Android 11), `google_apis` arm64-v8a userdebug image, 1080x2280 at 440 dpi (2.75), 3 GB RAM, started headless (`-no-window -no-snapshot`), emulator 37.2.12 |

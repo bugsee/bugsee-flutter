@@ -93,23 +93,20 @@ void main() {
   });
 
   group('the zone print hook', () {
-    test(
-      'the original output happens, unchanged, and the line is recorded as print / info',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final out = <String>[];
-        rig.inCaptureZone(() {
-          print('hello');
-          print('wörld\nsecond line');
-        }, out: out);
-        await rig.drain();
-        expect(out, ['hello', 'wörld\nsecond line']);
-        expect(rig.texts, ['hello', 'wörld\nsecond line']);
-        expect(rig.sent.map((m) => m.tag).toSet(), {'print'});
-        expect(rig.sent.map((m) => m.level).toSet(), {LogLevel.info.value});
-      },
-    );
+    test('the original output happens, unchanged, and the line is recorded as print / info', () async {
+      final rig = Rig();
+      await rig.install();
+      final out = <String>[];
+      rig.inCaptureZone(() {
+        print('hello');
+        print('wörld\nsecond line');
+      }, out: out);
+      await rig.drain();
+      expect(out, ['hello', 'wörld\nsecond line']);
+      expect(rig.texts, ['hello', 'wörld\nsecond line']);
+      expect(rig.sent.map((m) => m.tag).toSet(), {'print'});
+      expect(rig.sent.map((m) => m.level).toSet(), {LogLevel.info.value});
+    });
 
     test('the level given to install is the level of print lines', () async {
       final rig = Rig();
@@ -119,29 +116,26 @@ void main() {
       expect(rig.sent.single.level, LogLevel.debug.value);
     });
 
-    test(
-      'the original output comes first: the line is already printed when it is recorded',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final order = <String>[];
-        rig.service.pipeline.setFilter((e) {
-          order.add('filter');
-          return e;
-        }, const Duration(seconds: 1));
-        runZoned(
-          () => runZoned(() {
-            print('a');
-            order.add('after print');
-          }, zoneSpecification: rig.service.zoneSpecification),
-          zoneSpecification: ZoneSpecification(
-            print: (s, p, z, line) => order.add('original'),
-          ),
-        );
-        await rig.drain();
-        expect(order, ['original', 'after print', 'filter']);
-      },
-    );
+    test('the original output comes first: the line is already printed when it is recorded', () async {
+      final rig = Rig();
+      await rig.install();
+      final order = <String>[];
+      rig.service.pipeline.setFilter((e) {
+        order.add('filter');
+        return e;
+      }, const Duration(seconds: 1));
+      runZoned(
+        () => runZoned(() {
+          print('a');
+          order.add('after print');
+        }, zoneSpecification: rig.service.zoneSpecification),
+        zoneSpecification: ZoneSpecification(
+          print: (s, p, z, line) => order.add('original'),
+        ),
+      );
+      await rig.drain();
+      expect(order, ['original', 'after print', 'filter']);
+    });
 
     test('an app zone around ours sees every line once (chaining)', () async {
       final rig = Rig();
@@ -198,66 +192,57 @@ void main() {
       },
     );
 
-    test(
-      'the hook twice in one chain (a guarded zone inside a captured one) records once',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final out = <String>[];
-        rig.inCaptureZone(() {
-          runZoned(
+    test('the hook twice in one chain (a guarded zone inside a captured one) records once', () async {
+      final rig = Rig();
+      await rig.install();
+      final out = <String>[];
+      rig.inCaptureZone(() {
+        runZoned(
+          () => print('x'),
+          zoneSpecification: rig.service.zoneSpecification,
+        );
+      }, out: out);
+      await rig.drain();
+      expect(out, ['x']);
+      expect(rig.texts, ['x']);
+    });
+
+    test('a nested capture does not leave the guard set: the next line is recorded too', () async {
+      final rig = Rig();
+      await rig.install();
+      rig.inCaptureZone(() {
+        runZoned(
+          () => print('a'),
+          zoneSpecification: rig.service.zoneSpecification,
+        );
+        print('b');
+      });
+      await rig.drain();
+      expect(rig.texts, ['a', 'b']);
+    });
+
+    test('an exception from the app\'s own print handler is the app\'s: it propagates, nothing is recorded', () async {
+      final rig = Rig();
+      await rig.install();
+      expect(
+        () => runZoned(
+          () => runZoned(
             () => print('x'),
             zoneSpecification: rig.service.zoneSpecification,
-          );
-        }, out: out);
-        await rig.drain();
-        expect(out, ['x']);
-        expect(rig.texts, ['x']);
-      },
-    );
-
-    test(
-      'a nested capture does not leave the guard set: the next line is recorded too',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        rig.inCaptureZone(() {
-          runZoned(
-            () => print('a'),
-            zoneSpecification: rig.service.zoneSpecification,
-          );
-          print('b');
-        });
-        await rig.drain();
-        expect(rig.texts, ['a', 'b']);
-      },
-    );
-
-    test(
-      'an exception from the app\'s own print handler is the app\'s: it propagates, nothing is recorded',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        expect(
-          () => runZoned(
-            () => runZoned(
-              () => print('x'),
-              zoneSpecification: rig.service.zoneSpecification,
-            ),
-            zoneSpecification: ZoneSpecification(
-              print: (s, p, z, line) => throw StateError('app handler'),
-            ),
           ),
-          throwsStateError,
-        );
-        await rig.drain();
-        expect(rig.sent, isEmpty);
-        // ... and the guard was released: a later line is recorded.
-        rig.inCaptureZone(() => print('after'));
-        await rig.drain();
-        expect(rig.texts, ['after']);
-      },
-    );
+          zoneSpecification: ZoneSpecification(
+            print: (s, p, z, line) => throw StateError('app handler'),
+          ),
+        ),
+        throwsStateError,
+      );
+      await rig.drain();
+      expect(rig.sent, isEmpty);
+      // ... and the guard was released: a later line is recorded.
+      rig.inCaptureZone(() => print('after'));
+      await rig.drain();
+      expect(rig.texts, ['after']);
+    });
 
     test('a failure inside the capture never reaches the app', () async {
       final rig = Rig();
@@ -302,9 +287,8 @@ void main() {
             print('timer');
             done.complete();
           });
-          Future<void>.delayed(
-            const Duration(milliseconds: 1),
-          ).then((_) => print('then'));
+          Future<void>.delayed(const Duration(milliseconds: 1))
+              .then((_) => print('then'));
         }, out: out);
         await done.future;
         await rig.drain();
@@ -340,20 +324,17 @@ void main() {
       },
     );
 
-    test(
-      'nothing is recorded while the capture is not installed, and the output still happens',
-      () async {
-        final rig = Rig();
-        final out = <String>[];
-        rig.inCaptureZone(() => print('before install'), out: out);
-        await rig.install();
-        rig.service.uninstall();
-        rig.inCaptureZone(() => print('after uninstall'), out: out);
-        await rig.drain();
-        expect(out, ['before install', 'after uninstall']);
-        expect(rig.sent, isEmpty);
-      },
-    );
+    test('nothing is recorded while the capture is not installed, and the output still happens', () async {
+      final rig = Rig();
+      final out = <String>[];
+      rig.inCaptureZone(() => print('before install'), out: out);
+      await rig.install();
+      rig.service.uninstall();
+      rig.inCaptureZone(() => print('after uninstall'), out: out);
+      await rig.drain();
+      expect(out, ['before install', 'after uninstall']);
+      expect(rig.sent, isEmpty);
+    });
 
     test(
       'print inside a suppressed zone is not recorded (what a filter prints)',
@@ -384,53 +365,47 @@ void main() {
   });
 
   group('debugPrint', () {
-    test(
-      'is chained: the previous callback is still called with the same arguments',
-      () async {
-        final calls = <(String?, int?)>[];
-        debugPrint = (message, {wrapWidth}) => calls.add((message, wrapWidth));
-        final rig = Rig();
-        await rig.install();
-        debugPrint('hello', wrapWidth: 40);
-        debugPrint(null);
-        await rig.drain();
-        expect(calls, [('hello', 40), (null, null)]);
-        expect(rig.texts, ['hello', 'null']);
-        expect(rig.sent.map((m) => m.tag).toSet(), {'debugPrint'});
-      },
-    );
+    test('is chained: the previous callback is still called with the same arguments', () async {
+      final calls = <(String?, int?)>[];
+      debugPrint = (message, {wrapWidth}) => calls.add((message, wrapWidth));
+      final rig = Rig();
+      await rig.install();
+      debugPrint('hello', wrapWidth: 40);
+      debugPrint(null);
+      await rig.drain();
+      expect(calls, [('hello', 40), (null, null)]);
+      expect(rig.texts, ['hello', 'null']);
+      expect(rig.sent.map((m) => m.tag).toSet(), {'debugPrint'});
+    });
 
-    test(
-      'the real throttled debugPrint prints the same output and is recorded once',
-      () async {
-        final printed = <String>[];
-        final rig = Rig();
-        await rig.install();
-        // `debugPrintThrottled` wraps long lines and prints them from a timer, later, through `print`.
-        final long = List.filled(20, 'word').join(' ');
-        runZoned(
-          () => runZoned(() {
-            debugPrintSynchronously('plain');
-            debugPrint(long, wrapWidth: 30);
-          }, zoneSpecification: rig.service.zoneSpecification),
-          zoneSpecification: ZoneSpecification(
-            print: (s, p, z, l) => printed.add(l),
-          ),
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-        await rig.drain();
-        // The output is whatever the framework printed: several wrapped pieces ...
-        expect(printed.first, 'plain');
-        expect(printed.length, greaterThan(2));
-        // ... and the capture holds the debugPrint call once, whole, plus the synchronous one it
-        // could see through the zone (it never double counts the wrapped pieces).
-        expect(rig.texts.where((t) => t == long), hasLength(1));
-        expect(
-          rig.texts.where((t) => t.startsWith('word word') && t != long),
-          isEmpty,
-        );
-      },
-    );
+    test('the real throttled debugPrint prints the same output and is recorded once', () async {
+      final printed = <String>[];
+      final rig = Rig();
+      await rig.install();
+      // `debugPrintThrottled` wraps long lines and prints them from a timer, later, through `print`.
+      final long = List.filled(20, 'word').join(' ');
+      runZoned(
+        () => runZoned(() {
+          debugPrintSynchronously('plain');
+          debugPrint(long, wrapWidth: 30);
+        }, zoneSpecification: rig.service.zoneSpecification),
+        zoneSpecification: ZoneSpecification(
+          print: (s, p, z, l) => printed.add(l),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await rig.drain();
+      // The output is whatever the framework printed: several wrapped pieces ...
+      expect(printed.first, 'plain');
+      expect(printed.length, greaterThan(2));
+      // ... and the capture holds the debugPrint call once, whole, plus the synchronous one it
+      // could see through the zone (it never double counts the wrapped pieces).
+      expect(rig.texts.where((t) => t == long), hasLength(1));
+      expect(
+        rig.texts.where((t) => t.startsWith('word word') && t != long),
+        isEmpty,
+      );
+    });
 
     test(
       'a debugPrint made while a zone hook is active is recorded exactly once',
@@ -481,73 +456,64 @@ void main() {
       },
     );
 
-    test(
-      'an app that wrapped the hook keeps it in its chain: after uninstall it forwards and records nothing',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final ours = debugPrint;
-        final seen = <String?>[];
-        debugPrint = (m, {wrapWidth}) {
-          seen.add(m);
-          ours(m, wrapWidth: wrapWidth);
-        };
-        final theirs = debugPrint;
-        rig.service.uninstall();
-        expect(
-          identical(debugPrint, theirs),
-          isTrue,
-          reason: 'not ours to remove',
-        );
-        final printed = <String>[];
-        runZoned(
-          () => debugPrint('later'),
-          zoneSpecification: ZoneSpecification(
-            print: (s, p, z, l) => printed.add(l),
-          ),
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await rig.drain();
-        expect(seen, ['later']);
-        expect(printed, ['later']);
-        expect(rig.sent, isEmpty);
-      },
-    );
+    test('an app that wrapped the hook keeps it in its chain: after uninstall it forwards and records nothing', () async {
+      final rig = Rig();
+      await rig.install();
+      final ours = debugPrint;
+      final seen = <String?>[];
+      debugPrint = (m, {wrapWidth}) {
+        seen.add(m);
+        ours(m, wrapWidth: wrapWidth);
+      };
+      final theirs = debugPrint;
+      rig.service.uninstall();
+      expect(
+        identical(debugPrint, theirs),
+        isTrue,
+        reason: 'not ours to remove',
+      );
+      final printed = <String>[];
+      runZoned(
+        () => debugPrint('later'),
+        zoneSpecification: ZoneSpecification(
+          print: (s, p, z, l) => printed.add(l),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await rig.drain();
+      expect(seen, ['later']);
+      expect(printed, ['later']);
+      expect(rig.sent, isEmpty);
+    });
 
-    test(
-      'installed again in front of an app that replaced it without chaining: records, and reaches the app\'s callback',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final seen = <String?>[];
-        debugPrint = (m, {wrapWidth}) => seen.add(m);
-        await rig.install();
-        debugPrint('x');
-        await rig.drain();
-        expect(seen, ['x']);
-        expect(rig.texts, ['x']);
-      },
-    );
+    test('installed again in front of an app that replaced it without chaining: records, and reaches the app\'s callback', () async {
+      final rig = Rig();
+      await rig.install();
+      final seen = <String?>[];
+      debugPrint = (m, {wrapWidth}) => seen.add(m);
+      await rig.install();
+      debugPrint('x');
+      await rig.drain();
+      expect(seen, ['x']);
+      expect(rig.texts, ['x']);
+    });
 
-    test(
-      'installed again in front of an app that WRAPPED the hook: no recursion, recorded once',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final ours = debugPrint;
-        final seen = <String?>[];
-        debugPrint = (m, {wrapWidth}) {
-          seen.add(m);
-          ours(m, wrapWidth: wrapWidth);
-        };
-        await rig.install();
-        debugPrint('x');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await rig.drain();
-        expect(seen, ['x']);
-        expect(rig.texts, ['x']);
-      },
-    );
+    test('installed again in front of an app that WRAPPED the hook: no recursion, recorded once', () async {
+      final rig = Rig();
+      await rig.install();
+      final ours = debugPrint;
+      final seen = <String?>[];
+      debugPrint = (m, {wrapWidth}) {
+        seen.add(m);
+        ours(m, wrapWidth: wrapWidth);
+      };
+      await rig.install();
+      debugPrint('x');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await rig.drain();
+      expect(seen, ['x']);
+      expect(rig.texts, ['x']);
+    });
 
     test(
       'a previous callback that throws is the app\'s exception, not swallowed',
@@ -562,78 +528,65 @@ void main() {
       },
     );
 
-    test(
-      'a hot restart: a hook left in debugPrint by the old service records nothing twice',
-      () async {
-        // The old isolate's statics are gone on a real restart; this is the closest in-process case:
-        // two services, the second installed over the first's hook.
-        final first = Rig();
-        await first.install();
-        final second = Rig();
-        await second.install();
-        debugPrint('x');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await first.drain();
-        await second.drain();
-        expect(second.texts, ['x']);
-        expect(first.texts, isEmpty);
-      },
-    );
+    test('a hot restart: a hook left in debugPrint by the old service records nothing twice', () async {
+      // The old isolate's statics are gone on a real restart; this is the closest in-process case:
+      // two services, the second installed over the first's hook.
+      final first = Rig();
+      await first.install();
+      final second = Rig();
+      await second.install();
+      debugPrint('x');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await first.drain();
+      await second.drain();
+      expect(second.texts, ['x']);
+      expect(first.texts, isEmpty);
+    });
   });
 
   group('what is never recorded', () {
-    test(
-      'a FlutterError dump (the diagnostics tree) is not recorded, by the real dumpErrorToConsole',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final out = <String>[];
-        final saved = FlutterError.presentError;
-        FlutterErrorDetails details() => FlutterErrorDetails(
-          exception: StateError('private order 4242'),
-          library: 'widgets library',
-          context: ErrorDescription('while building Text("card 4111 1111")'),
-          informationCollector: () => [
-            DiagnosticsNode.message('The widget tree: Text("secret label")'),
-          ],
-        );
-        runZoned(
-          () => runZoned(() {
-            FlutterError.dumpErrorToConsole(details(), forceReport: true);
-          }, zoneSpecification: rig.service.zoneSpecification),
-          zoneSpecification: ZoneSpecification(
-            print: (s, p, z, l) => out.add(l),
-          ),
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        await rig.drain();
-        FlutterError.presentError = saved;
-        // It was printed (the console is the app's) ...
-        expect(out.join('\n'), contains('EXCEPTION CAUGHT'));
-        expect(out.join('\n'), contains('secret label'));
-        // ... and none of it was recorded.
-        expect(rig.sent, isEmpty);
-        expect(rig.service.pipeline.stats.droppedErrorDumps, greaterThan(0));
-      },
-    );
+    test('a FlutterError dump (the diagnostics tree) is not recorded, by the real dumpErrorToConsole', () async {
+      final rig = Rig();
+      await rig.install();
+      final out = <String>[];
+      final saved = FlutterError.presentError;
+      FlutterErrorDetails details() => FlutterErrorDetails(
+        exception: StateError('private order 4242'),
+        library: 'widgets library',
+        context: ErrorDescription('while building Text("card 4111 1111")'),
+        informationCollector: () => [
+          DiagnosticsNode.message('The widget tree: Text("secret label")'),
+        ],
+      );
+      runZoned(
+        () => runZoned(() {
+          FlutterError.dumpErrorToConsole(details(), forceReport: true);
+        }, zoneSpecification: rig.service.zoneSpecification),
+        zoneSpecification: ZoneSpecification(print: (s, p, z, l) => out.add(l)),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await rig.drain();
+      FlutterError.presentError = saved;
+      // It was printed (the console is the app's) ...
+      expect(out.join('\n'), contains('EXCEPTION CAUGHT'));
+      expect(out.join('\n'), contains('secret label'));
+      // ... and none of it was recorded.
+      expect(rig.sent, isEmpty);
+      expect(rig.service.pipeline.stats.droppedErrorDumps, greaterThan(0));
+    });
 
-    test(
-      'the second error line "Another exception was thrown" is not recorded either',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        debugPrint('Another exception was thrown: Bad state: private');
-        debugPrint('══╡ EXCEPTION CAUGHT BY X ╞════\nbody');
-        debugPrint(
-          '════════ Exception caught by widgets library ═══════\nbody',
-        );
-        debugPrint('an ordinary line');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await rig.drain();
-        expect(rig.texts, ['an ordinary line']);
-        expect(rig.service.pipeline.stats.droppedErrorDumps, 3);
-      },
-    );
+    test('the second error line "Another exception was thrown" is not recorded either', () async {
+      final rig = Rig();
+      await rig.install();
+      debugPrint('Another exception was thrown: Bad state: private');
+      debugPrint('══╡ EXCEPTION CAUGHT BY X ╞════\nbody');
+      debugPrint('════════ Exception caught by widgets library ═══════\nbody');
+      debugPrint('an ordinary line');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await rig.drain();
+      expect(rig.texts, ['an ordinary line']);
+      expect(rig.service.pipeline.stats.droppedErrorDumps, 3);
+    });
 
     test(
       'looksLikeFlutterErrorDump tells the dump headers from ordinary lines',
@@ -692,60 +645,51 @@ void main() {
       }
     }
 
-    test(
-      'the probe: a non-chaining, line-splitting debugPrint set after the install cannot leak the dump',
-      () async {
-        final rig = Rig();
-        FlutterError.presentError = (d) =>
-            FlutterError.dumpErrorToConsole(d, forceReport: true);
-        await rig.install();
-        debugPrint = splittingDebugPrint;
-        final out = <String>[];
-        rig.inCaptureZone(() {
-          FlutterError.presentError(details());
-        }, out: out);
-        await rig.drain();
-        // It was printed ...
-        expect(out.join('\n'), contains('bob@example.com'));
-        expect(out.join('\n'), contains('token=SECRET'));
-        // ... and not one piece of it was recorded.
-        expect(rig.sent, isEmpty);
-      },
-    );
+    test('the probe: a non-chaining, line-splitting debugPrint set after the install cannot leak the dump', () async {
+      final rig = Rig();
+      FlutterError.presentError = (d) =>
+          FlutterError.dumpErrorToConsole(d, forceReport: true);
+      await rig.install();
+      debugPrint = splittingDebugPrint;
+      final out = <String>[];
+      rig.inCaptureZone(() {
+        FlutterError.presentError(details());
+      }, out: out);
+      await rig.drain();
+      // It was printed ...
+      expect(out.join('\n'), contains('bob@example.com'));
+      expect(out.join('\n'), contains('token=SECRET'));
+      // ... and not one piece of it was recorded.
+      expect(rig.sent, isEmpty);
+    });
 
-    test(
-      'the same through the framework\'s default onError (dumpErrorToConsole itself)',
-      () async {
-        final rig = Rig();
-        FlutterError.onError = FlutterError.dumpErrorToConsole;
-        await rig.install();
-        debugPrint = splittingDebugPrint;
-        final out = <String>[];
-        rig.inCaptureZone(() {
-          FlutterError.onError!(details());
-        }, out: out);
-        await rig.drain();
-        expect(out.join('\n'), contains('bob@example.com'));
-        expect(rig.sent, isEmpty);
-      },
-    );
+    test('the same through the framework\'s default onError (dumpErrorToConsole itself)', () async {
+      final rig = Rig();
+      FlutterError.onError = FlutterError.dumpErrorToConsole;
+      await rig.install();
+      debugPrint = splittingDebugPrint;
+      final out = <String>[];
+      rig.inCaptureZone(() {
+        FlutterError.onError!(details());
+      }, out: out);
+      await rig.drain();
+      expect(out.join('\n'), contains('bob@example.com'));
+      expect(rig.sent, isEmpty);
+    });
 
-    test(
-      'an app\'s own presentError is chained, called with the details, and restored',
-      () async {
-        final seen = <FlutterErrorDetails>[];
-        void apps(FlutterErrorDetails d) => seen.add(d);
-        FlutterError.presentError = apps;
-        final rig = Rig();
-        await rig.install();
-        expect(identical(FlutterError.presentError, apps), isFalse);
-        final d = details();
-        FlutterError.presentError(d);
-        expect(seen, [d]);
-        rig.service.uninstall();
-        expect(identical(FlutterError.presentError, apps), isTrue);
-      },
-    );
+    test('an app\'s own presentError is chained, called with the details, and restored', () async {
+      final seen = <FlutterErrorDetails>[];
+      void apps(FlutterErrorDetails d) => seen.add(d);
+      FlutterError.presentError = apps;
+      final rig = Rig();
+      await rig.install();
+      expect(identical(FlutterError.presentError, apps), isFalse);
+      final d = details();
+      FlutterError.presentError(d);
+      expect(seen, [d]);
+      rig.service.uninstall();
+      expect(identical(FlutterError.presentError, apps), isTrue);
+    });
 
     test('an app\'s own onError is never replaced', () async {
       void apps(FlutterErrorDetails d) {}
@@ -770,34 +714,28 @@ void main() {
       );
     });
 
-    test(
-      'install twice wraps once; uninstall leaves a handler the app wrapped since',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        final ours = FlutterError.presentError;
-        rig.service.install();
-        expect(identical(FlutterError.presentError, ours), isTrue);
-        void wrapped(FlutterErrorDetails d) => ours(d);
-        FlutterError.presentError = wrapped;
-        rig.service.uninstall();
-        expect(identical(FlutterError.presentError, wrapped), isTrue);
-      },
-    );
+    test('install twice wraps once; uninstall leaves a handler the app wrapped since', () async {
+      final rig = Rig();
+      await rig.install();
+      final ours = FlutterError.presentError;
+      rig.service.install();
+      expect(identical(FlutterError.presentError, ours), isTrue);
+      void wrapped(FlutterErrorDetails d) => ours(d);
+      FlutterError.presentError = wrapped;
+      rig.service.uninstall();
+      expect(identical(FlutterError.presentError, wrapped), isTrue);
+    });
 
-    test(
-      'after an uninstall the chained handler records nothing and still forwards',
-      () async {
-        final seen = <FlutterErrorDetails>[];
-        FlutterError.presentError = (d) => seen.add(d);
-        final rig = Rig();
-        await rig.install();
-        final hook = FlutterError.presentError;
-        rig.service.uninstall();
-        hook(details());
-        expect(seen, hasLength(1));
-      },
-    );
+    test('after an uninstall the chained handler records nothing and still forwards', () async {
+      final seen = <FlutterErrorDetails>[];
+      FlutterError.presentError = (d) => seen.add(d);
+      final rig = Rig();
+      await rig.install();
+      final hook = FlutterError.presentError;
+      rig.service.uninstall();
+      hook(details());
+      expect(seen, hasLength(1));
+    });
   });
 
   group('a throttled debugPrint whose timer predates the install', () {
@@ -1121,21 +1059,18 @@ void main() {
       },
     );
 
-    test(
-      'a status that is not launching or launched stops it at once, before the options are read',
-      () async {
-        final rig = Rig();
-        await rig.install();
-        expect(rig.service.policy.accepting, isTrue);
-        rig.gate = Completer<void>();
-        rig.statuses.add(BugseeStatus.stopping);
-        await Future<void>.delayed(Duration.zero);
-        expect(rig.service.policy.accepting, isFalse);
-        rig.inCaptureZone(() => print('during stop'));
-        await rig.drain();
-        expect(rig.sent, isEmpty);
-      },
-    );
+    test('a status that is not launching or launched stops it at once, before the options are read', () async {
+      final rig = Rig();
+      await rig.install();
+      expect(rig.service.policy.accepting, isTrue);
+      rig.gate = Completer<void>();
+      rig.statuses.add(BugseeStatus.stopping);
+      await Future<void>.delayed(Duration.zero);
+      expect(rig.service.policy.accepting, isFalse);
+      rig.inCaptureZone(() => print('during stop'));
+      await rig.drain();
+      expect(rig.sent, isEmpty);
+    });
 
     test(
       'launching keeps accepting (both SDKs take a channel line then)',

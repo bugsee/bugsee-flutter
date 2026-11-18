@@ -12,17 +12,17 @@ workspace:
 
 environment:
   # Floors come from native-versions.json (flutter.min / flutter.dart).
-  sdk: ^3.11.0
-  flutter: ">=3.41.0"
+  sdk: ^3.14.0
+  flutter: ">=3.50.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  # Imported by the generated bridge (lib/src/bridge/messages.g.dart); the floor
-  # Flutter (3.41.0) ships 1.17.0.
+  # Imported by the generated bridge (lib/src/bridge/messages.g.dart); Flutter 3.50.0
+  # requires ^1.19.0 itself (the constraint here stays loose).
   meta: ^1.17.0
   # Parses the stack of a Dart error into frames (VM, `package:stack_trace` and async-gap formats);
-  # Flutter 3.41.0 pins 1.12.1 for flutter_test.
+  # Flutter 3.50.0's flutter_test requires ^1.12.2 (the constraint here stays loose).
   stack_trace: ^1.11.0
 
 dev_dependencies:
@@ -30,6 +30,7 @@ dev_dependencies:
     sdk: flutter
   fake_async: ^1.3.3
   flutter_lints: ^5.0.0
+  material_ui: ^1.11.0
 
 flutter:
   plugin:

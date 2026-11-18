@@ -14,19 +14,15 @@ import 'network_policy.dart';
 final class NetworkCaptureService {
   NetworkCaptureService({
     required NetworkSend send,
-    required Future<NetworkPolicy> Function() loadPolicy,
-    required void Function() ensureAttached,
-    required Stream<BugseeStatus> Function() statuses,
-    required bool Function() supported,
+    required this._loadPolicy,
+    required this._ensureAttached,
+    required this._statuses,
+    required this._supported,
     bool dropRedirectStage = false,
     void Function(String message)? warn,
     NetworkPipeline Function(NetworkSend send, NetworkPolicy Function() policy)?
     pipelineFactory,
-  }) : _loadPolicy = loadPolicy,
-       _ensureAttached = ensureAttached,
-       _statuses = statuses,
-       _supported = supported,
-       _warn = warn ?? ((_) {}) {
+  }) : _warn = warn ?? ((_) {}) {
     pipeline =
         (pipelineFactory ??
         (send, policy) => NetworkPipeline(

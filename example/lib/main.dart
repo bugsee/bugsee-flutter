@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'attachments_screen.dart';
 import 'exceptions_screen.dart';

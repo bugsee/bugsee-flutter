@@ -110,13 +110,11 @@ final class CreatedReportSnapshot {
 final class CreatedReport {
   CreatedReport._({
     required this.reportId,
-    required String typeName,
-    required String handle,
-    required BugseeBridgeHostApi host,
+    required this._typeName,
+    required this._handle,
+    required this._host,
     required Duration timeToLive,
-  }) : _typeName = typeName,
-       _handle = handle,
-       _host = host {
+  }) {
     _expiry = Timer(timeToLive, _expire);
   }
 

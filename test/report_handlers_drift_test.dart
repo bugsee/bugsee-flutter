@@ -8,10 +8,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Source with comments removed, so a call that is only commented out does not satisfy a guard.
-String code(String path) => File(path)
-    .readAsStringSync()
-    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+String code(String path) =>
+    File(path)
+        .readAsStringSync()
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .replaceAll(RegExp(r'//[^\n]*'), '');
 
 const java = 'android/src/main/java/com/bugsee/flutter';
 const objc = 'ios/bugsee_flutter/Sources/bugsee_flutter_wrapper';
@@ -32,9 +33,9 @@ void main() {
       // The SDKs' numbers come from test/fixtures/report_enums.json, extracted from their
       // source by scripts/extract_report_enums.dart, NOT from the wrapper: comparing the
       // wrapper's constants with each other proves nothing.
-      final fixture =
-          jsonDecode(File('test/fixtures/report_enums.json').readAsStringSync())
-              as Map<String, Object?>;
+      final fixture = jsonDecode(
+        File('test/fixtures/report_enums.json').readAsStringSync(),
+      ) as Map<String, Object?>;
       final a = (fixture['android']! as Map)['reportHandlerTimings']! as Map;
       final i = (fixture['ios']! as Map)['reportHandlerTimings']! as Map;
       final androidHandlerMs =
@@ -146,47 +147,36 @@ void main() {
       }
     }
 
-    test(
-      'Android: the isTerminating branch precedes every use of Dart, time or the report',
-      () {
-        guardOrder(
-          pipelineJava,
-          'private void dispatchOnce(',
-          'if (isTerminating)',
-          [
-            'registrationFor(',
-            'scheduler.schedule(',
-            'platform.post(',
-            'handles.put(',
-            'safeId(',
-            'ReportOps.typeOf(',
-            'clock.nowMs(',
-            'readOption(',
-            'threadName.current(',
-          ],
-        );
-      },
-    );
+    test('Android: the isTerminating branch precedes every use of Dart, time or the report', () {
+      guardOrder(
+        pipelineJava,
+        'private void dispatchOnce(',
+        'if (isTerminating)',
+        [
+          'registrationFor(',
+          'scheduler.schedule(',
+          'platform.post(',
+          'handles.put(',
+          'safeId(',
+          'ReportOps.typeOf(',
+          'clock.nowMs(',
+          'readOption(',
+          'threadName.current(',
+        ],
+      );
+    });
 
-    test(
-      'iOS: the isTerminating branch precedes every use of Dart, time or the report',
-      () {
-        guardOrder(
-          pipelineObjc,
-          '- (void)dispatchOnce:',
-          'if (isTerminating)',
-          [
-            '_registrations',
-            '_schedule(',
-            '_platformPost(',
-            '_handles[',
-            'SafeReportId',
-            'typeOfReport',
-            '_clock(',
-          ],
-        );
-      },
-    );
+    test('iOS: the isTerminating branch precedes every use of Dart, time or the report', () {
+      guardOrder(pipelineObjc, '- (void)dispatchOnce:', 'if (isTerminating)', [
+        '_registrations',
+        '_schedule(',
+        '_platformPost(',
+        '_handles[',
+        'SafeReportId',
+        'typeOfReport',
+        '_clock(',
+      ]);
+    });
 
     test(
       'the Dart message has no isTerminating field: Dart is never asked',
@@ -257,17 +247,14 @@ void main() {
       }
     });
 
-    test(
-      'no blocking primitive in any Objective-C or Swift file of the report path',
-      () {
-        for (final path in objcFiles) {
-          final text = code(path);
-          for (final blocking in objcBlocking) {
-            expect(text, isNot(contains(blocking)), reason: '$path: $blocking');
-          }
+    test('no blocking primitive in any Objective-C or Swift file of the report path', () {
+      for (final path in objcFiles) {
+        final text = code(path);
+        for (final blocking in objcBlocking) {
+          expect(text, isNot(contains(blocking)), reason: '$path: $blocking');
         }
-      },
-    );
+      }
+    });
 
     test('monitors are allowed only where listed, each with its reason', () {
       int count(String path, String word) => word.allMatches(code(path)).length;
@@ -305,54 +292,51 @@ void main() {
       );
     });
 
-    test(
-      'the SDK completion, Dart and the scheduler are called outside the handle lock',
-      () {
-        // Java: every `synchronized (handle)` block, braces balanced, calls none of them.
-        var from = 0;
-        var blocks = 0;
-        while (true) {
-          final at = pipelineJava.indexOf('synchronized (handle) {', from);
-          if (at < 0) break;
-          var depth = 0;
-          var end = at;
-          for (
-            var i = pipelineJava.indexOf('{', at);
-            i < pipelineJava.length;
-            i++
-          ) {
-            if (pipelineJava[i] == '{') depth++;
-            if (pipelineJava[i] == '}' && --depth == 0) {
-              end = i;
-              break;
-            }
+    test('the SDK completion, Dart and the scheduler are called outside the handle lock', () {
+      // Java: every `synchronized (handle)` block, braces balanced, calls none of them.
+      var from = 0;
+      var blocks = 0;
+      while (true) {
+        final at = pipelineJava.indexOf('synchronized (handle) {', from);
+        if (at < 0) break;
+        var depth = 0;
+        var end = at;
+        for (
+          var i = pipelineJava.indexOf('{', at);
+          i < pipelineJava.length;
+          i++
+        ) {
+          if (pipelineJava[i] == '{') depth++;
+          if (pipelineJava[i] == '}' && --depth == 0) {
+            end = i;
+            break;
           }
-          final block = pipelineJava.substring(at, end);
-          for (final out in [
-            'sdkCompletion',
-            'runQuietly',
-            'scheduler.',
-            'sink.deliver',
-            'platform.post',
-            'outcomes.',
-            'cancelQuietly',
-          ]) {
-            expect(block, isNot(contains(out)), reason: out);
-          }
-          blocks++;
-          from = end;
         }
-        expect(blocks, 4);
-        // ObjC: the edit lock is unlocked before the completion runs in finish.
-        final finish = pipelineObjc.substring(
-          pipelineObjc.indexOf('- (BOOL)finish:'),
-        );
-        expect(
-          finish.lastIndexOf('[handle.editLock unlock]'),
-          lessThan(finish.indexOf('RunQuietly(completion)')),
-        );
-      },
-    );
+        final block = pipelineJava.substring(at, end);
+        for (final out in [
+          'sdkCompletion',
+          'runQuietly',
+          'scheduler.',
+          'sink.deliver',
+          'platform.post',
+          'outcomes.',
+          'cancelQuietly',
+        ]) {
+          expect(block, isNot(contains(out)), reason: out);
+        }
+        blocks++;
+        from = end;
+      }
+      expect(blocks, 4);
+      // ObjC: the edit lock is unlocked before the completion runs in finish.
+      final finish = pipelineObjc.substring(
+        pipelineObjc.indexOf('- (BOOL)finish:'),
+      );
+      expect(
+        finish.lastIndexOf('[handle.editLock unlock]'),
+        lessThan(finish.indexOf('RunQuietly(completion)')),
+      );
+    });
   });
 
   group('the wrapper routes both phases through the pipeline', () {

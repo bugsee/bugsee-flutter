@@ -26,14 +26,18 @@ class Toolchain {
   static Toolchain detect(String repoRoot, String workDir) {
     final env = Platform.environment;
     final home = env['HOME'] ?? '';
-    final fvm = '$home/fvm/versions/3.41.0/bin/flutter';
+    // The floor of native-versions.json (flutter.min) under fvm, the version the harness is pinned to.
+    final floor = (jsonDecode(
+      File('$repoRoot/native-versions.json').readAsStringSync(),
+    ) as Map)['flutter']['min'];
+    final fvm = '$home/fvm/versions/$floor/bin/flutter';
     final flutter =
         env['VERIFY_FLUTTER'] ?? (File(fvm).existsSync() ? fvm : 'flutter');
     final androidHome =
         env['ANDROID_HOME'] ??
         env['ANDROID_SDK_ROOT'] ??
         '$home/Library/Android/sdk';
-    // Gradle 8.14 (the Flutter template's) cannot read JDK 25: 17 or 21 only (native-versions.json).
+    // 17 or 21 only (native-versions.json android.jdk): what CI runs and the SDK documents.
     var java = env['VERIFY_JAVA_HOME'] ?? env['JAVA_HOME'];
     if (java == null || !_javaOk(java)) {
       final r = Process.runSync('/usr/libexec/java_home', ['-v', '21']);
@@ -52,9 +56,8 @@ class Toolchain {
   static bool _javaOk(String home) {
     final release = File('$home/release');
     if (!release.existsSync()) return false;
-    final m = RegExp(
-      r'JAVA_VERSION="(\d+)',
-    ).firstMatch(release.readAsStringSync());
+    final m = RegExp(r'JAVA_VERSION="(\d+)')
+        .firstMatch(release.readAsStringSync());
     final major = int.tryParse(m?.group(1) ?? '');
     return major == 17 || major == 21;
   }
@@ -100,10 +103,9 @@ class Toolchain {
         .cast<String, Object?>();
     final java = javaHome == null
         ? 'none'
-        : (await sh([
-            '$javaHome/bin/java',
-            '-version',
-          ])).stderr.split('\n').first;
+        : (await sh(['$javaHome/bin/java', '-version'])).stderr
+              .split('\n')
+              .first;
     final xcode = Platform.isMacOS
         ? (await sh(['xcodebuild', '-version'])).text.replaceAll('\n', ' ')
         : 'n/a';

@@ -37,17 +37,14 @@ void main() {
   final ios = pins['ios'] as Map<String, dynamic>;
 
   group('native-versions.json', () {
-    test(
-      'Android Gradle plugin is >= 4.0.7 (4.0.6 silently unregisters every extension)',
-      () {
-        final parts = (android['gradlePlugin'] as String)
-            .split('.')
-            .map(int.parse)
-            .toList();
-        final v = parts[0] * 1000000 + parts[1] * 1000 + parts[2];
-        expect(v, greaterThanOrEqualTo(4 * 1000000 + 0 * 1000 + 7));
-      },
-    );
+    test('Android Gradle plugin is >= 4.0.7 (4.0.6 silently unregisters every extension)', () {
+      final parts = (android['gradlePlugin'] as String)
+          .split('.')
+          .map(int.parse)
+          .toList();
+      final v = parts[0] * 1000000 + parts[1] * 1000 + parts[2];
+      expect(v, greaterThanOrEqualTo(4 * 1000000 + 0 * 1000 + 7));
+    });
 
     test('no SNAPSHOT pins', () {
       expect(jsonEncode(pins), isNot(contains('SNAPSHOT')));
@@ -110,8 +107,7 @@ void main() {
       expect(
         RegExp(r'com\.bugsee:bugsee-android[a-z-]*:\d').hasMatch(gradle),
         isFalse,
-        reason:
-            'a literal version here would not be covered by native-versions.json',
+        reason: 'a literal version here would not be covered by native-versions.json',
       );
     });
 
@@ -158,9 +154,10 @@ void main() {
     test('deployment target matches', () {
       expect(manifest, contains('.iOS("${ios['deploymentTarget']}")'));
       final pbx = read('example/ios/Runner.xcodeproj/project.pbxproj');
-      final targets = RegExp(
-        r'IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);',
-      ).allMatches(pbx).map((m) => m.group(1)).toSet();
+      final targets = RegExp(r'IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);')
+          .allMatches(pbx)
+          .map((m) => m.group(1))
+          .toSet();
       expect(targets, {ios['deploymentTarget']});
     });
 
@@ -224,9 +221,10 @@ void main() {
 
     test('has no podspec: Bugsee publishes no pod, so one could not build', () {
       expect(
-        Directory('ios').listSync().whereType<File>().where(
-          (f) => f.path.endsWith('.podspec'),
-        ),
+        Directory('ios')
+            .listSync()
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.podspec')),
         isEmpty,
       );
     });
@@ -289,9 +287,9 @@ void main() {
         r"""^\s*java-version: ['"](\d+)['"]""",
         multiLine: true,
       ).allMatches(live).toList();
-      final setups = RegExp(
-        r'uses: actions/setup-java@',
-      ).allMatches(live).length;
+      final setups = RegExp(r'uses: actions/setup-java@')
+          .allMatches(live)
+          .length;
       expect(all, isNotEmpty, reason: 'no live java-version line in ci.yml');
       expect(
         all.length,
@@ -303,28 +301,24 @@ void main() {
       }
     });
 
-    test(
-      'enables SwiftPM before pub get in the same job (the plugin has no podspec)',
-      () {
-        final enable = RegExp(
-          r'^\s*- run: flutter config --enable-swift-package-manager\s*$\n(?:.*\n)*?\s*- run: flutter pub get[^\n]*$',
-          multiLine: true,
+    test('enables SwiftPM before pub get in the same job (the plugin has no podspec)', () {
+      final enable = RegExp(
+        r'^\s*- run: flutter config --enable-swift-package-manager\s*$\n(?:.*\n)*?\s*- run: flutter pub get[^\n]*$',
+        multiLine: true,
+      );
+      // Every job that runs pub get must enable SwiftPM first.
+      for (final job
+          in live
+              .split(RegExp(r'^  (?=[a-z-]+:\s*$)', multiLine: true))
+              .where((j) => j.contains('flutter pub get'))) {
+        expect(
+          enable.hasMatch(job),
+          isTrue,
+          reason: 'job lacks a live SwiftPM enable step before pub get:\n$job',
         );
-        // Every job that runs pub get must enable SwiftPM first.
-        for (final job
-            in live
-                .split(RegExp(r'^  (?=[a-z-]+:\s*$)', multiLine: true))
-                .where((j) => j.contains('flutter pub get'))) {
-          expect(
-            enable.hasMatch(job),
-            isTrue,
-            reason:
-                'job lacks a live SwiftPM enable step before pub get:\n$job',
-          );
-        }
-        expect(enable.hasMatch(live), isTrue);
-      },
-    );
+      }
+      expect(enable.hasMatch(live), isTrue);
+    });
 
     test('tests the Flutter floor via the matrix', () {
       final floor = RegExp(
@@ -548,17 +542,14 @@ void main() {
       );
     });
 
-    test(
-      'format gate is enforced on lib, test, example, scripts, pigeons and packages',
-      () {
-        expect(
-          liveOf(read('.github/workflows/ci.yml')),
-          contains(
-            'dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons packages',
-          ),
-        );
-      },
-    );
+    test('format gate is enforced on lib, test, example, scripts, pigeons and packages', () {
+      expect(
+        liveOf(read('.github/workflows/ci.yml')),
+        contains(
+          'dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons packages',
+        ),
+      );
+    });
 
     test('native-pins runs on a schedule, in its own workflow only', () {
       final pins = liveOf(read('.github/workflows/native-pins.yml'));

@@ -43,17 +43,14 @@ void main() {
     },
   );
 
-  test(
-    'the app listening subscribes once, and its cancel reaches the real response',
-    () async {
-      final (rig, response) = await open();
-      final sub = response.listen((_) {});
-      expect(rig.response.listens, 1);
-      expect(rig.response.cancels, 0);
-      await sub.cancel();
-      expect(rig.response.cancels, 1);
-    },
-  );
+  test('the app listening subscribes once, and its cancel reaches the real response', () async {
+    final (rig, response) = await open();
+    final sub = response.listen((_) {});
+    expect(rig.response.listens, 1);
+    expect(rig.response.cancels, 0);
+    await sub.cancel();
+    expect(rig.response.cancels, 1);
+  });
 
   test('pause and resume reach the real response, once each', () async {
     final (rig, response) = await open();
@@ -82,31 +79,28 @@ void main() {
     );
   });
 
-  test(
-    'an error is forwarded with its stack, ends the exchange as an error, and nothing completes after',
-    () async {
-      final (rig, response) = await open();
-      final errors = <Object>[];
-      final stacks = <StackTrace>[];
-      final done = Completer<void>();
-      response.listen(
-        (_) {},
-        onError: (Object e, StackTrace s) {
-          errors.add(e);
-          stacks.add(s);
-        },
-        onDone: done.complete,
-      );
-      final stack = StackTrace.current;
-      rig.response.data.addError(const SocketException('reset by peer'), stack);
-      await rig.response.data.close();
-      await done.future;
-      expect(errors.single, isA<SocketException>());
-      expect(stacks.single.toString(), stack.toString());
-      expect(stages(), [NetworkStage.before, NetworkStage.error]);
-      expect(events.last.error, startsWith('SocketException'));
-    },
-  );
+  test('an error is forwarded with its stack, ends the exchange as an error, and nothing completes after', () async {
+    final (rig, response) = await open();
+    final errors = <Object>[];
+    final stacks = <StackTrace>[];
+    final done = Completer<void>();
+    response.listen(
+      (_) {},
+      onError: (Object e, StackTrace s) {
+        errors.add(e);
+        stacks.add(s);
+      },
+      onDone: done.complete,
+    );
+    final stack = StackTrace.current;
+    rig.response.data.addError(const SocketException('reset by peer'), stack);
+    await rig.response.data.close();
+    await done.future;
+    expect(errors.single, isA<SocketException>());
+    expect(stacks.single.toString(), stack.toString());
+    expect(stages(), [NetworkStage.before, NetworkStage.error]);
+    expect(events.last.error, startsWith('SocketException'));
+  });
 
   test('cancelOnError cancels the real response too', () async {
     final (rig, response) = await open();
@@ -129,33 +123,30 @@ void main() {
     expect(events.last.size, 3);
   });
 
-  test(
-    'a cancel after the end is not an abort, and a done after a cancel is not a complete',
-    () async {
-      final (rig, response) = await open();
-      final sub = response.listen((_) {});
-      rig.response.data.add([1]);
-      await sub.cancel();
-      expect(stages(), [NetworkStage.before, NetworkStage.abort]);
-      await rig.response.data.close();
-      expect(stages(), [
-        NetworkStage.before,
-        NetworkStage.abort,
-      ], reason: 'no complete after an abort');
+  test('a cancel after the end is not an abort, and a done after a cancel is not a complete', () async {
+    final (rig, response) = await open();
+    final sub = response.listen((_) {});
+    rig.response.data.add([1]);
+    await sub.cancel();
+    expect(stages(), [NetworkStage.before, NetworkStage.abort]);
+    await rig.response.data.close();
+    expect(stages(), [
+      NetworkStage.before,
+      NetworkStage.abort,
+    ], reason: 'no complete after an abort');
 
-      final (rig2, response2) = await open();
-      final done = Completer<void>();
-      final sub2 = response2.listen((_) {}, onDone: done.complete);
-      await rig2.response.data.close();
-      await done.future;
-      await sub2.cancel();
-      expect(
-        stages().where((s) => s == NetworkStage.abort),
-        hasLength(1),
-        reason: 'no abort after a complete',
-      );
-    },
-  );
+    final (rig2, response2) = await open();
+    final done = Completer<void>();
+    final sub2 = response2.listen((_) {}, onDone: done.complete);
+    await rig2.response.data.close();
+    await done.future;
+    await sub2.cancel();
+    expect(
+      stages().where((s) => s == NetworkStage.abort),
+      hasLength(1),
+      reason: 'no abort after a complete',
+    );
+  });
 
   test(
     'a request that fails to close is an error with the same exception',
@@ -243,45 +234,37 @@ void main() {
     },
   );
 
-  test(
-    'a request still opening at an uninstall that then fails to open records no error',
-    () async {
-      final rig = await FakeRig.create(controller);
-      rig.fake.openGate = Completer<void>();
-      rig.fake.failOpen = const SocketException('refused');
-      final opening = rig.client.getUrl(Uri.parse('http://example.test/x'));
-      controller.generation++;
-      rig.fake.openGate!.complete();
-      await expectLater(opening, throwsA(isA<SocketException>()));
-      expect(stages(), isEmpty);
-    },
-  );
+  test('a request still opening at an uninstall that then fails to open records no error', () async {
+    final rig = await FakeRig.create(controller);
+    rig.fake.openGate = Completer<void>();
+    rig.fake.failOpen = const SocketException('refused');
+    final opening = rig.client.getUrl(Uri.parse('http://example.test/x'));
+    controller.generation++;
+    rig.fake.openGate!.complete();
+    await expectLater(opening, throwsA(isA<SocketException>()));
+    expect(stages(), isEmpty);
+  });
 
-  test(
-    'a manual redirect resolving after an uninstall and reinstall does not record',
-    () async {
-      final (rig, response) = await open();
-      final headers = await realHeaders();
-      rig.response.redirectTo = FakeResponse(
-        headers,
-        redirectInfos: [
-          FakeRedirectInfo(Uri.parse('http://example.test/next')),
-        ],
-      );
-      // The parent began under the first installation; the app follows its redirect after an
-      // uninstall and a reinstall.
-      controller.active = false;
-      controller.generation++;
-      controller.active = true;
-      final next = await response.redirect();
-      final done = Completer<void>();
-      next.listen((_) {}, onDone: done.complete);
-      await Future<void>.delayed(Duration.zero);
-      expect(stages(), [
-        NetworkStage.before,
-      ], reason: 'only the parent\'s own before');
-    },
-  );
+  test('a manual redirect resolving after an uninstall and reinstall does not record', () async {
+    final (rig, response) = await open();
+    final headers = await realHeaders();
+    rig.response.redirectTo = FakeResponse(
+      headers,
+      redirectInfos: [FakeRedirectInfo(Uri.parse('http://example.test/next'))],
+    );
+    // The parent began under the first installation; the app follows its redirect after an
+    // uninstall and a reinstall.
+    controller.active = false;
+    controller.generation++;
+    controller.active = true;
+    final next = await response.redirect();
+    final done = Completer<void>();
+    next.listen((_) {}, onDone: done.complete);
+    await Future<void>.delayed(Duration.zero);
+    expect(stages(), [
+      NetworkStage.before,
+    ], reason: 'only the parent\'s own before');
+  });
 
   test('a manual redirect within the same installation does record', () async {
     final (rig, response) = await open();

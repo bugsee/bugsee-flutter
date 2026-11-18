@@ -343,28 +343,25 @@ void main() {
       },
     );
 
-    test(
-      'native refusing an argument is an error, and the report stays live',
-      () async {
-        Object? error;
-        bool? live;
-        await bridge.setReportHandlers(
-          onBefore: (r) async {
-            try {
-              // Not reachable through the typed API; this is native's own guard.
-              await BugseeBridgeHostApi().reportSetSeverity('h1', 9);
-            } on PlatformException catch (e) {
-              error = e.code;
-            }
-            live = r.isLive;
-          },
-        );
-        await native.deliver(handle: 'h1');
-        await settle();
-        expect(error, 'invalid-argument');
-        expect(live, isTrue);
-      },
-    );
+    test('native refusing an argument is an error, and the report stays live', () async {
+      Object? error;
+      bool? live;
+      await bridge.setReportHandlers(
+        onBefore: (r) async {
+          try {
+            // Not reachable through the typed API; this is native's own guard.
+            await BugseeBridgeHostApi().reportSetSeverity('h1', 9);
+          } on PlatformException catch (e) {
+            error = e.code;
+          }
+          live = r.isLive;
+        },
+      );
+      await native.deliver(handle: 'h1');
+      await settle();
+      expect(error, 'invalid-argument');
+      expect(live, isTrue);
+    });
   });
 
   group('the report is live only until the completion runs (7.3.4)', () {
@@ -427,32 +424,29 @@ void main() {
       },
     );
 
-    test(
-      'native completing first (its deadline) turns the next edit into an error',
-      () async {
-        final gate = Completer<void>();
-        Object? caught;
-        await bridge.setReportHandlers(
-          onBefore: (r) async {
-            await r.setSummary('early');
-            native.closeNow('h1');
-            try {
-              await r.setSummary('late');
-            } catch (e) {
-              caught = e;
-            }
-            expect(r.isLive, isFalse);
-            await gate.future;
-          },
-        );
-        await native.deliver(handle: 'h1');
-        await settle();
-        expect(caught, isA<ReportClosedError>());
-        expect(native.summaryOf['h1'], 'early');
-        gate.complete();
-        await settle();
-      },
-    );
+    test('native completing first (its deadline) turns the next edit into an error', () async {
+      final gate = Completer<void>();
+      Object? caught;
+      await bridge.setReportHandlers(
+        onBefore: (r) async {
+          await r.setSummary('early');
+          native.closeNow('h1');
+          try {
+            await r.setSummary('late');
+          } catch (e) {
+            caught = e;
+          }
+          expect(r.isLive, isFalse);
+          await gate.future;
+        },
+      );
+      await native.deliver(handle: 'h1');
+      await settle();
+      expect(caught, isA<ReportClosedError>());
+      expect(native.summaryOf['h1'], 'early');
+      gate.complete();
+      await settle();
+    });
 
     test('Dart closes the proxy itself when the deadline passes', () async {
       final gate = Completer<void>();
@@ -530,30 +524,27 @@ void main() {
   });
 
   group('the budget', () {
-    test(
-      'a handler that overruns it is reported even if it edits nothing more',
-      () async {
-        final reported = <FlutterErrorDetails>[];
-        final old = FlutterError.onError;
-        FlutterError.onError = reported.add;
-        addTearDown(() => FlutterError.onError = old);
-        await bridge.setReportHandlers(
-          onBefore: (r) async {
-            await r.setSummary('early');
-            await Future<void>.delayed(const Duration(milliseconds: 120));
-            // No further edit: nothing else would say that the handler ran long.
-          },
-        );
-        await native.deliver(handle: 'h1', deadlineMs: 40);
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        expect(reported, hasLength(1));
-        expect(
-          reported.single.exception.toString(),
-          contains('ran past its 40 ms budget'),
-        );
-        expect(native.completions, 1);
-      },
-    );
+    test('a handler that overruns it is reported even if it edits nothing more', () async {
+      final reported = <FlutterErrorDetails>[];
+      final old = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = old);
+      await bridge.setReportHandlers(
+        onBefore: (r) async {
+          await r.setSummary('early');
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+          // No further edit: nothing else would say that the handler ran long.
+        },
+      );
+      await native.deliver(handle: 'h1', deadlineMs: 40);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(reported, hasLength(1));
+      expect(
+        reported.single.exception.toString(),
+        contains('ran past its 40 ms budget'),
+      );
+      expect(native.completions, 1);
+    });
 
     test('a handler inside the budget is not reported', () async {
       final reported = <FlutterErrorDetails>[];
@@ -667,28 +658,25 @@ void main() {
       await settle();
     }
 
-    test(
-      'a file crosses as its PATH with name, type and move; never bytes',
-      () async {
-        await inHandler((r) async {
-          await r.addAttachment(
-            '/data/app/log.txt',
-            name: 'log',
-            mimeType: 'text/plain',
-          );
-          await r.addAttachment('/data/app/tmp.db', name: 'db', move: true);
-        });
-        expect(
-          native.calls.where((c) => c.startsWith('reportAddAttachment')),
-          [
-            'reportAddAttachment(h1, /data/app/log.txt, log, text/plain, false)',
-            'reportAddAttachment(h1, /data/app/tmp.db, db, null, true)',
-          ],
-          reason:
-              'copy is the default; move is opt-in; the mime type is optional',
+    test('a file crosses as its PATH with name, type and move; never bytes', () async {
+      await inHandler((r) async {
+        await r.addAttachment(
+          '/data/app/log.txt',
+          name: 'log',
+          mimeType: 'text/plain',
         );
-      },
-    );
+        await r.addAttachment('/data/app/tmp.db', name: 'db', move: true);
+      });
+      expect(
+        native.calls.where((c) => c.startsWith('reportAddAttachment')),
+        [
+          'reportAddAttachment(h1, /data/app/log.txt, log, text/plain, false)',
+          'reportAddAttachment(h1, /data/app/tmp.db, db, null, true)',
+        ],
+        reason:
+            'copy is the default; move is opt-in; the mime type is optional',
+      );
+    });
 
     test('bytes cross as a Uint8List and only up to the cap', () async {
       Object? tooBig;
@@ -889,62 +877,56 @@ void main() {
       },
     );
 
-    test(
-      'a handle native reports as not live throws ReportClosedError for every file operation',
-      () async {
-        final ops = <String, Future<void> Function(ReportProxy)>{
-          'addAttachment': (r) => r.addAttachment('/a', name: 'n'),
-          'addAttachment (move)': (r) =>
-              r.addAttachment('/a', name: 'n', move: true),
-          'addAttachmentBytes': (r) =>
-              r.addAttachmentBytes(Uint8List(1), name: 'n'),
-          'clearAttachments': (r) => r.clearAttachments(),
-          'setScreenshot': (r) => r.setScreenshot('/a.png'),
-          'removeScreenshot': (r) => r.removeScreenshot(),
-        };
-        final outcome = <String, Object?>{};
-        var n = 0;
-        for (final entry in ops.entries) {
-          final handle = 'late${n++}';
-          await bridge.setReportHandlers(
-            onBefore: (r) async {
-              // Native completed first (its deadline): the next call is told "not live".
-              native.closeNow(handle);
-              try {
-                await entry.value(r);
-                outcome[entry.key] = 'accepted';
-              } catch (e) {
-                outcome[entry.key] = '${e.runtimeType}, live: ${r.isLive}';
-              }
-            },
-          );
-          await native.deliver(handle: handle, reportId: 'r$n');
-          await settle();
-        }
-        expect(outcome, {
-          for (final k in ops.keys) k: 'ReportClosedError, live: false',
-        });
-      },
-    );
+    test('a handle native reports as not live throws ReportClosedError for every file operation', () async {
+      final ops = <String, Future<void> Function(ReportProxy)>{
+        'addAttachment': (r) => r.addAttachment('/a', name: 'n'),
+        'addAttachment (move)': (r) =>
+            r.addAttachment('/a', name: 'n', move: true),
+        'addAttachmentBytes': (r) =>
+            r.addAttachmentBytes(Uint8List(1), name: 'n'),
+        'clearAttachments': (r) => r.clearAttachments(),
+        'setScreenshot': (r) => r.setScreenshot('/a.png'),
+        'removeScreenshot': (r) => r.removeScreenshot(),
+      };
+      final outcome = <String, Object?>{};
+      var n = 0;
+      for (final entry in ops.entries) {
+        final handle = 'late${n++}';
+        await bridge.setReportHandlers(
+          onBefore: (r) async {
+            // Native completed first (its deadline): the next call is told "not live".
+            native.closeNow(handle);
+            try {
+              await entry.value(r);
+              outcome[entry.key] = 'accepted';
+            } catch (e) {
+              outcome[entry.key] = '${e.runtimeType}, live: ${r.isLive}';
+            }
+          },
+        );
+        await native.deliver(handle: handle, reportId: 'r$n');
+        await settle();
+      }
+      expect(outcome, {
+        for (final k in ops.keys) k: 'ReportClosedError, live: false',
+      });
+    });
 
-    test(
-      'after the handler returns every file operation fails loudly without reaching native',
-      () async {
-        late ReportProxy kept;
-        await inHandler((r) async => kept = r);
-        final before = native.calls.length;
-        for (final call in <Future<void> Function()>[
-          () => kept.addAttachment('/a', name: 'n', move: true),
-          () => kept.addAttachmentBytes(Uint8List(1), name: 'n'),
-          () => kept.clearAttachments(),
-          () => kept.setScreenshot('/a.png', annotated: true),
-          () => kept.removeScreenshot(),
-        ]) {
-          await expectLater(call(), throwsA(isA<ReportClosedError>()));
-        }
-        expect(native.calls.length, before);
-      },
-    );
+    test('after the handler returns every file operation fails loudly without reaching native', () async {
+      late ReportProxy kept;
+      await inHandler((r) async => kept = r);
+      final before = native.calls.length;
+      for (final call in <Future<void> Function()>[
+        () => kept.addAttachment('/a', name: 'n', move: true),
+        () => kept.addAttachmentBytes(Uint8List(1), name: 'n'),
+        () => kept.clearAttachments(),
+        () => kept.setScreenshot('/a.png', annotated: true),
+        () => kept.removeScreenshot(),
+      ]) {
+        await expectLater(call(), throwsA(isA<ReportClosedError>()));
+      }
+      expect(native.calls.length, before);
+    });
 
     test(
       'screenshots cross as a path with the display id and the annotated flag',

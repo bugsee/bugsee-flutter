@@ -158,52 +158,46 @@ void main() {
       },
     );
 
-    test(
-      'after the app replaced the overrides without chaining, installing again puts it back in front',
-      () async {
-        final rig = Rig();
-        rig.service.install();
-        final mine = HttpOverrides.current;
-        final replacement = _AppOverrides();
-        HttpOverrides.global = replacement;
-        expect(isHttpCaptureInEffect(), isFalse);
-        expect(rig.service.install(), isTrue);
-        expect(isHttpCaptureInEffect(), isTrue);
-        expect(identical(HttpOverrides.current, mine), isFalse);
-        final madeBefore = replacement.created;
-        final client = HttpClient();
-        addTearDown(() => client.close(force: true));
-        expect(client, isA<CapturingHttpClient>());
-        expect(
-          replacement.created,
-          madeBefore + 1,
-          reason: 'now chained to the replacement',
-        );
-      },
-    );
+    test('after the app replaced the overrides without chaining, installing again puts it back in front', () async {
+      final rig = Rig();
+      rig.service.install();
+      final mine = HttpOverrides.current;
+      final replacement = _AppOverrides();
+      HttpOverrides.global = replacement;
+      expect(isHttpCaptureInEffect(), isFalse);
+      expect(rig.service.install(), isTrue);
+      expect(isHttpCaptureInEffect(), isTrue);
+      expect(identical(HttpOverrides.current, mine), isFalse);
+      final madeBefore = replacement.created;
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      expect(client, isA<CapturingHttpClient>());
+      expect(
+        replacement.created,
+        madeBefore + 1,
+        reason: 'now chained to the replacement',
+      );
+    });
 
-    test(
-      'a capture that is installed twice by chain does not record twice',
-      () async {
-        final rig = Rig();
-        rig.service.install();
-        // The app chains its own overrides over ours (the usual way to compose).
-        final app = _AppOverrides();
-        HttpOverrides.global = _Chained(app, HttpOverrides.current!);
-        expect(rig.service.install(), isTrue);
-        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-        addTearDown(() => server.close(force: true));
-        server.listen((r) => r.response.close());
-        await rig.settle();
-        final client = HttpClient();
-        addTearDown(() => client.close(force: true));
-        await (await (await client.getUrl(
-          Uri.parse('http://127.0.0.1:${server.port}/'),
-        )).close()).drain<void>();
-        await rig.service.pipeline.flush();
-        expect(rig.sent.where((m) => m.stage == 'before'), hasLength(1));
-      },
-    );
+    test('a capture that is installed twice by chain does not record twice', () async {
+      final rig = Rig();
+      rig.service.install();
+      // The app chains its own overrides over ours (the usual way to compose).
+      final app = _AppOverrides();
+      HttpOverrides.global = _Chained(app, HttpOverrides.current!);
+      expect(rig.service.install(), isTrue);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((r) => r.response.close());
+      await rig.settle();
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      await (await (await client.getUrl(
+        Uri.parse('http://127.0.0.1:${server.port}/'),
+      )).close()).drain<void>();
+      await rig.service.pipeline.flush();
+      expect(rig.sent.where((m) => m.stage == 'before'), hasLength(1));
+    });
   });
 
   group('uninstall', () {
@@ -225,36 +219,33 @@ void main() {
       expect(HttpOverrides.current, isNull);
     });
 
-    test(
-      'when the app chained over it, the capture stays in the chain and records nothing',
-      () async {
-        final rig = Rig();
-        rig.service.install();
-        final app = _Chained(_AppOverrides(), HttpOverrides.current!);
-        HttpOverrides.global = app;
-        rig.service.uninstall();
-        expect(
-          identical(HttpOverrides.current, app),
-          isTrue,
-          reason: 'not ours to remove',
-        );
-        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-        addTearDown(() => server.close(force: true));
-        server.listen((r) => r.response.close());
-        final client = HttpClient();
-        addTearDown(() => client.close(force: true));
-        expect(
-          client,
-          isNot(isA<CapturingHttpClient>()),
-          reason: 'a client made after the uninstall is not wrapped',
-        );
-        await (await (await client.getUrl(
-          Uri.parse('http://127.0.0.1:${server.port}/'),
-        )).close()).drain<void>();
-        await rig.service.pipeline.flush();
-        expect(rig.sent, isEmpty);
-      },
-    );
+    test('when the app chained over it, the capture stays in the chain and records nothing', () async {
+      final rig = Rig();
+      rig.service.install();
+      final app = _Chained(_AppOverrides(), HttpOverrides.current!);
+      HttpOverrides.global = app;
+      rig.service.uninstall();
+      expect(
+        identical(HttpOverrides.current, app),
+        isTrue,
+        reason: 'not ours to remove',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((r) => r.response.close());
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      expect(
+        client,
+        isNot(isA<CapturingHttpClient>()),
+        reason: 'a client made after the uninstall is not wrapped',
+      );
+      await (await (await client.getUrl(
+        Uri.parse('http://127.0.0.1:${server.port}/'),
+      )).close()).drain<void>();
+      await rig.service.pipeline.flush();
+      expect(rig.sent, isEmpty);
+    });
 
     test(
       'a reinstall accepts nothing until the policy is read again',
@@ -317,24 +308,17 @@ void main() {
       expect(HttpOverrides.current, isNull, reason: 'nothing was made global');
     });
 
-    test(
-      'a repeated install does not create a client through the app\'s overrides again',
-      () {
-        final app = _AppOverrides();
-        HttpOverrides.global = app;
-        final rig = Rig();
-        rig.service.install();
-        rig.service.install(); // the first probe
-        final made = app.created;
-        rig.service.install();
-        rig.service.install();
-        expect(
-          app.created,
-          made,
-          reason: 'answered from the probe already made',
-        );
-      },
-    );
+    test('a repeated install does not create a client through the app\'s overrides again', () {
+      final app = _AppOverrides();
+      HttpOverrides.global = app;
+      final rig = Rig();
+      rig.service.install();
+      rig.service.install(); // the first probe
+      final made = app.created;
+      rig.service.install();
+      rig.service.install();
+      expect(app.created, made, reason: 'answered from the probe already made');
+    });
 
     test('after the overrides changed it probes again', () {
       final app = _AppOverrides();
@@ -369,23 +353,20 @@ void main() {
   });
 
   group('the policy follows the SDK', () {
-    test(
-      'a status that is not launched stops capture at once, before the options are read again',
-      () async {
-        final rig = Rig();
-        rig.service.install();
-        await rig.settle();
-        expect(rig.service.policy.accepting, isTrue);
-        rig.loadGate = Completer<void>();
-        rig.statuses.add(BugseeStatus.stopping);
-        expect(
-          rig.service.policy.accepting,
-          isFalse,
-          reason: 'no waiting for the read',
-        );
-        rig.loadGate!.complete();
-      },
-    );
+    test('a status that is not launched stops capture at once, before the options are read again', () async {
+      final rig = Rig();
+      rig.service.install();
+      await rig.settle();
+      expect(rig.service.policy.accepting, isTrue);
+      rig.loadGate = Completer<void>();
+      rig.statuses.add(BugseeStatus.stopping);
+      expect(
+        rig.service.policy.accepting,
+        isFalse,
+        reason: 'no waiting for the read',
+      );
+      rig.loadGate!.complete();
+    });
 
     test('a launch is believed once the options say so', () async {
       final rig = Rig();
@@ -444,27 +425,24 @@ void main() {
   });
 
   group('the options', () {
-    test(
-      'read from what the SDK reports, with the SDK defaults for what is absent',
-      () {
-        final p = NetworkPolicy.from({}, launched: true);
-        expect(p.accepting, isTrue);
-        expect(p.bodySizeLimit, 20480);
-        expect(p.bodyWithoutType, isFalse);
-        expect(p.ownHosts, isEmpty);
-        final q = NetworkPolicy.from({
-          NetworkOptionKeys.capture: false,
-          NetworkOptionKeys.bodySizeLimit: 100,
-          NetworkOptionKeys.bodyWithoutType: true,
-          'com.bugsee.option.\$\$ENDPOINT':
-              'https://bugsee.internal.example:8443/base',
-        }, launched: true);
-        expect(q.accepting, isFalse);
-        expect(q.bodySizeLimit, 100);
-        expect(q.bodyWithoutType, isTrue);
-        expect(q.ownHosts, {'bugsee.internal.example'});
-      },
-    );
+    test('read from what the SDK reports, with the SDK defaults for what is absent', () {
+      final p = NetworkPolicy.from({}, launched: true);
+      expect(p.accepting, isTrue);
+      expect(p.bodySizeLimit, 20480);
+      expect(p.bodyWithoutType, isFalse);
+      expect(p.ownHosts, isEmpty);
+      final q = NetworkPolicy.from({
+        NetworkOptionKeys.capture: false,
+        NetworkOptionKeys.bodySizeLimit: 100,
+        NetworkOptionKeys.bodyWithoutType: true,
+        'com.bugsee.option.\$\$ENDPOINT':
+            'https://bugsee.internal.example:8443/base',
+      }, launched: true);
+      expect(q.accepting, isFalse);
+      expect(q.bodySizeLimit, 100);
+      expect(q.bodyWithoutType, isTrue);
+      expect(q.ownHosts, {'bugsee.internal.example'});
+    });
 
     test('a body-size limit above the cap is capped, one below is kept', () {
       expect(

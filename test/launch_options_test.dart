@@ -81,107 +81,112 @@ void main() {
     });
   });
 
-  group('platform-specific options: skipped with a warning, never an error', () {
-    test('an Android-only option is skipped on iOS and kept on Android', () {
-      const options = BugseeOptions(
-        captureVideoMode: VideoMode.v1,
-        captureLogs: true,
-      );
-      final onIos = encodeLaunchOptions(options, ios);
-      expect(onIos.values, {'com.bugsee.option.capture.logs': true});
-      expect(onIos.warnings, [
-        'com.bugsee.option.capture.video.mode exists on Android only: ignored on iOS',
-      ]);
-      final onAndroid = encodeLaunchOptions(options, android);
-      expect(
-        onAndroid.values.keys,
-        contains('com.bugsee.option.capture.video.mode'),
-      );
-      expect(onAndroid.warnings, isEmpty);
-    });
-
-    test('an iOS-only option is skipped on Android and kept on iOS', () {
-      const options = BugseeOptions(
-        captureAvPlayer: true,
-        reportingUiStyle: BugseeStyle.dusk,
-      );
-      final onAndroid = encodeLaunchOptions(options, android);
-      expect(onAndroid.values, isEmpty);
-      expect(onAndroid.warnings, hasLength(2));
-      expect(
-        onAndroid.warnings.first,
-        contains('exists on iOS only: ignored on Android'),
-      );
-      expect(encode(options, ios), {
-        'com.bugsee.option.capture.avplayer': true,
-        'com.bugsee.option.reporting.ui.style': 1,
-      });
-    });
-
-    test(
-      'an enum constant one platform lacks is skipped there (FrameRate.raw)',
-      () {
-        const options = BugseeOptions(captureVideoFrameRate: FrameRate.raw);
-        expect(encode(options, android), {
-          'com.bugsee.option.capture.video.frame-rate': 4,
-        });
+  group(
+    'platform-specific options: skipped with a warning, never an error',
+    () {
+      test('an Android-only option is skipped on iOS and kept on Android', () {
+        const options = BugseeOptions(
+          captureVideoMode: VideoMode.v1,
+          captureLogs: true,
+        );
         final onIos = encodeLaunchOptions(options, ios);
-        expect(onIos.values, isEmpty);
+        expect(onIos.values, {'com.bugsee.option.capture.logs': true});
+        expect(onIos.warnings, [
+          'com.bugsee.option.capture.video.mode exists on Android only: ignored on iOS',
+        ]);
+        final onAndroid = encodeLaunchOptions(options, android);
         expect(
-          onIos.warnings.single,
-          contains('is not a value of BugseeFrameRate on iOS'),
+          onAndroid.values.keys,
+          contains('com.bugsee.option.capture.video.mode'),
         );
-        // A constant both platforms have is never skipped.
-        expect(
-          encode(
-            const BugseeOptions(captureVideoFrameRate: FrameRate.high),
-            ios,
-          ),
-          {'com.bugsee.option.capture.video.frame-rate': 3},
-        );
-      },
-    );
+        expect(onAndroid.warnings, isEmpty);
+      });
 
-    test(
-      'every typed option reaches exactly the platforms that register it',
-      () {
-        for (final spec in optionSpecs.where((s) => s.typed)) {
-          final s = sample(spec);
-          final options = withField(spec, s.value);
-          for (final p in OptionPlatform.values) {
-            final here = spec.on(p);
-            final sent = encode(options, p);
-            if (here == null) {
-              expect(
-                sent,
-                isEmpty,
-                reason: '${spec.key} must not be sent to $p',
-              );
-            } else {
-              expect(sent, {spec.key: s.entry}, reason: '${spec.key} on $p');
+      test('an iOS-only option is skipped on Android and kept on iOS', () {
+        const options = BugseeOptions(
+          captureAvPlayer: true,
+          reportingUiStyle: BugseeStyle.dusk,
+        );
+        final onAndroid = encodeLaunchOptions(options, android);
+        expect(onAndroid.values, isEmpty);
+        expect(onAndroid.warnings, hasLength(2));
+        expect(
+          onAndroid.warnings.first,
+          contains('exists on iOS only: ignored on Android'),
+        );
+        expect(encode(options, ios), {
+          'com.bugsee.option.capture.avplayer': true,
+          'com.bugsee.option.reporting.ui.style': 1,
+        });
+      });
+
+      test(
+        'an enum constant one platform lacks is skipped there (FrameRate.raw)',
+        () {
+          const options = BugseeOptions(captureVideoFrameRate: FrameRate.raw);
+          expect(encode(options, android), {
+            'com.bugsee.option.capture.video.frame-rate': 4,
+          });
+          final onIos = encodeLaunchOptions(options, ios);
+          expect(onIos.values, isEmpty);
+          expect(
+            onIos.warnings.single,
+            contains('is not a value of BugseeFrameRate on iOS'),
+          );
+          // A constant both platforms have is never skipped.
+          expect(
+            encode(
+              const BugseeOptions(captureVideoFrameRate: FrameRate.high),
+              ios,
+            ),
+            {'com.bugsee.option.capture.video.frame-rate': 3},
+          );
+        },
+      );
+
+      test(
+        'every typed option reaches exactly the platforms that register it',
+        () {
+          for (final spec in optionSpecs.where((s) => s.typed)) {
+            final s = sample(spec);
+            final options = withField(spec, s.value);
+            for (final p in OptionPlatform.values) {
+              final here = spec.on(p);
+              final sent = encode(options, p);
+              if (here == null) {
+                expect(
+                  sent,
+                  isEmpty,
+                  reason: '${spec.key} must not be sent to $p',
+                );
+              } else {
+                expect(sent, {spec.key: s.entry}, reason: '${spec.key} on $p');
+              }
             }
           }
-        }
-      },
-    );
+        },
+      );
 
-    test('no hidden key is ever sent, whatever is set', () {
-      // Every typed option at once; the only hidden key that may appear is the endpoint.
-      final everything = <String, Object>{};
-      for (final spec in optionSpecs.where((s) => s.typed)) {
-        everything.addAll(encode(withField(spec, sample(spec).value), ios));
-        everything.addAll(encode(withField(spec, sample(spec).value), android));
-      }
-      expect(
-        everything.keys.where((k) => optionSpecForKey(k)!.hidden),
-        isEmpty,
-      );
-      expect(
-        encode(const BugseeOptions(endpoint: 'https://x.example'), ios).keys,
-        [endpointOptionKey],
-      );
-    });
-  });
+      test('no hidden key is ever sent, whatever is set', () {
+        // Every typed option at once; the only hidden key that may appear is the endpoint.
+        final everything = <String, Object>{};
+        for (final spec in optionSpecs.where((s) => s.typed)) {
+          everything.addAll(encode(withField(spec, sample(spec).value), ios));
+          everything.addAll(
+            encode(withField(spec, sample(spec).value), android),
+          );
+        }
+        expect(
+          everything.keys.where((k) => optionSpecForKey(k)!.hidden),
+          isEmpty,
+        );
+        expect(
+          encode(const BugseeOptions(endpoint: 'https://x.example'), ios).keys,
+          [endpointOptionKey],
+        );
+      });
+    },
+  );
 
   group('custom: options this plugin has no field for', () {
     test('a registered key with a value of its type is sent', () {
@@ -191,55 +196,52 @@ void main() {
       expect(encode(options, ios), {'com.bugsee.option.detect.crash': false});
     });
 
-    test(
-      'an int-valued enum takes a constant NAME and sends its number (iOS would read a string as 0)',
-      () {
-        expect(
-          encode(
-            const BugseeOptions(
-              custom: {'com.bugsee.option.capture.logs.level': 'Warning'},
-            ),
-            ios,
+    test('an int-valued enum takes a constant NAME and sends its number (iOS would read a string as 0)', () {
+      expect(
+        encode(
+          const BugseeOptions(
+            custom: {'com.bugsee.option.capture.logs.level': 'Warning'},
           ),
-          {'com.bugsee.option.capture.logs.level': 2},
-        );
+          ios,
+        ),
+        {'com.bugsee.option.capture.logs.level': 2},
+      );
+      expect(
+        encode(
+          const BugseeOptions(
+            custom: {'com.bugsee.option.capture.video.frame-rate': 'High'},
+          ),
+          android,
+        ),
+        {'com.bugsee.option.capture.video.frame-rate': 3},
+      );
+      // Android's and iOS's names for severity value 1 both resolve.
+      for (final name in ['VeryLow', 'Low']) {
         expect(
           encode(
-            const BugseeOptions(
-              custom: {'com.bugsee.option.capture.video.frame-rate': 'High'},
+            BugseeOptions(
+              custom: {
+                'com.bugsee.option.reporting.defaults.bug-priority': name,
+              },
             ),
             android,
           ),
-          {'com.bugsee.option.capture.video.frame-rate': 3},
+          {'com.bugsee.option.reporting.defaults.bug-priority': 1},
         );
-        // Android's and iOS's names for severity value 1 both resolve.
-        for (final name in ['VeryLow', 'Low']) {
-          expect(
-            encode(
-              BugseeOptions(
-                custom: {
-                  'com.bugsee.option.reporting.defaults.bug-priority': name,
-                },
-              ),
-              android,
+      }
+      for (final bad in ['high', 'Huge', '']) {
+        expect(
+          () => encode(
+            BugseeOptions(
+              custom: {'com.bugsee.option.capture.logs.level': bad},
             ),
-            {'com.bugsee.option.reporting.defaults.bug-priority': 1},
-          );
-        }
-        for (final bad in ['high', 'Huge', '']) {
-          expect(
-            () => encode(
-              BugseeOptions(
-                custom: {'com.bugsee.option.capture.logs.level': bad},
-              ),
-              ios,
-            ),
-            throwsArgumentError,
-            reason: bad,
-          );
-        }
-      },
-    );
+            ios,
+          ),
+          throwsArgumentError,
+          reason: bad,
+        );
+      }
+    });
 
     test('a string-valued enum takes only its own names or wire strings', () {
       for (final ok in ['FAST', 'Fast', 'DEEP_EVERYWHERE']) {
@@ -285,31 +287,27 @@ void main() {
       });
     });
 
-    test(
-      'a key neither SDK registers is an error (the SDKs would drop it in silence)',
-      () {
-        expect(
-          () => encode(
-            const BugseeOptions(
-              custom: {'com.bugsee.option.capture.vidoe': true},
-            ),
-            android,
+    test('a key neither SDK registers is an error (the SDKs would drop it in silence)', () {
+      expect(
+        () => encode(
+          const BugseeOptions(
+            custom: {'com.bugsee.option.capture.vidoe': true},
           ),
-          throwsA(
-            isA<ArgumentError>().having(
-              (e) => '$e',
-              'message',
-              contains('not an option'),
-            ),
+          android,
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => '$e',
+            'message',
+            contains('not an option'),
           ),
-        );
-        expect(
-          () =>
-              encode(const BugseeOptions(custom: {'capture.video': true}), ios),
-          throwsArgumentError,
-        );
-      },
-    );
+        ),
+      );
+      expect(
+        () => encode(const BugseeOptions(custom: {'capture.video': true}), ios),
+        throwsArgumentError,
+      );
+    });
 
     test(
       'a deprecated option is still reachable through custom, with a warning',
@@ -387,42 +385,36 @@ void main() {
       },
     );
 
-    test(
-      'an enum value neither SDK has is an error; one the other platform has is skipped',
-      () {
-        expect(
-          () => encode(
-            const BugseeOptions(
-              custom: {'com.bugsee.option.capture.video.frame-rate': 9},
-            ),
-            android,
-          ),
-          throwsArgumentError,
-        );
-        final onIos = encodeLaunchOptions(
+    test('an enum value neither SDK has is an error; one the other platform has is skipped', () {
+      expect(
+        () => encode(
           const BugseeOptions(
-            custom: {'com.bugsee.option.capture.video.frame-rate': 4},
-          ),
-          ios,
-        );
-        expect(onIos.values, isEmpty);
-        expect(onIos.warnings, hasLength(1));
-      },
-    );
-
-    test(
-      'a key of the other platform is skipped with a warning, like a typed field',
-      () {
-        final encoded = encodeLaunchOptions(
-          const BugseeOptions(
-            custom: {'com.bugsee.option.capture.avplayer': true},
+            custom: {'com.bugsee.option.capture.video.frame-rate': 9},
           ),
           android,
-        );
-        expect(encoded.values, isEmpty);
-        expect(encoded.warnings.single, contains('iOS only'));
-      },
-    );
+        ),
+        throwsArgumentError,
+      );
+      final onIos = encodeLaunchOptions(
+        const BugseeOptions(
+          custom: {'com.bugsee.option.capture.video.frame-rate': 4},
+        ),
+        ios,
+      );
+      expect(onIos.values, isEmpty);
+      expect(onIos.warnings, hasLength(1));
+    });
+
+    test('a key of the other platform is skipped with a warning, like a typed field', () {
+      final encoded = encodeLaunchOptions(
+        const BugseeOptions(
+          custom: {'com.bugsee.option.capture.avplayer': true},
+        ),
+        android,
+      );
+      expect(encoded.values, isEmpty);
+      expect(encoded.warnings.single, contains('iOS only'));
+    });
 
     test('the same option in a typed field and in custom is an error', () {
       expect(

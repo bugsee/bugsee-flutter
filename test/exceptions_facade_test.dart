@@ -107,17 +107,13 @@ void main() {
       },
     );
 
-    test(
-      'reportException with nothing but the error is a handled one with the current stack',
-      () async {
-        Future<bool> callerOfReport() =>
-            Bugsee.reportException(StateError('x'));
-        await callerOfReport();
-        expect(native.last['logException']![1], true);
-        final frames = (document(native)['frames']! as List).cast<Map>();
-        expect(frames.first['trace'], contains('callerOfReport'));
-      },
-    );
+    test('reportException with nothing but the error is a handled one with the current stack', () async {
+      Future<bool> callerOfReport() => Bugsee.reportException(StateError('x'));
+      await callerOfReport();
+      expect(native.last['logException']![1], true);
+      final frames = (document(native)['frames']! as List).cast<Map>();
+      expect(frames.first['trace'], contains('callerOfReport'));
+    });
 
     test('the SDK refusing the document is not blamed on the domain', () async {
       native.failing['logException'] = refusal(
@@ -185,27 +181,24 @@ void main() {
       expect(await Bugsee.reportException('x', domain: 'd' * 256), isTrue);
     });
 
-    test(
-      'a native refusal is a BugseeArgumentException, a native error a BugseeException',
-      () async {
-        native.failing['logException'] = refusal('invalid-argument');
-        await expectLater(
-          Bugsee.logException('x', null),
-          throwsA(isA<BugseeArgumentException>()),
-        );
-        native.failing['logException'] = refusal('sdk-error');
-        await expectLater(
-          Bugsee.logException('x', null),
-          throwsA(
-            isA<BugseeException>().having(
-              (e) => e,
-              'not an argument error',
-              isNot(isA<BugseeArgumentException>()),
-            ),
+    test('a native refusal is a BugseeArgumentException, a native error a BugseeException', () async {
+      native.failing['logException'] = refusal('invalid-argument');
+      await expectLater(
+        Bugsee.logException('x', null),
+        throwsA(isA<BugseeArgumentException>()),
+      );
+      native.failing['logException'] = refusal('sdk-error');
+      await expectLater(
+        Bugsee.logException('x', null),
+        throwsA(
+          isA<BugseeException>().having(
+            (e) => e,
+            'not an argument error',
+            isNot(isA<BugseeArgumentException>()),
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
     test('on a platform with no SDK it is a no-op answering false', () async {
       platform = null;
@@ -288,16 +281,13 @@ void main() {
       expect(native.calls.where((c) => c.startsWith('logException')), isEmpty);
     });
 
-    test(
-      'a failing native never reaches the app: not as an exception, not as an unhandled error',
-      () async {
-        Bugsee.installErrorHandlers(isolateErrors: false);
-        native.failing['logException'] = refusal('sdk-error');
-        FlutterError.onError!(FlutterErrorDetails(exception: StateError('x')));
-        await settle();
-        // the test would fail on an uncaught error
-      },
-    );
+    test('a failing native never reaches the app: not as an exception, not as an unhandled error', () async {
+      Bugsee.installErrorHandlers(isolateErrors: false);
+      native.failing['logException'] = refusal('sdk-error');
+      FlutterError.onError!(FlutterErrorDetails(exception: StateError('x')));
+      await settle();
+      // the test would fail on an uncaught error
+    });
 
     test(
       'nothing is reported when the launch said detect.crash is false',

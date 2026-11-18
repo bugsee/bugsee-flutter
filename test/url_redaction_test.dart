@@ -93,23 +93,20 @@ void main() {
       expect(stripFragment('/plain'), '/plain');
     });
 
-    test(
-      'a URL-valued header loses its fragment, query values and userinfo together',
-      () {
-        expect(
-          redactHeaderValue(
-            'location',
-            'https://u:p@app.example/cb?code=1#access_token=XYZ',
-          ),
-          'https://app.example/cb?code=<redacted>',
-        );
-        expect(
-          redactHeaderValue('location', 'myapp://cb#access_token=XYZ'),
-          'myapp://cb',
-        );
-        expect(redactHeaderValue('x-other', 'a#b'), 'a#b');
-      },
-    );
+    test('a URL-valued header loses its fragment, query values and userinfo together', () {
+      expect(
+        redactHeaderValue(
+          'location',
+          'https://u:p@app.example/cb?code=1#access_token=XYZ',
+        ),
+        'https://app.example/cb?code=<redacted>',
+      );
+      expect(
+        redactHeaderValue('location', 'myapp://cb#access_token=XYZ'),
+        'myapp://cb',
+      );
+      expect(redactHeaderValue('x-other', 'a#b'), 'a#b');
+    });
   });
 
   group('redactQueryValues', () {
@@ -120,15 +117,12 @@ void main() {
       );
     });
 
-    test(
-      'stops at the fragment and whitespace (the fragment itself is stripFragment\'s)',
-      () {
-        expect(
-          redactQueryValues('0; url=/n?s=1#frag'),
-          '0; url=/n?s=<redacted>#frag',
-        );
-      },
-    );
+    test('stops at the fragment and whitespace (the fragment itself is stripFragment\'s)', () {
+      expect(
+        redactQueryValues('0; url=/n?s=1#frag'),
+        '0; url=/n?s=<redacted>#frag',
+      );
+    });
 
     test('text without a query is unchanged', () {
       expect(redactQueryValues('/plain/path'), '/plain/path');
@@ -187,15 +181,12 @@ void main() {
       }
     });
 
-    test(
-      'encodedLength: UTF-8, Latin-1 and ASCII without building bytes, others by encoding',
-      () {
-        expect(encodedLength('café', utf8), 5);
-        expect(encodedLength('café', latin1), 4);
-        expect(encodedLength('abc', ascii), 3);
-        expect(encodedLength('abc', const _Doubling()), 6);
-      },
-    );
+    test('encodedLength: UTF-8, Latin-1 and ASCII without building bytes, others by encoding', () {
+      expect(encodedLength('café', utf8), 5);
+      expect(encodedLength('café', latin1), 4);
+      expect(encodedLength('abc', ascii), 3);
+      expect(encodedLength('abc', const _Doubling()), 6);
+    });
 
     test('a text is kept only while its bytes can still fit', () {
       final tee = BodyTee(limit: 10);

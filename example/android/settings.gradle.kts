@@ -19,8 +19,7 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.11.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
+    id("com.android.application") version "9.1.1" apply false
     // Mandatory for Android 7.x and not autolinkable: the app applies it. Version
     // is the pin in ../../native-versions.json (android.gradlePlugin); the drift
     // guard asserts they agree.

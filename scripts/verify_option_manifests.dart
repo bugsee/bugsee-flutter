@@ -61,9 +61,8 @@ Set<String> iosKeys(String source) => {
 /// The members of an Objective-C enum, by value, tolerating `NS_SWIFT_NAME(...)` and
 /// implicit values.
 Map<String, int> objcEnumValues(String source, String name) {
-  final clean = stripComments(
-    source,
-  ).replaceAll(RegExp(r'NS_SWIFT_NAME\([^)]*\)'), '');
+  final clean = stripComments(source)
+      .replaceAll(RegExp(r'NS_SWIFT_NAME\([^)]*\)'), '');
   final patterns = [
     RegExp(
       r'typedef\s+NS_(?:ENUM|OPTIONS)\s*\(\s*[\w ]+\s*,\s*' +
@@ -80,9 +79,8 @@ Map<String, int> objcEnumValues(String source, String name) {
     final out = <String, int>{};
     var next = 0;
     for (final entry in m.group(1)!.split(',')) {
-      final e = RegExp(
-        r'^\s*(\w+)\s*(?:=\s*(-?\d+)\s*)?$',
-      ).firstMatch(entry.trim());
+      final e = RegExp(r'^\s*(\w+)\s*(?:=\s*(-?\d+)\s*)?$')
+          .firstMatch(entry.trim());
       if (e == null) continue;
       final value = e.group(2) == null ? next : int.parse(e.group(2)!);
       out[e.group(1)!] = value;
@@ -110,13 +108,9 @@ String show(String repo, String ref, String path) {
   return r.stdout as String;
 }
 
-Map<String, dynamic> manifest(String root, String sdk) =>
-    jsonDecode(
-          File(
-            '$root/test/fixtures/option_manifests/$sdk.json',
-          ).readAsStringSync(),
-        )
-        as Map<String, dynamic>;
+Map<String, dynamic> manifest(String root, String sdk) => jsonDecode(
+  File('$root/test/fixtures/option_manifests/$sdk.json').readAsStringSync(),
+) as Map<String, dynamic>;
 
 List<String> compareKeys(
   String label,
@@ -237,9 +231,9 @@ void main(List<String> args) {
   // ---- iOS
   final im = manifest(root, 'ios');
   final iKeys = iosKeys(show(iosRepo, iosRef, iosOptionKeysFile));
-  final iHidden = iosKeys(
-    show(iosRepo, iosRef, iosDescriptors),
-  ).where((k) => k.startsWith('com.bugsee.option.\$\$')).toSet();
+  final iHidden = iosKeys(show(iosRepo, iosRef, iosDescriptors))
+      .where((k) => k.startsWith('com.bugsee.option.\$\$'))
+      .toSet();
   problems.addAll(
     compareKeys('ios@$iosRef', im, iKeys.difference(iHidden), iHidden),
   );

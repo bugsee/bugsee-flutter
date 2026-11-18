@@ -3,7 +3,7 @@ description: Code generation for the bugsee_flutter bridge. Not part of the publ
 publish_to: none
 
 environment:
-  sdk: ^3.11.0
+  sdk: ^3.14.0
 
 dev_dependencies:
   pigeon: 29.0.7

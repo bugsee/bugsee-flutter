@@ -60,14 +60,11 @@ void main() {
       },
     );
 
-    test(
-      'a first read that finds the report gone releases it too and answers null',
-      () async {
-        native.createdSnapshot = null;
-        expect(await Bugsee.createReport(), isNull);
-        expect(callsOf('createdReportDiscard'), ['createdReportDiscard(cr-1)']);
-      },
-    );
+    test('a first read that finds the report gone releases it too and answers null', () async {
+      native.createdSnapshot = null;
+      expect(await Bugsee.createReport(), isNull);
+      expect(callsOf('createdReportDiscard'), ['createdReportDiscard(cr-1)']);
+    });
 
     test(
       'a discard that itself fails does not hide the first failure',
@@ -374,20 +371,17 @@ void main() {
       expect(callsOf('createdReportApply'), isEmpty);
     });
 
-    test(
-      'native saying not-live to an upload is a CreatedReportClosedError, not false',
-      () async {
-        final report = (await Bugsee.createReport())!;
-        native.failing['createdReportUpload'] = PlatformException(
-          code: 'not-live',
-        );
-        await expectLater(
-          report.upload(),
-          throwsA(isA<CreatedReportClosedError>()),
-        );
-        expect(report.isLive, isFalse);
-      },
-    );
+    test('native saying not-live to an upload is a CreatedReportClosedError, not false', () async {
+      final report = (await Bugsee.createReport())!;
+      native.failing['createdReportUpload'] = PlatformException(
+        code: 'not-live',
+      );
+      await expectLater(
+        report.upload(),
+        throwsA(isA<CreatedReportClosedError>()),
+      );
+      expect(report.isLive, isFalse);
+    });
 
     test('an SDK that never answers the upload is a typed timeout', () async {
       final report = (await Bugsee.createReport())!;
@@ -432,15 +426,12 @@ void main() {
       expect(callsOf('createdReportUpload'), hasLength(1));
     });
 
-    test(
-      'upload answers false when the SDK did not schedule it; the report is dead anyway',
-      () async {
-        native.createdUploadResult = false;
-        final report = (await Bugsee.createReport())!;
-        expect(await report.upload(), isFalse);
-        expect(report.isLive, isFalse);
-      },
-    );
+    test('upload answers false when the SDK did not schedule it; the report is dead anyway', () async {
+      native.createdUploadResult = false;
+      final report = (await Bugsee.createReport())!;
+      expect(await report.upload(), isFalse);
+      expect(report.isLive, isFalse);
+    });
 
     test(
       'discard releases it once; later calls throw; discard again is harmless',

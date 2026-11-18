@@ -28,9 +28,9 @@ void main() {
   final objcPipeline = stripComments(
     read('$objc/BGSFlutterReportHandlerPipeline.m'),
   );
-  final fixture =
-      jsonDecode(read('test/fixtures/report_enums.json'))
-          as Map<String, Object?>;
+  final fixture = jsonDecode(
+    read('test/fixtures/report_enums.json'),
+  ) as Map<String, Object?>;
   final androidLimits =
       (fixture['android'] as Map)['attachments'] as Map<String, Object?>;
   final iosLimits =
@@ -91,32 +91,29 @@ void main() {
       }
     });
 
-    test(
-      'the created-report codes added by the review: rate limit, upload timeout, not-live',
-      () {
-        expect(ReportWire.createRateLimited, 'create-rate-limited');
-        expect(ReportWire.uploadTimeout, 'upload-timeout');
-        expect(
-          javaFlow,
-          contains('CREATE_RATE_LIMITED = "${ReportWire.createRateLimited}"'),
-        );
-        expect(
-          javaFlow,
-          contains('UPLOAD_TIMEOUT = "${ReportWire.uploadTimeout}"'),
-        );
-        expect(javaFlow, contains('NOT_LIVE = "${ReportWire.notLive}"'));
-        expect(
-          objcFlow,
-          contains(
-            'BGSFlutterCreateRateLimited = @"${ReportWire.createRateLimited}"',
-          ),
-        );
-        expect(
-          objcFlow,
-          contains('BGSFlutterUploadTimeout = @"${ReportWire.uploadTimeout}"'),
-        );
-      },
-    );
+    test('the created-report codes added by the review: rate limit, upload timeout, not-live', () {
+      expect(ReportWire.createRateLimited, 'create-rate-limited');
+      expect(ReportWire.uploadTimeout, 'upload-timeout');
+      expect(
+        javaFlow,
+        contains('CREATE_RATE_LIMITED = "${ReportWire.createRateLimited}"'),
+      );
+      expect(
+        javaFlow,
+        contains('UPLOAD_TIMEOUT = "${ReportWire.uploadTimeout}"'),
+      );
+      expect(javaFlow, contains('NOT_LIVE = "${ReportWire.notLive}"'));
+      expect(
+        objcFlow,
+        contains(
+          'BGSFlutterCreateRateLimited = @"${ReportWire.createRateLimited}"',
+        ),
+      );
+      expect(
+        objcFlow,
+        contains('BGSFlutterUploadTimeout = @"${ReportWire.uploadTimeout}"'),
+      );
+    });
 
     test('createReport codes: Dart, Java and Objective-C', () {
       expect(ReportWire.createBusy, 'create-busy');
@@ -247,57 +244,49 @@ void main() {
 
     test('the URL-scheme rule is the same expression in all three', () {
       String normal(String s) => s.replaceAll(r'\\', r'\');
-      final dart = RegExp(
-        r"RegExp\(r'(\^\[A-Za-z\]\[A-Za-z0-9\+\.\\-\]\*:)'\)",
-      ).firstMatch(read('lib/src/report/attachments.dart'))!.group(1)!;
+      final dart = RegExp(r"RegExp\(r'(\^\[A-Za-z\]\[A-Za-z0-9\+\.\\-\]\*:)'\)")
+          .firstMatch(read('lib/src/report/attachments.dart'))!
+          .group(1)!;
       expect(normal(javaOps), contains(normal(dart.replaceAll(r'\-', r'\-'))));
       expect(normal(objcFiles), contains(normal(dart)));
     });
 
-    test(
-      'the SDKs\' own attachment caps are the fixture\'s (extracted from source)',
-      () {
-        expect(androidLimits['maxPerReport'], 1000);
-        expect(
-          javaOps,
-          contains(
-            'MAX_REPORT_ATTACHMENTS = ${androidLimits['maxPerReport']};',
-          ),
-        );
-        expect(iosLimits['maxPerReport'], androidLimits['maxPerReport']);
-        expect(
-          read('$objc/BGSFlutterReportFiles.m'),
-          contains(
-            'BGSFlutterMaxReportAttachments = ${iosLimits['maxPerReport']};',
-          ),
-        );
-        expect(
-          objcCreated,
-          contains(
-            'BGSFlutterCreatedReportMaxAttachments = ${iosLimits['legacyCreatedReportMaxCount']};',
-          ),
-        );
-        expect(
-          objcCreated,
-          contains(
-            'BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;',
-          ),
-        );
-        expect(iosLimits['legacyCreatedReportMaxBytes'], 3 * 1024 * 1024);
-      },
-    );
+    test('the SDKs\' own attachment caps are the fixture\'s (extracted from source)', () {
+      expect(androidLimits['maxPerReport'], 1000);
+      expect(
+        javaOps,
+        contains('MAX_REPORT_ATTACHMENTS = ${androidLimits['maxPerReport']};'),
+      );
+      expect(iosLimits['maxPerReport'], androidLimits['maxPerReport']);
+      expect(
+        read('$objc/BGSFlutterReportFiles.m'),
+        contains(
+          'BGSFlutterMaxReportAttachments = ${iosLimits['maxPerReport']};',
+        ),
+      );
+      expect(
+        objcCreated,
+        contains(
+          'BGSFlutterCreatedReportMaxAttachments = ${iosLimits['legacyCreatedReportMaxCount']};',
+        ),
+      );
+      expect(
+        objcCreated,
+        contains(
+          'BGSFlutterCreatedReportMaxAttachmentBytes = 3u * 1024u * 1024u;',
+        ),
+      );
+      expect(iosLimits['legacyCreatedReportMaxBytes'], 3 * 1024 * 1024);
+    });
 
-    test(
-      'the plugin cap of a bytes attachment stays under both SDKs\' legacy limit',
-      () {
-        // A bytes attachment is capped below what the legacy iOS created report takes, so one cap is
-        // never the reason a created report refuses what a handler report took.
-        expect(
-          maxAttachmentBytes,
-          lessThan(iosLimits['legacyCreatedReportMaxBytes']! as int),
-        );
-      },
-    );
+    test('the plugin cap of a bytes attachment stays under both SDKs\' legacy limit', () {
+      // A bytes attachment is capped below what the legacy iOS created report takes, so one cap is
+      // never the reason a created report refuses what a handler report took.
+      expect(
+        maxAttachmentBytes,
+        lessThan(iosLimits['legacyCreatedReportMaxBytes']! as int),
+      );
+    });
   });
 
   group('each path makes the SDK call the spec names', () {
@@ -325,65 +314,56 @@ void main() {
       },
     );
 
-    test(
-      'iOS: the path-first and bytes methods of BGSReportContract, never the object forms',
-      () {
-        expect(
-          objcFiles,
-          contains(
-            'addAttachmentWithFilePath:path name:name mimeType:mimeType move:move',
-          ),
-        );
-        expect(
-          objcFiles,
-          contains('addAttachmentWithData:data name:name mimeType:mimeType'),
-        );
-        expect(
-          objcFiles,
-          contains(
-            'setScreenshot:image displayId:(NSInteger)displayId annotated:annotated',
-          ),
-        );
-        expect(
-          objcFiles,
-          contains(
-            'setScreenshot:nil displayId:(NSInteger)displayId annotated:NO',
-          ),
-        );
-        for (final source in [objcFiles, objcFlow]) {
-          expect(source, isNot(contains('createAndAddAttachmentWithName')));
-          expect(source, isNot(contains('addAttachment:')));
-        }
-      },
-    );
+    test('iOS: the path-first and bytes methods of BGSReportContract, never the object forms', () {
+      expect(
+        objcFiles,
+        contains(
+          'addAttachmentWithFilePath:path name:name mimeType:mimeType move:move',
+        ),
+      );
+      expect(
+        objcFiles,
+        contains('addAttachmentWithData:data name:name mimeType:mimeType'),
+      );
+      expect(
+        objcFiles,
+        contains(
+          'setScreenshot:image displayId:(NSInteger)displayId annotated:annotated',
+        ),
+      );
+      expect(
+        objcFiles,
+        contains(
+          'setScreenshot:nil displayId:(NSInteger)displayId annotated:NO',
+        ),
+      );
+      for (final source in [objcFiles, objcFlow]) {
+        expect(source, isNot(contains('createAndAddAttachmentWithName')));
+        expect(source, isNot(contains('addAttachment:')));
+      }
+    });
 
-    test(
-      'createReport: Android Bugsee.createReport/upload, iOS createReportWithCompletion/uploadReport',
-      () {
-        expect(javaFlow, contains('Bugsee.createReport(listener)'));
-        expect(javaFlow, contains('Bugsee.upload(report, done)'));
-        expect(objcFlow, contains('[Bugsee createReportWithCompletion:'));
-        expect(
-          objcFlow,
-          contains(
-            '[Bugsee uploadReport:(BugseeExtendedReport *)report completion:completion]',
-          ),
-        );
-      },
-    );
+    test('createReport: Android Bugsee.createReport/upload, iOS createReportWithCompletion/uploadReport', () {
+      expect(javaFlow, contains('Bugsee.createReport(listener)'));
+      expect(javaFlow, contains('Bugsee.upload(report, done)'));
+      expect(objcFlow, contains('[Bugsee createReportWithCompletion:'));
+      expect(
+        objcFlow,
+        contains(
+          '[Bugsee uploadReport:(BugseeExtendedReport *)report completion:completion]',
+        ),
+      );
+    });
 
-    test(
-      'a created report is only ever copied: neither platform exposes a move for it',
-      () {
-        expect(
-          javaFlow,
-          contains(
-            'ReportOps.addFile(report, path, name, mimeType, false, window)',
-          ),
-        );
-        expect(RegExp(r'\bmove\b').hasMatch(objcCreated), isFalse);
-      },
-    );
+    test('a created report is only ever copied: neither platform exposes a move for it', () {
+      expect(
+        javaFlow,
+        contains(
+          'ReportOps.addFile(report, path, name, mimeType, false, window)',
+        ),
+      );
+      expect(RegExp(r'\bmove\b').hasMatch(objcCreated), isFalse);
+    });
   });
 
   group('nothing blocks, and file work is off the platform thread', () {
@@ -418,21 +398,18 @@ void main() {
       }
     });
 
-    test(
-      'a handler report\'s file operations are queued on the worker, behind a lease',
-      () {
-        expect(javaFlow, contains('pipeline.acquire(handle)'));
-        expect(javaFlow, contains('worker.execute('));
-        expect(objcFlow, contains('[_pipeline acquireHandle:handle]'));
-        expect(objcFlow, contains('_worker('));
-        // The SDK's completion waits for the claim, in both pipelines.
-        expect(
-          stripComments(read('$java/ReportHandlerPipeline.java')),
-          contains('completionDeferred'),
-        );
-        expect(objcPipeline, contains('deferredCompletion'));
-      },
-    );
+    test('a handler report\'s file operations are queued on the worker, behind a lease', () {
+      expect(javaFlow, contains('pipeline.acquire(handle)'));
+      expect(javaFlow, contains('worker.execute('));
+      expect(objcFlow, contains('[_pipeline acquireHandle:handle]'));
+      expect(objcFlow, contains('_worker('));
+      // The SDK's completion waits for the claim, in both pipelines.
+      expect(
+        stripComments(read('$java/ReportHandlerPipeline.java')),
+        contains('completionDeferred'),
+      );
+      expect(objcPipeline, contains('deferredCompletion'));
+    });
 
     test(
       'the Pigeon file operations are asynchronous, the cheap ones synchronous',

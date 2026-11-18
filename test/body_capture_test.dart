@@ -42,14 +42,11 @@ void main() {
       },
     );
 
-    test(
-      'bytes after the overflow are counted and not kept, whatever the chunking',
-      () {
-        final tee = teeOf(List<int>.filled(10000, 1), limit: 100, chunk: 7);
-        expect(tee.size, 10000);
-        expect(tee.bytes, isNull);
-      },
-    );
+    test('bytes after the overflow are counted and not kept, whatever the chunking', () {
+      final tee = teeOf(List<int>.filled(10000, 1), limit: 100, chunk: 7);
+      expect(tee.size, 10000);
+      expect(tee.bytes, isNull);
+    });
 
     test(
       'the copy is dropped at the overflow: memory is bounded by the limit',
@@ -242,79 +239,64 @@ void main() {
       },
     );
 
-    test(
-      'the order of the checks differs for a request and a response, as in the SDK',
-      () {
-        final big = List<int>.filled(500, 1);
-        // A request that overflowed is size_too_large first (NetworkEventsProducer.getRequestBody).
-        expect(
-          resolve(big, type: 'image/png', request: true, keep: false).reason,
-          NoBodyReason.sizeTooLarge,
-        );
-        expect(
-          resolve(big, type: null, request: true, keep: false).reason,
-          NoBodyReason.sizeTooLarge,
-        );
-        // A response is judged by its type first (getResponseBody).
-        expect(
-          resolve(big, type: 'image/png', keep: false).reason,
-          NoBodyReason.unsupportedContentType,
-        );
-        expect(
-          resolve(big, type: null, keep: false).reason,
-          NoBodyReason.noContentType,
-        );
-        expect(resolve(big).reason, NoBodyReason.sizeTooLarge);
-      },
-    );
+    test('the order of the checks differs for a request and a response, as in the SDK', () {
+      final big = List<int>.filled(500, 1);
+      // A request that overflowed is size_too_large first (NetworkEventsProducer.getRequestBody).
+      expect(
+        resolve(big, type: 'image/png', request: true, keep: false).reason,
+        NoBodyReason.sizeTooLarge,
+      );
+      expect(
+        resolve(big, type: null, request: true, keep: false).reason,
+        NoBodyReason.sizeTooLarge,
+      );
+      // A response is judged by its type first (getResponseBody).
+      expect(
+        resolve(big, type: 'image/png', keep: false).reason,
+        NoBodyReason.unsupportedContentType,
+      );
+      expect(
+        resolve(big, type: null, keep: false).reason,
+        NoBodyReason.noContentType,
+      );
+      expect(resolve(big).reason, NoBodyReason.sizeTooLarge);
+    });
 
-    test(
-      'with the option on no type check applies; what is not text is cant_read_data',
-      () {
-        expect(
-          resolve(utf8.encode('plain'), type: null, without: true).body,
-          'plain',
-        );
-        expect(
-          resolve(utf8.encode('x'), type: 'image/png', without: true).body,
-          'x',
-        );
-        expect(
-          resolve([0xff, 0xfe, 0xfd], type: 'image/png', without: true).reason,
-          NoBodyReason.cantReadData,
-        );
-      },
-    );
+    test('with the option on no type check applies; what is not text is cant_read_data', () {
+      expect(
+        resolve(utf8.encode('plain'), type: null, without: true).body,
+        'plain',
+      );
+      expect(
+        resolve(utf8.encode('x'), type: 'image/png', without: true).body,
+        'x',
+      );
+      expect(
+        resolve([0xff, 0xfe, 0xfd], type: 'image/png', without: true).reason,
+        NoBodyReason.cantReadData,
+      );
+    });
 
-    test(
-      'charsets: utf-8, latin1 and ascii decode; others and bad bytes are cant_read_data',
-      () {
-        expect(
-          resolve([0xe9], type: 'text/plain; charset=iso-8859-1').body,
-          'é',
-        );
-        expect(resolve([0xe9], type: 'text/plain; charset=latin1').body, 'é');
-        expect(
-          resolve(
-            utf8.encode('abc'),
-            type: 'text/plain; charset=us-ascii',
-          ).body,
-          'abc',
-        );
-        expect(
-          resolve([0xe9], type: 'text/plain; charset=us-ascii').reason,
-          NoBodyReason.cantReadData,
-        );
-        expect(
-          resolve([0x68, 0x00], type: 'text/plain; charset=utf-16').reason,
-          NoBodyReason.cantReadData,
-        );
-        expect(
-          resolve([0xff, 0xfe], type: 'text/plain').reason,
-          NoBodyReason.cantReadData,
-        );
-      },
-    );
+    test('charsets: utf-8, latin1 and ascii decode; others and bad bytes are cant_read_data', () {
+      expect(resolve([0xe9], type: 'text/plain; charset=iso-8859-1').body, 'é');
+      expect(resolve([0xe9], type: 'text/plain; charset=latin1').body, 'é');
+      expect(
+        resolve(utf8.encode('abc'), type: 'text/plain; charset=us-ascii').body,
+        'abc',
+      );
+      expect(
+        resolve([0xe9], type: 'text/plain; charset=us-ascii').reason,
+        NoBodyReason.cantReadData,
+      );
+      expect(
+        resolve([0x68, 0x00], type: 'text/plain; charset=utf-16').reason,
+        NoBodyReason.cantReadData,
+      );
+      expect(
+        resolve([0xff, 0xfe], type: 'text/plain').reason,
+        NoBodyReason.cantReadData,
+      );
+    });
 
     test(
       'a compressed body is cant_read_data even when its bytes were kept',

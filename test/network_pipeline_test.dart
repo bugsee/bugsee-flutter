@@ -76,17 +76,14 @@ class Rig {
 }
 
 void main() {
-  test(
-    'submit is synchronous and never blocks: nothing is sent before the caller yields',
-    () async {
-      final rig = Rig();
-      rig.pipeline.submit(event('1'));
-      expect(rig.sendStarts, 0);
-      expect(rig.pipeline.queued, 1);
-      await rig.pipeline.flush();
-      expect(rig.sent.map((m) => m.id), ['1']);
-    },
-  );
+  test('submit is synchronous and never blocks: nothing is sent before the caller yields', () async {
+    final rig = Rig();
+    rig.pipeline.submit(event('1'));
+    expect(rig.sendStarts, 0);
+    expect(rig.pipeline.queued, 1);
+    await rig.pipeline.flush();
+    expect(rig.sent.map((m) => m.id), ['1']);
+  });
 
   test(
     'events reach the bridge in the order they were captured, across batches',
@@ -274,54 +271,48 @@ void main() {
       },
     );
 
-    test(
-      'id, stage, method, status and size are the exchange\'s: the filter cannot change them',
-      () async {
-        final rig = Rig();
-        rig.pipeline.setFilter(
-          (e) => BugseeNetworkEvent(
-            id: 'forged',
-            stage: NetworkStage.abort,
-            method: 'DELETE',
-            url: e.url,
-            statusCode: 599,
-            size: 12345,
-          ),
-          const Duration(seconds: 1),
-        );
-        rig.pipeline.submit(
-          event('real', stage: NetworkStage.complete, status: 200),
-        );
-        await rig.pipeline.flush();
-        final m = rig.sent.single;
-        expect(m.id, 'real');
-        expect(m.stage, 'complete');
-        expect(m.method, 'GET');
-        expect(m.statusCode, 200);
-        expect(m.size, 3);
-      },
-    );
+    test('id, stage, method, status and size are the exchange\'s: the filter cannot change them', () async {
+      final rig = Rig();
+      rig.pipeline.setFilter(
+        (e) => BugseeNetworkEvent(
+          id: 'forged',
+          stage: NetworkStage.abort,
+          method: 'DELETE',
+          url: e.url,
+          statusCode: 599,
+          size: 12345,
+        ),
+        const Duration(seconds: 1),
+      );
+      rig.pipeline.submit(
+        event('real', stage: NetworkStage.complete, status: 200),
+      );
+      await rig.pipeline.flush();
+      final m = rig.sent.single;
+      expect(m.id, 'real');
+      expect(m.stage, 'complete');
+      expect(m.method, 'GET');
+      expect(m.statusCode, 200);
+      expect(m.size, 3);
+    });
 
-    test(
-      'a filter that throws drops that event (fail closed), warns once, and the rest go on',
-      () async {
-        final rig = Rig();
-        rig.pipeline.setFilter((e) {
-          if (e.id != 'ok') throw StateError('bug in the filter');
-          return e;
-        }, const Duration(seconds: 1));
-        rig.pipeline.submit(event('bad1'));
-        rig.pipeline.submit(event('ok'));
-        rig.pipeline.submit(event('bad2'));
-        await rig.pipeline.flush();
-        expect(rig.sent.map((m) => m.id), ['ok']);
-        expect(rig.pipeline.stats.filterFailures, 2);
-        expect(
-          rig.warnings.where((w) => w.contains('filter failed')),
-          hasLength(1),
-        );
-      },
-    );
+    test('a filter that throws drops that event (fail closed), warns once, and the rest go on', () async {
+      final rig = Rig();
+      rig.pipeline.setFilter((e) {
+        if (e.id != 'ok') throw StateError('bug in the filter');
+        return e;
+      }, const Duration(seconds: 1));
+      rig.pipeline.submit(event('bad1'));
+      rig.pipeline.submit(event('ok'));
+      rig.pipeline.submit(event('bad2'));
+      await rig.pipeline.flush();
+      expect(rig.sent.map((m) => m.id), ['ok']);
+      expect(rig.pipeline.stats.filterFailures, 2);
+      expect(
+        rig.warnings.where((w) => w.contains('filter failed')),
+        hasLength(1),
+      );
+    });
 
     test('an async filter that throws fails closed too', () async {
       final rig = Rig();
@@ -355,23 +346,20 @@ void main() {
       },
     );
 
-    test(
-      'a hung filter never holds the app: submit stays instant and the queue stays bounded',
-      () async {
-        final rig = Rig(maxQueuedEvents: 10);
-        rig.pipeline.setFilter(
-          (e) => Completer<BugseeNetworkEvent?>().future,
-          const Duration(seconds: 30),
-        );
-        for (var i = 0; i < 500; i++) {
-          rig.pipeline.submit(event('$i'));
-        }
-        // (no wall-clock assertion: the stalled filter above is what is under test)
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(rig.pipeline.stats.captured, 10);
-        expect(rig.pipeline.stats.droppedQueueFull, 490);
-      },
-    );
+    test('a hung filter never holds the app: submit stays instant and the queue stays bounded', () async {
+      final rig = Rig(maxQueuedEvents: 10);
+      rig.pipeline.setFilter(
+        (e) => Completer<BugseeNetworkEvent?>().future,
+        const Duration(seconds: 30),
+      );
+      for (var i = 0; i < 500; i++) {
+        rig.pipeline.submit(event('$i'));
+      }
+      // (no wall-clock assertion: the stalled filter above is what is under test)
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(rig.pipeline.stats.captured, 10);
+      expect(rig.pipeline.stats.droppedQueueFull, 490);
+    });
 
     test('an async filter keeps the order', () async {
       final rig = Rig();
@@ -509,23 +497,20 @@ void main() {
   });
 
   group('limits after the filter', () {
-    test(
-      'a body a filter returns over the limit is dropped, by bytes not characters',
-      () async {
-        final rig = Rig(bodySizeLimit: 10);
-        rig.pipeline.setFilter(
-          (e) => e
-            ..body = e.id == 'big' ? '\u20ac\u20ac\u20ac\u20ac' : 'abcdefghij',
-          const Duration(seconds: 1),
-        );
-        rig.pipeline.submit(event('big'));
-        rig.pipeline.submit(event('ok'));
-        await rig.pipeline.flush();
-        expect(rig.sent[0].body, isNull);
-        expect(rig.sent[0].noBodyReason, 'size_too_large');
-        expect(rig.sent[1].body, 'abcdefghij');
-      },
-    );
+    test('a body a filter returns over the limit is dropped, by bytes not characters', () async {
+      final rig = Rig(bodySizeLimit: 10);
+      rig.pipeline.setFilter(
+        (e) =>
+            e..body = e.id == 'big' ? '\u20ac\u20ac\u20ac\u20ac' : 'abcdefghij',
+        const Duration(seconds: 1),
+      );
+      rig.pipeline.submit(event('big'));
+      rig.pipeline.submit(event('ok'));
+      await rig.pipeline.flush();
+      expect(rig.sent[0].body, isNull);
+      expect(rig.sent[0].noBodyReason, 'size_too_large');
+      expect(rig.sent[1].body, 'abcdefghij');
+    });
 
     test(
       'a batch is cut by what the messages weigh, not what the events did',
@@ -566,22 +551,19 @@ void main() {
   });
 
   group('the batch byte limit', () {
-    test(
-      'counts UTF-8 bytes: multi-byte bodies fill a batch that characters would not',
-      () async {
-        final rig = Rig(maxBatchBytes: 2500, bodySizeLimit: 100000);
-        // 400 characters, 1200 bytes each.
-        rig.pipeline.setFilter(
-          (e) => e..body = '\u20ac' * 400,
-          const Duration(seconds: 1),
-        );
-        for (var i = 0; i < 3; i++) {
-          rig.pipeline.submit(event('$i'));
-        }
-        await rig.pipeline.flush();
-        expect(rig.batches.map((b) => b.length), [1, 1, 1]);
-      },
-    );
+    test('counts UTF-8 bytes: multi-byte bodies fill a batch that characters would not', () async {
+      final rig = Rig(maxBatchBytes: 2500, bodySizeLimit: 100000);
+      // 400 characters, 1200 bytes each.
+      rig.pipeline.setFilter(
+        (e) => e..body = '\u20ac' * 400,
+        const Duration(seconds: 1),
+      );
+      for (var i = 0; i < 3; i++) {
+        rig.pipeline.submit(event('$i'));
+      }
+      await rig.pipeline.flush();
+      expect(rig.batches.map((b) => b.length), [1, 1, 1]);
+    });
 
     test(
       'a message that would overflow the batch starts the next one, in order',
@@ -685,26 +667,23 @@ void main() {
   });
 
   group('the message stamps', () {
-    test(
-      'the age is taken when the batch is sent, not when the event was prepared',
-      () async {
-        final rig = Rig();
-        // Three events through a slow async filter share one batch: the first is ready long before
-        // the batch leaves.
-        rig.pipeline.setFilter((e) async {
-          await Future<void>.delayed(const Duration(milliseconds: 70));
-          return e;
-        }, const Duration(seconds: 2));
-        for (var i = 0; i < 3; i++) {
-          rig.pipeline.submit(event('$i'));
-        }
-        await rig.pipeline.flush();
-        expect(rig.batches, hasLength(1));
-        final first = rig.sent.first;
-        expect(first.id, '0');
-        expect(first.ageMs, greaterThanOrEqualTo(190));
-      },
-    );
+    test('the age is taken when the batch is sent, not when the event was prepared', () async {
+      final rig = Rig();
+      // Three events through a slow async filter share one batch: the first is ready long before
+      // the batch leaves.
+      rig.pipeline.setFilter((e) async {
+        await Future<void>.delayed(const Duration(milliseconds: 70));
+        return e;
+      }, const Duration(seconds: 2));
+      for (var i = 0; i < 3; i++) {
+        rig.pipeline.submit(event('$i'));
+      }
+      await rig.pipeline.flush();
+      expect(rig.batches, hasLength(1));
+      final first = rig.sent.first;
+      expect(first.id, '0');
+      expect(first.ageMs, greaterThanOrEqualTo(190));
+    });
 
     test('a URL leaves without userinfo whatever a filter put in it', () async {
       final rig = Rig();
@@ -736,26 +715,23 @@ void main() {
   });
 
   group('the bridge', () {
-    test(
-      'a failing send drops that batch, counts it, warns once, and the next batch goes',
-      () async {
-        final rig = Rig(maxBatchEvents: 1);
-        rig.sendThrows = true;
-        rig.pipeline.submit(event('a'));
-        await rig.pipeline.flush();
-        rig.pipeline.submit(event('b'));
-        await rig.pipeline.flush();
-        expect(rig.pipeline.stats.sendFailures, 2);
-        expect(
-          rig.warnings.where((w) => w.contains('could not be handed')),
-          hasLength(1),
-        );
-        rig.sendThrows = false;
-        rig.pipeline.submit(event('c'));
-        await rig.pipeline.flush();
-        expect(rig.pipeline.stats.submittedToSdk, 1);
-      },
-    );
+    test('a failing send drops that batch, counts it, warns once, and the next batch goes', () async {
+      final rig = Rig(maxBatchEvents: 1);
+      rig.sendThrows = true;
+      rig.pipeline.submit(event('a'));
+      await rig.pipeline.flush();
+      rig.pipeline.submit(event('b'));
+      await rig.pipeline.flush();
+      expect(rig.pipeline.stats.sendFailures, 2);
+      expect(
+        rig.warnings.where((w) => w.contains('could not be handed')),
+        hasLength(1),
+      );
+      rig.sendThrows = false;
+      rig.pipeline.submit(event('c'));
+      await rig.pipeline.flush();
+      expect(rig.pipeline.stats.submittedToSdk, 1);
+    });
 
     test(
       'the SDK handing over fewer than were sent is counted as refused',

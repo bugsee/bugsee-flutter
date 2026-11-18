@@ -5,3 +5,6 @@ analyzer:
     # A separate pure-Dart package (the Pigeon generator) that needs its own `pub get`;
     # the bridge-codegen CI job analyzes it there.
     - pigeons/**
+    - build/**
+    - android/**
+    - ios/**

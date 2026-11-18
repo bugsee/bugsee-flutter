@@ -46,19 +46,15 @@ bool looksLikeFlutterErrorDump(String text) {
 final class LogCaptureService {
   LogCaptureService({
     required LogSend send,
-    required Future<LogPolicy> Function() loadPolicy,
-    required void Function() ensureAttached,
-    required Stream<BugseeStatus> Function() statuses,
-    required bool Function() supported,
+    required this._loadPolicy,
+    required this._ensureAttached,
+    required this._statuses,
+    required this._supported,
     bool Function()? echoRisk,
     void Function(String message)? warn,
     LogPipeline Function(LogSend send, LogPolicy Function() policy)?
     pipelineFactory,
-  }) : _loadPolicy = loadPolicy,
-       _ensureAttached = ensureAttached,
-       _statuses = statuses,
-       _supported = supported,
-       _echoRisk = echoRisk ?? (() => false),
+  }) : _echoRisk = echoRisk ?? (() => false),
        _warn = warn ?? ((_) {}) {
     pipeline =
         (pipelineFactory ??

@@ -11,7 +11,7 @@ flutter run --dart-define=BUGSEE_TOKEN=<your app token>
 ```
 
 Without a token the placeholder `EXAMPLE-APP-TOKEN` is used: the SDK launches, but nothing it captures is delivered anywhere.
-`--dart-define=BUGSEE_ENDPOINT=https://...` points it at an on-premises or test server. Use Flutter 3.41.0 or newer and a JDK 17 or 21.
+`--dart-define=BUGSEE_ENDPOINT=https://...` points it at an on-premises or test server. Use Flutter 3.50.0 or newer and a JDK 17 or 21.
 
 The Android app shows the integration the main README describes: the Bugsee Gradle plugin applied in `android/settings.gradle.kts` and
 `android/app/build.gradle.kts`, with the ordering workaround. Its manifest deliberately has no `com.bugsee.app-token` meta-data: with it the

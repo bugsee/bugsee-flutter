@@ -150,21 +150,25 @@ void main() {
   });
 
   group('IssueType agrees across platforms and with Dart', () {
-    test('Android toString(), iOS strings and Dart wire names are the same', () {
-      final androidWire = (android['IssueType']! as Map).cast<String, String>();
-      final iosWire = (ios['issueTypeStrings']! as List).cast<String>();
-      final dart = ReportType.values.map((t) => t.wire).toList();
-      expect(androidWire.values.toList(), dart);
-      expect(iosWire, dart);
-      // The enum NAME is not the wire value ("Crash" vs "crash"): the wire one crosses.
-      expect(androidWire.keys.map(lowerFirst).toList(), dart);
-      expect(
-        androidWire.keys.toList(),
-        ReportType.values.map(
-          (t) => t.name[0].toUpperCase() + t.name.substring(1),
-        ),
-      );
-    });
+    test(
+      'Android toString(), iOS strings and Dart wire names are the same',
+      () {
+        final androidWire = (android['IssueType']! as Map)
+            .cast<String, String>();
+        final iosWire = (ios['issueTypeStrings']! as List).cast<String>();
+        final dart = ReportType.values.map((t) => t.wire).toList();
+        expect(androidWire.values.toList(), dart);
+        expect(iosWire, dart);
+        // The enum NAME is not the wire value ("Crash" vs "crash"): the wire one crosses.
+        expect(androidWire.keys.map(lowerFirst).toList(), dart);
+        expect(
+          androidWire.keys.toList(),
+          ReportType.values.map(
+            (t) => t.name[0].toUpperCase() + t.name.substring(1),
+          ),
+        );
+      },
+    );
 
     test('an unknown type is not guessed', () {
       expect(ReportType.fromWire('anr'), isNull);

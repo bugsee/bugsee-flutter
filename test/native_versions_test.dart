@@ -139,6 +139,26 @@ void main() {
         contains('id("com.bugsee.android.gradle")'),
       );
     });
+
+    test('example turns the native symbol upload on (off by default in the plugin)', () {
+      // Without it a native crash in a release build reaches the backend as raw addresses.
+      // A live statement, not text in a comment or in a disabled block: the line starts with the code.
+      expect(
+        read('example/android/app/build.gradle.kts'),
+        matches(
+          RegExp(
+            r'^bugsee\s*\{\s*ndk\s*\{\s*enabled\.set\(true\)\s*\}\s*\}',
+            multiLine: true,
+          ),
+        ),
+      );
+      // The token file the comment and the README name is the one the plugin reads and git ignores.
+      expect(
+        read('example/android/.gitignore'),
+        contains('/bugsee.properties'),
+      );
+      expect(read('README.md'), contains('ndk { enabled.set(true) }'));
+    });
   });
 
   group('iOS', () {

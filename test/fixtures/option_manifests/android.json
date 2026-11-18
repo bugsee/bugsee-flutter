@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "sdk": "android",
-  "sdkVersion": "7.5.0",
+  "sdkVersion": "7.6.0",
   "buildConfiguration": "release",
-  "generatedAt": "2026-11-06T02:58:10Z",
+  "generatedAt": "2026-11-16T21:58:23Z",
   "options": [
     {"key": "com.bugsee.option.$$DEBUG", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": true},
     {"key": "com.bugsee.option.$$ENDPOINT", "type": "string", "default": null, "module": "bugsee-android", "hidden": true},
@@ -84,9 +84,9 @@
     {"key": "com.bugsee.option.reporting.defaults.crash-priority", "type": "enum", "default": "Blocker", "module": "bugsee-android", "hidden": false, "enum": {"name": "IssueSeverity", "values": {"VeryLow": 1, "Medium": 2, "High": 3, "Critical": 4, "Blocker": 5}}},
     {"key": "com.bugsee.option.reporting.defaults.error-priority", "type": "enum", "default": "High", "module": "bugsee-android", "hidden": false, "enum": {"name": "IssueSeverity", "values": {"VeryLow": 1, "Medium": 2, "High": 3, "Critical": 4, "Blocker": 5}}},
     {"key": "com.bugsee.option.reporting.triggers.broadcast", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},
-    {"key": "com.bugsee.option.reporting.triggers.notification-bar", "type": "boolean", "default": true, "module": "bugsee-android", "hidden": false},
+    {"key": "com.bugsee.option.reporting.triggers.notification-bar", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},
     {"key": "com.bugsee.option.reporting.triggers.screenshot", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},
-    {"key": "com.bugsee.option.reporting.triggers.shake", "type": "boolean", "default": true, "module": "bugsee-android", "hidden": false},
+    {"key": "com.bugsee.option.reporting.triggers.shake", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},
     {"key": "com.bugsee.option.reporting.ui.description-required", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},
     {"key": "com.bugsee.option.reporting.ui.email-required", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},
     {"key": "com.bugsee.option.reporting.ui.labels-enabled", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": false},

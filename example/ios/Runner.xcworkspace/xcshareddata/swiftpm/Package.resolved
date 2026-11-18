@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/bugsee/feedback-spm",
       "state" : {
-        "revision" : "0d203389a1bc04df8fa92299483967f59c7cbce9",
-        "version" : "7.0.1"
+        "revision" : "879875ed3b02e6e20f03cb1336868472ea3cbe95",
+        "version" : "7.1.0"
       }
     },
     {
@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/bugsee/spm",
       "state" : {
-        "revision" : "15553bdd9c7980715515e54ff6160b8cae25e158",
-        "version" : "7.0.1"
+        "revision" : "465ec10d05313bca91254a0c8b7adf266d456c93",
+        "version" : "7.1.0"
       }
     }
   ],

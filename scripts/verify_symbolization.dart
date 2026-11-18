@@ -10,7 +10,7 @@
 // printed in the stack's header must be inside the symbols file (that is how the backend finds the
 // symbols), and every `--expect` name must come out of the symbolizer. `--tool` is the worker's
 // `dart_symbolize` (stack on stdin, symbols file as the argument; dart-symbolize repository, `dist/`);
-// without it `flutter symbolize` is used, which decodes the same format.
+// without it `package:native_stack_traces` is used, which decodes the same format.
 //
 // The symbols file is NOT committed (it holds the build machine's paths): produce it with
 // `flutter build apk --release --obfuscate --split-debug-info=<dir>`. Exit code 0 when it checks out.
@@ -23,7 +23,9 @@ Future<void> main(List<String> args) async {
     return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
   }
 
-  final symbols = option('--symbols');
+  // Absolute, because the decoder runs in the repository root: a relative path would mean two places.
+  final symbolsArg = option('--symbols');
+  final symbols = symbolsArg == null ? null : File(symbolsArg).absolute.path;
   final entry = option('--entry');
   final expected = (option('--expect') ?? '')
       .split(',')
@@ -69,21 +71,32 @@ Future<void> main(List<String> args) async {
   }
   stdout.writeln('build id $buildId is in the symbols file');
 
+  // Without --tool: `package:native_stack_traces` (a dev dependency), the decoder `flutter symbolize` wraps.
+  // Flutter 3.50's own `flutter symbolize` fails on the symbols of a 3.50 build ("Cannot locate isolate
+  // instructions section in snapshot", measured), the package (0.7.1) decodes the same file.
   final process = await Process.start(
-    tool ?? 'flutter',
-    tool != null ? [symbols] : ['symbolize', '-d', symbols],
+    tool ?? Platform.resolvedExecutable,
+    tool != null
+        ? [symbols]
+        : ['run', 'native_stack_traces:decode', 'translate', '-d', symbols],
+    // `dart run` resolves the package through the workspace of the working directory: the repository root.
+    workingDirectory: tool != null
+        ? null
+        : File.fromUri(Platform.script).parent.parent.path,
   );
   process.stdin.write(stack);
   await process.stdin.close();
   final out = await process.stdout.transform(utf8.decoder).join();
-  await process.stderr.drain<void>();
+  final err = await process.stderr.transform(utf8.decoder).join();
   stdout.write(out);
   final missing = [
     for (final name in expected)
       if (!out.contains(name)) name,
   ];
   if (await process.exitCode != 0 || missing.isNotEmpty) {
-    stderr.writeln('FAIL: missing from the symbolized stack: $missing');
+    stderr.writeln(
+      'FAIL: missing from the symbolized stack: $missing${err.trim().isEmpty ? '' : '\ndecoder said: ${err.trim()}'}',
+    );
     exit(1);
   }
   stdout.writeln('OK: ${expected.length} expected names symbolized');

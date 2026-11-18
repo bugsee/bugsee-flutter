@@ -1,8 +1,8 @@
 {
   "_comment": "Extracted from the native SDK sources by scripts/extract_data_requests.dart; do not edit by hand. Compared by test/view_hierarchy_drift_test.dart.",
   "pins": {
-    "android": "7.5.0",
-    "ios": "7.0.1"
+    "android": "7.6.0",
+    "ios": "7.1.0"
   },
   "android": {
     "vhType": "vh",
@@ -11,7 +11,7 @@
     "waitsForReplyOffMainThreadOnly": true
   },
   "ios": {
-    "source": "origin/release@5c6b9d9db",
+    "source": "origin/release@b65bdca06",
     "vhType": "vh",
     "vhBudgetMs": 500,
     "silentBudgetMs": 50,

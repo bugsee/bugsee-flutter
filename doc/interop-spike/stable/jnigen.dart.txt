@@ -1,0 +1,14 @@
+import 'package:jnigen/jnigen.dart';
+
+void main() => JniGenerator(
+  input: Input(
+    sourcePath: [Uri.directory('android/app/src/main/java')],
+    classes: ['com.bugsee.spike2.SpikeStore'],
+  ),
+  output: Output(
+    dart: DartOutput(
+      path: Uri.file('lib/src/spike_store.g.dart'),
+      structure: OutputStructure.singleFile,
+    ),
+  ),
+).generate();

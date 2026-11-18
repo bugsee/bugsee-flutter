@@ -1,0 +1,23 @@
+import 'dart:io';
+import 'package:ffigen/ffigen.dart';
+
+Future<void> main() async {
+  final root = Platform.script.resolve('../');
+  await FfiGenerator(
+    objectiveC: const ObjectiveC(),
+    output: Output(
+      dart: DartOutput(path: root.resolve('lib/src/spike_store_objc.g.dart')),
+      objectiveCFile: root.resolve('ios/Runner/spike_store_objc.g.m'),
+    ),
+    input: Input(entryPoints: [root.resolve('ios/Runner/SpikeStore.h')], compilerOptions: ['-isysroot', '/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk', '-target', 'arm64-apple-ios15.0'], ignoreSourceErrors: false),
+    visitors: [
+      Visitor(
+        objCInterface: (node) {
+          if (node.originalName.contains('Spike')) print('IFACE ${node.originalName} ${node.isIncluded}');
+          node.isIncluded = node.originalName == 'SpikeStore';
+        },
+        objCMethod: (m) { if (m.originalName.contains('ping')||m.originalName.contains('echo')) print('METHOD ${m.originalName}'); },
+      ),
+    ],
+  ).generate();
+}

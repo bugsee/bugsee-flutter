@@ -45,6 +45,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 | D10 | **Capture of what only Dart sees is opt-in and explicit** (`installNetworkCapture`, `installLogCapture`, `installErrorHandlers`), filters run in Dart first and fail closed | privacy; nothing changes for an app that does not call them |
 | D11 | **One pub workspace, two packages published separately** (core first, then feedback), one committed `pubspec.lock` at the root with `--enforce-lockfile` in CI, a hosted (not path) constraint between them, lock-step versions | lets the feedback package depend on the core without a path dependency or overrides |
 | D12 | **A native wrapper replaced on identity refinement; process-wide stores outside it** (secure rectangles, lifecycle hub, view-hierarchy snapshot, network channel) | workbook 5.4.2 |
+| D13 | **Direct Interop is not used in 10.0** (the floor moved to Flutter 3.50 partly for it, D5): the bridge stays Pigeon over platform channels (D7). Pigeon's interop mode is preview and Kotlin-only on Android; the stable generators (JNIgen, FFIgen) work on our Java and Objective-C but a synchronous call cannot help the calls the SDK makes on the main thread. A candidate for the secure-rectangle store only, after a frame-capture measurement | [doc/direct-interop-spike.md](doc/direct-interop-spike.md) |
 
 ## Open decisions for the owner
 

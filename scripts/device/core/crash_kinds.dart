@@ -61,7 +61,7 @@ const iosReportSignalNames = <int, String>{
 };
 
 /// Kinds whose process dies of the signal on a physical iPhone but whose report the SDK never produced
-/// (`ffi-bus`: no report in 120 s, in 2 of 2 runs, 2026-11-18). A recorded SDK gap, not an expectation: the
+/// (`ffi-bus`: no report in 120 s, in 3 of 3 runs, 2026-11-18). A recorded SDK gap, not an expectation: the
 /// matrix keeps it a known gap that flips to a pass the day a report appears.
 const iosKnownNoReport = {'ffi-bus'};
 

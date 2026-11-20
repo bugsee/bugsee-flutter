@@ -97,7 +97,7 @@ Future<void> main(List<String> args) async {
     return;
   }
   if (platform == 'ios-device') {
-    final pw = parsePromptWait(opt('--prompt-wait-minutes'));
+    final pw = parsePromptWaitArgs(args);
     if (pw.problem != null) {
       stderr.writeln(pw.problem);
       exit(64);

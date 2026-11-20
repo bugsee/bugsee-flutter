@@ -45,7 +45,11 @@ process ended; the console also carries the SDK banner, e.g. `Bugsee IOS SDK ver
 matrix of scenario 10 against the mock API on the LAN. Only scenario 10 exists for a device (1 to 9 need the simulator's filesystem and `simctl`). The first
 launch after an install shows iOS's Local Network prompt, which a script cannot answer: the run prints `PROMPT EXPECTED NOW` and waits `--prompt-wait-minutes N`
 (default 3) for a tap; without a launch event the run is INVALID. `--keep-install` (off by default: the clean install is the guarded precondition) does not
-uninstall at the start and the end, so a re-run on an install that already holds the permission needs no tap (measured: a 3-minute full run). **Status: the
+uninstall at the start and the end, so a re-run on an install that already holds the permission needs no tap (measured: a 3-minute full run). Its limit: the
+install is not clean, so a report an earlier or aborted run left pending is uploaded by the next launch; the run therefore launches once first, lets the SDK hand
+that report over and forgets it (the note `--keep-install: drained ...`), but the clean-install precondition is not what ran, so a result that depends on it
+needs the default. Each launch gets a token (`VERIFY_LAUNCH_TOKEN`, passed with `devicectl --environment-variables`) that the app puts in every event, and the
+launch wait takes only an event with that token; the app numbers its events (`rid`, `seq`) and the mock reader drops a repeat of one. **Status: the
 matrix ran to the end on an iPhone XS (iOS 18.7.9) on 2026-11-18, results under scenario 10 (iOS).** Two attempts before it ended INVALID because nobody
 tapped within 30 minutes ("The Internet connection appears to be offline" from the SDK; the console shows the wrapper lines and the banner, so the
 console does carry the wrapper's `NSLog` lines).

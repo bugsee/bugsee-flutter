@@ -8,7 +8,8 @@
 // of Bugsee.xcframework, so a recovered iOS crash report, an uncaught Objective-C exception and a
 // Swift trap are only measurable here. The first launch after an install shows iOS's Local Network
 // prompt ("Allow"): it cannot be answered by a script, so the first launch waits for it (the run says
-// so; `--prompt-wait-minutes N` sets how long, `--keep-install` keeps an install that already has the permission). One scenario only (10, the crash and error matrix); scenarios 1 to 9 are written for the
+// so; `--prompt-wait-minutes N` sets how long, `--keep-install` keeps an install that already has the
+// permission). One scenario only (10, the crash and error matrix); scenarios 1 to 9 are written for the
 // simulator and need its filesystem and `simctl`.
 import 'dart:convert';
 import 'dart:io';
@@ -16,6 +17,7 @@ import 'dart:typed_data';
 
 import 'core/bundle.dart';
 import 'core/crash_kinds.dart';
+import 'core/events.dart';
 import 'core/experiment.dart';
 import 'core/lan_host.dart';
 import 'core/log_parsers.dart';
@@ -64,7 +66,10 @@ class IosPhysical {
 
   /// Launches with the process's stdout and stderr attached: the child lives while the app does, so
   /// its exit is the proof the process ended, and it carries the app's `VERIFY|` lines.
-  Future<Child> launch() => Child.start([
+  ///
+  /// [token] reaches the app as `VERIFY_LAUNCH_TOKEN` and comes back in every event it emits, so an event
+  /// of an earlier process (a replay, a late retry) is never taken for this launch.
+  Future<Child> launch(String token) => Child.start([
     'xcrun',
     'devicectl',
     'device',
@@ -74,6 +79,8 @@ class IosPhysical {
     udid,
     '--terminate-existing',
     '--console',
+    '--environment-variables',
+    jsonEncode({'VERIFY_LAUNCH_TOKEN': token}),
     _bundleId,
   ]);
 }
@@ -206,6 +213,7 @@ class _Ctx {
   /// Local Network permission keeps it. Off by default: the clean install is the guarded precondition.
   final bool keepInstall;
   final Set<String> _seen = {};
+  var _launches = 0;
   final List<Child> _live = [];
 
   /// Stops every console child that is still running and removes the app: a guard that fails in the
@@ -273,7 +281,8 @@ class _Ctx {
   /// Local Network prompt to be answered.
   Future<Child> launch(Run run, {required bool first}) async {
     await mock.reset();
-    final child = await dev.launch();
+    final token = '${DateTime.now().microsecondsSinceEpoch}-${_launches++}';
+    final child = await dev.launch(token);
     _live.add(child);
     if (first) {
       say(
@@ -281,7 +290,7 @@ class _Ctx {
       );
     }
     final launched = await waitEvent(
-      (e) => e.kind == 'launch',
+      (e) => e.kind == 'launch' && eventHasToken(e.data, token),
       timeout: first ? promptWait : const Duration(minutes: 2),
     );
     run.guard(
@@ -313,8 +322,30 @@ class _Ctx {
         r.ok ? [] : ['install failed: ${r.stdout}\n${r.stderr}'],
         'devicectl install ${app.split('/').last}',
       );
+      // Stale evidence of an earlier run must not be taken for this one.
+      for (final f in Directory(tc.workDir).listSync()) {
+        final name = f.uri.pathSegments.last;
+        if (f is File &&
+            name.startsWith('ios-crash-') &&
+            name.endsWith('.json')) {
+          f.deleteSync();
+        }
+      }
       try {
         var first = true;
+        if (keepInstall) {
+          // A report left pending by an earlier or aborted run is uploaded by the next launch of the same
+          // install and could be mistaken for this kind's: launch once, let the SDK hand it over, forget it.
+          final c = await launch(run, first: true);
+          first = false;
+          final stale = await newBundle(timeout: const Duration(seconds: 30));
+          run.note(
+            '--keep-install: drained a pending report from an earlier run: ${stale == null ? 'none' : '${stale.source} ${stale.type}'}',
+          );
+          await c.stop();
+          await mock.reset();
+          _seen.clear();
+        }
         final seenBanner = <String>{};
         for (final k in crashKindTable.where(
           (k) => k.fatal && k.platforms.contains('ios'),
@@ -328,6 +359,9 @@ class _Ctx {
             const Duration(seconds: 45),
             onTimeout: () => -999,
           );
+          // The last console lines (devicectl's `App terminated due to signal N`) can still be in the
+          // pipes when the exit code arrives: read the output only once both streams have ended.
+          if (code != -999) await c1.drained();
           final out = c1.output.toString();
           run.guard(
             'event: the process ended after crash ${k.name}',

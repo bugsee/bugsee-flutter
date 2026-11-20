@@ -11,8 +11,10 @@ import 'package:flutter_test/flutter_test.dart';
 import '../scripts/device/build.dart';
 import '../scripts/device/checks.dart';
 import '../scripts/device/report.dart';
+import '../scripts/device/shell.dart';
 import '../scripts/device/toolchain.dart';
 import '../scripts/device/core/bundle.dart';
+import '../scripts/device/core/events.dart';
 import '../scripts/device/core/experiment.dart';
 import '../scripts/device/core/lan_host.dart';
 import '../scripts/device/core/expectations.dart';
@@ -815,6 +817,74 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
     });
   });
 
+  group('events and child output', () {
+    test('a repeated event (same rid:seq) is dropped, the first copy stays, order is kept', () {
+      Map<String, Object?> ev(String k, String rid, int seq) => {
+        'kind': k,
+        'rid': rid,
+        'seq': seq,
+      };
+      final kept = dropRepeatedEvents([
+        ev('main', 'a', 0),
+        ev('launch', 'a', 1),
+        ev(
+          'launch',
+          'a',
+          1,
+        ), // the retry of an event the mock had already stored
+        ev('launch', 'b', 1), // another isolate: not a repeat
+        {'kind': 'old'}, // no rid/seq: kept
+        {'kind': 'old'},
+        {'data': ev('handler', 'a', 2)},
+        {'data': ev('handler', 'a', 2)},
+      ]);
+      expect(kept.length, 6);
+      expect(kept.map((e) => (e['data'] as Map?)?['kind'] ?? e['kind']), [
+        'main',
+        'launch',
+        'launch',
+        'old',
+        'old',
+        'handler',
+      ]);
+    });
+
+    test('a launch event satisfies only the launch that carries its token', () {
+      expect(eventHasToken({'kind': 'launch', 'token': 't1'}, 't1'), isTrue);
+      expect(eventHasToken({'kind': 'launch', 'token': 't0'}, 't1'), isFalse);
+      expect(eventHasToken({'kind': 'launch'}, 't1'), isFalse);
+      expect(
+        eventHasToken({
+          'data': {'token': 't1'},
+        }, 't1'),
+        isTrue,
+      );
+    });
+
+    test('Child.drained returns the last lines that were still in the pipes at exit', () async {
+      final c = await Child.start([
+        'bash',
+        '-c',
+        'head -c 300000 /dev/zero | tr "\\0" x; echo; echo App terminated due to signal 11.; exit 1',
+      ]);
+      expect(await c.process.exitCode, 1);
+      await c.drained();
+      expect(c.output.toString(), contains('App terminated due to signal 11.'));
+      expect(parseTerminatedSignal(c.output.toString()), 11);
+    });
+
+    test(
+      'Child.drained is bounded when a grandchild keeps the pipe open',
+      () async {
+        final c = await Child.start(['bash', '-c', 'sleep 4 & exit 0']);
+        await c.process.exitCode;
+        final t = Stopwatch()..start();
+        await c.drained(timeout: const Duration(milliseconds: 300));
+        expect(t.elapsedMilliseconds, lessThan(2500));
+      },
+    );
+  });
+
   group('the mock host', () {
     test('one IPv4 address of the Mac for a phone; never every interface', () {
       expect(lanHostProblem('192.168.31.104'), isNull);
@@ -836,6 +906,26 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(bindHostProblem('0.0.0.0'), isNotNull);
       expect(bindHostProblem('::'), isNotNull);
       expect(bindHostProblem('my-mac.local'), isNotNull);
+    });
+
+    test('--prompt-wait-minutes without an operand is an error, absent keeps the default', () {
+      expect(
+        parsePromptWaitArgs(['ios-device']).wait,
+        const Duration(minutes: 3),
+      );
+      expect(
+        parsePromptWaitArgs(['--prompt-wait-minutes', '30']).wait,
+        const Duration(minutes: 30),
+      );
+      for (final bad in [
+        ['--prompt-wait-minutes'],
+        ['--prompt-wait-minutes', '--keep-install'],
+        ['--prompt-wait-minutes', 'x'],
+      ]) {
+        final r = parsePromptWaitArgs(bad);
+        expect(r.wait, isNull, reason: '$bad');
+        expect(r.problem, contains('--prompt-wait-minutes'), reason: '$bad');
+      }
     });
 
     test('the Local Network prompt wait: 3 minutes by default, bounded, never silent', () {

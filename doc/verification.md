@@ -43,9 +43,16 @@ reason (`exitRecordProblems`, tested to still fail for any other status or reaso
 address>`, one address) installs the signed release build with `devicectl`, launches it with its console attached (the child's exit is the proof the
 process ended; the console also carries the SDK banner, e.g. `Bugsee IOS SDK ver:7.0.1 build:5c6b9d9db-8`, measured on an iPhone XS) and runs the crash
 matrix of scenario 10 against the mock API on the LAN. Only scenario 10 exists for a device (1 to 9 need the simulator's filesystem and `simctl`). The first
-launch after an install shows iOS's Local Network prompt, which a script cannot answer: the run says so and waits 3 minutes for a tap. **Status: written and
-tested up to the install and launch on an iPhone XS (iOS 18.7.9); the matrix itself has NOT run** (the first attempt ended INVALID at "SDK launched": the
-phone reported "The Internet connection appears to be offline" because nobody was there to allow the prompt, or the phone is not on the Mac's network).
+launch after an install shows iOS's Local Network prompt, which a script cannot answer: the run prints `PROMPT EXPECTED NOW` and waits `--prompt-wait-minutes N`
+(default 3) for a tap; without a launch event the run is INVALID. `--keep-install` (off by default: the clean install is the guarded precondition) does not
+uninstall at the start and the end, so a re-run on an install that already holds the permission needs no tap (measured: a 3-minute full run). Its limit: the
+install is not clean, so a report an earlier or aborted run left pending is uploaded by the next launch; the run therefore launches once first, lets the SDK hand
+that report over and forgets it (the note `--keep-install: drained ...`), but the clean-install precondition is not what ran, so a result that depends on it
+needs the default. Each launch gets a token (`VERIFY_LAUNCH_TOKEN`, passed with `devicectl --environment-variables`) that the app puts in every event, and the
+launch wait takes only an event with that token; the app numbers its events (`rid`, `seq`) and the mock reader drops a repeat of one. **Status: the
+matrix ran to the end on an iPhone XS (iOS 18.7.9) on 2026-11-18, results under scenario 10 (iOS).** Two attempts before it ended INVALID because nobody
+tapped within 30 minutes ("The Internet connection appears to be offline" from the SDK; the console shows the wrapper lines and the banner, so the
+console does carry the wrapper's `NSLog` lines).
 
 **What it drives.** `example/lib/verify_main.dart` is the example app's second entry point: it launches the SDK
 from build flags (`--dart-define=VERIFY_SERVER`, `BUGSEE_ENDPOINT`), registers a report handler that records what
@@ -376,8 +383,39 @@ harness itself, and neither is a product defect. (1) The first full run was INVA
 banner prints 10 (`2a88ea7fbf`); the build guard refused the runs, and the pin now comes from a run. (2) Scenario 4's offline symbolization check failed:
 Flutter 3.50's own `flutter symbolize` answers "Cannot locate isolate instructions section in snapshot" on the symbols of a 3.50 build, while
 `package:native_stack_traces` 0.7.1 decodes the same file and stack to the app frames (`Bugsee.logUnhandledException`, `_command`, `_poll`); the harness now uses
-the package. The backend's `dart_symbolize` against Dart 3.14 snapshots was NOT run: it is the tool this check stands in for, and it is unverified. The iOS
-7.1.0 crash matrix was not run (the iPhone's Local Network prompt was not answered in time, see the Physical iPhone paragraph).
+the package. The backend's `dart_symbolize` against Dart 3.14 snapshots was NOT run: it is the tool this check stands in for, and it is unverified.
+
+**iOS crash matrix on a physical iPhone (2026-11-18; iPhone XS, iOS 18.7.9, release build, iOS SDK 7.1.0, console banner `Bugsee IOS SDK ver:7.1.0
+build:b65bdca06-9`, which equals the `ios.sdkBuild` pin; wrapper `flutter/10.0.0-dev.1`).** Three full runs (the first two answered the prompt by hand: 43 and 49 checks;
+the third, 63 checks after the expectations below were added, took 3 minutes with `--keep-install` and no tap). Each kind: crash the app, the process ends (devicectl prints `App terminated
+due to signal N`), the next launch of the same install uploads the recovered report (entries `crash`, `traces.system`, `video`, `attachment`,
+`log.internal`, mostly also `log` and `breadcrumbs`). What `crash.json` holds, per kind (the signal, code and exception data are identical in the last two
+runs, the first recorded it only partly; each kind's `crash.json` is saved in the work dir as `ios-crash-<kind>.json`):
+
+| kind | the process died of | report `signal` (name, code) | `exception` block |
+| --- | --- | --- | --- |
+| `ffi-segv` | 11 | `SIGSEGV`, `SEGV_MAPERR`, addr 0 | none |
+| `ffi-abort` | 6 | `SIGABRT`, `#0` | none |
+| `ffi-fpe` | 8 | `SIGFPE`, `FPE_NOOP` | none |
+| `ffi-bus` | 7 | NO REPORT in 120 s (3 of 3 runs) | - |
+| `ffi-ill` | 4 | `SIGILL`, `ILL_ILLTRP` | none |
+| `objc-main` | 6 | `SIGABRT`, `#0` | `name: VerifyException`, `reason: verify-objc-main`, 19 frames |
+| `objc-thread` | 6 | `SIGABRT`, `#0` | `name: VerifyException`, `reason: verify-objc-thread`, 8 frames |
+| `swift-trap` | 5 | `SIGTRAP`, `TRAP_BRKPT` | none (the message `Fatal error: verify-swift-trap` is on the console only) |
+
+Every report that exists has `exception_type: native`, `handled: false`, `code_type: ARM-64`, 18 to 22 threads (varies per run), a `signatures` list of one hash, and an `sdk`
+block `{type: IOS, version: 7.1.0, build: b65bdca06-9, wrapper: {type: flutter, version: 10.0.0-dev.1, context: {dart, flutter, flutter-engine,
+build-configuration: release}}, options}`. `signal` has `name`, `addr` and `code`, no `number`. The report's summary field is empty. **Found:** an
+uncaught Objective-C exception ends in `SIGABRT` with the NSException in `exception` (`reason` exact, `name` the app's class), and the native `SIGBUS`
+(`raise(7)`) leaves no report at all on SDK 7.1.0 although the process dies of it: recorded as a KNOWN-GAP of the matrix (flips to a pass when a report
+appears), to be reported to the SDK team; whether a hardware bus error (not `raise`) is recorded was not tested. **Harness fixes this found:** the
+verification app lost its one-shot `launch` event when it was sent while the Local Network prompt was up (it now keeps and resends events the mock did not
+take), and the harness read `signal.number`, which does not exist. The wrapper-identity guard works on the console. **Expectations now enforced:** the
+terminating signal of every native kind, the report's signal name, `exception_type native`, `handled false`, the `exception.reason` equal to the marker for the
+Objective-C kinds and no exception block for the others. **Not covered:** symbolication (the dSYM was not uploaded), `code` values (`#0`, `FPE_NOOP` look
+SDK-specific and are recorded, not asserted), frames content, Dart routes on a device, a crash during background or before the first frame, other iOS
+versions or devices, a hardware-raised bus error, whether the first launch on a clean install (with the prompt) differs from a keep-install launch beyond the
+prompt.
 
 ## Findings
 
@@ -417,8 +455,8 @@ For follow-up (SDK or environment, not fixed here):
 
 ## Not covered
 
-* A physical iPhone and a physical Android phone: no recovered iOS report, no iOS exception bundle, no iOS release/profile run, no
-  real-device PixelCopy behaviour.
+* iOS on a device beyond the crash matrix: no iOS exception bundle (Dart routes) and no iOS profile run through this harness; the matrix's own
+  not-covered list is under scenario 10 (iOS).
 * Early-crash recovery on Android (a second crash before the first `onResume`: the bounded thread path), a crash while the app is
   in the background, a crash with the SDK stopped, ANR and exit-info recoveries.
 * A handler that overruns the SDK's deadline, and a hot restart while a delivery is in flight.

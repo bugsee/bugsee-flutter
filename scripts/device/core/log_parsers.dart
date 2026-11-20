@@ -32,6 +32,15 @@ SdkBanner? parseIosBanner(String log) {
   return m == null ? null : SdkBanner('ios', m.group(1)!, m.group(2)!);
 }
 
+/// The signal devicectl reports when the launched process dies of one: `App terminated due to signal 11.`
+/// (the last such line), or `null` when the console has none (an exit, or a process still running).
+int? parseTerminatedSignal(String log) {
+  final m = RegExp(r'App terminated due to signal (\d+)')
+      .allMatches(log)
+      .lastOrNull;
+  return m == null ? null : int.parse(m.group(1)!);
+}
+
 /// What the wrapper said when it registered (before the SDK launched) and when Dart refined it.
 class WrapperLog {
   const WrapperLog({this.registered, this.refined, this.context = const {}});

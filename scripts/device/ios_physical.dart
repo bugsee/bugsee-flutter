@@ -8,7 +8,8 @@
 // of Bugsee.xcframework, so a recovered iOS crash report, an uncaught Objective-C exception and a
 // Swift trap are only measurable here. The first launch after an install shows iOS's Local Network
 // prompt ("Allow"): it cannot be answered by a script, so the first launch waits for it (the run says
-// so). One scenario only (10, the crash and error matrix); scenarios 1 to 9 are written for the
+// so; `--prompt-wait-minutes N` sets how long, `--keep-install` keeps an install that already has the
+// permission). One scenario only (10, the crash and error matrix); scenarios 1 to 9 are written for the
 // simulator and need its filesystem and `simctl`.
 import 'dart:convert';
 import 'dart:io';
@@ -16,6 +17,7 @@ import 'dart:typed_data';
 
 import 'core/bundle.dart';
 import 'core/crash_kinds.dart';
+import 'core/events.dart';
 import 'core/experiment.dart';
 import 'core/lan_host.dart';
 import 'core/log_parsers.dart';
@@ -64,7 +66,10 @@ class IosPhysical {
 
   /// Launches with the process's stdout and stderr attached: the child lives while the app does, so
   /// its exit is the proof the process ended, and it carries the app's `VERIFY|` lines.
-  Future<Child> launch() => Child.start([
+  ///
+  /// [token] reaches the app as `VERIFY_LAUNCH_TOKEN` and comes back in every event it emits, so an event
+  /// of an earlier process (a replay, a late retry) is never taken for this launch.
+  Future<Child> launch(String token) => Child.start([
     'xcrun',
     'devicectl',
     'device',
@@ -74,6 +79,8 @@ class IosPhysical {
     udid,
     '--terminate-existing',
     '--console',
+    '--environment-variables',
+    jsonEncode({'VERIFY_LAUNCH_TOKEN': token}),
     _bundleId,
   ]);
 }
@@ -86,6 +93,8 @@ Future<int> runIosDevice({
   required bool reuse,
   required bool allowDirty,
   required bool allowNotPossible,
+  Duration promptWait = const Duration(minutes: 3),
+  bool keepInstall = false,
 }) async {
   if (udid.isEmpty) {
     stderr.writeln('--udid <device> is required (the harness never picks one)');
@@ -167,7 +176,7 @@ Future<int> runIosDevice({
         return 1;
       }
     }
-    final ctx = _Ctx(tc, dev, mock, app, say);
+    final ctx = _Ctx(tc, dev, mock, app, say, promptWait, keepInstall);
     final scenarios = <int, Future<ScenarioResult> Function()>{
       10: ctx.crashMatrix,
     };
@@ -182,13 +191,29 @@ Future<int> runIosDevice({
 }
 
 class _Ctx {
-  _Ctx(this.tc, this.dev, this.mock, this.app, this.say);
+  _Ctx(
+    this.tc,
+    this.dev,
+    this.mock,
+    this.app,
+    this.say,
+    this.promptWait,
+    this.keepInstall,
+  );
   final Toolchain tc;
   final IosPhysical dev;
   final Mock mock;
   final String app;
   final void Function(String) say;
+
+  /// How long the first launch waits for the Local Network prompt (`--prompt-wait-minutes`).
+  final Duration promptWait;
+
+  /// `--keep-install`: neither remove the app first nor at the end, so an install that already holds the
+  /// Local Network permission keeps it. Off by default: the clean install is the guarded precondition.
+  final bool keepInstall;
   final Set<String> _seen = {};
+  var _launches = 0;
   final List<Child> _live = [];
 
   /// Stops every console child that is still running and removes the app: a guard that fails in the
@@ -202,6 +227,7 @@ class _Ctx {
       }
     }
     _live.clear();
+    if (keepInstall) return;
     try {
       await dev.uninstall();
     } on Object {
@@ -255,22 +281,24 @@ class _Ctx {
   /// Local Network prompt to be answered.
   Future<Child> launch(Run run, {required bool first}) async {
     await mock.reset();
-    final child = await dev.launch();
+    final token = '${DateTime.now().microsecondsSinceEpoch}-${_launches++}';
+    final child = await dev.launch(token);
     _live.add(child);
     if (first) {
       say(
-        '  >>> the iPhone shows "Allow Bugsee... to find devices on your local network": tap ALLOW within 3 minutes',
+        '  >>> PROMPT EXPECTED NOW: the iPhone shows "Allow Bugsee... to find devices on your local network": tap ALLOW within ${promptWait.inMinutes} minutes (phone on the same Wi-Fi as the Mac)',
       );
     }
     final launched = await waitEvent(
-      (e) => e.kind == 'launch',
-      timeout: Duration(minutes: first ? 3 : 2),
+      (e) => e.kind == 'launch' && eventHasToken(e.data, token),
+      timeout: first ? promptWait : const Duration(minutes: 2),
     );
     run.guard(
       'SDK launched',
       launched == null
           ? [
-              'no launch event reached the mock (Local Network not allowed, or the Mac is not on the phone\'s network, or a report still pending from the previous kind stopped this launch)',
+              'no launch event reached the mock (Local Network not allowed, or the Mac is not on the phone\'s network, or a report still pending from the previous kind stopped this launch); '
+                  'the app console says: ${child.output.toString().split('\n').where((l) => l.contains('VERIFY|') || l.contains('Bugsee')).take(12).join(' | ')}',
             ]
           : launched['result'] == 'launched'
           ? []
@@ -285,15 +313,39 @@ class _Ctx {
     'Crash and error matrix: native signals, Objective-C, Swift, Dart routes',
     say,
     (run) async {
-      if (await dev.isInstalled()) await dev.uninstall();
+      if (!keepInstall && await dev.isInstalled()) await dev.uninstall();
       final r = await dev.install(app);
       run.guard(
-        'precondition: the release build is installed on a clean device',
+        keepInstall
+            ? 'precondition: the release build is installed over the existing install (--keep-install)'
+            : 'precondition: the release build is installed on a clean device',
         r.ok ? [] : ['install failed: ${r.stdout}\n${r.stderr}'],
         'devicectl install ${app.split('/').last}',
       );
+      // Stale evidence of an earlier run must not be taken for this one.
+      for (final f in Directory(tc.workDir).listSync()) {
+        final name = f.uri.pathSegments.last;
+        if (f is File &&
+            name.startsWith('ios-crash-') &&
+            name.endsWith('.json')) {
+          f.deleteSync();
+        }
+      }
       try {
         var first = true;
+        if (keepInstall) {
+          // A report left pending by an earlier or aborted run is uploaded by the next launch of the same
+          // install and could be mistaken for this kind's: launch once, let the SDK hand it over, forget it.
+          final c = await launch(run, first: true);
+          first = false;
+          final stale = await newBundle(timeout: const Duration(seconds: 30));
+          run.note(
+            '--keep-install: drained a pending report from an earlier run: ${stale == null ? 'none' : '${stale.source} ${stale.type}'}',
+          );
+          await c.stop();
+          await mock.reset();
+          _seen.clear();
+        }
         final seenBanner = <String>{};
         for (final k in crashKindTable.where(
           (k) => k.fatal && k.platforms.contains('ios'),
@@ -307,12 +359,26 @@ class _Ctx {
             const Duration(seconds: 45),
             onTimeout: () => -999,
           );
+          // The last console lines (devicectl's `App terminated due to signal N`) can still be in the
+          // pipes when the exit code arrives: read the output only once both streams have ended.
+          if (code != -999) await c1.drained();
           final out = c1.output.toString();
           run.guard(
             'event: the process ended after crash ${k.name}',
             code == -999 ? ['the app is still running after 45 s'] : [],
             'devicectl exit $code; last console lines: ${out.split('\n').where((l) => l.trim().isNotEmpty).toList().reversed.take(3).toList().reversed.join(' | ')}',
           );
+          // The kernel's verdict as devicectl prints it: a native kind dies of its own signal; an
+          // uncaught Objective-C exception ends in abort (6).
+          final died = parseTerminatedSignal(out);
+          run.note('[${k.name}] the process died of signal $died');
+          if (k.signal != null) {
+            run.expect(
+              '[${k.name}] the process died of signal ${k.signal}',
+              died == k.signal,
+              'devicectl: App terminated due to signal $died',
+            );
+          }
           final banner = parseIosBanner(out);
           if (banner != null) {
             seenBanner.add('${banner.version} ${banner.build}');
@@ -330,13 +396,22 @@ class _Ctx {
             where: (x) => x.type == 'crash',
             timeout: const Duration(seconds: 120),
           );
-          run.expect(
-            '[${k.name}] the next launch produced the recovered crash report',
-            bundle != null,
-            bundle == null
-                ? 'none in 120 s'
-                : '${bundle.source} ${bundle.type} "${bundle.summary}"',
-          );
+          final reportEvidence = bundle == null
+              ? 'none in 120 s'
+              : '${bundle.source} ${bundle.type} "${bundle.summary}"';
+          if (iosKnownNoReport.contains(k.name)) {
+            run.knownGap(
+              '[${k.name}] the next launch produced the recovered crash report (SDK 7.1.0 records none for this signal)',
+              bundle != null,
+              reportEvidence,
+            );
+          } else {
+            run.expect(
+              '[${k.name}] the next launch produced the recovered crash report',
+              bundle != null,
+              reportEvidence,
+            );
+          }
           if (bundle != null) {
             final crash = bundle.crash;
             final text = jsonEncode(crash ?? bundle.request);
@@ -346,10 +421,40 @@ class _Ctx {
             run.note(
               '[${k.name}] sdk ${jsonEncode(bundle.sdk)}; summary "${bundle.summary}"; excerpt ${text.substring(0, text.length < 400 ? text.length : 400)}',
             );
-            if (k.layer == CrashLayer.native) {
-              // Measured, not asserted, until a first real report shows what iOS records.
-              run.note(
-                '[${k.name}] the report says signal ${jsonEncode((crash?['signal'] as Map?)?['number'])}, the kind expects ${k.signal}',
+            // What iOS records, compactly; the whole crash.json is saved beside the report.
+            File('${tc.workDir}/ios-crash-${k.name}.json').writeAsStringSync(
+              const JsonEncoder.withIndent('  ')
+                  .convert(crash ?? bundle.request),
+            );
+            run.note(
+              '[${k.name}] recorded: ${jsonEncode({
+                for (final key in const ['signal', 'exception_type', 'code_type', 'handled', 'exception']) key: crash?[key],
+              })}; threads ${(crash?['threads'] as List?)?.length}',
+            );
+            // Measured on a device (doc/verification.md, 2026-11-18): every kind records the signal it died of
+            // by name, as a native exception that nobody handled; the Objective-C kinds record SIGABRT plus
+            // an `exception` block whose `reason` is the NSException's reason.
+            final reportSignal = (crash?['signal'] as Map?)?['name'];
+            final wantSignal = iosReportSignalNames[k.signal ?? 6];
+            run.expect(
+              '[${k.name}] the report records $wantSignal, exception_type native, not handled',
+              reportSignal == wantSignal &&
+                  crash?['exception_type'] == 'native' &&
+                  crash?['handled'] == false,
+              'signal $reportSignal, exception_type ${crash?['exception_type']}, handled ${crash?['handled']}',
+            );
+            if (k.layer == CrashLayer.platform) {
+              final ex = crash?['exception'] as Map?;
+              run.expect(
+                '[${k.name}] the exception block carries the NSException reason ${k.marker}',
+                ex?['reason'] == k.marker,
+                'exception name ${ex?['name']}, reason ${ex?['reason']}',
+              );
+            } else {
+              run.expect(
+                '[${k.name}] a native signal has no exception block',
+                crash?['exception'] == null,
+                'exception ${crash?['exception']}',
               );
             }
             if (k.marker != null) {

@@ -44,34 +44,85 @@ final _clock = Stopwatch()..start();
 // "request" in the report.
 final HttpClient _control = HttpClient();
 
+/// Names this isolate's events: an event carries `rid` (this isolate) and `seq` (its order), so the harness
+/// drops a repeat (a retry after a timeout that fired once the mock had stored the event) without ever
+/// confusing two lifetimes of the app. `token` is the harness's per-launch value (the iOS device harness
+/// passes `VERIFY_LAUNCH_TOKEN` in the environment) so a replayed event of an earlier process is not taken
+/// for this launch.
+final String _rid =
+    '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-$pid';
+final String _launchToken = Platform.environment['VERIFY_LAUNCH_TOKEN'] ?? '';
+var _seq = 0;
+
 void _emit(String kind, [Map<String, Object?> data = const {}]) {
   final line = jsonEncode({
     'kind': kind,
     'ms': _clock.elapsedMilliseconds,
     'mode': kReleaseMode ? 'release' : (kProfileMode ? 'profile' : 'debug'),
+    'rid': _rid,
+    'seq': _seq++,
+    if (_launchToken.isNotEmpty) 'token': _launchToken,
     ...data,
   });
   // `print` is what a release build keeps on both platforms (debugPrint throttles but also prints).
   // ignore: avoid_print
   print('VERIFY|$line');
   if (_server.isNotEmpty) {
-    unawaited(_post('/__event', line));
+    _outbox.add(
+      line,
+    ); // enqueued BEFORE any delivery: the order is the order of emission
+    _kick();
   }
 }
 
-Future<void> _post(String path, String body) async {
+/// Events not yet taken by the mock, in order. ONE delivery owner ([_kick]) sends the head, first attempts
+/// and retries alike; a failed attempt leaves it in place and the poll loop kicks again (the iOS Local
+/// Network prompt blocks the first seconds, airplane mode cuts the network), so a one-shot event such as
+/// `launch` is not lost for good. The console line stays the primary record.
+final List<String> _outbox = [];
+bool _delivering = false;
+
+void _kick() {
+  if (_delivering || _outbox.isEmpty) return;
+  _delivering = true;
+  unawaited(_deliver());
+}
+
+Future<void> _deliver() async {
   try {
-    final request = await _control
-        .postUrl(Uri.parse('http://$_server$path'))
-        .timeout(const Duration(seconds: 2));
-    final bytes = utf8.encode(body);
-    request.headers.contentType = ContentType.json;
-    request.contentLength = bytes.length;
-    request.add(bytes);
-    final response = await request.close().timeout(const Duration(seconds: 2));
-    await response.drain<void>();
+    while (_outbox.isNotEmpty) {
+      if (!await _post('/__event', _outbox.first)) return;
+      _outbox.removeAt(0);
+    }
+  } finally {
+    _delivering = false;
+  }
+}
+
+/// One bounded POST: the whole exchange (connect, send, the response drained) has two seconds, and on a
+/// timeout the request is aborted so a stalled response cannot hold the connection or block the poll loop.
+/// `false` leaves the event queued; a late success of the aborted attempt is dropped by `rid:seq`.
+Future<bool> _post(String path, String body) async {
+  HttpClientRequest? request;
+  try {
+    return await () async {
+      request = await _control.postUrl(Uri.parse('http://$_server$path'));
+      final bytes = utf8.encode(body);
+      request!.headers.contentType = ContentType.json;
+      request!.contentLength = bytes.length;
+      request!.add(bytes);
+      final response = await request!.close();
+      await response.drain<void>();
+      return response.statusCode >= 200 && response.statusCode < 300;
+    }().timeout(const Duration(seconds: 2));
   } on Object {
-    // Offline (airplane mode) or the server is gone: the console line is the record.
+    // Offline (airplane mode), the server is gone or it stalled: the console line is the record.
+    try {
+      request?.abort();
+    } on Object {
+      // already finished
+    }
+    return false;
   }
 }
 
@@ -259,6 +310,7 @@ void _emitGeometry() {
 
 Future<void> _poll() async {
   while (true) {
+    _kick();
     final command = await _nextCommand();
     if (command != null) {
       await _command(command);

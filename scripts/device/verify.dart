@@ -9,12 +9,14 @@
 // Options: --work DIR (default build/device-verify), --port N (default 8731; the apps are built with it),
 // --reuse (use the APKs/apps already in the work dir instead of building), --allow-not-possible (a NOT
 // POSSIBLE scenario exits 2 without it: the iOS simulator run needs it), --allow-dirty (a clean tree is
-// asserted otherwise).
+// asserted otherwise). ios-device only: --prompt-wait-minutes N (how long the first launch waits for the
+// Local Network prompt to be tapped, default 3), --keep-install (do not uninstall at the start and the end).
 import 'dart:io';
 
 import 'android_scenarios.dart';
 import 'build.dart';
 import 'builds.dart';
+import 'core/lan_host.dart';
 import 'ios_build.dart';
 import 'ios_physical.dart';
 import 'ios_scenarios.dart';
@@ -95,6 +97,11 @@ Future<void> main(List<String> args) async {
     return;
   }
   if (platform == 'ios-device') {
+    final pw = parsePromptWaitArgs(args);
+    if (pw.problem != null) {
+      stderr.writeln(pw.problem);
+      exit(64);
+    }
     exit(
       await runIosDevice(
         tc: tc,
@@ -104,6 +111,8 @@ Future<void> main(List<String> args) async {
         reuse: args.contains('--reuse'),
         allowDirty: args.contains('--allow-dirty'),
         allowNotPossible: args.contains('--allow-not-possible'),
+        promptWait: pw.wait!,
+        keepInstall: args.contains('--keep-install'),
       ),
     );
   }

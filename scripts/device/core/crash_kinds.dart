@@ -48,6 +48,23 @@ class CrashKind {
   bool get fatal => layer != CrashLayer.dart;
 }
 
+/// The name the iOS report's `signal.name` holds for a signal number (measured on an iPhone XS, iOS 18.7.9,
+/// SDK 7.1.0: every native kind and the Swift trap recorded exactly this, `exception_type: native`,
+/// `handled: false`). The report's `signal` has no `number`, only `name`, `addr` and `code`.
+const iosReportSignalNames = <int, String>{
+  4: 'SIGILL',
+  5: 'SIGTRAP',
+  6: 'SIGABRT',
+  7: 'SIGBUS',
+  8: 'SIGFPE',
+  11: 'SIGSEGV',
+};
+
+/// Kinds whose process dies of the signal on a physical iPhone but whose report the SDK never produced
+/// (`ffi-bus`: no report in 120 s, in 3 of 3 runs, 2026-11-18). A recorded SDK gap, not an expectation: the
+/// matrix keeps it a known gap that flips to a pass the day a report appears.
+const iosKnownNoReport = {'ffi-bus'};
+
 /// The positive control of the absence check (`crash control-async` in the app): not a kind of the
 /// matrix, so the matrix never runs it, and a marker no kind's marker contains.
 const crashControlMarker = 'verify-control-async';

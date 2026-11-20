@@ -58,7 +58,8 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 
 * Verified on Android emulators and iOS simulators, plus integration tests (not the device harness) on one physical Android 14 device, an iPhone XS and an iPhone 16 Pro. On the
   phones some tests failed or were not run (`view_hierarchy_test` fails on the debug builds of the Android device and the iPhone XS and passes in profile builds; the iPhone 16 Pro ran only
-  `attachments`, `network` and `logs`), and the harness scenarios (iOS recovered crash, exception bundles) were not run on a phone. The iOS simulator slice has no crash reporter and
-  files no logged exceptions, so those paths are unverified on iOS. Details: PLAN.md.
+  `attachments`, `network` and `logs`), and the harness's iOS crash matrix ran on an iPhone XS (recovered reports of native signals, Objective-C exceptions and a Swift trap; a raised SIGBUS
+  leaves no report), while iOS exception bundles (the Dart routes) were not run on a phone. The iOS simulator slice has no crash reporter and
+  files no logged exceptions. Details: PLAN.md, doc/verification.md.
 * Not exposed: APM transactions and spans, the appearance system, `relaunch`.
 * See `PLAN.md` for the open decisions and the full list.

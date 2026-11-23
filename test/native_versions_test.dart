@@ -441,8 +441,13 @@ void main() {
         .whereType<File>()
         .where((f) => f.path.endsWith('.yml'))
         .toList();
-    // claude-review.yml is owned by the org's shared workflow.
-    final ours = files.where((f) => !f.path.endsWith('claude-review.yml'));
+    // claude-review.yml and bugseeai.yml are thin callers of the org's shared workflows (a job that
+    // `uses:` a reusable workflow cannot set timeout-minutes; the called workflow owns it).
+    final ours = files.where(
+      (f) =>
+          !f.path.endsWith('claude-review.yml') &&
+          !f.path.endsWith('bugseeai.yml'),
+    );
 
     test('every workflow is least-privilege', () {
       for (final f in ours) {

@@ -7,7 +7,7 @@ It wraps the native Bugsee 7.x SDKs (it is not a reimplementation), so a report 
 native app produces, plus what only Dart can see: the widget tree, `dart:io` network traffic, `print` output and Dart
 errors.
 
-> **Version 10.0.0-dev.1, not published yet.** This is a clean rewrite for the 7.x native SDKs and a **breaking change from
+> **Version 10.0.0-beta.1, not published yet.** This is a clean rewrite for the 7.x native SDKs and a **breaking change from
 > 9.x**: see [doc/migration-from-9x.md](doc/migration-from-9x.md). Whether a 9.x compatibility layer is offered has not been
 > decided. Everything below was verified on Android emulators and iOS simulators; physical devices (an Android 14 phone, an iPhone XS, an iPhone 16 Pro)
 > ran only part of the integration tests, with some failures and unverified reports (see [Platform support and limits](#platform-support-and-limits)).
@@ -29,7 +29,7 @@ Plugin 9 and `material_ui`. The plugin is also SwiftPM-only, so `flutter pub get
 
 ```yaml
 dependencies:
-  bugsee_flutter: ^10.0.0-dev.1
+  bugsee_flutter: ^10.0.0-beta.1
 ```
 
 That resolves once the version is published. **Until then**, depend on the repository (checked with Flutter 3.50.0):

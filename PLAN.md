@@ -1,6 +1,6 @@
 # Bugsee Flutter SDK 10.x: project status
 
-The 7.x rewrite of `bugsee_flutter` (package version `10.0.0-dev.1`, unpublished) on `main` (formerly the `nextgen` branch, kept as the archive), plus the separate
+The 7.x rewrite of `bugsee_flutter` (package version `10.0.0-beta.1`, unpublished) on `main` (formerly the `nextgen` branch, kept as the archive), plus the separate
 `bugsee_flutter_feedback` package. **The implementation is feature complete and merged**; what remains is the owner's decisions, the
 known gaps below and the release itself. Sources: the wrapper workbook (`sdk/wrapper-workbook` in `bugsee/specs`, the authoritative
 order of work; how it is met: [doc/workbook-conformance.md](doc/workbook-conformance.md)), the wrapper, options, report and identity specs in the
@@ -52,10 +52,10 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 1. **A 9.x compatibility layer** (D3): offer a `bugsee.dart`-style shim over the 10.x facade, or none. The migration guide is written for
    "none".
 2. **Whether to publish**, and when. Both native pins are stable releases now (Android 7.6.0, iOS 7.1.0; the iOS pin was `7.0.0-beta7`, then `7.0.0`, until then), so a stable
-   `10.0.0` is no longer blocked by a beta dependency; the choice between `10.0.0` and `10.0.0-dev.N` / `-beta` first is open.
+   `10.0.0` is no longer blocked by a beta dependency; **decided 2026-11-23: a beta first** (`10.0.0-beta.1`); the stable `10.0.0` follows the beta soak and the remaining device and backend verification.
 3. **pub.dev name and ownership.** `bugsee_flutter` exists on pub.dev (latest `9.0.4`, publisher `bugsee.com`), so 10.x continues that
    package. `bugsee_flutter_feedback` does not exist yet (checked 2026-10-22) and must be created under the same publisher.
-4. **Versioning of the first release**: `10.0.0` against `10.0.0-dev.1`. The versions in `pubspec.yaml` (both packages), `wrapper_identity.dart`,
+4. **Versioning of the first release**: `10.0.0-beta.1` first, `10.0.0` after the beta (was `10.0.0-dev.1`). The versions in `pubspec.yaml` (both packages), `wrapper_identity.dart`,
    the iOS `BGSFlutterWrapper.m` and `feedback_version.dart` must move together (a drift guard checks it).
 5. **The default branch.** Done 2026-11-23: `nextgen` was squash-merged into `main` (the repository requires linear history; `nextgen` stays as the archive of the
    per-change history), so `native-pins.yml` and Dependabot run on the rewrite (`.github/CI.md`, "Default branch"). The `release` branch is the 9.x line;

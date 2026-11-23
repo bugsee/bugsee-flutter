@@ -1,6 +1,6 @@
-## 10.0.0-dev.1
+## 10.0.0-beta.1
 
-The first version, released in lock-step with `bugsee_flutter` (same version number). **Not published yet; a prerelease.**
+The first version, released in lock-step with `bugsee_flutter` (same version number). **The first beta (a prerelease; not published yet).**
 
 * The in-app feedback chat as a separate package, so apps that never show it do not carry its UI (SwiftUI on iOS, Jetpack Compose on Android).
 * `BugseeFeedback.show`, `setGreeting`, `isAvailable`, and the `messagesReceived` and `messageSent` streams (they fire only while the chat is

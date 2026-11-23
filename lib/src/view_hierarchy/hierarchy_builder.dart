@@ -474,7 +474,12 @@ class HierarchyWalk {
             _end(invalid: true);
           }
         case _Phase.writing:
-          _write();
+          // The write is a step of its own, so the view is checked again: gone, nothing is written.
+          if (_view.mounted && _view.renderObject.attached) {
+            _write();
+          } else {
+            _end(invalid: true);
+          }
         case _Phase.done:
           break;
       }

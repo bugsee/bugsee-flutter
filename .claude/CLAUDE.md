@@ -77,6 +77,7 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
 - **Feedback package**: separate (PLAN.md D4), a workspace member, lock-step version, hosted constraint `>=<core> <next minor>` (never exact, never a
   path or an override); the core must never mention it; its own Pigeon bridge; native pins are literals compared by
   `test/feedback_package_drift_test.dart`; it adds no Android provider; publish only through `scripts/publish_feedback.sh`, core first.
+  Releases: only `.github/workflows/release.yml` publishes (tag `v<version>`, OIDC, `environment: pub.dev`, after its gate; guarded in `test/native_versions_test.dart`); `workflow_dispatch` there is a dry run (pub.dev refuses non-tag publishing).
 - **Device harness** (`scripts/device/`, not in CI): its guards are on by default and must stay so; a new check goes through `Run.guard` / `Run.expect`, a
   new parser in `scripts/device/core/` with a test that shows it failing (`test/device_harness_test.dart`). A NOT POSSIBLE scenario exits 2.
 - **Docs**: a doc claim about code (a name, default, limit, command, path) is checked against the code; `README.md`, `CHANGELOG.md` (the newest entry is

@@ -3,7 +3,8 @@
 #
 #   scripts/publish_feedback.sh                # `flutter pub publish --dry-run`, then checks the archive
 #   scripts/publish_feedback.sh --publish      # the real thing (publish bugsee_flutter FIRST); refuses a dirty tree
-#   scripts/publish_feedback.sh --stage DIR    # only writes the copy to DIR (for the test of this script)
+#   scripts/publish_feedback.sh --publish --yes  # the same without pub's prompt (`--force`): the release workflow
+#   scripts/publish_feedback.sh --stage DIR   # only writes the copy to DIR (for the test of this script)
 #
 # Why a copy: the root package's .pubignore drops /packages/ so that `bugsee_flutter` does not ship
 # its sibling, and pub applies every .pubignore between the git root and the package it publishes,
@@ -30,6 +31,12 @@ esac
 if [ ${#mode[@]} -eq 0 ] && [ -n "$(git -C "$root" status --porcelain)" ]; then
   echo "refusing to publish from a dirty working tree; commit or stash first" >&2
   exit 1
+fi
+
+if [ "${2:-}" = "--yes" ]; then
+  # Only with --publish: the answer to the prompt of a real publish (the release workflow has no tty).
+  [ ${#mode[@]} -eq 0 ] || { echo "usage: $0 [--publish [--yes] | --stage DIR]" >&2; exit 64; }
+  mode=(--force)
 fi
 
 if [ -n "$stage" ]; then

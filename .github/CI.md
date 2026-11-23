@@ -1,9 +1,9 @@
 # CI/CD
 
-Nothing here publishes, tags or deploys. Releases to pub.dev are a separate, human-run
-step (PLAN.md, "Release checklist"). All workflows except `claude-review.yml` (owned by the org's shared workflow, which needs
-`pull-requests`/`issues` write, `id-token` write and a secret) use `permissions: contents: read`
-and checkout with `persist-credentials: false`.
+Only `release.yml` publishes (pub.dev, on a pushed version tag; see "Releases" below). Nothing else here publishes, tags or
+deploys. All workflows except `claude-review.yml` (owned by the org's shared workflow, which needs
+`pull-requests`/`issues` write, `id-token` write and a secret) use top-level `permissions: contents: read`
+and checkout with `persist-credentials: false`; the one other permission is `id-token: write` on the two publishing jobs of `release.yml`.
 
 ## Workflows
 
@@ -11,6 +11,7 @@ and checkout with `persist-credentials: false`.
 |---|---|---|
 | `ci.yml` | PR, push to `main` | Format, bridge and option codegen, analyze + test + iOS build, Android APK build, `pub publish --dry-run`, and the aggregate `ci-ok` |
 | `native-pins.yml` | weekly (Mon 06:17 UTC), manual | Verifies the pins in `native-versions.json` still exist upstream, and that the vendored option manifests are still the SDKs' published ones (`dart scripts/sync_option_manifests.dart --check`). Network checks live only here, never in PR CI |
+| `release.yml` | push of a tag `v<version>`, manual (always a dry run) | The release: gate, then publish `bugsee_flutter`, then `bugsee_flutter_feedback`, to pub.dev with OIDC. See "Releases" |
 | `claude-review.yml` | PR opened / updated | Calls the shared org review workflow. Advisory; do not require it (needs an org secret, unavailable to fork PRs). Do not edit it here |
 
 ### `ci.yml` jobs and check names
@@ -141,6 +142,34 @@ superseded PR runs are cancelled. The Android repo uses a single shared self-hos
 for its CI (see `bugsee/bugsee-android` `.github/CI.md`); this repo does not, so it
 neither competes for that slot nor inherits its dirty workspace. Moving the iOS leg there
 is possible later, but only after SwiftPM and Xcode availability on it are confirmed.
+
+## Releases
+
+`release.yml` publishes BOTH packages from one tag, in lock-step (the same version in both pubspecs). The tag form is `v<version>`
+(`v10.0.0`, `v10.0.0-beta.1`; the form the 9.x tags use). pub.dev needs a tag pattern with `{{version}}`: `v{{version}}` for each package, and the
+workflow's `on.push.tags` matches it. Authentication is pub.dev's automated publishing (GitHub OIDC, [dart.dev docs](https://dart.dev/tools/pub/automated-publishing)):
+no secret exists. pub.dev accepts it only from a run triggered by a TAG PUSH, so `workflow_dispatch` (input `dryRun`, default true; false is refused
+in the first step) rehearses every step except the upload.
+
+| Job | Needs | Permissions | What it does |
+|---|---|---|---|
+| `gate` | | `contents: read`, `checks: read` | The tag's commit is reachable from `origin/main`; `scripts/check_release.sh` (tag == both pubspec versions == both CHANGELOG top entries; the wrapper identity, the feedback lower bound and the pins are compared by the `flutter test` below); a successful `ci-ok` check run exists on the commit (so the iOS and Android builds were green); then on the floor Flutter: format, both Pigeon checks, the option registry check, `flutter analyze` and `flutter test` (root and feedback package), `flutter pub publish --dry-run`, the core archive through `scripts/check_pub_archive.sh`, and `scripts/publish_feedback.sh` (dry run). Holds no token and no environment |
+| `publish-core` | `gate` | `contents: read`, `id-token: write`; `environment: pub.dev` | `flutter pub publish --force` of `bugsee_flutter` (skipped when that version is already live: a re-run is safe) |
+| `publish-feedback` | `gate`, `publish-core` | the same; same environment | Waits (`scripts/pub_dev_status.sh wait`, 20 minutes) until the core version is live on pub.dev, then `scripts/publish_feedback.sh --publish --yes`: it refuses a dirty tree and publishes from a copy of the TRACKED files (see its header). Skipped with a warning and a step summary when the package does not exist on pub.dev yet (below); skipped when that version is live |
+
+- **Concurrency.** One group, `release`, never cancelled: two releases (or a release and a rehearsal) do not overlap; the second waits.
+- **The checked commit is the published one.** The publish jobs check out `github.sha`, not the tag's current target, so a tag moved after the gate publishes nothing unchecked.
+- **First version of the feedback package.** pub.dev can enable automated publishing only for a package that already exists, so the very first version
+  of `bugsee_flutter_feedback` is published by hand once (PLAN.md, release checklist). Until then `publish-feedback` publishes nothing and says so
+  (the core is already out by then). After the manual publish and enabling automated publishing, the next tag publishes it.
+- **Guards.** `test/native_versions_test.dart` ("workflows"): only `release.yml` publishes; a publishing job is under `environment: pub.dev`,
+  holds `id-token: write`, needs `gate`, and publishes in a step that runs on a tag push only; `id-token: write` appears nowhere else (mutation
+  tests show each break failing); the gate repeats `ci.yml`'s format and codegen commands. `test/release_scripts_test.dart` runs both scripts
+  (the pub.dev one against a local server). `scripts/pub_dev_status.sh` treats anything but 200/404 as an error, never as "not there".
+- **Manual fallback.** From a clean checkout of the tag on the floor Flutter: `flutter pub publish` for the core, wait until it is live, then
+  `scripts/publish_feedback.sh --publish`. Never from an agent.
+
+Maintainer setup (nothing here applies it): see the PR description of the release pipeline and PLAN.md, release checklist step 7.
 
 ## Default branch
 

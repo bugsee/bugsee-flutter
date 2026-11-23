@@ -103,7 +103,17 @@ Other gaps, none with an issue:
 
 ## Release checklist
 
-Nothing in this repository publishes, tags or deploys by itself; a maintainer does all of this by hand.
+Publishing is done by `.github/workflows/release.yml` when a maintainer pushes the tag (step 7); nothing else here publishes, and an agent
+never tags or publishes. The one-time setup (step 0) is by hand on pub.dev and GitHub.
+
+0. **One-time setup, before the first tag** (pub.dev and GitHub admin; the workflow cannot do it, see `.github/CI.md`, "Releases"):
+   - Publish the FIRST version of `bugsee_flutter_feedback` by hand (a new package cannot use automated publishing): from a clean checkout of
+     the release commit on Flutter 3.50.0, after the core is live, `scripts/publish_feedback.sh --publish`. Skip when it already exists.
+   - pub.dev, Admin tab of EACH package (`bugsee_flutter`, publisher bugsee.com, and `bugsee_flutter_feedback`): enable automated publishing from
+     GitHub Actions, repository `bugsee/bugsee-flutter`, tag pattern `v{{version}}`; tick "Require GitHub Actions environment" with `pub.dev`.
+   - GitHub, Settings, Environments: create `pub.dev` with required reviewers, and "deployment branches and tags" limited to the `v*` tags.
+   - GitHub, Settings, Rules, tags: a ruleset on `v*` so only maintainers can create tags and nobody can move or delete one.
+   - Rehearse: Actions, `release`, Run workflow, `dryRun` true (needs `release.yml` on the default branch).
 
 1. **Decide** the open questions above (publish or not, name and publisher, the first version, the default branch).
 2. **Pins final.** If a native pin moves, edit `native-versions.json`, then run `dart scripts/sync_option_manifests.dart`, the two
@@ -122,9 +132,11 @@ Nothing in this repository publishes, tags or deploys by itself; a maintainer do
    scripts/publish_feedback.sh                # the feedback package: a dry run by default, then the archive check
    flutter pub publish --to-archive=/tmp/core.tar.gz && scripts/check_pub_archive.sh /tmp/core.tar.gz
    ```
-7. **Publish in order:** the core first (`flutter pub publish` from the repository root), wait until it is live on pub.dev, then the feedback package
-   (`scripts/publish_feedback.sh --publish`, which refuses a dirty tree and publishes from a copy of the tracked files).
-8. **Tag** the release commit (`v<version>`, the form the 9.x tags use) and write the GitHub release notes from the CHANGELOG.
+7. **Tag and let the workflow publish.** On `main`, with `ci-ok` green on the release commit, push the tag `v<version>` (the form the 9.x tags use;
+   `git tag -s v<version> && git push origin v<version>`). `release.yml` runs the gate, waits for the `pub.dev` environment approval, publishes the
+   core, waits until it is live, then publishes the feedback package. Manual fallback if the workflow cannot be used: the core first (`flutter pub
+   publish` from the repository root), wait until it is live on pub.dev, then `scripts/publish_feedback.sh --publish`.
+8. **Release notes.** Write the GitHub release for the tag from the CHANGELOG.
 9. **After:** check the pub.dev pages (README rendering, scores, the Platforms and SDK tabs), install from pub.dev into a clean app on both platforms,
    and make `main` hold the release (see open decision 5).
 

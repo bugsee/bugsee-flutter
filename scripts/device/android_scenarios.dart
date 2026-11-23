@@ -937,7 +937,7 @@ class AndroidCtx {
       run.result.notCovered.addAll([
         'unhandled exception reported AS A CRASH by the zone (installErrorHandlers(reportAsCrash: true)) in a release build',
         'errors thrown in a spawned isolate',
-        'Dart stack symbolization through the real backend worker (the offline decoder, package:native_stack_traces, decodes the same format; the `flutter symbolize` of Flutter 3.50 does not decode 3.50 symbols; the dart_symbolize of the worker was not run)',
+        'Dart stack symbolization through the real backend worker (production symbols upload and worker; offline, scripts/verify_symbolization.dart decodes with package:native_stack_traces, and with `--tool` the backend\'s dart_symbolize decodes a Dart 3.14 stack once the header is stripped as the worker does: doc/exceptions.md; `flutter symbolize` of Flutter 3.50 does not decode 3.50 symbols)',
       ]);
     },
   );

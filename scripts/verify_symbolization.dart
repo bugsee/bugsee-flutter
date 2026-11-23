@@ -10,7 +10,12 @@
 // printed in the stack's header must be inside the symbols file (that is how the backend finds the
 // symbols), and every `--expect` name must come out of the symbolizer. `--tool` is the worker's
 // `dart_symbolize` (stack on stdin, symbols file as the argument; dart-symbolize repository, `dist/`);
-// without it `package:native_stack_traces` is used, which decodes the same format.
+// without it `package:native_stack_traces` (0.7.1) is used, which decodes the same format. The worker
+// strips everything before the first `#00` (header lines included, symbolfiles/flutter.py) before it runs
+// `dart_symbolize`; with `--tool` the same is done here. That is not cosmetic: the dart_symbolize built from
+// bugsee-symbolication-aux (a 2023 copy of native_stack_traces) crashes on a Dart 3.14 stack that still has
+// its header (the header path looks for the `_kDartIsolateSnapshotInstructions` symbol, which Dart 3.14 symbols
+// do not have: they carry `_kDartSnapshotText`), and decodes the stripped one by the `virt` address.
 //
 // The symbols file is NOT committed (it holds the build machine's paths): produce it with
 // `flutter build apk --release --obfuscate --split-debug-info=<dir>`. Exit code 0 when it checks out.
@@ -71,9 +76,21 @@ Future<void> main(List<String> args) async {
   }
   stdout.writeln('build id $buildId is in the symbols file');
 
-  // Without --tool: `package:native_stack_traces` (a dev dependency), the decoder `flutter symbolize` wraps.
-  // Flutter 3.50's own `flutter symbolize` fails on the symbols of a 3.50 build ("Cannot locate isolate
-  // instructions section in snapshot", measured), the package (0.7.1) decodes the same file.
+  // Without --tool: `package:native_stack_traces` (a dev dependency, 0.7.1). The decoder `flutter symbolize` wraps
+  // is 0.6.1 in Flutter 3.50 and fails on a 3.50 build's symbols with the header ("Cannot locate isolate
+  // instructions section in snapshot", measured); the 0.7.0 changelog reads
+  // "Adjusts snapshot readers for the removal of the VM isolate."; 0.7.1 decodes it (0.7.0 itself was not run).
+  // With --tool: the stack from the first `#00` on, as the worker port `obfuscatedFrameLines`
+  // (test/exceptions_worker_contract_test.dart) reads it: a leading empty line dropped, every line trimmed.
+  // (symbolfiles/flutter.py itself passes the untrimmed text; measured: both forms decode the same.)
+  if (tool != null) {
+    final m = RegExp(r'^(.*?)(\s*#00.*)', dotAll: true).firstMatch(stack);
+    if (m != null) {
+      var lines = const LineSplitter().convert(m.group(2)!);
+      if (lines.isNotEmpty && lines.first.isEmpty) lines = lines.sublist(1);
+      stack = [for (final l in lines) l.trim()].join('\n');
+    }
+  }
   final process = await Process.start(
     tool ?? Platform.resolvedExecutable,
     tool != null

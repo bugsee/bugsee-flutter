@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'core/events.dart';
 import 'core/lan_host.dart';
 import 'shell.dart';
 
@@ -126,10 +127,10 @@ class Mock {
   Future<List<Map<String, Object?>>> events() async {
     final body = await _get('/__events');
     if (body == null) return const [];
-    return [
+    return dropRepeatedEvents([
       for (final e in jsonDecode(body) as List)
         if (e is Map) e.cast<String, Object?>(),
-    ];
+    ]);
   }
 
   /// The bundles the server stored (decoded manifest/request, entries with sizes and hashes).

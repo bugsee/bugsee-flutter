@@ -62,9 +62,17 @@ Future<Out> sh(
 
 /// Starts a long-lived child (the mock server, `flutter run`) and keeps its output.
 class Child {
-  Child._(this.process, this.output);
+  Child._(this.process, this.output, this._drained);
   final Process process;
   final StringBuffer output;
+  final Future<void> _drained;
+
+  /// Completes when the child's stdout and stderr have both ended: after `process.exitCode` the last lines
+  /// can still be in the pipes, so a reader of [output] that must see them (devicectl's final
+  /// `App terminated due to signal N`) awaits this first. Bounded by [timeout]: a grandchild holding the
+  /// pipe open must not hang the harness, the output so far is what there is.
+  Future<void> drained({Duration timeout = const Duration(seconds: 10)}) =>
+      _drained.timeout(timeout, onTimeout: () {});
 
   static Future<Child> start(
     List<String> cmd, {
@@ -78,9 +86,13 @@ class Child {
       workingDirectory: cwd,
     );
     final out = StringBuffer();
-    p.stdout.transform(utf8.decoder).listen(out.write);
-    p.stderr.transform(utf8.decoder).listen(out.write);
-    return Child._(p, out);
+    final done = () async {
+      await Future.wait([
+        p.stdout.transform(utf8.decoder).listen(out.write).asFuture<void>(),
+        p.stderr.transform(utf8.decoder).listen(out.write).asFuture<void>(),
+      ]);
+    }();
+    return Child._(p, out, done);
   }
 
   void write(String s) => process.stdin.write(s);

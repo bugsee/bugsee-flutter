@@ -29,7 +29,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   fake_async: ^1.3.3
-  flutter_lints: ^5.0.0
+  flutter_lints: ">=5.0.0 <7.0.0"
   material_ui: ^1.11.0
   native_stack_traces: ^0.7.1
 

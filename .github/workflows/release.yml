@@ -4,8 +4,8 @@ name: release
 # commit, in lock-step: `bugsee_flutter` first, then (once it is live on pub.dev)
 # `bugsee_flutter_feedback`. Authentication is pub.dev's automated publishing (GitHub OIDC): there
 # is no secret and no stored credential. pub.dev accepts it only from a run triggered by a tag push,
-# so a manual run (`workflow_dispatch`) is always a dry run: it rehearses every step except the
-# upload. See .github/CI.md ("Releases") and PLAN.md ("Release checklist").
+# so a manual run (`workflow_dispatch`) is always a dry run: it runs the whole gate (which includes
+# the dry runs of both packages) and the publish jobs do not run. See .github/CI.md ("Releases") and PLAN.md ("Release checklist").
 #
 # Safety, in the order a run meets it:
 #   gate            read-only; tag is on main, tag == both pubspecs and both CHANGELOG tops, ci-ok was
@@ -26,10 +26,11 @@ on:
 permissions:
   contents: read
 
-# Two releases never overlap, and a running release is never cancelled half way: a queued run
-# waits. Dry runs share the group on purpose (a rehearsal must not race a real release).
+# Two releases never overlap, and a running release is never cancelled half way. GitHub keeps one
+# running and ONE pending run per group: a third tag push replaces the pending one (re-push it).
+# A manual rehearsal has a group of its own, so it can neither wait behind nor displace a release.
 concurrency:
-  group: release
+  group: ${{ github.event_name == 'push' && 'release' || format('release-dry-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -109,10 +110,20 @@ jobs:
           scripts/check_pub_archive.sh "$RUNNER_TEMP/core.tar.gz"
       # Dry run of the sibling (and its archive check), from a copy of the tracked files.
       - run: scripts/publish_feedback.sh
+      # Read-only: what the release would do (a rehearsal shows it without publishing).
+      - name: What pub.dev has now
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for p in bugsee_flutter bugsee_flutter_feedback; do
+            echo "$p $VERSION on pub.dev: $(scripts/pub_dev_status.sh status "$p" "$VERSION" || echo unknown)" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
 
   publish-core:
     name: publish bugsee_flutter
     needs: [gate]
+    # A manual run is the gate only: pub.dev refuses it, and the environment's tag rule would too.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The reviewers of this environment approve the release; pub.dev can require it by name.
@@ -138,13 +149,13 @@ jobs:
         id: live
         env:
           VERSION: ${{ needs.gate.outputs.version }}
-        run: echo "state=$(scripts/pub_dev_status.sh status bugsee_flutter "$VERSION")" >> "$GITHUB_OUTPUT"
+        # Assigned first: inside `echo "$(...)"` a failing call would be lost and the state left empty.
+        run: |
+          state="$(scripts/pub_dev_status.sh status bugsee_flutter "$VERSION")"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
       - name: Publish bugsee_flutter
         if: github.event_name == 'push' && steps.live.outputs.state != 'live'
         run: flutter pub publish --force
-      - name: Dry run
-        if: github.event_name != 'push'
-        run: flutter pub publish --dry-run
       - name: Already live, nothing to do
         if: steps.live.outputs.state == 'live'
         run: echo "::notice::bugsee_flutter ${{ needs.gate.outputs.version }} is already on pub.dev; not published again"
@@ -152,6 +163,7 @@ jobs:
   publish-feedback:
     name: publish bugsee_flutter_feedback
     needs: [gate, publish-core]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: pub.dev
@@ -172,7 +184,6 @@ jobs:
       # The feedback package depends on the core at this version: it must resolve from pub.dev
       # (indexing can lag the upload by a minute or two).
       - name: Wait until the core is live
-        if: github.event_name == 'push'
         env:
           VERSION: ${{ needs.gate.outputs.version }}
         run: scripts/pub_dev_status.sh wait bugsee_flutter "$VERSION" 1200 15
@@ -180,7 +191,9 @@ jobs:
         id: live
         env:
           VERSION: ${{ needs.gate.outputs.version }}
-        run: echo "state=$(scripts/pub_dev_status.sh status bugsee_flutter_feedback "$VERSION")" >> "$GITHUB_OUTPUT"
+        run: |
+          state="$(scripts/pub_dev_status.sh status bugsee_flutter_feedback "$VERSION")"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
       # pub.dev: automated publishing exists only for a package that already exists, so the very
       # first version of the sibling is published by hand once (PLAN.md, release checklist).
       - name: The package does not exist on pub.dev yet
@@ -192,9 +205,6 @@ jobs:
       - name: Publish bugsee_flutter_feedback
         if: github.event_name == 'push' && steps.live.outputs.state == 'missing-version'
         run: scripts/publish_feedback.sh --publish --yes
-      - name: Dry run
-        if: github.event_name != 'push'
-        run: scripts/publish_feedback.sh
       - name: Already live, nothing to do
         if: steps.live.outputs.state == 'live'
         run: echo "::notice::bugsee_flutter_feedback ${{ needs.gate.outputs.version }} is already on pub.dev; not published again"

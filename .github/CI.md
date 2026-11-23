@@ -149,15 +149,15 @@ is possible later, but only after SwiftPM and Xcode availability on it are confi
 (`v10.0.0`, `v10.0.0-beta.1`; the form the 9.x tags use). pub.dev needs a tag pattern with `{{version}}`: `v{{version}}` for each package, and the
 workflow's `on.push.tags` matches it. Authentication is pub.dev's automated publishing (GitHub OIDC, [dart.dev docs](https://dart.dev/tools/pub/automated-publishing)):
 no secret exists. pub.dev accepts it only from a run triggered by a TAG PUSH, so `workflow_dispatch` (input `dryRun`, default true; false is refused
-in the first step) rehearses every step except the upload.
+in the first step) runs the `gate` only (it includes the dry runs of both packages and prints what pub.dev has); the publish jobs do not run, so the environment's tag rule never sees a branch.
 
 | Job | Needs | Permissions | What it does |
 |---|---|---|---|
 | `gate` | | `contents: read`, `checks: read` | The tag's commit is reachable from `origin/main`; `scripts/check_release.sh` (tag == both pubspec versions == both CHANGELOG top entries; the wrapper identity, the feedback lower bound and the pins are compared by the `flutter test` below); a successful `ci-ok` check run exists on the commit (so the iOS and Android builds were green); then on the floor Flutter: format, both Pigeon checks, the option registry check, `flutter analyze` and `flutter test` (root and feedback package), `flutter pub publish --dry-run`, the core archive through `scripts/check_pub_archive.sh`, and `scripts/publish_feedback.sh` (dry run). Holds no token and no environment |
-| `publish-core` | `gate` | `contents: read`, `id-token: write`; `environment: pub.dev` | `flutter pub publish --force` of `bugsee_flutter` (skipped when that version is already live: a re-run is safe) |
-| `publish-feedback` | `gate`, `publish-core` | the same; same environment | Waits (`scripts/pub_dev_status.sh wait`, 20 minutes) until the core version is live on pub.dev, then `scripts/publish_feedback.sh --publish --yes`: it refuses a dirty tree and publishes from a copy of the TRACKED files (see its header). Skipped with a warning and a step summary when the package does not exist on pub.dev yet (below); skipped when that version is live |
+| `publish-core` | `gate`; tag push only | `contents: read`, `id-token: write`; `environment: pub.dev` | `flutter pub publish --force` of `bugsee_flutter` (skipped when that version is already live: a re-run is safe) |
+| `publish-feedback` | `gate`, `publish-core`; tag push only | the same; same environment | Waits (`scripts/pub_dev_status.sh wait`, 20 minutes) until the core version is live on pub.dev, then `scripts/publish_feedback.sh --publish --yes`: it refuses a dirty tree and publishes from a copy of the TRACKED files (see its header). Skipped with a warning and a step summary when the package does not exist on pub.dev yet (below); skipped when that version is live |
 
-- **Concurrency.** One group, `release`, never cancelled: two releases (or a release and a rehearsal) do not overlap; the second waits.
+- **Concurrency.** Tag pushes share the group `release`, never cancelled: a running release finishes first. GitHub keeps one running and ONE pending run per group, so a third tag push replaces the pending one (re-push it). A rehearsal has a group of its own (`release-dry-<run id>`) and cannot displace a release.
 - **The checked commit is the published one.** The publish jobs check out `github.sha`, not the tag's current target, so a tag moved after the gate publishes nothing unchecked.
 - **First version of the feedback package.** pub.dev can enable automated publishing only for a package that already exists, so the very first version
   of `bugsee_flutter_feedback` is published by hand once (PLAN.md, release checklist). Until then `publish-feedback` publishes nothing and says so

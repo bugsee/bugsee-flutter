@@ -113,7 +113,7 @@ never tags or publishes. The one-time setup (step 0) is by hand on pub.dev and G
      GitHub Actions, repository `bugsee/bugsee-flutter`, tag pattern `v{{version}}`; tick "Require GitHub Actions environment" with `pub.dev`.
    - GitHub, Settings, Environments: create `pub.dev` with required reviewers, and "deployment branches and tags" limited to the `v*` tags.
    - GitHub, Settings, Rules, tags: a ruleset on `v*` so only maintainers can create tags and nobody can move or delete one.
-   - Rehearse: Actions, `release`, Run workflow, `dryRun` true (needs `release.yml` on the default branch).
+   - Rehearse: Actions, `release`, Run workflow, `dryRun` true (needs `release.yml` on the default branch). It runs the gate only (with the dry runs of both packages); the publish jobs run on a tag push only, so the first real run is the first time the environment approval, OIDC and the upload are exercised.
 
 1. **Decide** the open questions above (publish or not, name and publisher, the first version, the default branch).
 2. **Pins final.** If a native pin moves, edit `native-versions.json`, then run `dart scripts/sync_option_manifests.dart`, the two

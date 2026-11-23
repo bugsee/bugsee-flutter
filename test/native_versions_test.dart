@@ -698,7 +698,30 @@ void main() {
         live,
         matches(RegExp(r'dryRun:\n(?:\s+.*\n)*?\s+default: true\n')),
       );
-      expect(live, contains('group: release\n'));
+      expect(
+        live,
+        contains(
+          r"group: ${{ github.event_name == 'push' && 'release' || format('release-dry-{0}', github.run_id) }}",
+        ),
+        reason: 'one release at a time; a rehearsal has its own group',
+      );
+      // Both publish jobs exist for a tag push only (the environment's tag rule would refuse a branch).
+      for (final j in ['publish-core', 'publish-feedback']) {
+        expect(
+          jobs[j],
+          contains("    if: github.event_name == 'push'\n"),
+          reason: j,
+        );
+      }
+      // A status read keeps its exit code: never `echo "...$(pub_dev_status.sh ...)"` in a publishing job.
+      for (final j in ['publish-core', 'publish-feedback']) {
+        expect(
+          jobs[j],
+          isNot(contains(r'echo "state=$(scripts/pub_dev_status')),
+          reason:
+              '$j: a failing status call would be lost and read as nothing to do',
+        );
+      }
       expect(live, contains('cancel-in-progress: false'));
       // The gate repeats ci.yml's format and codegen commands, on the floor.
       final ci = liveOf(read('.github/workflows/ci.yml'));

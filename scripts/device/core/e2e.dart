@@ -56,7 +56,9 @@ List<String> symbolsUploadProblems(String output, int exitCode) {
     problems.add('POST .../symbols answered $post');
   }
   if (put == null) {
-    problems.add('no PUT of the zip was made (no presigned URL, or it was not used)');
+    problems.add(
+      'no PUT of the zip was made (no presigned URL, or it was not used)',
+    );
   } else if (!put.startsWith('2')) {
     problems.add('PUT of the zip answered $put');
   }
@@ -76,23 +78,31 @@ List<String> phaseProblems(
   final starts = events.where((e) => e['kind'] == 'start').toList();
   final phases = starts.map((e) => e['phase']).toList();
   if (phases.join(',') != '0,1,2,3') {
-    problems.add('the app started phases [${phases.join(',')}], expected 0,1,2,3');
+    problems.add(
+      'the app started phases [${phases.join(',')}], expected 0,1,2,3',
+    );
   }
   for (final s in starts) {
-    if (s['os'] != os) problems.add('a start event says os ${s['os']}, expected $os');
+    if (s['os'] != os)
+      problems.add('a start event says os ${s['os']}, expected $os');
     if (release && s['mode'] != 'release') {
       problems.add('a start event says mode ${s['mode']}, expected release');
     }
   }
   final launches = events.where((e) => e['kind'] == 'launch').toList();
   if (launches.length != 4 || launches.any((e) => e['result'] != 'launched')) {
-    problems.add('launch results: ${launches.map((e) => e['result']).toList()}, expected 4 x launched');
+    problems.add(
+      'launch results: ${launches.map((e) => e['result']).toList()}, expected 4 x launched',
+    );
   }
   if (events.any((e) => e['kind'] == 'invalid')) {
-    problems.add('the app reported invalid: ${events.where((e) => e['kind'] == 'invalid').toList()}');
+    problems.add(
+      'the app reported invalid: ${events.where((e) => e['kind'] == 'invalid').toList()}',
+    );
   }
   final crashes = events.where((e) => e['kind'] == 'crashing').length;
-  if (crashes != 2) problems.add('the app announced $crashes crashes, expected 2');
+  if (crashes != 2)
+    problems.add('the app announced $crashes crashes, expected 2');
   if (!events.any((e) => e['kind'] == 'reported')) {
     problems.add('phase 0 never reported its Dart errors');
   }
@@ -109,7 +119,10 @@ String runIdFor(DateTime now) {
 /// A `.symbols` file's format by magic bytes: `elf` (Android), `macho` (iOS), or null.
 String? symbolsFormat(List<int> head) {
   if (head.length < 4) return null;
-  if (head[0] == 0x7f && head[1] == 0x45 && head[2] == 0x4c && head[3] == 0x46) {
+  if (head[0] == 0x7f &&
+      head[1] == 0x45 &&
+      head[2] == 0x4c &&
+      head[3] == 0x46) {
     return 'elf';
   }
   final m = (head[0] << 24) | (head[1] << 16) | (head[2] << 8) | head[3];
@@ -129,11 +142,14 @@ List<String> readbackProblems(
 }) {
   final problems = <String>[];
   if (reports.isEmpty) {
-    return ['the backend returned no report for this build: nothing was verified'];
+    return [
+      'the backend returned no report for this build: nothing was verified',
+    ];
   }
   final all = reports.join('\n');
   for (final n in [...expectedDartNames, ...expectedNativeNames]) {
-    if (!all.contains(n)) problems.add('"$n" is in none of the ${reports.length} report(s)');
+    if (!all.contains(n))
+      problems.add('"$n" is in none of the ${reports.length} report(s)');
   }
   return problems;
 }
@@ -141,5 +157,8 @@ List<String> readbackProblems(
 /// Frames that are still raw addresses in a rendered report (a symbolication that did not happen).
 List<String> rawFrameLines(String report) => [
   for (final l in const LineSplitter().convert(report))
-    if (RegExp(r'_kDart(Isolate)?Snapshot(Text|Instructions)\+0x|^\s*#?\d+\s+abs\s+[0-9a-f]+\s+virt\s').hasMatch(l)) l.trim(),
+    if (RegExp(
+      r'_kDart(Isolate)?Snapshot(Text|Instructions)\+0x|^\s*#?\d+\s+abs\s+[0-9a-f]+\s+virt\s',
+    ).hasMatch(l))
+      l.trim(),
 ];

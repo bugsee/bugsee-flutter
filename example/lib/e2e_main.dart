@@ -26,7 +26,7 @@ import 'crash_lab.dart' as crash_lab;
 const _run = String.fromEnvironment('E2E_RUN');
 const _defineToken = String.fromEnvironment('BUGSEE_E2E_TOKEN');
 const _endpoint = String.fromEnvironment('BUGSEE_ENDPOINT');
-const _wait =int.fromEnvironment('E2E_WAIT_SECONDS', defaultValue: 40);
+const _wait = int.fromEnvironment('E2E_WAIT_SECONDS', defaultValue: 40);
 
 void _emit(String kind, [Map<String, Object?> data = const {}]) {
   final line = 'E2E|${jsonEncode({'kind': kind, 'run': _run, ...data})}';
@@ -55,9 +55,8 @@ Future<void> e2eUnhandledSite() async {
 @pragma('vm:never-inline')
 void e2eUncaughtSite() {
   unawaited(
-    Future<void>.delayed(const Duration(milliseconds: 20)).then(
-      (_) => e2eUncaughtThrower(),
-    ),
+    Future<void>.delayed(const Duration(milliseconds: 20))
+        .then((_) => e2eUncaughtThrower()),
   );
 }
 
@@ -135,7 +134,9 @@ Future<void> _phases() async {
 
 void main() {
   runApp(
-    const MaterialApp(home: Scaffold(body: Center(child: Text('e2e')))),
+    const MaterialApp(
+      home: Scaffold(body: Center(child: Text('e2e'))),
+    ),
   );
   unawaited(_phases());
 }

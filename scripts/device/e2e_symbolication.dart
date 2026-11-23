@@ -94,12 +94,18 @@ Future<void> main(List<String> args) async {
   }
 
   final env = Platform.environment;
-  final token = env[platform == 'ios' ? 'BUGSEE_IOS_TOKEN' : 'BUGSEE_ANDROID_TOKEN'] ?? '';
+  final token =
+      env[platform == 'ios' ? 'BUGSEE_IOS_TOKEN' : 'BUGSEE_ANDROID_TOKEN'] ??
+      '';
   final serverToken = env['BUGSEE_SERVER_TOKEN'] ?? '';
-  final appId = env[platform == 'ios' ? 'BUGSEE_IOS_APP_ID' : 'BUGSEE_ANDROID_APP_ID'] ?? '';
+  final appId =
+      env[platform == 'ios' ? 'BUGSEE_IOS_APP_ID' : 'BUGSEE_ANDROID_APP_ID'] ??
+      '';
   _secrets = [token, serverToken];
   if (token.isEmpty) {
-    stderr.writeln('BUGSEE_${platform == 'ios' ? 'IOS' : 'ANDROID'}_TOKEN is not set');
+    stderr.writeln(
+      'BUGSEE_${platform == 'ios' ? 'IOS' : 'ANDROID'}_TOKEN is not set',
+    );
     exit(64);
   }
   final device = opt(platform == 'ios' ? '--udid' : '--serial') ?? '';
@@ -111,16 +117,31 @@ Future<void> main(List<String> args) async {
       ? Directory.current.parent.parent.path
       : Directory.current.path;
   final runId = opt('--run-id') ?? runIdFor(DateTime.now());
-  _workDir = '${env['E2E_WORK_DIR'] ?? '${Directory.systemTemp.path}/bugsee-e2e'}/$platform-$runId';
+  _workDir =
+      '${env['E2E_WORK_DIR'] ?? '${Directory.systemTemp.path}/bugsee-e2e'}/$platform-$runId';
   Directory(_workDir).createSync(recursive: true);
   final tc = Toolchain.detect(repo, _workDir);
   say('run $runId on $platform $device, work dir $_workDir');
   say('flutter ${(await tc.describe())['flutter']}, java ${tc.javaHome}');
-  final job = _Job(tc, platform, device, token, runId, opt('--reuse-build') != null);
+  final job = _Job(
+    tc,
+    platform,
+    device,
+    token,
+    runId,
+    opt('--reuse-build') != null,
+  );
 
   var locked = false;
   if (!args.contains('--no-lock')) {
-    final r = await sh([_devlock, 'acquire', device, 'claude-e2e-symbolication', 'e2e symbolication run $runId', '600']);
+    final r = await sh([
+      _devlock,
+      'acquire',
+      device,
+      'claude-e2e-symbolication',
+      'e2e symbolication run $runId',
+      '600',
+    ]);
     if (!r.ok) invalid('the device lock is not ours: ${r.text}');
     locked = true;
     _lockedDevice = device;
@@ -153,8 +174,8 @@ class _Job {
 
   /// `BUGSEE_ENDPOINT` (a version-less base such as https://apidev.bugsee.com): empty means the default,
   /// production, endpoint everywhere (SDK, symbols.py, bugsee-cli, Gradle plugin). The same value goes to all.
-  String get endpoint =>
-      (Platform.environment['BUGSEE_ENDPOINT'] ?? '').replaceAll(RegExp(r'/+$'), '');
+  String get endpoint => (Platform.environment['BUGSEE_ENDPOINT'] ?? '')
+      .replaceAll(RegExp(r'/+$'), '');
   String get symbolsDir => '$_workDir/symbols';
   String get buildNumber => runId.split('.').last; // HHMM
 
@@ -189,7 +210,9 @@ class _Job {
     }
     try {
       if (!reuse) {
-        say('building ${ios ? 'ios' : 'apk'} release (obfuscated), build $runId');
+        say(
+          'building ${ios ? 'ios' : 'apk'} release (obfuscated), build $runId',
+        );
         await sh([tc.flutter, 'pub', 'get'], cwd: example, env: tc.buildEnv);
         final b = await sh(
           [tc.flutter, 'build', if (ios) 'ios' else 'apk', ..._buildArgs],
@@ -197,14 +220,20 @@ class _Job {
           env: tc.buildEnv,
           timeout: const Duration(minutes: 45),
         );
-        File('$_workDir/build.log').writeAsStringSync(redact('${b.stdout}\n${b.stderr}', _secrets));
-        if (!b.ok) invalid('flutter build failed (see $_workDir/build.log): ${redact(b.stderr, _secrets)}');
+        File('$_workDir/build.log')
+            .writeAsStringSync(redact('${b.stdout}\n${b.stderr}', _secrets));
+        if (!b.ok)
+          invalid(
+            'flutter build failed (see $_workDir/build.log): ${redact(b.stderr, _secrets)}',
+          );
         if (!ios) {
-          final up = RegExp(r'^.*(?:[Bb]ugsee).*(?:upload|symbol).*$', multiLine: true)
-              .allMatches(b.stdout + b.stderr)
-              .map((m) => m[0]!)
-              .toList();
-          say('Gradle plugin lines about uploads: ${up.isEmpty ? 'NONE (see build.log; native symbols were probably not uploaded)' : up.join(' | ')}');
+          final up = RegExp(
+            r'^.*(?:[Bb]ugsee).*(?:upload|symbol).*$',
+            multiLine: true,
+          ).allMatches(b.stdout + b.stderr).map((m) => m[0]!).toList();
+          say(
+            'Gradle plugin lines about uploads: ${up.isEmpty ? 'NONE (see build.log; native symbols were probably not uploaded)' : up.join(' | ')}',
+          );
           if (up.isEmpty) nativeUploadSeen = false;
         }
       }
@@ -212,8 +241,15 @@ class _Job {
       if (!ios && bugseeProps.existsSync()) bugseeProps.deleteSync();
     }
     // guard: the symbols are the platform's format
-    final files = Directory(symbolsDir).listSync().whereType<File>().where((f) => f.path.endsWith('.symbols')).toList();
-    if (files.isEmpty) invalid('no .symbols file in $symbolsDir: --split-debug-info did not write any');
+    final files = Directory(symbolsDir)
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.symbols'))
+        .toList();
+    if (files.isEmpty)
+      invalid(
+        'no .symbols file in $symbolsDir: --split-debug-info did not write any',
+      );
     for (final f in files) {
       final fmt = symbolsFormat(f.openSync().readSync(8));
       final want = ios ? 'macho' : 'elf';
@@ -225,11 +261,19 @@ class _Job {
         ? '$example/build/ios/iphoneos/Runner.app/Frameworks/App.framework/App'
         : null;
     if (binary != null) {
-      final s = await sh(['strings', '-a', binary], timeout: const Duration(minutes: 3));
+      final s = await sh([
+        'strings',
+        '-a',
+        binary,
+      ], timeout: const Duration(minutes: 3));
       if (s.stdout.contains('e2eHandledSite')) {
-        invalid('the shipped App binary still contains "e2eHandledSite": not obfuscated, a readable backend name would prove nothing');
+        invalid(
+          'the shipped App binary still contains "e2eHandledSite": not obfuscated, a readable backend name would prove nothing',
+        );
       }
-      say('obfuscation guard: "e2eHandledSite" is not in the shipped App binary');
+      say(
+        'obfuscation guard: "e2eHandledSite" is not in the shipped App binary',
+      );
     }
   }
 
@@ -240,9 +284,12 @@ class _Job {
     final dl = await sh(['curl', '-fsSL', _symbolsPy, '-o', py]);
     if (!dl.ok) invalid('could not fetch symbols.py: ${dl.text}');
     final sha = (await sh(['shasum', '-a', '256', py])).text.split(' ').first;
-    if (sha != _symbolsPySha) invalid('symbols.py sha256 is $sha, pinned $_symbolsPySha');
+    if (sha != _symbolsPySha)
+      invalid('symbols.py sha256 is $sha, pinned $_symbolsPySha');
     final venv = Platform.environment['E2E_PYTHON'] ?? 'python3';
-    say('uploading the Dart symbols with the pinned symbols.py (-t <token> -d <dir> -v $runId, default endpoint)');
+    say(
+      'uploading the Dart symbols with the pinned symbols.py (-t <token> -d <dir> -v $runId, default endpoint)',
+    );
     final r = await sh([
       venv,
       '${tc.repoRoot}/scripts/device/symbols_logged.py',
@@ -258,22 +305,42 @@ class _Job {
     final out = redact('${r.stdout}\n${r.stderr}', _secrets);
     say(out.trim());
     final problems = symbolsUploadProblems(out, r.code);
-    if (problems.isNotEmpty) invalid('the Dart symbols upload: ${problems.join('; ')}');
+    if (problems.isNotEmpty)
+      invalid('the Dart symbols upload: ${problems.join('; ')}');
     say('Dart symbols uploaded (POST and PUT both 2xx)');
 
     if (ios) {
       // The native side: the dSYM of this build, with bugsee-cli (docs: /cli/xcode, /cli/debug-files).
       final cli = Platform.environment['BUGSEE_CLI'] ?? 'bugsee-cli';
-      final dsyms = Directory('$example/build/ios').listSync(recursive: true).whereType<Directory>().where((d) => d.path.endsWith('.dSYM')).map((d) => d.path).toList();
+      final dsyms = Directory('$example/build/ios')
+          .listSync(recursive: true)
+          .whereType<Directory>()
+          .where((d) => d.path.endsWith('.dSYM'))
+          .map((d) => d.path)
+          .toList();
       say('dSYMs of the build: $dsyms');
-      if (dsyms.isEmpty) invalid('no .dSYM was produced by the release build: the native iOS frames cannot be symbolicated');
+      if (dsyms.isEmpty)
+        invalid(
+          'no .dSYM was produced by the release build: the native iOS frames cannot be symbolicated',
+        );
       final dir = '$_workDir/dsyms';
       Directory(dir).createSync(recursive: true);
       for (final d in dsyms) {
         await sh(['cp', '-R', d, dir]);
       }
       final up = await sh(
-        [cli, 'debug-files', 'upload', dir, '--type', 'dsym', '--version', runId, '--build', buildNumber],
+        [
+          cli,
+          'debug-files',
+          'upload',
+          dir,
+          '--type',
+          'dsym',
+          '--version',
+          runId,
+          '--build',
+          buildNumber,
+        ],
         env: {
           ...Platform.environment,
           'BUGSEE_APP_TOKEN': token,
@@ -281,10 +348,14 @@ class _Job {
         },
         timeout: const Duration(minutes: 15),
       );
-      say('bugsee-cli debug-files upload (dsym): exit ${up.code}\n${redact('${up.stdout}\n${up.stderr}', _secrets).trim()}');
+      say(
+        'bugsee-cli debug-files upload (dsym): exit ${up.code}\n${redact('${up.stdout}\n${up.stderr}', _secrets).trim()}',
+      );
       if (!up.ok) invalid('the dSYM upload failed (exit ${up.code})');
     } else if (!nativeUploadSeen) {
-      say('WARNING: the Gradle plugin printed nothing about an upload; the native Android symbols may be missing');
+      say(
+        'WARNING: the Gradle plugin printed nothing about an upload; the native Android symbols may be missing',
+      );
     }
   }
 
@@ -301,8 +372,15 @@ class _Job {
   }
 
   Future<Child> _iosLaunch() => Child.start([
-    'xcrun', 'devicectl', 'device', 'process', 'launch', '--device', device,
-    '--terminate-existing', '--console',
+    'xcrun',
+    'devicectl',
+    'device',
+    'process',
+    'launch',
+    '--device',
+    device,
+    '--terminate-existing',
+    '--console',
 
     _iosBundle,
   ]);
@@ -310,8 +388,24 @@ class _Job {
   Future<void> _runIos() async {
     final ctl = ['xcrun', 'devicectl'];
     final app = '$example/build/ios/iphoneos/Runner.app';
-    await sh([...ctl, 'device', 'uninstall', 'app', '--device', device, _iosBundle]);
-    final inst = await sh([...ctl, 'device', 'install', 'app', '--device', device, app], timeout: const Duration(minutes: 5));
+    await sh([
+      ...ctl,
+      'device',
+      'uninstall',
+      'app',
+      '--device',
+      device,
+      _iosBundle,
+    ]);
+    final inst = await sh([
+      ...ctl,
+      'device',
+      'install',
+      'app',
+      '--device',
+      device,
+      app,
+    ], timeout: const Duration(minutes: 5));
     if (!inst.ok) invalid('install failed: ${redact(inst.text, _secrets)}');
     say('installed $_iosBundle build $runId');
     final all = StringBuffer();
@@ -324,15 +418,22 @@ class _Job {
         final ok = await c.waitFor(marker, timeout: const Duration(minutes: 5));
         if (!ok) {
           all.write(redact(c.output.toString(), _secrets));
-          invalid('phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}:\n${redact(c.output.toString(), _secrets)}');
+          invalid(
+            'phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}:\n${redact(c.output.toString(), _secrets)}',
+          );
         }
         if (wantsExit) {
-          final code = await c.process.exitCode.timeout(const Duration(seconds: 90), onTimeout: () => -999);
+          final code = await c.process.exitCode.timeout(
+            const Duration(seconds: 90),
+            onTimeout: () => -999,
+          );
           await c.drained();
           if (code == -999) {
             await c.stop();
             all.write(redact(c.output.toString(), _secrets));
-            invalid('phase $phase announced a crash and the process did not end within 90 s');
+            invalid(
+              'phase $phase announced a crash and the process did not end within 90 s',
+            );
           }
           say('phase $phase: the process ended (devicectl exit $code)');
         } else {
@@ -345,20 +446,37 @@ class _Job {
       }
     } finally {
       File(consoleFile).writeAsStringSync(all.toString());
-      await sh([...ctl, 'device', 'uninstall', 'app', '--device', device, _iosBundle]);
+      await sh([
+        ...ctl,
+        'device',
+        'uninstall',
+        'app',
+        '--device',
+        device,
+        _iosBundle,
+      ]);
     }
     _checkEvents('ios');
   }
 
   Future<void> _runAndroid() async {
     final adb = tc.adbPath;
-    Future<Out> a(List<String> args, {Duration timeout = const Duration(minutes: 2)}) => sh([adb, '-s', device, ...args], timeout: timeout);
+    Future<Out> a(
+      List<String> args, {
+      Duration timeout = const Duration(minutes: 2),
+    }) => sh([adb, '-s', device, ...args], timeout: timeout);
     final state = (await a(['get-state'])).text;
-    if (state != 'device') invalid('$device is "$state" over adb, not "device"');
+    if (state != 'device')
+      invalid('$device is "$state" over adb, not "device"');
     final apk = '$example/build/app/outputs/flutter-apk/app-release.apk';
     await a(['uninstall', _androidPackage]);
-    final inst = await a(['install', '-r', apk], timeout: const Duration(minutes: 5));
-    if (!inst.ok || !inst.stdout.contains('Success')) invalid('install failed: ${inst.text}');
+    final inst = await a([
+      'install',
+      '-r',
+      apk,
+    ], timeout: const Duration(minutes: 5));
+    if (!inst.ok || !inst.stdout.contains('Success'))
+      invalid('install failed: ${inst.text}');
     say('installed $_androidPackage build $runId');
     final all = StringBuffer();
     try {
@@ -366,7 +484,14 @@ class _Job {
         say('launch ${phase + 1} of 4 (phase $phase)');
         await a(['logcat', '-c']);
         await a(['shell', 'am', 'force-stop', _androidPackage]);
-        final l = await a(['shell', 'am', 'start', '-W', '-n', '$_androidPackage/.MainActivity']);
+        final l = await a([
+          'shell',
+          'am',
+          'start',
+          '-W',
+          '-n',
+          '$_androidPackage/.MainActivity',
+        ]);
         if (!l.ok) invalid('am start failed: ${l.text}');
         final wantsExit = phase == 1 || phase == 2;
         final marker = wantsExit ? '"kind":"crashing"' : '"kind":"phase-done"';
@@ -382,10 +507,23 @@ class _Job {
           await delay(2);
         }
         all.writeln(redact(log, _secrets));
-        if (!seen) invalid('phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}');
+        if (!seen)
+          invalid(
+            'phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}',
+          );
         if (wantsExit) {
-          final gone = await until<bool>(() async => (await a(['shell', 'pidof', _androidPackage])).text.isEmpty ? true : null, timeout: const Duration(seconds: 90), every: const Duration(seconds: 2));
-          if (gone != true) invalid('phase $phase announced a crash and the process is still alive after 90 s');
+          final gone = await until<bool>(
+            () async =>
+                (await a(['shell', 'pidof', _androidPackage])).text.isEmpty
+                ? true
+                : null,
+            timeout: const Duration(seconds: 90),
+            every: const Duration(seconds: 2),
+          );
+          if (gone != true)
+            invalid(
+              'phase $phase announced a crash and the process is still alive after 90 s',
+            );
           say('phase $phase: the process ended');
         }
       }
@@ -402,20 +540,25 @@ class _Job {
     say('${events.length} events of run $runId in the console');
     final problems = phaseProblems(events, os: os, release: true);
     if (problems.isNotEmpty) invalid('the device run: ${problems.join('; ')}');
-    say('device run complete: 4 launches (errors, native signal, platform crash, upload), 2 crashes, all launched');
+    say(
+      'device run complete: 4 launches (errors, native signal, platform crash, upload), 2 crashes, all launched',
+    );
   }
 
   // ---- the backend --------------------------------------------------------------------------------
 
   Future<int> readBack(String serverToken, String appId, Duration wait) async {
     if (serverToken.isEmpty || appId.isEmpty) {
-      say('UNVERIFIED: reading the backend needs the organisation SERVER token (BUGSEE_SERVER_TOKEN, the public '
-          'API\'s x-auth-servertoken) and the application id (BUGSEE_${ios ? 'IOS' : 'ANDROID'}_APP_ID). An app token '
-          'cannot read issues. Everything before this point ran: the build is $runId; find it in the dashboard '
-          'by that version string.');
+      say(
+        'UNVERIFIED: reading the backend needs the organisation SERVER token (BUGSEE_SERVER_TOKEN, the public '
+        'API\'s x-auth-servertoken) and the application id (BUGSEE_${ios ? 'IOS' : 'ANDROID'}_APP_ID). An app token '
+        'cannot read issues. Everything before this point ran: the build is $runId; find it in the dashboard '
+        'by that version string.',
+      );
       return 3;
     }
-    final base = '${endpoint.isEmpty ? 'https://api.bugsee.com' : endpoint}/v2/partner/';
+    final base =
+        '${endpoint.isEmpty ? 'https://api.bugsee.com' : endpoint}/v2/partner/';
     final client = HttpClient();
     Future<Object?> get(String path) async {
       final req = await client.getUrl(Uri.parse('$base$path'));
@@ -423,7 +566,9 @@ class _Job {
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) {
-        throw StateError('GET $path -> ${res.statusCode} ${redact(body, _secrets)}');
+        throw StateError(
+          'GET $path -> ${res.statusCode} ${redact(body, _secrets)}',
+        );
       }
       final v = jsonDecode(body);
       return v is Map && v.containsKey('result') ? v['result'] : v;
@@ -437,10 +582,15 @@ class _Job {
         final objs = (r['objects'] as List).cast<Map>();
         mine = [
           for (final i in objs)
-            if (((i['statistics'] as Map?)?['versions'] as Map?)?.keys.any((k) => '$k' == runId) ?? false)
+            if (((i['statistics'] as Map?)?['versions'] as Map?)?.keys.any(
+                  (k) => '$k' == runId,
+                ) ??
+                false)
               i.cast<String, Object?>(),
         ];
-        say('backend: ${objs.length} issues listed, ${mine.length} with version $runId');
+        say(
+          'backend: ${objs.length} issues listed, ${mine.length} with version $runId',
+        );
         if (mine.length >= 3) break; // handled+uncaught are error issues, the crashes are issues too
       } on Object catch (e) {
         say('backend read: $e');
@@ -456,12 +606,23 @@ class _Job {
         final list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
         for (final rec in list.take(3)) {
           final rid = (rec as Map)['_id'];
-          final text = await _text(client, '${base}applications/$appId/issues/$id/recordings/$rid/crash_report', serverToken);
+          final text = await _text(
+            client,
+            '${base}applications/$appId/issues/$id/recordings/$rid/crash_report',
+            serverToken,
+          );
           reports.add(text);
-          File('$_workDir/backend-$id-$rid.txt').writeAsStringSync(redact(text, _secrets));
+          File('$_workDir/backend-$id-$rid.txt')
+              .writeAsStringSync(redact(text, _secrets));
           final raw = rawFrameLines(text);
-          say('  recording $rid: ${text.split('\n').length} lines, ${raw.length} raw frame line(s)');
-          for (final l in text.split('\n').where((l) => _expectedDart.any(l.contains)).take(6)) {
+          say(
+            '  recording $rid: ${text.split('\n').length} lines, ${raw.length} raw frame line(s)',
+          );
+          for (final l
+              in text
+                  .split('\n')
+                  .where((l) => _expectedDart.any(l.contains))
+                  .take(6)) {
             say('    $l');
           }
         }
@@ -478,7 +639,9 @@ class _Job {
       say('NOT SYMBOLICATED (or not found): ${problems.join('; ')}');
       return 1;
     }
-    say('VERIFIED: the backend shows the readable names ${_expectedDart.join(', ')} and the native side');
+    say(
+      'VERIFIED: the backend shows the readable names ${_expectedDart.join(', ')} and the native side',
+    );
     return 0;
   }
 
@@ -487,7 +650,8 @@ class _Job {
     req.headers.set('x-auth-servertoken', serverToken);
     final res = await req.close();
     final body = await res.transform(utf8.decoder).join();
-    if (res.statusCode != 200) throw StateError('GET crash_report -> ${res.statusCode}');
+    if (res.statusCode != 200)
+      throw StateError('GET crash_report -> ${res.statusCode}');
     return body;
   }
 }

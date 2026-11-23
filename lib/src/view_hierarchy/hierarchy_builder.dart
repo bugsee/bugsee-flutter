@@ -250,11 +250,12 @@ bool _touches(Rect rect, Rect clip) =>
     rect.top < clip.bottom &&
     rect.bottom > clip.top;
 
-/// Builds the snapshot of the implicit view (or [viewId]), or `null` when there is nothing to
+/// Builds the snapshot of the implicit view (or [viewId]) in one go, or `null` when there is nothing to
 /// describe or anything went wrong (fail closed: no partial answer on an error). Never throws.
 ///
 /// [root] is the element tree's root (`WidgetsBinding.rootElement` by default). [clock] is a
-/// monotonic clock the budget is read from (a test supplies its own).
+/// monotonic clock the budget is read from (a test supplies its own). The same walk, taken a slice
+/// at a time, is [HierarchyWalk].
 HierarchySnapshot? buildViewHierarchy({
   Element? root,
   int viewId = 0,
@@ -264,18 +265,17 @@ HierarchySnapshot? buildViewHierarchy({
   @visibleForTesting bool skipContained = true,
 }) {
   try {
-    final Element? top = root ?? WidgetsBinding.instance.rootElement;
-    if (top == null) return null;
-    final Element? viewElement = _findView(top, viewId);
-    if (viewElement == null) return null;
-    final Duration Function() now = clock ?? _stopwatchClock();
-    final walker = _Walker(
-      limits,
-      now,
-      obfuscated ?? typeNamesAreObfuscated,
-      skipContained,
+    final HierarchyWalk? walk = HierarchyWalk.start(
+      root: root,
+      viewId: viewId,
+      limits: limits,
+      clock: clock,
+      obfuscated: obfuscated,
+      skipContained: skipContained,
     );
-    return walker.run(viewElement as RenderObjectElement);
+    if (walk == null) return null;
+    walk.step(null);
+    return walk.result;
   } catch (_) {
     return null;
   }
@@ -304,9 +304,93 @@ Element? _findView(Element start, int viewId) {
   return found;
 }
 
-class _Walker {
-  _Walker(this.limits, this.now, this.obfuscated, this.skipContained)
-    : _start = now();
+/// What a level of the walk's own stack does when its children are done.
+const int _plain = 0; // nothing: the view, a provider of data, a render object that is off screen
+const int _composite =
+    1; // a widget with no render object: its box is its children's
+const int _render = 2; // a painted render object: closes the node, places it
+
+/// One element whose children are being visited. Pooled by stack position.
+class _Frame {
+  late Element owner;
+
+  /// What a child is placed in, and the node and depth it is given.
+  late _Context ctx;
+  late _Node into;
+  late int depth;
+  late int kind;
+
+  /// The children, on [HierarchyWalk._arena] from [next] up to [end] (they start at [start]).
+  int start = 0;
+  int next = 0;
+  int end = 0;
+
+  // For `_composite` and `_render`, what happens when the children are done.
+  _Node? node;
+  _Node? outer;
+  RenderObject? ro;
+  RenderObject? outerParent;
+}
+
+enum _Phase { fresh, walking, writing, done }
+
+/// One walk of one Flutter view, resumable: [step] does as much as a time slice allows and says
+/// whether the walk is complete. The depth-first walk keeps its place in an explicit stack (one
+/// pooled frame per level, the children of every level on one shared list) instead of the call
+/// stack, so it can stop between any two elements. [buildViewHierarchy] is the same walk run to
+/// the end in one step.
+///
+/// Consistency (doc/view-hierarchy.md): STRICT. The tree must not change between two steps; the
+/// framework mutates the element and render trees only inside a frame, so the caller (the
+/// publisher) abandons a walk when a frame is drawn or due and starts over. As a defence a step
+/// checks that every level it still holds is mounted and attached, and a walk that finds one is
+/// [invalid] and gives no snapshot, so a tree that changed outside a frame is never mixed.
+///
+/// The caps are the walk's own, not a slice's: nodes, bytes and depth count across slices, and
+/// the time budget in [HierarchyLimits.budget] is the time spent IN steps, not the time between
+/// them. A cap reached in any step marks what it cut as `truncated`, exactly as in one piece.
+/// Nothing here reads more than the unsliced walk did: the privacy rules are unchanged.
+class HierarchyWalk {
+  HierarchyWalk._(
+    this.limits,
+    this.now,
+    this.obfuscated,
+    this.skipContained,
+    this._view,
+  ) {
+    _collect = (Element child) => _arena.add(child);
+  }
+
+  /// Starts a walk of the view [viewId], or returns `null` when there is nothing to describe
+  /// (no tree, no such view, a view with no area). Nothing is walked until the first [step].
+  static HierarchyWalk? start({
+    Element? root,
+    int viewId = 0,
+    HierarchyLimits limits = const HierarchyLimits(),
+    Duration Function()? clock,
+    bool? obfuscated,
+    bool skipContained = true,
+  }) {
+    final Element? top = root ?? WidgetsBinding.instance.rootElement;
+    if (top == null) return null;
+    final Element? viewElement = _findView(top, viewId);
+    if (viewElement == null) return null;
+    final RenderView view =
+        (viewElement as RenderObjectElement).renderObject as RenderView;
+    final Size size = view.size;
+    if (!(size.width > 0 && size.height > 0) ||
+        !size.width.isFinite ||
+        !size.height.isFinite) {
+      return null;
+    }
+    return HierarchyWalk._(
+      limits,
+      clock ?? _stopwatchClock(),
+      obfuscated ?? typeNamesAreObfuscated,
+      skipContained,
+      viewElement,
+    );
+  }
 
   final bool obfuscated;
 
@@ -319,6 +403,7 @@ class _Walker {
   /// One matrix per element depth, reused by every node at that depth: a node's matrix is read
   /// only while its own subtree is visited and never kept, and everything below a node is
   /// visited at a greater depth than the node, so a matrix in use is never the one handed out.
+  /// The stack mirrors the recursion this replaced, so the rule holds across slices too.
   Matrix4 _pool(int depth) {
     while (_matrices.length <= depth) {
       _matrices.add(Matrix4.identity());
@@ -332,7 +417,7 @@ class _Walker {
 
   final HierarchyLimits limits;
   final Duration Function() now;
-  final Duration _start;
+  final RenderObjectElement _view;
   late Rect _screen;
   final Map<RenderObject, _Node> _byRender = <RenderObject, _Node>{};
   int _nodes = 0;
@@ -341,24 +426,139 @@ class _Walker {
   bool _truncated = false;
   bool _stopped = false;
 
-  HierarchySnapshot? run(RenderObjectElement viewElement) {
-    final RenderView view = viewElement.renderObject as RenderView;
-    final Size size = view.size;
-    if (!(size.width > 0 && size.height > 0) ||
-        !size.width.isFinite ||
-        !size.height.isFinite) {
-      return null;
+  // Where the walk is: the levels being visited (pooled), the children still to visit.
+  final List<_Frame> _stack = <_Frame>[];
+  int _sp = 0;
+  final List<Element> _arena = <Element>[];
+  late final void Function(Element) _collect;
+  late _Node _rootNode;
+
+  _Phase _phase = _Phase.fresh;
+  HierarchySnapshot? _result;
+  bool _invalid = false;
+
+  // Time: what earlier steps took, when this one began, and when it must stop.
+  Duration _spent = Duration.zero;
+  Duration _sliceStart = Duration.zero;
+  Duration? _sliceEnd;
+  Duration? _scanEnd;
+
+  /// Whether the walk is over (complete, failed or [invalid]).
+  bool get finished => _phase == _Phase.done;
+
+  /// The snapshot once [finished]; `null` when it failed, was [invalid], or is over the byte cap.
+  HierarchySnapshot? get result => _result;
+
+  /// The walk found that the tree had changed between two steps and gave up (it has no result).
+  bool get invalid => _invalid;
+
+  /// The time spent in steps so far (the cost of the walk, whatever the gaps between them).
+  Duration get spent => _spent;
+
+  /// Runs the walk for about [slice] (the whole rest of it when `null`); returns whether it is
+  /// [finished]. A step ends at the first element boundary after the slice, so it can overrun by
+  /// one element (and by the check of an off-screen box, which gives up after twice the slice).
+  /// Never throws: an error ends the walk with no result (fail closed).
+  bool step(Duration? slice) {
+    if (_phase == _Phase.done) return true;
+    try {
+      _sliceStart = now();
+      _sliceEnd = slice == null ? null : _sliceStart + slice;
+      _scanEnd = slice == null ? null : _sliceStart + slice * 2;
+      switch (_phase) {
+        case _Phase.fresh:
+          _begin();
+          _walkSome();
+        case _Phase.walking:
+          if (_stillMounted()) {
+            _walkSome();
+          } else {
+            _end(invalid: true);
+          }
+        case _Phase.writing:
+          _write();
+        case _Phase.done:
+          break;
+      }
+      // Writing the template is a step of its own when the walk is sliced, so the last slice of
+      // the walk and the write are two short pieces and not one long one.
+      if (_phase == _Phase.writing && slice == null) _write();
+      _spent += now() - _sliceStart;
+    } catch (_) {
+      _end();
     }
-    final Rect screen = Offset.zero & size;
+    return _phase == _Phase.done;
+  }
+
+  void _end({bool invalid = false, HierarchySnapshot? result}) {
+    _phase = _Phase.done;
+    _invalid = invalid;
+    _result = result;
+    _sp = 0;
+    _arena.clear();
+    _stack.clear();
+    _byRender.clear();
+    _noRecheck.clear();
+  }
+
+  void _begin() {
+    final RenderView view = _view.renderObject as RenderView;
+    final Rect screen = Offset.zero & view.size;
     _screen = screen;
-    final rootNode = _Node(viewNodeClassName)..rect = screen;
+    _rootNode = _Node(viewNodeClassName)..rect = screen;
     _nodes = 1;
-    _children(
-      viewElement,
+    _phase = _Phase.walking;
+    _pushChildren(
+      _view,
+      _plain,
       _Context(view, Matrix4.identity(), screen),
-      rootNode,
+      _rootNode,
       1,
     );
+  }
+
+  /// Whether every level the walk still holds is as it was: mounted, attached. A walk that
+  /// resumes into a tree a frame changed would mix two trees; the publisher prevents that, this
+  /// is the check that makes it fail closed if the publisher ever does not.
+  bool _stillMounted() {
+    for (var i = 0; i < _sp; i++) {
+      final _Frame f = _stack[i];
+      if (!f.owner.mounted) return false;
+      final RenderObject? ro = f.ro;
+      if (ro != null && !ro.attached) return false;
+    }
+    return true;
+  }
+
+  /// The walk proper, until the tree is done or the slice is over.
+  void _walkSome() {
+    var ticks = 0;
+    while (_sp > 0) {
+      final Duration? end = _sliceEnd;
+      if (end != null && (++ticks & 15) == 0 && now() >= end) return;
+      final _Frame f = _stack[_sp - 1];
+      if (f.next < f.end) {
+        final Element child = _arena[f.next++];
+        if (!child.mounted) {
+          _end(
+            invalid: true,
+          ); // changed under the walk: nothing of it is trusted
+          return;
+        }
+        _visit(child, f.ctx, f.into, f.depth);
+      } else {
+        _closeFrame(f);
+        _arena.length = f.start;
+        _sp--;
+      }
+    }
+    _phase = _Phase.writing;
+  }
+
+  /// Serialises the finished tree. Over the byte cap the template is dropped, not trimmed.
+  void _write() {
+    final RenderView view = _view.renderObject as RenderView;
+    final _Node rootNode = _rootNode;
     final writer = _Writer(obfuscated: obfuscated);
     writer.writeRoot(
       rootNode,
@@ -368,16 +568,24 @@ class _Walker {
     final int templateLength = writer.finish();
     // The estimate while walking is generous; an over-size template is dropped, not trimmed.
     // Numbers are not in the template yet: each box adds about 24 bytes.
-    if (templateLength + 24 * writer.nodeCount > limits.maxBytes) return null;
-    return HierarchySnapshot(
-      viewId: view.flutterView.viewId,
-      devicePixelRatio: view.flutterView.devicePixelRatio,
-      segments: writer.segments,
-      bounds: writer.bounds,
-      nodeCount: writer.nodeCount,
-      truncated: _truncated || rootNode.truncated,
+    if (templateLength + 24 * writer.nodeCount > limits.maxBytes) {
+      _end();
+      return;
+    }
+    _end(
+      result: HierarchySnapshot(
+        viewId: view.flutterView.viewId,
+        devicePixelRatio: view.flutterView.devicePixelRatio,
+        segments: writer.segments,
+        bounds: writer.bounds,
+        nodeCount: writer.nodeCount,
+        truncated: _truncated || rootNode.truncated,
+      ),
     );
   }
+
+  /// The time the walk has spent: in the steps before this one, and in this one so far.
+  Duration _elapsed() => _spent + (now() - _sliceStart);
 
   /// Whether a cap says to stop adding nodes; flags [parent] (and the snapshot) when it does.
   bool _capped(_Node parent, int depth) {
@@ -385,7 +593,7 @@ class _Walker {
       parent.truncated = true;
       return true;
     }
-    if ((++_steps & 31) == 0 && now() - _start > limits.budget) {
+    if ((++_steps & 31) == 0 && _elapsed() > limits.budget) {
       _stopped = true;
     }
     if (_stopped ||
@@ -399,16 +607,84 @@ class _Walker {
     return false;
   }
 
-  void _children(Element e, _Context ctx, _Node into, int depth) {
-    e.debugVisitOnstageChildren((Element child) {
-      _visit(child, ctx, into, depth);
-    });
+  /// Opens a level: the on-stage children of [e] are listed (in order, on the shared list) and
+  /// visited one at a time by [_walkSome], with [ctx], into [into], at [depth]. When they are
+  /// done, [_closeFrame] does what [kind] says.
+  void _pushChildren(
+    Element e,
+    int kind,
+    _Context ctx,
+    _Node into,
+    int depth, {
+    _Node? node,
+    _Node? outer,
+    RenderObject? ro,
+    RenderObject? outerParent,
+  }) {
+    if (_sp == _stack.length) _stack.add(_Frame());
+    final _Frame f = _stack[_sp++];
+    f
+      ..owner = e
+      ..ctx = ctx
+      ..into = into
+      ..depth = depth
+      ..kind = kind
+      ..node = node
+      ..outer = outer
+      ..ro = ro
+      ..outerParent = outerParent
+      ..start = _arena.length;
+    e.debugVisitOnstageChildren(_collect);
+    f
+      ..next = f.start
+      ..end = _arena.length;
+  }
+
+  /// What a level does once its children are visited.
+  void _closeFrame(_Frame f) {
+    switch (f.kind) {
+      case _composite:
+        final _Node node = f.node!;
+        final _Node into = f.outer!;
+        Rect? box;
+        for (final _Node c in node.children) {
+          final Rect? r = c.rect;
+          if (r != null) box = box == null ? r : box.expandToInclude(r);
+        }
+        if (box == null) {
+          // Nothing of it is painted: no node, and its slot is given back. What a cap cut below it
+          // is still said, by the node above.
+          if (node.truncated) into.truncated = true;
+          _nodes--;
+          _bytes -= _estimate(node);
+          return;
+        }
+        node.rect = box;
+        into.addChild(node);
+      case _render:
+        final _Node node = f.node!;
+        final _Node into = f.outer!;
+        final RenderObject ro = f.ro!;
+        node.open = false;
+        node.flushLate();
+        final RenderObject? render = ro.parent;
+        final _Node? host = render == null ? null : _byRender[render];
+        if (f.outerParent != null &&
+            !identical(render, f.outerParent) &&
+            host != null &&
+            host.open) {
+          // Painted by a render object elsewhere: on top of what is there.
+          host.addLate(node);
+        } else {
+          into.addChild(node);
+        }
+    }
   }
 
   void _visit(Element e, _Context ctx, _Node into, int depth) {
     // A provider of data: no box of its own, no name worth a node.
     if (e is InheritedElement) {
-      _children(e, ctx, into, depth);
+      _pushChildren(e, _plain, ctx, into, depth);
       return;
     }
     if (_capped(into, depth)) return;
@@ -420,22 +696,7 @@ class _Walker {
     // is its painted children's, and it is absent when none of them is painted.
     final node = _Node(_typeName(e.widget, 'Widget'));
     _reserve(node); // before its children, so the caps see it
-    _children(e, ctx, node, depth + 1);
-    Rect? box;
-    for (final _Node c in node.children) {
-      final Rect? r = c.rect;
-      if (r != null) box = box == null ? r : box.expandToInclude(r);
-    }
-    if (box == null) {
-      // Nothing of it is painted: no node, and its slot is given back. What a cap cut below it
-      // is still said, by the node above.
-      if (node.truncated) into.truncated = true;
-      _nodes--;
-      _bytes -= _estimate(node);
-      return;
-    }
-    node.rect = box;
-    into.addChild(node);
+    _pushChildren(e, _composite, ctx, node, depth + 1, node: node, outer: into);
   }
 
   /// About what the node costs in the final text: the fixed JSON around it and a box
@@ -504,7 +765,7 @@ class _Walker {
           _containedBelow(e, ro)) {
         return; // nothing below can reach the screen: no node would be made
       }
-      _children(e, _Context(ro, toView, clip), into, depth + 1);
+      _pushChildren(e, _plain, _Context(ro, toView, clip), into, depth + 1);
       return;
     }
 
@@ -546,21 +807,17 @@ class _Walker {
     _reserve(node);
     _byRender[ro] = node;
     node.open = true;
-    _children(e, _Context(ro, toView, clip), node, depth + 1);
-    node.open = false;
-    node.flushLate();
-    final RenderObject? render = ro.parent;
-    final _Node? host = render == null ? null : _byRender[render];
-    if (parent != null &&
-        !identical(render, parent) &&
-        host != null &&
-        host.open) {
-      host.addLate(
-        node,
-      ); // painted by a render object elsewhere: on top of what is there
-    } else {
-      into.addChild(node);
-    }
+    _pushChildren(
+      e,
+      _render,
+      _Context(ro, toView, clip),
+      node,
+      depth + 1,
+      node: node,
+      outer: into,
+      ro: ro,
+      outerParent: parent,
+    );
   }
 
   /// Whether every render object below [anchor] (an off-screen box) lies inside the anchor's own
@@ -586,9 +843,16 @@ class _Walker {
     late final ElementVisitor visit;
     visit = (Element e) {
       if (!ok) return;
-      if ((++_steps & 31) == 0 && now() - _start > limits.budget) {
-        _stopped = true;
-        _truncated = true;
+      if ((++_steps & 31) == 0) {
+        if (_elapsed() > limits.budget) {
+          _stopped = true;
+          _truncated = true;
+        } else if (_scanEnd != null && now() >= _scanEnd!) {
+          // A step's slice is long gone and this subtree is large: give up on the shortcut. The
+          // subtree is then walked the ordinary way, a slice at a time, to the same snapshot.
+          ok = false;
+          return;
+        }
       }
       if (_stopped) {
         return; // the walk is over: what is skipped here is cut anyway

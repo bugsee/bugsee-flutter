@@ -19,6 +19,7 @@ class CrashKind {
     this.name,
     this.layer, {
     this.signal,
+    this.iosSignal,
     this.marker,
     this.expectReport = true,
     this.alsoContains = const [],
@@ -31,6 +32,12 @@ class CrashKind {
 
   /// The signal number the kernel logs and the minidump records (native kinds).
   final int? signal;
+
+  /// The number on iOS where Darwin differs from Linux/Android (`SIGBUS` is 10, 7 is `SIGEMT`).
+  final int? iosSignal;
+
+  /// [signal] as the iOS kernel numbers it.
+  int? get signalOnIos => iosSignal ?? signal;
 
   /// Text that must be in the report's crash entry (the exception's message).
   final String? marker;
@@ -55,15 +62,10 @@ const iosReportSignalNames = <int, String>{
   4: 'SIGILL',
   5: 'SIGTRAP',
   6: 'SIGABRT',
-  7: 'SIGBUS',
+  10: 'SIGBUS', // Darwin's number; 7 is SIGEMT there
   8: 'SIGFPE',
   11: 'SIGSEGV',
 };
-
-/// Kinds whose process dies of the signal on a physical iPhone but whose report the SDK never produced
-/// (`ffi-bus`: no report in 120 s, in 3 of 3 runs, 2026-11-18). A recorded SDK gap, not an expectation: the
-/// matrix keeps it a known gap that flips to a pass the day a report appears.
-const iosKnownNoReport = {'ffi-bus'};
 
 /// The positive control of the absence check (`crash control-async` in the app): not a kind of the
 /// matrix, so the matrix never runs it, and a marker no kind's marker contains.
@@ -73,7 +75,7 @@ const crashKindTable = <CrashKind>[
   CrashKind('ffi-segv', CrashLayer.native, signal: 11),
   CrashKind('ffi-abort', CrashLayer.native, signal: 6),
   CrashKind('ffi-fpe', CrashLayer.native, signal: 8),
-  CrashKind('ffi-bus', CrashLayer.native, signal: 7),
+  CrashKind('ffi-bus', CrashLayer.native, signal: 7, iosSignal: 10),
   CrashKind('ffi-ill', CrashLayer.native, signal: 4),
   CrashKind(
     'java-main',

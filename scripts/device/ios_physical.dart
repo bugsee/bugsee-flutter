@@ -372,10 +372,10 @@ class _Ctx {
           // uncaught Objective-C exception ends in abort (6).
           final died = parseTerminatedSignal(out);
           run.note('[${k.name}] the process died of signal $died');
-          if (k.signal != null) {
+          if (k.signalOnIos != null) {
             run.expect(
-              '[${k.name}] the process died of signal ${k.signal}',
-              died == k.signal,
+              '[${k.name}] the process died of signal ${k.signalOnIos}',
+              died == k.signalOnIos,
               'devicectl: App terminated due to signal $died',
             );
           }
@@ -399,19 +399,11 @@ class _Ctx {
           final reportEvidence = bundle == null
               ? 'none in 120 s'
               : '${bundle.source} ${bundle.type} "${bundle.summary}"';
-          if (iosKnownNoReport.contains(k.name)) {
-            run.knownGap(
-              '[${k.name}] the next launch produced the recovered crash report (SDK 7.1.0 records none for this signal)',
-              bundle != null,
-              reportEvidence,
-            );
-          } else {
-            run.expect(
-              '[${k.name}] the next launch produced the recovered crash report',
-              bundle != null,
-              reportEvidence,
-            );
-          }
+          run.expect(
+            '[${k.name}] the next launch produced the recovered crash report',
+            bundle != null,
+            reportEvidence,
+          );
           if (bundle != null) {
             final crash = bundle.crash;
             final text = jsonEncode(crash ?? bundle.request);
@@ -435,7 +427,7 @@ class _Ctx {
             // by name, as a native exception that nobody handled; the Objective-C kinds record SIGABRT plus
             // an `exception` block whose `reason` is the NSException's reason.
             final reportSignal = (crash?['signal'] as Map?)?['name'];
-            final wantSignal = iosReportSignalNames[k.signal ?? 6];
+            final wantSignal = iosReportSignalNames[k.signalOnIos ?? 6];
             run.expect(
               '[${k.name}] the report records $wantSignal, exception_type native, not handled',
               reportSignal == wantSignal &&

@@ -56,7 +56,8 @@ Future<void> crash(String kind) async {
     case 'ffi-fpe':
       _raise(8);
     case 'ffi-bus':
-      _raise(7);
+      // SIGBUS is 10 on Darwin and 7 on Linux/Android (7 is SIGEMT on Darwin: a different signal).
+      _raise(Platform.isIOS ? 10 : 7);
     case 'ffi-ill':
       _raise(4);
     case 'java-main':

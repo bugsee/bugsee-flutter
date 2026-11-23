@@ -359,7 +359,7 @@ and the Gradle plugin's build id; 180 of 180 checks passed.
 
 | Kind | How | Result |
 |---|---|---|
-| `ffi-segv`, `ffi-abort`, `ffi-fpe`, `ffi-bus`, `ffi-ill` | a real signal raised in the process through `dart:ffi` (a write to address 0; `abort`; `raise` of 8, 7, 4) | the kernel logs `Fatal signal N`; the report is `ndkCrash: true`, `exception_type: native`, the right signal number and name, with a `crash.tombstone` entry |
+| `ffi-segv`, `ffi-abort`, `ffi-fpe`, `ffi-bus`, `ffi-ill` | a real signal raised in the process through `dart:ffi` (a write to address 0; `abort`; `raise` of 8, 7 (10 on iOS: Darwin's SIGBUS), 4) | the kernel logs `Fatal signal N`; the report is `ndkCrash: true`, `exception_type: native`, the right signal number and name, with a `crash.tombstone` entry |
 | `java-main`, `java-thread`, `java-nested` | an uncaught exception on the main thread, on a worker thread, and with a cause chain, thrown from native Java | `FATAL EXCEPTION` in logcat; the report is a crash that is NOT native and names the exception (and, nested, its cause) |
 | `dart-sync-framework`, `dart-async`, `dart-zone`, `dart-isolate`, `dart-platform-dispatcher`, `dart-timer`, `dart-stream` | Dart errors through `FlutterError.reportError`, an unawaited future, `Bugsee.runGuarded`, an isolate with `Bugsee.listenToIsolateErrors`, `PlatformDispatcher.onError`, a `Timer`, a stream error | one error report each, with the carrier and the document checked |
 | `dart-isolate-unlistened` | an error in a spawned isolate nobody listened to | **no report, by design** (documented limit), proved against a positive control in the same setup |
@@ -397,7 +397,7 @@ runs, the first recorded it only partly; each kind's `crash.json` is saved in th
 | `ffi-segv` | 11 | `SIGSEGV`, `SEGV_MAPERR`, addr 0 | none |
 | `ffi-abort` | 6 | `SIGABRT`, `#0` | none |
 | `ffi-fpe` | 8 | `SIGFPE`, `FPE_NOOP` | none |
-| `ffi-bus` | 7 | NO REPORT in 120 s (3 of 3 runs) | - |
+| `ffi-bus` | 7 (`SIGEMT` on Darwin: the earlier stimulus, see below) | NO REPORT in 120 s (3 of 3 runs) | - |
 | `ffi-ill` | 4 | `SIGILL`, `ILL_ILLTRP` | none |
 | `objc-main` | 6 | `SIGABRT`, `#0` | `name: VerifyException`, `reason: verify-objc-main`, 19 frames |
 | `objc-thread` | 6 | `SIGABRT`, `#0` | `name: VerifyException`, `reason: verify-objc-thread`, 8 frames |
@@ -406,15 +406,18 @@ runs, the first recorded it only partly; each kind's `crash.json` is saved in th
 Every report that exists has `exception_type: native`, `handled: false`, `code_type: ARM-64`, 18 to 22 threads (varies per run), a `signatures` list of one hash, and an `sdk`
 block `{type: IOS, version: 7.1.0, build: b65bdca06-9, wrapper: {type: flutter, version: 10.0.0-dev.1, context: {dart, flutter, flutter-engine,
 build-configuration: release}}, options}`. `signal` has `name`, `addr` and `code`, no `number`. The report's summary field is empty. **Found:** an
-uncaught Objective-C exception ends in `SIGABRT` with the NSException in `exception` (`reason` exact, `name` the app's class), and the native `SIGBUS`
-(`raise(7)`) leaves no report at all on SDK 7.1.0 although the process dies of it: recorded as a KNOWN-GAP of the matrix (flips to a pass when a report
-appears), to be reported to the SDK team; whether a hardware bus error (not `raise`) is recorded was not tested. **Harness fixes this found:** the
+uncaught Objective-C exception ends in `SIGABRT` with the NSException in `exception` (`reason` exact, `name` the app's class), and a
+`raise(7)` leaves no report at all on SDK 7.1.0 although the process dies of it. **That 7 was the wrong stimulus:** signal 7 is `SIGEMT` on Darwin, SIGBUS
+is 10 (7 is SIGBUS on Linux/Android only; 8 SIGFPE and 4 SIGILL are the same on both). The app now raises 10 on iOS (`Platform.isIOS ? 10 : 7`), the table
+holds `iosSignal: 10`, and the check is an ordinary expectation (the known-gap marker is gone). So the only thing measured is that SDK 7.1.0 records no
+report for SIGEMT; a real SIGBUS on iOS has NOT been measured (the simulator has no crash reporter, so it cannot produce a report: a physical run
+is needed, and is the next step). **Harness fixes this found:** the
 verification app lost its one-shot `launch` event when it was sent while the Local Network prompt was up (it now keeps and resends events the mock did not
 take), and the harness read `signal.number`, which does not exist. The wrapper-identity guard works on the console. **Expectations now enforced:** the
 terminating signal of every native kind, the report's signal name, `exception_type native`, `handled false`, the `exception.reason` equal to the marker for the
 Objective-C kinds and no exception block for the others. **Not covered:** symbolication (the dSYM was not uploaded), `code` values (`#0`, `FPE_NOOP` look
 SDK-specific and are recorded, not asserted), frames content, Dart routes on a device, a crash during background or before the first frame, other iOS
-versions or devices, a hardware-raised bus error, whether the first launch on a clean install (with the prompt) differs from a keep-install launch beyond the
+versions or devices, SIGBUS (10) on iOS (see above), whether the first launch on a clean install (with the prompt) differs from a keep-install launch beyond the
 prompt.
 
 ## Findings

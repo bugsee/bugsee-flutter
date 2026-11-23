@@ -988,14 +988,20 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       },
     );
 
-    test('every iOS native kind has a report signal name, the known gaps name real kinds', () {
+    test('every iOS native kind has a report signal name; SIGBUS is 10 on Darwin, never 7', () {
       for (final k in crashKindTable.where(
         (k) => k.platforms.contains('ios') && k.signal != null,
       )) {
-        expect(iosReportSignalNames[k.signal], isNotNull, reason: k.name);
+        expect(iosReportSignalNames[k.signalOnIos], isNotNull, reason: k.name);
       }
-      final names = crashKindTable.map((k) => k.name).toSet();
-      expect(names.containsAll(iosKnownNoReport), isTrue);
+      final bus = crashKindTable.firstWhere((k) => k.name == 'ffi-bus');
+      expect([bus.signal, bus.signalOnIos], [7, 10]);
+      expect(iosReportSignalNames[10], 'SIGBUS');
+      // 7 is SIGEMT on Darwin: the table must not call it SIGBUS (the old stimulus raised 7 on iOS).
+      expect(iosReportSignalNames.containsKey(7), isFalse);
+      // The app raises what the table says, per platform.
+      final lab = File('example/lib/crash_lab.dart').readAsStringSync();
+      expect(lab, contains('_raise(Platform.isIOS ? 10 : 7)'));
     });
 
     test('native kinds carry a signal, platform and Dart kinds a marker', () {

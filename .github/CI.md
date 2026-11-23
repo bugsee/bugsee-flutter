@@ -147,9 +147,10 @@ is possible later, but only after SwiftPM and Xcode availability on it are confi
 The rewrite lives on `main`, the default branch (it was `nextgen` until 2026-11-23; that branch is kept as the
 archive of the per-change history and is no longer used). GitHub reads `dependabot.yml` and fires `schedule:`
 triggers only from the default branch, so `native-pins.yml` and `dependabot.yml` work as they are: no
-`target-branch`, and `native-pins.yml` checks out the default tree without a `ref`. Dependabot *security* updates
-use the default branch, where the `com.bugsee*` ignore does not apply; the Bugsee pins are not pub or Gradle
-dependencies of the app, so this is not a risk. The 9.x line is the `release` branch.
+`target-branch`, and `native-pins.yml` checks out the default tree without a `ref`. Without a `target-branch`, the
+`com.bugsee*` ignore rules also apply to Dependabot's security updates (GitHub makes the exception only when
+`target-branch` is set), so a Bugsee pin is never bumped by Dependabot, security fixes included: such upgrades
+are reviewed and made by hand through `native-versions.json`. The 9.x line is the `release` branch.
 
 ## Dependabot, templates
 

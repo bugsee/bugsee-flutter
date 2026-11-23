@@ -137,8 +137,10 @@ boxes on and off, gives the same bytes (lazy and eager lists, secure views, an `
   1.0 at 120 and 240, 4.0 at 30). Unity takes 5% of a frame (min 0.1 ms); a Flutter slice here runs in a quiet stretch where the cost is the
   delay of an input that arrives meanwhile, and 1-2 ms of that is below what is noticed, while a smaller slice only adds timer hops. The
   length is a share of the frame like the walk budget (`frameShare`, 35% when a frame is due) and unlike a fixed 2 ms, so a 120 Hz frame
-  (8.3 ms) keeps its slack. A step ends at the first element boundary after its time (checked every 16 elements); the check of an off-screen
-  box (`_containedBelow`) gives up after twice the slice, and the subtree is then walked the ordinary way, so the output does not change.
+  (8.3 ms) keeps its slack. A step ends at the first element boundary after its time (checked every 16 elements); the scan of one off-screen
+  box (`_containedBelow`, which cannot stop in the middle) gives up after 2000 elements, a count and not a time, and the subtree is then walked
+  the ordinary way, a slice at a time; so the same tree gives the same snapshot however it is sliced (near a node, byte or depth cap the
+  shortcut and the ordinary walk could always differ, since the walk counts the nodes it reserves and refunds).
   The template is written in a step of its own, so the last slice of the walk and the write are two short pieces.
 * **Caps are the walk's.** Nodes, bytes and depth count across slices; a cap reached in any slice marks what it cut as `truncated`, exactly as
   in one piece. The time budget counts **the time spent in slices, not the gaps between them**, and a sliced walk may spend

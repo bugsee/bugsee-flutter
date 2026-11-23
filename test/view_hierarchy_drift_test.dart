@@ -455,6 +455,19 @@ void main() {
         ),
       );
       expect(body(src, 'bool step('), contains('_spent +='));
+      // The scan of an off-screen box gives up on a COUNT (the same tree, the same snapshot however it
+      // is sliced), never on a time.
+      expect(src, contains('static const int _maxScan = 2000;'));
+      expect(
+        body(src, 'bool _containedBelow('),
+        contains('++scanned > _maxScan'),
+      );
+      expect(
+        body(src, 'bool _containedBelow('),
+        isNot(contains('now()')),
+        reason: 'a time limit on the scan would make the output depend on the machine',
+      );
+      expect(doc, contains('gives up after 2000 elements'));
     });
 
     test('a walk that resumes into a changed tree fails closed', () {

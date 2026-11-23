@@ -441,7 +441,6 @@ class HierarchyWalk {
   Duration _spent = Duration.zero;
   Duration _sliceStart = Duration.zero;
   Duration? _sliceEnd;
-  Duration? _scanEnd;
 
   /// Whether the walk is over (complete, failed or [invalid]).
   bool get finished => _phase == _Phase.done;
@@ -457,14 +456,13 @@ class HierarchyWalk {
 
   /// Runs the walk for about [slice] (the whole rest of it when `null`); returns whether it is
   /// [finished]. A step ends at the first element boundary after the slice, so it can overrun by
-  /// one element (and by the check of an off-screen box, which gives up after twice the slice).
+  /// one element (and by the scan of one off-screen box, which gives up after [_maxScan] elements).
   /// Never throws: an error ends the walk with no result (fail closed).
   bool step(Duration? slice) {
     if (_phase == _Phase.done) return true;
     try {
       _sliceStart = now();
       _sliceEnd = slice == null ? null : _sliceStart + slice;
-      _scanEnd = slice == null ? null : _sliceStart + slice * 2;
       switch (_phase) {
         case _Phase.fresh:
           _begin();
@@ -830,11 +828,14 @@ class HierarchyWalk {
   /// box below it would scan its own part again: the boxes on the path down to what failed are
   /// remembered ([_noRecheck]) and answer `false` at once, so the waste is one scan and not one
   /// per level. A box that answers `false` is only walked, as it was before the check existed.
+  static const int _maxScan = 2000;
+
   bool _containedBelow(RenderObjectElement anchor, RenderBox anchorBox) {
     if (_noRecheck.contains(anchorBox)) return false;
     final Size size = anchorBox.size;
     if (!(size.width.isFinite && size.height.isFinite)) return false;
     var ok = true;
+    var scanned = 0;
     // The position being visited, read by the one visitor below (no closure per element): the
     // parent render box and its origin in the anchor's space.
     RenderBox parent = anchorBox;
@@ -847,12 +848,15 @@ class HierarchyWalk {
         if (_elapsed() > limits.budget) {
           _stopped = true;
           _truncated = true;
-        } else if (_scanEnd != null && now() >= _scanEnd!) {
-          // A step's slice is long gone and this subtree is large: give up on the shortcut. The
-          // subtree is then walked the ordinary way, a slice at a time, to the same snapshot.
-          ok = false;
-          return;
         }
+      }
+      if (++scanned > _maxScan) {
+        // A subtree this large is not scanned in one go (a step cannot stop inside the scan): the
+        // shortcut is given up and the subtree is walked the ordinary way, a slice at a time. The
+        // limit is a COUNT, not a time, so the same tree gives the same snapshot however it is
+        // sliced (near a cap the shortcut and the walk can differ, as they always could).
+        ok = false;
+        return;
       }
       if (_stopped) {
         return; // the walk is over: what is skipped here is cut anyway

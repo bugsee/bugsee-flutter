@@ -311,6 +311,55 @@ void main() {
       );
     });
 
+    testWidgets('an off-screen box too large to scan in one go', (
+      tester,
+    ) async {
+      // 2500 children inside one off-screen box: well over the scan limit, so the shortcut is
+      // given up and the subtree is walked the ordinary way.
+      final Widget tree = host(
+        Stack(
+          children: [
+            const Marker(width: 40, height: 40),
+            Positioned(
+              left: 1000,
+              top: 1000,
+              child: SizedBox(
+                width: 50,
+                height: 50,
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < 2500; i++)
+                      const Positioned(
+                        left: 0,
+                        top: 0,
+                        width: 1,
+                        height: 1,
+                        child: Marker(width: 1, height: 1),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      await check(tester, tree);
+      // The slice length does not change the answer, near a cap either: the limit on the scan is a
+      // count, not a time.
+      for (final limits in const [
+        HierarchyLimits(maxNodes: 9, budget: Duration(hours: 1)),
+        HierarchyLimits(maxDepth: 3, budget: Duration(hours: 1)),
+        HierarchyLimits(maxBytes: 2000, budget: Duration(hours: 1)),
+      ]) {
+        final one = buildViewHierarchy(limits: limits, clock: TickClock().call);
+        for (final Duration slice in slices) {
+          final HierarchySnapshot? got = sliced(slice, limits: limits);
+          expect(got?.render(), one?.render(), reason: '$slice');
+          expect(got?.truncated, one?.truncated, reason: '$slice');
+        }
+      }
+    });
+
     testWidgets('a deep tree', (tester) async {
       Widget deep(int n) => n == 0
           ? const Marker()

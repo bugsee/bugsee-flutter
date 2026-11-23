@@ -1,0 +1,10 @@
+*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+pid: 23155, tid: 527685088504, name 1.ui
+os: android arch: arm64 comp: yes sim: no
+build_id: 'a579af9d76c8acd8528219258f174ae5'
+isolate_dso_base: 78fa45f000, vm_dso_base: 0
+isolate_instructions: 78fa52f000, vm_instructions: 0
+    #00 abs 00000078fa6493c7 virt 00000000001ea3c7 _kDartSnapshotText+0x11a3c7
+    #01 abs 00000078fa7281b7 virt 00000000002c91b7 _kDartSnapshotText+0x1f91b7
+    #02 abs 00000078fa727e57 virt 00000000002c8e57 _kDartSnapshotText+0x1f8e57
+<asynchronous suspension>

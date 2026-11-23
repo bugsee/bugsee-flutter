@@ -383,7 +383,7 @@ harness itself, and neither is a product defect. (1) The first full run was INVA
 banner prints 10 (`2a88ea7fbf`); the build guard refused the runs, and the pin now comes from a run. (2) Scenario 4's offline symbolization check failed:
 Flutter 3.50's own `flutter symbolize` answers "Cannot locate isolate instructions section in snapshot" on the symbols of a 3.50 build, while
 `package:native_stack_traces` 0.7.1 decodes the same file and stack to the app frames (`Bugsee.logUnhandledException`, `_command`, `_poll`); the harness now uses
-the package. The backend's `dart_symbolize` against Dart 3.14 snapshots was NOT run: it is the tool this check stands in for, and it is unverified.
+the package. The backend's `dart_symbolize` was run on 2026-11-18 (see the next paragraph).
 
 **iOS crash matrix on a physical iPhone (2026-11-18; iPhone XS, iOS 18.7.9, release build, iOS SDK 7.1.0, console banner `Bugsee IOS SDK ver:7.1.0
 build:b65bdca06-9`, which equals the `ios.sdkBuild` pin; wrapper `flutter/10.0.0-dev.1`).** Three full runs (the first two answered the prompt by hand: 43 and 49 checks;
@@ -419,6 +419,21 @@ Objective-C kinds and no exception block for the others. **Not covered:** symbol
 SDK-specific and are recorded, not asserted), frames content, Dart routes on a device, a crash during background or before the first frame, other iOS
 versions or devices, SIGBUS (10) on iOS (see above), whether the first launch on a clean install (with the prompt) differs from a keep-install launch beyond the
 prompt.
+
+**Backend symbolizer against a Dart 3.14 build (2026-11-18, offline, no device):** the real `exception` entry and `app.android-arm64.symbols` of the Flutter 3.50.0
+release build above, run through `dart_symbolize` built from `bugsee-symbolication-aux` `dart-symbolize/` (commit `06db90f`, Dart SDK 2.19.6 as in its `version.txt`,
+and also Dart 3.14). Fed what the worker feeds it (`symbolfiles/flutter.py` of `bugsee-background-worker` cuts everything before the first `#00`; untrimmed and trimmed lines both tried, same result), it
+returns `Bugsee.logUnhandledException (.../bugsee.dart:638:30)`, `_command`, `_poll`. Fed the stack WITH its header it crashes (`Bad state: Future already
+completed`), as `flutter symbolize` 3.50 (`native_stack_traces` 0.6.1) does ("Cannot locate isolate instructions section in snapshot"). Cause: Dart 3.14
+symbols have `_kDartSnapshotText`, not `_kDartIsolateSnapshotInstructions` (`llvm-objdump --syms`), which the header-based path of the older decoders needs;
+the `native_stack_traces` 0.7.0 changelog reads "Adjusts snapshot readers for the removal of the VM isolate." (0.7.0 itself was not run; 0.6.1 fails, 0.7.1 works), and `dart_symbolize` with 0.7.1 in place of its vendored
+copy decodes both forms. The backend works today only because it strips the header and the frames carry a `virt` address. The full table is in
+`doc/exceptions.md`. The regression fixture is `test/fixtures/exceptions/real_obfuscated_android_arm64_dart_3_14_trace.txt`.
+iOS: a Flutter 3.50 `--release --obfuscate --split-debug-info` build (`example`, `lib/verify_main.dart`, no codesign) writes `app.ios-arm64.symbols`, a Mach-O
+file (`file`: "Mach-O 64-bit dSYM companion file arm64") with `LC_UUID` and the symbols `_kDartSnapshotText`, `_kDartSnapshotData` and `_kDartSnapshotBss`.
+`dart_symbolize` (and 0.7.1) read it: a SYNTHETIC header-less stack (frames written by hand from the file's own symbol addresses, not captured on a phone)
+came out as the right functions with file:line. Not verified: a real iOS stack (its header, whether its frames carry `virt`, the form of its `build_id`,
+which should be the `LC_UUID` as 32 hex digits, which the worker looks up by that and by the upper-case dashed UUID), and the iOS upload path.
 
 ## Findings
 
@@ -465,7 +480,8 @@ For follow-up (SDK or environment, not fixed here):
 * A handler that overruns the SDK's deadline, and a hot restart while a delivery is in flight.
 * The Gradle plugin 4.0.6 broken arm (only the fixed arm was run; the detection is unit-tested).
 * x86_64 and armeabi-v7a ABIs, a second display, rotation, split screen, a density change *during* a report.
-* Server-side processing (symbolization through the real worker, real tokens): the mock API stands in for the backend.
+* Server-side processing (real tokens, the symbols upload, the worker as a whole): the mock API stands in for the backend. Its `dart_symbolize` was run offline on
+  the Android arm64 Dart 3.14 artifacts only (see scenario 4); an iOS stack was not.
 * Dart `Isolate` errors and `reportAsCrash: true` in a release build.
 
 ## Extending it

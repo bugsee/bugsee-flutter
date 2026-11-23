@@ -88,7 +88,10 @@ Other gaps, none with an issue:
   a late completion re-persists) were not measured.
 * The Gradle plugin 4.0.6 failure arm was not run; `optimizeExtensionsLoading=false` and the feedback safety-net path were not run.
 * A real token and the production backend: the harness uses a loopback stand-in; server-side symbolication was run offline with the
-  worker's own tool.
+  backend's `dart_symbolize` (2026-11-18, `doc/exceptions.md`): it decodes the Android arm64 stack of a Dart 3.14 build only because the worker strips the
+  stack's header (with the header it crashes, as Flutter 3.50's `flutter symbolize` does: `_kDartSnapshotText`, no `_kDartIsolateSnapshotInstructions`);
+  its vendored `native_stack_traces` copy is from 2023 and needs a bump to 0.7.x to stop depending on that (owner: the backend; not changed here). A real iOS stack
+  was not decoded.
 * Secure views do not cover the first frame of a newly appearing region (documented on the widget); iOS verified in portrait only. Android startup: the SDK's `wrapper-hold` is on (found by the API audit of 2026-11-12: the wrapper never used it), so the first ~4 s of a session are not recorded and, while the hold is on, no secure view is recorded (a time cap ends it even if Dart has not published, so this is not a guarantee past the cap); measured on the Android phone in a profile build (hold released on the first frame), a debug build there reaches its first frame late (the 10 s cap released it). iOS has no equivalent.
 * The Android logcat echo of `print` is not governed by the Dart log filter (needs a native filter; documented).
 * `tvOS`, `visionOS`, the Android leak module, `x86_64` and `armeabi-v7a` ABIs, a second display, rotation and split screen were not covered.

@@ -213,7 +213,7 @@ It zips `build/symbols/*.symbols` with a manifest (`{'target':'flutter','items':
 `POST {endpoint}apps/{token}/symbols` (`{uuid, version, build}`), then `PUT`s the zip to the presigned URL it
 returns. Keep the symbols of every release you ship; the build id ties a stack to them.
 
-**Verifying a build's symbols against a captured stack, offline** (the same tool the worker runs):
+**Verifying a build's symbols against a captured stack, offline:**
 
 ```bash
 dart scripts/verify_symbolization.dart --symbols build/symbols/app.android-arm64.symbols \
@@ -221,13 +221,44 @@ dart scripts/verify_symbolization.dart --symbols build/symbols/app.android-arm64
    [--tool <dart-symbolize>/dist/Darwin-arm64/dart_symbolize]
 ```
 
+Without `--tool` the script decodes with `package:native_stack_traces` (0.7.1); with `--tool` it runs the backend's `dart_symbolize` on the
+stack from the first `#00` with a leading empty line dropped and every line trimmed (the rule of the worker port in `test/exceptions_worker_contract_test.dart`).
+
+What the backend does (read from the code, 2026-11-18): the worker (`crash/managed/dart.py` and `symbolfiles/flutter.py` in the private
+`bugsee-background-worker`) takes the build id from `build_id: '...'` in `originalStackTrace`, looks that id up among the symbols files the
+customer uploaded, cuts everything before the first `#00` (the `***` header, `isolate_instructions` and all) and pipes the rest to
+`dart_symbolize <symbols file>`. `dart_symbolize` is built from `dart-symbolize/` of `bugsee-symbolication-aux` (Dart SDK 2.19.6 pinned in its
+`version.txt`; it vendors a 2023 copy of `native_stack_traces` with no `_kDartSnapshotText` support, and has Mach-O support).
+
 Measured: a release arm64 build of a probe app (`--obfuscate --split-debug-info`) threw an error through
 `Bugsee.logException` and the root-zone hook on the emulator; the bundle was read; its `originalStackTrace` (vendored:
 `test/fixtures/exceptions/real_obfuscated_android_arm64_trace.txt`, the whole entry in
 `android_7_4_2_obfuscated_entry.json`) has build id `7a3ef930...`, which is inside that build's `.symbols` file, and
 both `dart_symbolize` (worker's tool) and `flutter symbolize` turned it into `level3 / level2 / level1 (obf_main.dart:12..14)`.
-(Measured again at Flutter 3.50 / Android 7.6.0: `flutter symbolize` 3.50 fails on the symbols of a 3.50 build, "Cannot locate isolate instructions section in snapshot"; `package:native_stack_traces` 0.7.1, which the harness uses now, decodes them; the worker's `dart_symbolize` against Dart 3.14 snapshots is not verified.) The same script fails (`build id ... is another build's symbols`) with another build's symbols file. The symbols file
+
+Dart 3.14 (Flutter 3.50.0, Android SDK 7.6.0, measured 2026-11-18 on the stack of a real release build, its text vendored in
+`test/fixtures/exceptions/real_obfuscated_android_arm64_dart_3_14_trace.txt`): the stack prints `_kDartSnapshotText+0x...` and
+`vm_instructions: 0`, and the symbols file has the dynamic symbols `_kDartSnapshotText`, `_kDartSnapshotData` and `_kDartSnapshotBuildId` and no
+`_kDartIsolateSnapshotInstructions` (`llvm-objdump --syms`). A decoder that reads the header looks for that symbol and fails:
+
+| Decoder | Stack with its header | Stack from `#00` (what the worker sends) |
+| --- | --- | --- |
+| `dart_symbolize` as the backend builds it (aux source, Dart 2.19.6) | FAILS (`Bad state: Future already completed` after the header lines) | symbolized (`Bugsee.logUnhandledException`, `_command`, `_poll` with file:line) |
+| the same source built with Dart 3.14 | FAILS the same way | symbolized |
+| `flutter symbolize` of Flutter 3.50.0 (`native_stack_traces` 0.6.1) | FAILS: "Cannot locate isolate instructions section in snapshot" | symbolized |
+| `native_stack_traces` 0.7.1 (its 0.7.0 changelog: "Adjusts snapshot readers for the removal of the VM isolate." 0.7.0 itself was not run) | symbolized | symbolized |
+| `dart_symbolize` with its vendored copy replaced by 0.7.1 | symbolized | symbolized |
+
+The "from `#00`" column was measured with both forms: the untrimmed text `symbolfiles/flutter.py` passes (a leading newline and the 4-space indent of each frame) and the trimmed lines; all three builds (Dart 2.19.6, Dart 3.14, 0.7.1 vendored) give the same frames for both.
+
+So the backend decodes a Dart 3.14 stack because it strips the header and the frames carry a `virt` address (the decoder falls back to it when it cannot
+map the symbol name), not because it understands the new layout. That holds as long as the worker keeps stripping the header and the
+frames keep their `virt` field; the build-id lookup is not affected (the `.note.gnu.build-id` section is still there). Not verified: the uploaded
+symbols file reaching the worker through the production symbols endpoint (the 9.x `symbols.py` uploader is not in this repository), Flutter 3.41 on a device, and iOS (below).
+The script also fails (`build id ... is another build's symbols`) with another build's symbols file. The symbols file
 is not committed (it holds the build machine's paths).
+
+iOS (a Mach-O symbols file with an `LC_UUID`): what was and was not checked is in `doc/verification.md`, scenario 4, "Backend symbolizer against a Dart 3.14 build".
 
 ## 6. Limits (known, not bugs)
 

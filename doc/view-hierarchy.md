@@ -159,8 +159,14 @@ boxes on and off, gives the same bytes (lazy and eager lists, secure views, an `
 Measured on the host in a `flutter test` run (JIT, an eager 1000-row list of ~500 nodes, 60 walks, three rounds): the old recursive
 walker 2.5 / 1.7 / 1.4 ms, the new walker in one step 2.5 / 1.6 / 1.3 ms, the same walk sliced 2.4 / 1.6 / 1.3 ms in total with a longest slice
 of 3.9 / 2.0 / 1.7 ms (the first round is warm-up): the explicit stack costs no more than the recursion. **Not measured on a device**: no
-frame timing with slices on the Android phone or an iPhone (see PLAN.md), so the gain in dropped frames and the p99 interval is not quantified;
-the numbers above (10 ms lazy / 30 ms eager on the phone) are the reason, not a result.
+frame timing with slices on the Android phone or an iPhone, so the gain in dropped frames and the p99 interval is not quantified;
+the numbers above (10 ms lazy / 30 ms eager on the phone) are the reason, not a result. The harness exists and was tried once
+(2026-11-23, WOD-LX1 under the shared device lock): the profile APK built, but the phone went `offline` over USB before the install
+(`usb_osx.cpp: Could not open interface`) and stayed so for ~8 minutes; the adb server was not restarted, the lock was released and
+nothing was installed. `example/integration_test/view_hierarchy_slicing_timing_test.dart` (analyzed, never run: its numbers are unknown; run with `flutter drive --profile`, command in its header)
+compares, with the publisher doing real walks, the walk in one piece with the 12 ms budget (what shipped before), in one piece with the
+100 ms budget (the same work as the slices) and sliced; per cycle it schedules an "input" timer 1 ms after a walk starts and records how late
+it runs (how long the walk held the event loop), plus the engine's frame intervals and spans over each trial.
 
 A slice is a **target, not a bound**. Flutter offers no resumable enumeration of an element's children, so the children of ONE level are listed
 in one go (`_pushChildren`, what the old walk also did through its callback; a level of 16k children costs ~7 ms of Flutter's own visit on the

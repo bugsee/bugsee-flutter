@@ -20,6 +20,7 @@ import '../scripts/device/core/lan_host.dart';
 import '../scripts/device/core/expectations.dart';
 import '../scripts/device/core/image.dart';
 import '../scripts/device/core/crash_kinds.dart';
+import '../scripts/device/core/e2e.dart';
 import '../scripts/device/core/log_parsers.dart';
 import '../scripts/device/core/symbols.dart';
 import '../scripts/device/core/zip.dart';
@@ -1505,5 +1506,140 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         expect(failing.status, Status.fail);
       },
     );
+  });
+
+  group('the end-to-end symbolication run (e2e_symbolication.dart)', () {
+    const post200 =
+        'HTTP POST https://api.bugsee.com/v2/apps/<APP_TOKEN>/symbols -> 200 (request body 90 bytes)\n';
+
+    test('redact removes every secret and ignores trivial ones', () {
+      const t = 'GET /apps/app-token-secret/symbols server=SRV-TOKEN-1234';
+      final r = redact(t, ['app-token-secret', 'SRV-TOKEN-1234', 'ab']);
+      expect(r, isNot(contains('app-token')));
+      expect(r, isNot(contains('SRV-TOKEN')));
+      expect(r.split('<REDACTED>').length, 3);
+    });
+
+    test('events of another run are dropped; a truncated line does not throw', () {
+      const console =
+          'noise\nE2E|{"kind":"start","run":"9.1.1","phase":0}\n'
+          'E2E|{"kind":"start","run":"OLD","phase":0}\nE2E|{"kind":"sta';
+      final e = e2eEvents(console, '9.1.1');
+      expect(e, hasLength(1));
+      expect(e.single['phase'], 0);
+    });
+
+    test('symbols.py exiting 0 after a refused POST is NOT an upload', () {
+      // the pinned script returns None from a non-2xx POST and exits 0
+      expect(symbolsUploadProblems('', 0), isNotEmpty);
+      expect(
+        symbolsUploadProblems(
+          'HTTP POST https://x/apps/<APP_TOKEN>/symbols -> 403 (request body 90 bytes)\n',
+          0,
+        ),
+        anyElement(contains('403')),
+      );
+      expect(symbolsUploadProblems(post200, 0), anyElement(contains('no PUT')));
+      expect(
+        symbolsUploadProblems(
+          '${post200}HTTP PUT https://s3.example/k?<query-dropped> -> 200 (request body 5 bytes)\n',
+          0,
+        ),
+        isEmpty,
+      );
+      expect(
+        symbolsUploadProblems(
+          '${post200}HTTP PUT https://s3/k -> 403 (request body 1 bytes)\n',
+          0,
+        ),
+        anyElement(contains('403')),
+      );
+    });
+
+    test('the device run needs all four phases, launched, release, two crashes', () {
+      List<Map<String, Object?>> good() => [
+        for (var p = 0; p < 4; p++) ...[
+          {'kind': 'start', 'phase': p, 'mode': 'release', 'os': 'ios'},
+          {'kind': 'launch', 'result': 'launched'},
+          if (p == 0) {'kind': 'reported'},
+          if (p == 1 || p == 2) {'kind': 'crashing'},
+        ],
+      ];
+      expect(phaseProblems(good(), os: 'ios', release: true), isEmpty);
+      expect(
+        phaseProblems(good().sublist(4), os: 'ios', release: true),
+        isNotEmpty,
+      );
+      expect(
+        phaseProblems(
+          good()
+              .map((e) => e['kind'] == 'start' ? {...e, 'mode': 'debug'} : e)
+              .toList(),
+          os: 'ios',
+          release: true,
+        ),
+        anyElement(contains('release')),
+      );
+      expect(
+        phaseProblems(
+          good()
+              .map(
+                (e) => e['kind'] == 'launch'
+                    ? {...e, 'result': 'already-running'}
+                    : e,
+              )
+              .toList(),
+          os: 'ios',
+          release: true,
+        ),
+        isNotEmpty,
+      );
+    });
+
+    test('run ids are unique per minute and valid as an iOS short version', () {
+      final a = runIdFor(DateTime(2026, 11, 23, 14, 5));
+      expect(a, '9.1123.1405');
+      expect(runIdFor(DateTime(2026, 11, 23, 14, 6)), isNot(a));
+      expect(RegExp(r'^\d+\.\d+\.\d+$').hasMatch(a), isTrue);
+    });
+
+    test('the symbols file must be the platform format', () {
+      expect(symbolsFormat([0x7f, 0x45, 0x4c, 0x46, 2, 1]), 'elf');
+      expect(symbolsFormat([0xcf, 0xfa, 0xed, 0xfe, 12, 0]), 'macho');
+      expect(symbolsFormat([0x50, 0x4b, 3, 4]), isNull);
+    });
+
+    test('a backend report with raw frames or without the names is not symbolicated', () {
+      const good =
+          '#0 e2eHandledSite (e2e_main.dart:40)\n#1 e2eUnhandledSite\n#2 e2eUncaughtThrower\nAppDelegate';
+      const dart = ['e2eHandledSite', 'e2eUnhandledSite', 'e2eUncaughtThrower'];
+      expect(
+        readbackProblems(
+          [good],
+          expectedDartNames: dart,
+          expectedNativeNames: ['AppDelegate'],
+        ),
+        isEmpty,
+      );
+      expect(
+        readbackProblems(
+          ['#0 abs 0000 virt 1234 _kDartSnapshotText+0x42'],
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeNames: [],
+        ),
+        isNotEmpty,
+      );
+      expect(
+        readbackProblems([], expectedDartNames: [], expectedNativeNames: []),
+        anyElement(contains('nothing was verified')),
+      );
+      expect(
+        rawFrameLines(
+          '    #00 abs 0000007f virt 000000000012 _kDartSnapshotText+0x42 (x)',
+        ),
+        hasLength(1),
+      );
+      expect(rawFrameLines('#0 e2eHandledSite (e2e_main.dart:40)'), isEmpty);
+    });
   });
 }

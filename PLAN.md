@@ -27,7 +27,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 | Device verification harness (emulator and simulator) | Done, not in CI | [verification](doc/verification.md) |
 | Documentation pass, migration guide | Done (this pass) | [doc/README.md](doc/README.md) |
 | **Not exposed on purpose** | APM transactions and spans, the appearance system, `relaunch`, secure rectangles and activities (replaced by `BugseeSecureView`), `deleteCollectedDataOnDevice`, native views | [api-surface](doc/api-surface.md) |
-| **Not verified** | any physical device; iOS recovered crash reports and exception bundles (simulator limits); a valid token and the production backend | [verification](doc/verification.md) |
+| **Not verified** | the production backend; what a backend (apidev, 2026-11-23) made of the uploaded symbols and crashes: the symbolicated frames were not read (no server token), see scenario 11 | [verification](doc/verification.md) |
 
 ## Decisions taken
 
@@ -87,7 +87,12 @@ Other gaps, none with an issue:
   reports for native signals, Objective-C exceptions and a Swift trap; a `raise(7)`, which is SIGEMT on Darwin and not SIGBUS (10), left no report; SIGBUS itself is not yet measured on a device). The workbook's iOS recovery claims (off-main, capped,
   a late completion re-persists) were not measured.
 * The Gradle plugin 4.0.6 failure arm was not run; `optimizeExtensionsLoading=false` and the feedback safety-net path were not run.
-* A real token and the production backend: the harness uses a loopback stand-in; server-side symbolication was run offline with the
+* **End-to-end symbolication (2026-11-23, `doc/verification.md` scenario 11): symbols uploaded, backend result NOT read.** The two app tokens available exist on
+  `apidev.bugsee.com` only (production answers `ApplicationNotFoundError`), so the runs used apidev: Dart symbols (`symbols.py`) and iOS dSYMs (`bugsee-cli`) were accepted,
+  an obfuscated release build crashed on an iPhone XS and the Android phone, reports were built and (by the device log) handed to the SDK; but reading the issues back
+  needs an organisation server token or a dashboard login that the run did not have, so nothing says the backend symbolicated Dart 3.14 or iOS stacks (the header-stripping
+  risk below is still open), and Android native symbols through the Gradle plugin are unconfirmed. Next step: look at apidev versions `9.1123.2012` (iOS) and `9.1123.2016` (Android).
+* A production-backend run: not done (no production tokens); the harness otherwise uses a loopback stand-in; server-side symbolication was run offline with the
   backend's `dart_symbolize` (2026-11-18, `doc/exceptions.md`): it decodes the Android arm64 stack of a Dart 3.14 build only because the worker strips the
   stack's header (with the header it crashes, as Flutter 3.50's `flutter symbolize` does: `_kDartSnapshotText`, no `_kDartIsolateSnapshotInstructions`);
   its vendored `native_stack_traces` copy is from 2023 and needs a bump to 0.7.x to stop depending on that (owner: the backend; not changed here). A real iOS stack

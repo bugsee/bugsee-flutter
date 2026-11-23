@@ -3,6 +3,11 @@
 A rewrite for the Bugsee 7.x native SDKs (Android 7.6.0, iOS 7.1.0). **Not published yet; a prerelease.** Existing 9.x apps
 should stay on 9.x: there is no compatibility layer (the decision is open), see `doc/migration-from-9x.md`.
 
+### Known gaps
+
+* Symbolication was exercised end to end up to the upload (Dart symbols and iOS dSYMs accepted by apidev, obfuscated release builds crashed on an iPhone XS and an
+  Android phone) but the backend's symbolicated frames were not read back, and the production endpoint was not used (`doc/verification.md` scenario 11).
+
 ### Features
 
 * **Launch and configuration.** `Bugsee.launch(token, {options})` returning `LaunchResult` (`launched`, `alreadyRunning`, `deferred`),

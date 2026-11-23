@@ -43,10 +43,16 @@ List<String> publishViolations(String name, String text) {
   final realPublish = RegExp(
     r'(?:(?:flutter|dart) pub publish|publish_feedback\.sh --publish)',
   );
-  bool isReal(String l) =>
-      realPublish.hasMatch(l) &&
-      !l.contains('--dry-run') &&
-      !l.contains('--to-archive=');
+  // Each command of a line is classified on its own: `pub publish --dry-run && pub publish --force`
+  // is a real publish.
+  bool isReal(String l) => l
+      .split(RegExp(r'&&|\|\||;|\|'))
+      .any(
+        (c) =>
+            realPublish.hasMatch(c) &&
+            !c.contains('--dry-run') &&
+            !c.contains('--to-archive='),
+      );
   if (!live.contains('\njobs:')) return out;
   final jobs = jobsOf(live);
   for (final e in jobs.entries) {
@@ -84,11 +90,39 @@ List<String> publishViolations(String name, String text) {
         !needs.group(1)!.split(',').map((e) => e.trim()).contains('gate')) {
       out.add('$where: a publishing job must need the gate job');
     }
-    for (final step in job.split(RegExp(r'\n      - '))) {
-      if (step.split('\n').any(isReal) &&
-          !step.contains("if: github.event_name == 'push'")) {
+    // The job runs after a SUCCESSFUL gate: no condition may override that (`always()` runs a job
+    // after a failed need), and a failed gate must not be tolerated.
+    final jobIf = RegExp(r'^    if: (.*)$', multiLine: true).firstMatch(job);
+    if (jobIf != null &&
+        RegExp(r'always\(\)|cancelled\(\)|failure\(\)')
+            .hasMatch(jobIf.group(1)!)) {
+      out.add(
+        '$where: a job-level if must not run the job after a failed gate',
+      );
+    }
+    if (live.contains('continue-on-error')) {
+      out.add('$where: continue-on-error would let a failed gate pass');
+    }
+    final steps = job.split(RegExp(r'\n      - '));
+    for (final step in steps) {
+      if (!step.split('\n').any(isReal)) continue;
+      // `push` required, alone or AND-ed with more (never OR-ed with another event).
+      final cond = RegExp(r'^\s+if: (.*)$', multiLine: true).firstMatch(step);
+      if (cond == null ||
+          !RegExp(r"^github\.event_name == 'push'( && [^|]*)?$")
+              .hasMatch(cond.group(1)!.trim())) {
         out.add('$where: a real publish step must run on a tag push only');
       }
+    }
+    // pub.dev OIDC: setup-dart exchanges the runner token for PUB_TOKEN; before the publish.
+    final realAt = steps.indexWhere((st) => st.split('\n').any(isReal));
+    final oidcAt = steps.indexWhere(
+      (st) => st.contains('uses: dart-lang/setup-dart@v1'),
+    );
+    if (oidcAt < 0 || oidcAt > realAt) {
+      out.add(
+        '$where: a publishing job must run dart-lang/setup-dart (the pub.dev OIDC token) before the publish',
+      );
     }
   }
   if (isRelease && jobs.containsKey('gate')) {
@@ -684,6 +718,63 @@ void main() {
         ),
         contains(contains('tag push only')),
       );
+      // A dry run chained to a real publish is a real publish.
+      expect(
+        v(
+          'ci.yml',
+          swap(
+            ci,
+            '- run: flutter pub publish --dry-run',
+            '- run: flutter pub publish --dry-run && flutter pub publish --force',
+          ),
+        ),
+        contains(contains('only release.yml publishes')),
+      );
+      // A condition that also admits a manual run.
+      expect(
+        v(
+          'release.yml',
+          release.replaceAll(
+            "if: github.event_name == 'push' && steps.live.outputs.state != 'live'",
+            "if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
+          ),
+        ),
+        contains(contains('tag push only')),
+      );
+      // A publishing job that runs after a failed gate.
+      expect(
+        v(
+          'release.yml',
+          swap(
+            release,
+            "    needs: [gate]\n    # A manual run",
+            "    needs: [gate]\n    if: always()\n    # A manual run",
+          ),
+        ),
+        contains(contains('after a failed gate')),
+      );
+      expect(
+        v(
+          'release.yml',
+          swap(
+            release,
+            '    timeout-minutes: 45\n    # checks: read',
+            '    timeout-minutes: 45\n    continue-on-error: true\n    # checks: read',
+          ),
+        ),
+        contains(contains('continue-on-error')),
+      );
+      // No pub.dev OIDC setup before the publish (nothing would authenticate it).
+      expect(
+        v(
+          'release.yml',
+          release.replaceAll(
+            RegExp(r'      - uses: dart-lang/setup-dart@v1\n(?:        .*\n)+'),
+            '',
+          ),
+        ),
+        contains(contains('dart-lang/setup-dart')),
+      );
       expect(v('release.yml', release), isEmpty);
     });
 
@@ -747,6 +838,12 @@ void main() {
       ]) {
         expect(gate, contains(cmd), reason: cmd);
       }
+      expect(
+        live,
+        contains("sdk: '${flutterPin['dart']}'"),
+        reason:
+            'the Dart of the OIDC setup is the one the floor Flutter bundles',
+      );
       final floor = "flutter-version: '${flutterPin['min']}'";
       expect(
         "flutter-version: '".allMatches(live).length,

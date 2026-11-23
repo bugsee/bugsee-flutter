@@ -153,6 +153,12 @@ jobs:
         run: |
           state="$(scripts/pub_dev_status.sh status bugsee_flutter "$VERSION")"
           echo "state=$state" >> "$GITHUB_OUTPUT"
+      # Exchanges the runner's OIDC token for the pub.dev credential (PUB_TOKEN); the Flutter action
+      # does not. Right before the upload: the token is short-lived.
+      - uses: dart-lang/setup-dart@v1
+        if: github.event_name == 'push' && steps.live.outputs.state != 'live'
+        with:
+          sdk: '3.14.0'   # what Flutter 3.50.0 bundles; native-versions.json flutter.dart
       - name: Publish bugsee_flutter
         if: github.event_name == 'push' && steps.live.outputs.state != 'live'
         run: flutter pub publish --force
@@ -202,6 +208,11 @@ jobs:
           msg="bugsee_flutter_feedback is not on pub.dev yet: automated publishing needs an existing package. Publish the first version by hand (PLAN.md, release checklist), then enable automated publishing for it. SKIPPED."
           echo "::warning::$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+      # The pub.dev credential, minted after the wait above (it is short-lived).
+      - uses: dart-lang/setup-dart@v1
+        if: github.event_name == 'push' && steps.live.outputs.state == 'missing-version'
+        with:
+          sdk: '3.14.0'
       - name: Publish bugsee_flutter_feedback
         if: github.event_name == 'push' && steps.live.outputs.state == 'missing-version'
         run: scripts/publish_feedback.sh --publish --yes

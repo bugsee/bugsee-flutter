@@ -222,10 +222,11 @@ class _Job {
         );
         File('$_workDir/build.log')
             .writeAsStringSync(redact('${b.stdout}\n${b.stderr}', _secrets));
-        if (!b.ok)
+        if (!b.ok) {
           invalid(
             'flutter build failed (see $_workDir/build.log): ${redact(b.stderr, _secrets)}',
           );
+        }
         if (!ios) {
           final up = RegExp(
             r'^.*(?:[Bb]ugsee).*(?:upload|symbol).*$',
@@ -246,10 +247,11 @@ class _Job {
         .whereType<File>()
         .where((f) => f.path.endsWith('.symbols'))
         .toList();
-    if (files.isEmpty)
+    if (files.isEmpty) {
       invalid(
         'no .symbols file in $symbolsDir: --split-debug-info did not write any',
       );
+    }
     for (final f in files) {
       final fmt = symbolsFormat(f.openSync().readSync(8));
       final want = ios ? 'macho' : 'elf';
@@ -284,8 +286,9 @@ class _Job {
     final dl = await sh(['curl', '-fsSL', _symbolsPy, '-o', py]);
     if (!dl.ok) invalid('could not fetch symbols.py: ${dl.text}');
     final sha = (await sh(['shasum', '-a', '256', py])).text.split(' ').first;
-    if (sha != _symbolsPySha)
+    if (sha != _symbolsPySha) {
       invalid('symbols.py sha256 is $sha, pinned $_symbolsPySha');
+    }
     final venv = Platform.environment['E2E_PYTHON'] ?? 'python3';
     say(
       'uploading the Dart symbols with the pinned symbols.py (-t <token> -d <dir> -v $runId, default endpoint)',
@@ -305,8 +308,9 @@ class _Job {
     final out = redact('${r.stdout}\n${r.stderr}', _secrets);
     say(out.trim());
     final problems = symbolsUploadProblems(out, r.code);
-    if (problems.isNotEmpty)
+    if (problems.isNotEmpty) {
       invalid('the Dart symbols upload: ${problems.join('; ')}');
+    }
     say('Dart symbols uploaded (POST and PUT both 2xx)');
 
     if (ios) {
@@ -319,10 +323,11 @@ class _Job {
           .map((d) => d.path)
           .toList();
       say('dSYMs of the build: $dsyms');
-      if (dsyms.isEmpty)
+      if (dsyms.isEmpty) {
         invalid(
           'no .dSYM was produced by the release build: the native iOS frames cannot be symbolicated',
         );
+      }
       final dir = '$_workDir/dsyms';
       Directory(dir).createSync(recursive: true);
       for (final d in dsyms) {
@@ -466,8 +471,9 @@ class _Job {
       Duration timeout = const Duration(minutes: 2),
     }) => sh([adb, '-s', device, ...args], timeout: timeout);
     final state = (await a(['get-state'])).text;
-    if (state != 'device')
+    if (state != 'device') {
       invalid('$device is "$state" over adb, not "device"');
+    }
     final apk = '$example/build/app/outputs/flutter-apk/app-release.apk';
     await a(['uninstall', _androidPackage]);
     final inst = await a([
@@ -475,8 +481,9 @@ class _Job {
       '-r',
       apk,
     ], timeout: const Duration(minutes: 5));
-    if (!inst.ok || !inst.stdout.contains('Success'))
+    if (!inst.ok || !inst.stdout.contains('Success')) {
       invalid('install failed: ${inst.text}');
+    }
     say('installed $_androidPackage build $runId');
     final all = StringBuffer();
     try {
@@ -507,10 +514,11 @@ class _Job {
           await delay(2);
         }
         all.writeln(redact(log, _secrets));
-        if (!seen)
+        if (!seen) {
           invalid(
             'phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}',
           );
+        }
         if (wantsExit) {
           final gone = await until<bool>(
             () async =>
@@ -520,10 +528,11 @@ class _Job {
             timeout: const Duration(seconds: 90),
             every: const Duration(seconds: 2),
           );
-          if (gone != true)
+          if (gone != true) {
             invalid(
               'phase $phase announced a crash and the process is still alive after 90 s',
             );
+          }
           say('phase $phase: the process ended');
         }
       }
@@ -650,8 +659,9 @@ class _Job {
     req.headers.set('x-auth-servertoken', serverToken);
     final res = await req.close();
     final body = await res.transform(utf8.decoder).join();
-    if (res.statusCode != 200)
+    if (res.statusCode != 200) {
       throw StateError('GET crash_report -> ${res.statusCode}');
+    }
     return body;
   }
 }

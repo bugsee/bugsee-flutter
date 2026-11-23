@@ -83,8 +83,9 @@ List<String> phaseProblems(
     );
   }
   for (final s in starts) {
-    if (s['os'] != os)
+    if (s['os'] != os) {
       problems.add('a start event says os ${s['os']}, expected $os');
+    }
     if (release && s['mode'] != 'release') {
       problems.add('a start event says mode ${s['mode']}, expected release');
     }
@@ -101,8 +102,9 @@ List<String> phaseProblems(
     );
   }
   final crashes = events.where((e) => e['kind'] == 'crashing').length;
-  if (crashes != 2)
+  if (crashes != 2) {
     problems.add('the app announced $crashes crashes, expected 2');
+  }
   if (!events.any((e) => e['kind'] == 'reported')) {
     problems.add('phase 0 never reported its Dart errors');
   }
@@ -148,8 +150,9 @@ List<String> readbackProblems(
   }
   final all = reports.join('\n');
   for (final n in [...expectedDartNames, ...expectedNativeNames]) {
-    if (!all.contains(n))
+    if (!all.contains(n)) {
       problems.add('"$n" is in none of the ${reports.length} report(s)');
+    }
   }
   return problems;
 }

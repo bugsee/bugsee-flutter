@@ -9,7 +9,7 @@ and checkout with `persist-credentials: false`.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | PR, push to `nextgen` / `main` | Format, bridge and option codegen, analyze + test + iOS build, Android APK build, `pub publish --dry-run`, and the aggregate `ci-ok` |
+| `ci.yml` | PR, push to `main` | Format, bridge and option codegen, analyze + test + iOS build, Android APK build, `pub publish --dry-run`, and the aggregate `ci-ok` |
 | `native-pins.yml` | weekly (Mon 06:17 UTC), manual | Verifies the pins in `native-versions.json` still exist upstream, and that the vendored option manifests are still the SDKs' published ones (`dart scripts/sync_option_manifests.dart --check`). Network checks live only here, never in PR CI |
 | `claude-review.yml` | PR opened / updated | Calls the shared org review workflow. Advisory; do not require it (needs an org secret, unavailable to fork PRs). Do not edit it here |
 
@@ -26,7 +26,7 @@ and checkout with `persist-credentials: false`.
 | `ci-ok` | `ci-ok` | ubuntu | `if: always()`; fails unless every job above succeeded (failed, cancelled and skipped needed jobs all fail it). Deliberately not `!cancelled()`: that would skip `ci-ok` on a cancelled run, and a skipped required check counts as passing |
 
 Concurrency: PR runs of the same ref cancel superseded (running or pending) runs; every
-push to `nextgen`/`main` has its own group (its SHA), so none is cancelled or replaced. Every job has a `timeout-minutes`. Flutter SDK and pub cache use
+push to `main` has its own group (its SHA), so none is cancelled or replaced. Every job has a `timeout-minutes`. Flutter SDK and pub cache use
 `subosito/flutter-action`'s `cache: true`; no build outputs are cached or uploaded.
 
 ## Device verification harness (not in CI)
@@ -142,14 +142,14 @@ for its CI (see `bugsee/bugsee-android` `.github/CI.md`); this repo does not, so
 neither competes for that slot nor inherits its dirty workspace. Moving the iOS leg there
 is possible later, but only after SwiftPM and Xcode availability on it are confirmed.
 
-## Default branch caveat
+## Default branch
 
-The default branch is `main`, but this rewrite lives on `nextgen`. GitHub reads
-`dependabot.yml` and fires `schedule:` triggers only from the default branch, and shows
-the `workflow_dispatch` button only for workflows present there. So `native-pins.yml` and
-`dependabot.yml` must also exist on `main` (or `nextgen` must become the default) before
-the weekly check and Dependabot do anything. Every Dependabot entry sets
-`target-branch: nextgen` so its PRs land on the rewrite, and `native-pins.yml` checks out `ref: nextgen` because a scheduled run would otherwise use `main`'s tree, which has neither `native-versions.json` nor the script. Dependabot *security* updates ignore `target-branch` and use the default branch, where the `com.bugsee*` ignore does not apply; `main` does not hold these pins, so this is not a risk today.
+The rewrite lives on `main`, the default branch (it was `nextgen` until 2026-11-23; that branch is kept as the
+archive of the per-change history and is no longer used). GitHub reads `dependabot.yml` and fires `schedule:`
+triggers only from the default branch, so `native-pins.yml` and `dependabot.yml` work as they are: no
+`target-branch`, and `native-pins.yml` checks out the default tree without a `ref`. Dependabot *security* updates
+use the default branch, where the `com.bugsee*` ignore does not apply; the Bugsee pins are not pub or Gradle
+dependencies of the app, so this is not a risk. The 9.x line is the `release` branch.
 
 ## Dependabot, templates
 
@@ -162,7 +162,7 @@ the Android repo routes to individuals. Add one once an owner is chosen.
 
 ## Recommended branch protection (human admin action; not applied by this PR)
 
-For `nextgen` and `main`:
+For `main`:
 
 - Require a pull request before merging; require at least 1 approving review; dismiss
   stale approvals on new commits.

@@ -1,6 +1,6 @@
 # Bugsee Flutter SDK 10.x: project status
 
-The 7.x rewrite of `bugsee_flutter` (package version `10.0.0-dev.1`, unpublished) on branch `nextgen`, plus the separate
+The 7.x rewrite of `bugsee_flutter` (package version `10.0.0-dev.1`, unpublished) on `main` (formerly the `nextgen` branch, kept as the archive), plus the separate
 `bugsee_flutter_feedback` package. **The implementation is feature complete and merged**; what remains is the owner's decisions, the
 known gaps below and the release itself. Sources: the wrapper workbook (`sdk/wrapper-workbook` in `bugsee/specs`, the authoritative
 order of work; how it is met: [doc/workbook-conformance.md](doc/workbook-conformance.md)), the wrapper, options, report and identity specs in the
@@ -57,9 +57,9 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
    package. `bugsee_flutter_feedback` does not exist yet (checked 2026-10-22) and must be created under the same publisher.
 4. **Versioning of the first release**: `10.0.0` against `10.0.0-dev.1`. The versions in `pubspec.yaml` (both packages), `wrapper_identity.dart`,
    the iOS `BGSFlutterWrapper.m` and `feedback_version.dart` must move together (a drift guard checks it).
-5. **The default branch.** `main` still holds 9.x work; `nextgen` is the rewrite. `native-pins.yml` and Dependabot only run from the
-   default branch (see `.github/CI.md`, "Default branch caveat"). Decide when `nextgen` becomes `main`, and what happens to the `release` branch
-   (the 9.x line). Open PR #1 targets `release`.
+5. **The default branch.** Done 2026-11-23: `nextgen` was squash-merged into `main` (the repository requires linear history; `nextgen` stays as the archive of the
+   per-change history), so `native-pins.yml` and Dependabot run on the rewrite (`.github/CI.md`, "Default branch"). The `release` branch is the 9.x line;
+   open PR #1 targets it.
 6. **Required checks and CODEOWNERS** (`.github/CI.md`): branch protection with only `ci-ok`, and an owner team.
 7. **Real-device verification** before a stable release (below).
 
@@ -141,7 +141,7 @@ token launches), tvOS and visionOS.
 
 ## Phase record
 
-All phases are merged into `nextgen`. Per-phase detail lives in the docs listed in Status; this is only the map.
+All phases are merged into `main` (they were merged into `nextgen` first). Per-phase detail lives in the docs listed in Status; this is only the map.
 
 | Phase | PR | Scope |
 |---|---|---|

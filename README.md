@@ -39,7 +39,7 @@ dependencies:
   bugsee_flutter:
     git:
       url: https://github.com/bugsee/bugsee-flutter.git
-      ref: nextgen
+      ref: main
 ```
 
 The feedback package (below) needs its own git entry (`path: packages/bugsee_flutter_feedback`, same `url` and `ref`) **and** a

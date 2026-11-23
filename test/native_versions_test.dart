@@ -559,11 +559,13 @@ void main() {
       },
     );
 
-    test('every dependabot entry targets nextgen', () {
+    test('every dependabot entry targets the default branch (main)', () {
       final dep = liveOf(read('.github/dependabot.yml'));
+      expect('package-ecosystem:'.allMatches(dep).length, greaterThan(0));
       expect(
-        'package-ecosystem:'.allMatches(dep).length,
-        'target-branch: nextgen'.allMatches(dep).length,
+        dep,
+        isNot(contains('target-branch')),
+        reason: 'no target-branch: the PRs land on the default branch, main',
       );
     });
 
@@ -588,12 +590,8 @@ void main() {
       );
       expect(
         pins,
-        matches(
-          RegExp(
-            r'uses: actions/checkout@v\d+\n\s+with:\n(?:\s+[a-z-]+: .*\n)*?\s+ref: nextgen\n',
-          ),
-        ),
-        reason: 'scheduled runs use the default branch tree, which has no pins',
+        isNot(matches(RegExp(r'^\s+ref: ', multiLine: true))),
+        reason: 'scheduled runs use the default branch (main), whose tree holds the pins',
       );
       expect(
         pins,

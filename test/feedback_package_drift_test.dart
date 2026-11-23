@@ -759,7 +759,7 @@ void main() {
         r'(?:(?!  - package-ecosystem)[\s\S])*',
       ).firstMatch(dep)!;
       expect(gradle.group(0), contains('dependency-name: "com.bugsee*"'));
-      expect(gradle.group(0), contains('target-branch: nextgen'));
+      expect(gradle.group(0), isNot(contains('target-branch')));
     });
   });
 

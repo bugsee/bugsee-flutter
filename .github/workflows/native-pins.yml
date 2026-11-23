@@ -25,9 +25,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # A scheduled run uses the default branch's copy of this file and, without a
-          # ref, its tree. The pins and script live on nextgen, so check that out.
-          ref: nextgen
+          # A scheduled run uses the default branch (main): its copy of this file and its tree,
+          # which holds the pins and the script, so no ref is set.
       # The script uses only dart:io, so no `pub get` and no Flutter are needed.
       - uses: dart-lang/setup-dart@v1
         with:

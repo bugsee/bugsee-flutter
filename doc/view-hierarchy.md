@@ -97,7 +97,7 @@ While active the publisher (`publisher.dart`):
 * sends **only when the payload changed**; a failed send is retried with a doubling backoff (never given up, 30 s cap), and
   a clear that failed is retried until it lands;
 * takes a walk that follows a quiet stretch **a slice at a time** (below, "The sliced walk"); every other walk, in one piece;
-* cuts the walk by a **12 ms budget** (the ceiling, used when no frame is due; while a frame is already due, that is an animation is running, the budget is **35% of one frame at the display's refresh rate**, at least 2 ms: 5.8 ms at 60 Hz, 2.9 ms at 120 Hz, so a walk fits the slack of the frame it is added to; an explicit `captureViewHierarchy` keeps the full 12 ms; a walk cut by the smaller budget is marked `truncated` like any other. **Consequence, chosen on purpose** (the UI thread comes first): a screen that never goes quiet (a spinner, a video, a marquee) is only walked next to its frames, so on a device where its walk takes longer than the smaller budget (an Android phone needs ~10 ms for a ~900-node list; a 60 Hz budget is 5.8 ms) every snapshot of it is cut, where the cut falls depends on the device's speed, and nothing completes it until the screen goes quiet. A screen that settles gets the full budget. `ViewHierarchyPublisher.frameShare` is the knob, if complete snapshots of such screens matter more than their frames), **2000 nodes**, **256 KiB**, **512 element levels** (a provider of data, an `InheritedElement`, is not a level: a Material app has dozens): over a cap the tree is cut
+* cuts a walk taken in one piece by a **12 ms budget** (a sliced walk has its own, 100 ms of work in total, see "The sliced walk"; the frame share below applies only to the one-piece walk) (the ceiling, used when no frame is due; while a frame is already due, that is an animation is running, the budget is **35% of one frame at the display's refresh rate**, at least 2 ms: 5.8 ms at 60 Hz, 2.9 ms at 120 Hz, so a walk fits the slack of the frame it is added to; an explicit `captureViewHierarchy` keeps the full 12 ms; a walk cut by the smaller budget is marked `truncated` like any other. **Consequence, chosen on purpose** (the UI thread comes first): a screen that never goes quiet (a spinner, a video, a marquee) is only walked next to its frames, so on a device where its walk takes longer than the smaller budget (an Android phone needs ~10 ms for a ~900-node list; a 60 Hz budget is 5.8 ms) every snapshot of it is cut, where the cut falls depends on the device's speed, and nothing completes it until the screen goes quiet. A screen that settles gets the full budget. `ViewHierarchyPublisher.frameShare` is the knob, if complete snapshots of such screens matter more than their frames), **2000 nodes**, **256 KiB**, **512 element levels** (a provider of data, an `InheritedElement`, is not a level: a Material app has dozens): over a cap the tree is cut
   and the cut nodes carry `"truncated": true` (and the root's `options.truncated`), the answer stays valid; a template over
   the byte cap is dropped, not trimmed.
 
@@ -161,6 +161,14 @@ walker 2.5 / 1.7 / 1.4 ms, the new walker in one step 2.5 / 1.6 / 1.3 ms, the sa
 of 3.9 / 2.0 / 1.7 ms (the first round is warm-up): the explicit stack costs no more than the recursion. **Not measured on a device**: no
 frame timing with slices on the Android phone or an iPhone (see PLAN.md), so the gain in dropped frames and the p99 interval is not quantified;
 the numbers above (10 ms lazy / 30 ms eager on the phone) are the reason, not a result.
+
+A slice is a **target, not a bound**. Flutter offers no resumable enumeration of an element's children, so the children of ONE level are listed
+in one go (`_pushChildren`, what the old walk also did through its callback; a level of 16k children costs ~7 ms of Flutter's own visit on the
+Android phone, more than a slice), and the scan of an off-screen box (`_containedBelow`) stops reading geometry after 2000 elements but
+Flutter still calls its visitor for the rest of that subtree's elements. A wide eager level therefore overruns a slice by the cost of
+listing it; output is not cut for it. The other state a slice cannot see is a value that changes outside a frame and does not change what
+is painted (a shared `AnimationController` set from 0.500 to 0.501 repaints nothing, so no frame abandons the walk): two nodes can then
+carry two raw values that paint the same alpha. Every change that alters what is painted schedules a frame, which abandons the walk.
 
 ### What the answer is, and when it is null
 
@@ -298,7 +306,7 @@ publishing is on) and asks the SDK for a pass, which the cache answers. A no-op 
 * A hot-restarted isolate that publishes nothing leaves the old isolate's snapshot until the engine detaches (debug only).
 * The Dart walk runs on the UI isolate. After a quiet stretch it runs in slices of 1-4 ms (2 ms at 60 Hz), 100 ms in total; in one piece (the first snapshot,
   a `busyCap` walk, after three abandoned walks, an explicit capture) it is bounded by 12 ms (35% of a frame while a frame is due) / 2000 nodes and not
-  preemptible. A huge tree is cut, not skipped. A walk a frame abandons is not resumed: it starts over after the next quiet stretch.
+  preemptible. A huge tree is cut, not skipped. A slice is a target: one very wide level is listed in one go and can overrun it. A walk a frame abandons is not resumed: it starts over after the next quiet stretch.
 
 ## Mutation checks and the mutants that were not killed
 

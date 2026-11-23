@@ -532,6 +532,9 @@ class ViewHierarchyPublisher {
     } catch (_) {
       // Only the newest attempt decides what native holds.
       if (sequence != _sequence) return;
+      // A sliced walk that is under way would finish into the backoff and send before it ends:
+      // the retry is the next walk, in one piece, from the timer below.
+      _abandonWalk(counted: false);
       _nativeKnown = false;
       _failures++;
       _dirty = true;

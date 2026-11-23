@@ -360,6 +360,57 @@ void main() {
       }
     });
 
+    testWidgets(
+      'the scan limit is really taken: a big box is walked, a small one skipped',
+      (tester) async {
+        Widget tree(int n) => host(
+          Stack(
+            children: [
+              const SizedBox(width: 40, height: 40),
+              Positioned(
+                left: 1000,
+                top: 1000,
+                child: SizedBox(
+                  width: 50,
+                  height: 50,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < n; i++)
+                        const Positioned(
+                          left: 0,
+                          top: 0,
+                          width: 1,
+                          height: 1,
+                          child: SizedBox(width: 1, height: 1),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        // A depth cap that admits the off-screen anchor and cuts what is below it: when the contained
+        // subtree is skipped nothing below is visited (not truncated); when the scan gives up
+        // (above 2000 elements) it is walked the ordinary way and the cap cuts it.
+        const limits = HierarchyLimits(maxDepth: 8, budget: Duration(hours: 1));
+        for (final Duration slice in slices) {
+          await tester.pumpWidget(tree(100));
+          final small = sliced(slice, limits: limits);
+          expect(small, isNotNull);
+          expect(
+            small!.truncated,
+            isFalse,
+            reason: 'small box skipped, $slice',
+          );
+          await tester.pumpWidget(tree(2500));
+          final big = sliced(slice, limits: limits);
+          expect(big, isNotNull);
+          expect(big!.truncated, isTrue, reason: 'big box walked, $slice');
+        }
+      },
+    );
+
     testWidgets('a deep tree', (tester) async {
       Widget deep(int n) => n == 0
           ? const Marker()
@@ -501,6 +552,7 @@ void main() {
     late DateTime start;
     HierarchyWalk? lastWalk;
     bool pending = false;
+    Completer<bool>? hold;
     final List<HeldTimer> held_ = [];
 
     /// Runs the next slice, if one is waiting (the timer the publisher would have had fire).
@@ -523,6 +575,7 @@ void main() {
       sent = [];
       phases = [];
       pending = false;
+      hold = null;
       held_.clear();
       lastWalk = null;
       start = tester.binding.clock.now();
@@ -538,6 +591,11 @@ void main() {
       publisher = ViewHierarchyPublisher(
         send: (m) async {
           sent.add(m);
+          final Completer<bool>? h = hold;
+          if (h != null) {
+            hold = null;
+            return h.future;
+          }
           return true;
         },
         epoch: 3,
@@ -722,6 +780,44 @@ void main() {
       expect(publisher.walking, isFalse);
       expect(held(), expectedNow());
     });
+
+    testWidgets(
+      'a send that fails drops the walk that would finish into its backoff',
+      (tester) async {
+        await rig(tester);
+        await firstSnapshot(tester, screen(row, rows: 150));
+        // A send that is still in flight when the next walk starts...
+        final inFlight = Completer<bool>();
+        hold = inFlight;
+        await changeAndGoQuiet(tester, screen(row, rows: 151));
+        for (var i = 0; publisher.walking && i < 10000; i++) {
+          runSlice();
+        }
+        await tester.idle();
+        expect(sent, hasLength(2), reason: 'the second snapshot is on its way');
+        await tester.pumpWidget(screen(row, rows: 152));
+        await tester.binding.delayed(const Duration(seconds: 6));
+        expect(
+          publisher.walking,
+          isTrue,
+          reason: 'a sliced walk, send in flight',
+        );
+        // ...fails: the walk must not finish and send before the backoff ends.
+        inFlight.completeError(StateError("channel"));
+        await tester.idle();
+        expect(publisher.walking, isFalse, reason: 'dropped with the failure');
+        expect(sent, hasLength(2), reason: 'nothing was sent into the backoff');
+        // The retry is the next walk, in one piece, when the backoff is over.
+        await tester.binding.delayed(const Duration(seconds: 2));
+        await tester.idle();
+        expect(sent, hasLength(3));
+        expect(
+          held(),
+          expectedNow(),
+          reason: 'the retry carries the current tree',
+        );
+      },
+    );
 
     testWidgets('stopping drops the walk and sends none of it', (tester) async {
       await rig(tester);

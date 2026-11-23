@@ -473,6 +473,21 @@ void main() {
     test('a walk that resumes into a changed tree fails closed', () {
       expect(body(src, 'bool step('), contains('_stillMounted()'));
       expect(body(src, 'void _walkSome()'), contains('mounted'));
+      expect(
+        body(src, 'bool _stillMounted()'),
+        allOf(
+          contains('_view.mounted'),
+          contains('_view.renderObject.attached'),
+        ),
+        reason:
+            'the view is the root of every level and on no frame of its own',
+      );
+      expect(
+        body(pub, 'Future<void> _publish('),
+        contains('_abandonWalk(counted: false)'),
+        reason:
+            'a failed send must not let a sliced walk finish into the backoff',
+      );
     });
 
     test(

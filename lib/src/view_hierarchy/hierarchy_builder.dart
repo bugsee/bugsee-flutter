@@ -519,6 +519,8 @@ class HierarchyWalk {
   /// resumes into a tree a frame changed would mix two trees; the publisher prevents that, this
   /// is the check that makes it fail closed if the publisher ever does not.
   bool _stillMounted() {
+    // The view itself first: it is the root of every level, and is on no frame of its own.
+    if (!_view.mounted || !_view.renderObject.attached) return false;
     for (var i = 0; i < _sp; i++) {
       final _Frame f = _stack[i];
       if (!f.owner.mounted) return false;

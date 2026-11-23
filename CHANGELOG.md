@@ -17,7 +17,9 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 * **Privacy.** The `BugseeSecureView` widget, and the Flutter widget tree in reports (boxes and type names only, no text, keys or semantics;
   a secure view is one node) answered synchronously from a native snapshot cache; `Bugsee.captureViewHierarchy()`. A walk of the tree that
   follows a quiet stretch runs in slices of a few milliseconds from timers, so a big screen no longer holds the UI isolate for the whole walk;
-  a frame that arrives abandons it and it starts over (the payload is byte for byte the one a single walk makes).
+  a frame that arrives abandons it and it starts over (with the same node, byte and depth limits and no time cut, the payload is byte for
+  byte the one a single walk makes; a quiet walk may spend up to 100 ms in total where a walk in one piece has 12 ms, so a big screen can
+  come out complete from slices and cut from one piece).
 * **Dart errors.** `logException`, `logUnhandledException`, `reportException`; opt-in `installErrorHandlers` (chained, restored, once per
   error, rate limited, **error reports by default**, `reportAsCrash: true` for crash reports), `errorHandlersActive`, `runGuarded`,
   `listenToIsolateErrors`; obfuscated (`--split-debug-info`) stacks are sent untouched for the backend to symbolicate.

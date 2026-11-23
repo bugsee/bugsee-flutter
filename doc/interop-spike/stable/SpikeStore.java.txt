@@ -1,0 +1,47 @@
+package com.bugsee.spike2;
+
+/** A process-wide store like the wrapper's secure-rectangle store: static, thread-safe, no engine. */
+public final class SpikeStore {
+  private static volatile int last;
+  private static volatile Listener listener;
+
+  public interface Listener {
+    void onEvent(String name);
+  }
+
+  private SpikeStore() {}
+
+  public static void ping() {}
+
+  public static int echo(int v) {
+    return v;
+  }
+
+  public static void publish(int[] rects) {
+    if (rects.length == 0) throw new IllegalStateException("empty");
+    last = rects.length;
+  }
+
+  public static int last() {
+    return last;
+  }
+
+  public static String thread() {
+    return Thread.currentThread().getName();
+  }
+
+  public static void setListener(Listener l) {
+    listener = l;
+  }
+
+  /** Native to Dart: fire on the calling thread or on a worker thread, and say how long the call took. */
+  public static void fire(String name, boolean worker) {
+    final Runnable r = () -> {
+      final long t = System.nanoTime();
+      final Listener l = listener;
+      if (l != null) l.onEvent(name + "@" + Thread.currentThread().getName());
+      android.util.Log.i("SPIKE2", "native fire(" + name + ") returned in " + (System.nanoTime() - t) / 1000 + " us on " + Thread.currentThread().getName());
+    };
+    if (worker) new Thread(r, "spike-worker").start(); else r.run();
+  }
+}

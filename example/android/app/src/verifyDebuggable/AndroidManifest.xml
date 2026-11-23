@@ -1,0 +1,10 @@
+<!--
+  Device verification only (scripts/device, doc/verification.md). Added to the release variant by
+  app/build.gradle.kts when BUGSEE_VERIFY_DEBUGGABLE_RELEASE=1 and never otherwise: a phone without root
+  cannot read the private data of a non-debuggable app, so the harness asks for android:debuggable on
+  the RELEASE build (still AOT, R8, obfuscation and the Gradle plugin; `isDebuggable` on the build type
+  would make Flutter's Gradle plugin build in DEBUG mode).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:debuggable="true" />
+</manifest>

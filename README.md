@@ -1,88 +1,437 @@
-# Bugsee for flutter
+# bugsee_flutter
 
-Bugsee is a mobile SDK that adds crucial information to your bug and crash reports. Bugsee reports include video of user actions, network traffic, console logs and many other important traces from your app. Now you know what exactly led to the unexpected behavior.
+Bugsee for Flutter. Crash, error and bug reports that carry the video, network traffic, console logs and
+traces that led up to them, from an Android or iOS Flutter app.
 
-Sign up for a service at https://www.bugsee.com.
+It wraps the native Bugsee 7.x SDKs (it is not a reimplementation), so a report from a Flutter app is the report a
+native app produces, plus what only Dart can see: the widget tree, `dart:io` network traffic, `print` output and Dart
+errors.
 
-## Installation
+> **Version 10.0.0-dev.1, not published yet.** This is a clean rewrite for the 7.x native SDKs and a **breaking change from
+> 9.x**: see [doc/migration-from-9x.md](doc/migration-from-9x.md). Whether a 9.x compatibility layer is offered has not been
+> decided. Everything below was verified on Android emulators and iOS simulators; physical devices (an Android 14 phone, an iPhone XS, an iPhone 16 Pro)
+> ran only part of the integration tests, with some failures and unverified reports (see [Platform support and limits](#platform-support-and-limits)).
 
-Install Bugsee plugin into your dart project by adding it to dependecies in your pubspec.yaml
+## Requirements
+
+| | |
+|---|---|
+| Flutter / Dart | 3.50.0 or newer / 3.14 or newer |
+| Android | `minSdk` 21; JDK 17 or 21 for the build (what CI runs and the SDK documents; the example also built a debug APK with JDK 25 on Gradle 9.3.1, measured, not a supported set); the Bugsee Gradle plugin **4.1.1** (mandatory, see below) |
+| iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
+| Native SDKs | Android `7.6.0`, iOS `7.1.0` (pinned in [`native-versions.json`](native-versions.json)) |
+| Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
+
+The Flutter floor is 3.50.0 (Dart 3.14): the 10.0 major builds on the release that ships Direct Interop, Android Gradle
+Plugin 9 and `material_ui`. The plugin is also SwiftPM-only, so `flutter pub get` fails on Linux and Windows before 3.41.0.
+
+## Install
 
 ```yaml
 dependencies:
-  bugsee_flutter: ^99.99.99
+  bugsee_flutter: ^10.0.0-dev.1
 ```
 
-## Launching
+That resolves once the version is published. **Until then**, depend on the repository (checked with Flutter 3.50.0):
+
+```yaml
+dependencies:
+  bugsee_flutter:
+    git:
+      url: https://github.com/bugsee/bugsee-flutter.git
+      ref: nextgen
+```
+
+The feedback package (below) needs its own git entry (`path: packages/bugsee_flutter_feedback`, same `url` and `ref`) **and** a
+`dependency_overrides:` entry for `bugsee_flutter` with the same git source, because its hosted constraint on the core cannot resolve
+while the core is unpublished.
+
+### Android
+
+1. **Apply the Bugsee Gradle plugin.** It is mandatory for the 7.x SDK and a Flutter plugin cannot apply it for you, so the app
+   does. In `android/settings.gradle.kts`, next to the other plugins:
+
+   ```kotlin
+   plugins {
+       id("dev.flutter.flutter-plugin-loader") version "1.0.0"
+       id("com.android.application") version "9.1.1" apply false   // Flutter 3.50 requires AGP 9
+       id("com.bugsee.android.gradle") version "4.1.1" apply false   // the version this release is tested with
+   }
+   ```
+
+   and in `android/app/build.gradle.kts`, after the Android and Flutter plugins:
+
+   ```kotlin
+   plugins {
+       id("com.android.application")
+       id("dev.flutter.flutter-gradle-plugin")
+       id("com.bugsee.android.gradle")
+   }
+   ```
+
+   (Groovy: `id 'com.bugsee.android.gradle' version '4.1.1' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
+
+2. Build with a JDK 17 or 21 (`JAVA_HOME`, and `org.gradle.java.home` in `gradle.properties` to pin it; JDK 25 is not part of the supported set).
+
+   Plugin 4.1.0 declares its task ordering itself ([bugsee-android-gradle-plugin#33](https://github.com/bugsee/bugsee-android-gradle-plugin/issues/33),
+   fixed): the ordering snippet that 4.0.x needed on Gradle 8.14 (the old Flutter template) is gone (debug, release and profile builds of the example were measured
+   without it). On an older plugin the build fails Gradle task validation on `injectBugsee<Variant>BuildId`: use 4.1.1.
+
+3. **Turn on the native symbol upload** in `android/app/build.gradle.kts` (the Bugsee plugin has it OFF by default):
+
+   ```kotlin
+   bugsee {
+       ndk { enabled.set(true) }
+   }
+   ```
+
+   The native crash detector itself is always present (this package depends on the separate `bugsee-android-ndk` artefact), but a
+   crash in `libflutter.so` or any other `.so` is only readable (function and file:line) when the backend has that build's
+   native symbols. With `ndk.enabled` the plugin uploads the unstripped libraries of every **non-debuggable** build (task
+   `upload<Variant>Native`, for example `uploadBugseeReleaseNative`) with the app token (`bugsee.properties` in the Gradle root directory, the
+   `android/` folder of a Flutter app, or `appToken("...")` in the `bugsee { }` block); without a token it skips quietly. The R8 mapping upload
+   needs no setting. See [Debug symbols](#debug-symbols) for the Dart and iOS symbols too.
+
+Besides that, the plugin registers this package's wrapper from a content provider that runs before the SDK can launch and the
+package ships consumer ProGuard rules. The working example is [`example/android`](example/android).
+
+**Other Bugsee Android modules** (`bugsee-android-okhttp`, `-ktor-2`, `-ktor-3`, `-cronet`, `-compose`, `-leak`) are not added: they
+instrument NATIVE UI and HTTP stacks (OkHttp, Ktor, Cronet, Jetpack Compose, native leak watching), which a Flutter UI and Dart's
+`dart:io` network capture do not use. An app that has native code using one of them declares the dependency itself and the plugin
+wires it. The feedback chat is the separate package `bugsee_flutter_feedback`.
+
+### iOS
+
+The iOS side is distributed through Swift Package Manager only. Where SwiftPM is not on by default, run once:
+
+```sh
+flutter config --enable-swift-package-manager
+```
+
+Raise the app's **iOS deployment target to 15.0** (Xcode: Runner target, General, Minimum Deployments; or
+`IPHONEOS_DEPLOYMENT_TARGET = 15.0` in `ios/Runner.xcodeproj`). Older Flutter app templates default to a lower one. No
+`Info.plist` keys are required.
+
+### Launch
 
 ```dart
 import 'package:bugsee_flutter/bugsee_flutter.dart';
-
-Future<void> launchBugsee(void Function(bool isBugseeLaunched) appRunner) async {
-  var launchOptions;
-  var bugseeToken = "";
-
-  if (Platform.isAndroid) {
-    bugseeToken = "<android app token>";
-    launchOptions = AndroidLaunchOptions();
-  } else if (Platform.isIOS) {
-    bugseeToken = "<ios app token>";
-    launchOptions = IOSLaunchOptions();
-  }
-
-  await Bugsee.launch(bugseeToken,
-      appRunCallback: appRunner, launchOptions: launchOptions);
-}
+import 'package:flutter/widgets.dart';
 
 Future<void> main() async {
-  // This is required to let Bugsee intercept network requests
-  HttpOverrides.global = Bugsee.defaultHttpOverrides;
+  WidgetsFlutterBinding.ensureInitialized();
 
-  await launchBugsee((bool isBugseeLaunched) async {
+  final result = await Bugsee.launch(
+    'YOUR_APP_TOKEN',
+    options: const BugseeOptions(
+      captureVideo: true,
+      captureLogsLevel: LogLevel.info,
+      configDuration: 45,
+      detectHang: true,
+      reportingDefaultsCrashPriority: ReportSeverity.critical,
+    ),
+  );
+  // launched, alreadyRunning and deferred are all "not a failure"; see below.
+
+  runApp(const MyApp());
+}
+```
+
+`Bugsee.launch` completes when the SDK answers: `launched` once capture started, `alreadyRunning` at once when the SDK is already
+launching or launched (**your options were not applied**), `deferred` on iOS when the app is not active yet (the SDK starts
+later). `await Bugsee.waitUntilLaunched()` settles all three: it returns `false` if the launch failed or nothing happened within its
+timeout. A launch that did not happen throws a `BugseeLaunchException` with a `LaunchFailure` reason (a blank token, a stop still in
+progress, a refusal, an exception on the native side, a platform without an SDK).
+
+```dart
+Bugsee.statusChanges.listen(print);   // launching, launched, stopping, stopped
+await Bugsee.getStatus();             // the SDK's own answer
+await Bugsee.getLaunchOptions();      // what is in effect: yours over the SDK's defaults
+await Bugsee.stop();                  // completes when the SDK has stopped; stop() then launch() is how options change
+```
+
+## Options
+
+`BugseeOptions` has a typed, documented field for every option the SDKs register, except the leak module's and the deprecated ones
+(100 at the pinned versions; `custom` reaches the rest), named after its key: `capture.video.frame-rate` is `captureVideoFrameRate`.
+A field you leave out keeps the SDK's own default (several defaults differ between Android and iOS; each field says which). The fields
+are generated from the manifests the two SDKs publish (`test/fixtures/option_manifests`), so they cannot drift from the SDKs. Enums
+carry the SDK's internal value, never an ordinal.
+
+- **One configuration for both platforms.** An option that exists on one platform only (the video mode is Android's, the AVPlayer
+  capture is iOS's) is ignored on the other, with a debug warning. An enum constant one platform lacks (`FrameRate.raw` on iOS) too.
+- **Stricter than the SDKs.** Both SDKs silently drop an unknown key or a value of the wrong type. Here an unknown key in
+  `BugseeOptions.custom`, a wrong type or a bad `endpoint` is an `ArgumentError` before anything reaches the SDK.
+- **`endpoint`** is for an on-premises or test server: give the base URL (a trailing slash and a `/v2` segment are removed).
+- `$$ENDPOINT`, `$$WRAPPER` and `$$DEBUG` are internal and never returned by `getLaunchOptions`.
+
+### Launching twice, auto-init, and stopping
+
+- On **Android** the SDK launches itself before any Dart code when the manifest declares `com.bugsee.app-token` meta-data. A later
+  `Bugsee.launch` is then `alreadyRunning` and its options are not applied. To launch from Dart, leave the token out of the manifest
+  or add `<meta-data android:name="com.bugsee.auto-init" android:value="false"/>`. Events from before the first call into the
+  plugin are delivered when it attaches (the latest status is replayed).
+- **iOS** has no auto-init.
+- A launch while a stop is still in progress is refused (`LaunchFailure.stopping`): `await Bugsee.stop()` first.
+- `getHostLaunchOptions()` differs between the platforms (Android: everything you passed; iOS: only what differs from the iOS
+  default); `getLaunchOptions()` is the same on both.
+
+## Features
+
+The snippets below are fragments: they assume `import 'package:bugsee_flutter/bugsee_flutter.dart';` and `import 'package:flutter/material.dart';` (plus a `dart:` or package import where one is shown), and run inside `main()` or another `async` function.
+
+Calls that talk to the SDK are statics on `Bugsee` that return a `Future`, and report an invalid argument through that `Future`. The setup
+calls for what only Dart can see (`installNetworkCapture`, `installLogCapture`, `installErrorHandlers`, `setNetworkFilter`, `setLogFilter`,
+`forwardLog`, `runGuarded`, `listenToIsolateErrors`) are synchronous, and an invalid argument there (a `setNetworkFilter` or `setLogFilter`
+timeout out of range) throws a `BugseeArgumentException` at once. `BugseeOptions` problems (an unknown key, a wrong type, a bad endpoint)
+are an `ArgumentError`, surfaced by `Bugsee.launch`'s `Future`. What each call does before `launch`, what is left out and why:
+[doc/api-surface.md](doc/api-surface.md). All the pages: [doc/README.md](doc/README.md).
+
+### Data you add
+
+```dart
+await Bugsee.setAttribute('plan', 'pro');            // String, bool, int or double; persisted; works before launch
+await Bugsee.setUserIdentifier('user@example.com');  // one identifier; an email links reports to a user
+await Bugsee.event('checkout', {'items': 3, 'coupon': null});   // events, traces, logs: dropped before launch
+await Bugsee.trace('cart-size', 3);
+await Bugsee.log('payment declined', level: LogLevel.warning);
+await Bugsee.notify('Deploy finished', body: 'v2.1', severity: ReportSeverity.medium);   // to your Slack/Teams integration
+
+// Breadcrumb capture is off by default on both SDKs: launch with BugseeOptions(captureBreadcrumbs: true).
+final taken = await Bugsee.addBreadcrumb(
+  const BugseeBreadcrumb(category: 'nav', message: 'opened cart', level: BreadcrumbLevel.info),
+);
+await Bugsee.upload('Summary', 'Description', severity: ReportSeverity.high, labels: ['checkout']);
+await Bugsee.showReportDialog(summary: 'Something broke');
+```
+
+Argument errors of these calls are `BugseeException`s through the `Future` (`BugseeArgumentException`; `BugseeAttributeException` when an SDK refuses
+an attribute over its size limits). Calls on a platform without an SDK (desktop, web) do nothing; only `launch` throws.
+
+### Dart errors ([doc/exceptions.md](doc/exceptions.md))
+
+```dart
+try {
+  risky();
+} catch (e, stack) {
+  await Bugsee.logException(e, stack);                  // an error report
+  await Bugsee.logUnhandledException(e, stack);         // a crash report
+  await Bugsee.reportException(e, domain: 'checkout');  // an error report with a grouping domain
+}
+
+// Opt in to the errors nobody handled. Chained: Crashlytics, Sentry and your own handlers still run.
+// Call it AFTER the tools that assign FlutterError.onError / PlatformDispatcher.onError (Crashlytics replaces them).
+Bugsee.installErrorHandlers();
+assert(Bugsee.errorHandlersActive);               // false when another tool replaced them
+Bugsee.runGuarded(() => runApp(const MyApp()));   // a zone: what escapes it is reported, then printed as usual
+```
+
+The installed handlers file **error** reports (once per error, rate limited); `installErrorHandlers(reportAsCrash: true)` files crash
+reports instead (why error is the default: doc/exceptions.md). For readable stacks build with
+`--obfuscate --split-debug-info=<dir>` and upload `<dir>/*.symbols` (doc/exceptions.md, section 5).
+
+### Network ([doc/network.md](doc/network.md))
+
+The SDKs' network interception cannot see `dart:io` (`package:http`, dio's default adapter, `Image.network`, a plain `HttpClient`), so
+this plugin records it in Dart and hands the events to the SDK. Opt-in, once, early:
+
+```dart
+void main() {
+  Bugsee.installNetworkCapture();   // after your own HttpOverrides.global = ..., if any: this chains to it
+
+  // Optional. Runs in Dart BEFORE anything reaches the SDK, so it cannot be bypassed.
+  Bugsee.setNetworkFilter((event) {
+    if (event.url.contains('/internal/')) return null;   // not recorded
+    event.headers.remove('x-session');                   // redact in place
+    return event;
+  });
+  runApp(const MyApp());
+}
+```
+
+### Logs ([doc/logs.md](doc/logs.md))
+
+`print` needs a zone that carries the hook (`Zone.root` cannot be replaced); `debugPrint` is chained globally. Opt-in:
+
+```dart
+void main() {
+  Bugsee.runWithLogCapture(() {          // or Bugsee.runGuarded, or your runZoned(zoneSpecification: Bugsee.logCaptureZoneSpecification)
+    WidgetsFlutterBinding.ensureInitialized();
+    Bugsee.installLogCapture();
+
+    // The SDKs have no log sanitizer of their own: redact here. Return null to drop.
+    Bugsee.setLogFilter((event) {
+      event.message = event.message.replaceAll(RegExp(r'\d{12,}'), '<number>');
+      return event;
+    });
     runApp(const MyApp());
   });
 }
 
-class MyApp extends StatelessWidget {
-  ....
+// An adapter for package:logging and your own loggers: recorded like `print`, not as Bugsee.log.
+void myLogger(String line) => Bugsee.forwardLog(line, level: LogLevel.warning, tag: 'net');
 ```
 
-## Custom data
-
-### Events
-
-Events are identified by a string and can have an optional dictionary of parameters that will be stored and passed along with the report.
+### Report handler, attachments, `createReport` ([doc/attachments.md](doc/attachments.md))
 
 ```dart
-// Without any additional parameters
-Bugsee.event(name: 'payment_processed');
+import 'dart:typed_data';
 
-// ... or with additional custom parameters
-Bugsee.event(name: 'payment_processed', parameters: <String, dynamic>{
-                'amount': 125,
-                'currency': 'USD'});
-```
+import 'package:bugsee_flutter/bugsee_flutter.dart';
 
-### Traces
+// Register BEFORE launch to see reports the SDK recovers while launching.
+Future<void> registerHandler() => Bugsee.setReportHandler(
+  BugseeReportHandler(
+    onAfterReportCreated: (report) async {    // at least once: make it idempotent
+      await report.replaceLabels(['flutter']);
+      await report.setAttribute('screen', 'cart');
+      await report.addAttachment('/path/to/notes.txt', name: 'notes', mimeType: 'text/plain');
+    },
+  ),
+);
 
-Traces may be useful when you want to trace how a specific variable or state changes over time right before the problem happens.
-
-```dart
-// Manually set value of 15 to property named "credit_balance"
-// any time it changes
-Bugsee.trace(name: 'credit_balance', value: 15);
-```
-
-## Manual reporting
-
-You can register non fatal exceptions using the following method:
-
-```dart
-try {
-  some_code_that_throws();
-} catch (ex, st) {
-  await Bugsee.logException(exception: ex, handled: true, stackTrace: st);
+// Or build a report yourself.
+Future<void> reportByHand() async {
+  final report = await Bugsee.createReport();
+  if (report != null) {
+    await report.setSummary('Checkout failed');
+    await report.addAttachmentBytes(Uint8List.fromList([104, 105]), name: 'note');
+    await report.upload();
+  }
 }
 ```
 
-Bugsee can be further customized. For a complete SDK documentation covering additional options and API's visit [https://docs.bugsee.com/sdk/flutter/](https://docs.bugsee.com/sdk/flutter/installation/)
+`onBeforeReportCreated` runs at most once and may be skipped. Attachments are path-first (native copies or moves the file). The
+handler's report is live only until the handler returns: await every edit. Every SDK lifecycle event is a stream:
+`Bugsee.lifecycleEvents.listen((e) => print(e.name))`.
+
+### Secure views
+
+```dart
+Widget build(BuildContext context) => Column(
+  children: [
+    const Text('Card number'),
+    // Blanked in the recorded video and in the report screenshot; the user sees it as usual.
+    BugseeSecureView(child: TextField(obscureText: true)),
+  ],
+);
+```
+
+It fails closed for what it cannot place, but it is not instant: a region that has just appeared is recorded in the clear for its
+first frame or so (Dart can only measure it once layout has placed it). For something that must never be captured keep the
+`BugseeSecureView` mounted and swap its content instead of inserting the whole widget when the content appears. The other limits
+are on the widget's dartdoc. The reports also carry the **Flutter widget tree** ([doc/view-hierarchy.md](doc/view-hierarchy.md)); see the
+privacy model below.
+
+### Feedback chat ([packages/bugsee_flutter_feedback](packages/bugsee_flutter_feedback/README.md))
+
+The chat your users write to you in is a separate package, so apps that never show it do not carry its UI (SwiftUI on iOS,
+Jetpack Compose on Android). Add it next to this one, at the same version; there is nothing else to configure:
+
+```dart
+import 'package:bugsee_flutter/bugsee_flutter.dart';
+import 'package:bugsee_flutter_feedback/bugsee_flutter_feedback.dart';
+import 'package:flutter/widgets.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Bugsee.launch('YOUR_APP_TOKEN');   // first: before the SDK has launched, Android's show() does nothing
+  runApp(const MyApp());
+}
+
+// For example from a "Contact support" button.
+Future<void> contactSupport() async {
+  try {
+    // `waitUntilLaunched` settles `alreadyRunning` and `deferred` launches too; `isAvailable` is false when the module is not registered.
+    if (await Bugsee.waitUntilLaunched() && await BugseeFeedback.isAvailable()) {
+      await BugseeFeedback.show();
+    }
+  } on BugseeFeedbackException {
+    // `nativeError` or `incompatibleCore`: hide the button or tell the user to try later.
+  }
+}
+```
+
+## Debug symbols
+
+A crash or error report is only readable when the backend holds the symbols of the build that produced it. Keep the symbols of
+every build you ship.
+
+| What | Where it comes from | How it gets to Bugsee |
+|---|---|---|
+| Android Java/Kotlin frames (R8 mapping) | the Bugsee Gradle plugin | automatic, on every minified build (`upload<Variant>Mapping`) |
+| Android native frames (`libflutter.so`, your `.so` files) | the Bugsee Gradle plugin | **only with `bugsee { ndk { enabled.set(true) } }`** (see Install, Android); non-debuggable builds |
+| Dart frames of a release build made with `--split-debug-info` (and `--obfuscate`) | `build/symbols/*.symbols` | **manual**: [doc/exceptions.md](doc/exceptions.md) section 5 (the 9.x `symbols.py` script; `bugsee-cli` has no Flutter type yet) |
+| iOS native frames (the app, `Flutter.framework`) | the build's dSYMs | **manual in a Flutter app**: a Run Script phase after "Embed Frameworks" running `bugsee-cli xcode upload-dsyms --app-token "$BUGSEE_APP_TOKEN"` ([Bugsee CLI, Xcode](https://docs.bugsee.com/cli/xcode/)), or `bugsee-cli debug-files upload <archive>/dSYMs --type dsym --version <v> --build <n>` in CI; with Xcode 15 and newer set `ENABLE_USER_SCRIPT_SANDBOXING = NO` on the target; `$BUGSEE_APP_TOKEN` must exist in the script's environment (a user-defined build setting of the target named `BUGSEE_APP_TOKEN` does that), and the CLI fails the build, exit code 20, when it is missing or empty |
+
+Dart symbols and iOS dSYMs are not uploaded for you by this package: nothing in a Flutter build calls the Bugsee uploader. The iOS
+row is taken from Bugsee's CLI documentation and has not been measured with a Flutter build here.
+
+## Privacy model
+
+Bugsee records what makes a bug reproducible, so decide what must not be recorded. What is captured, and the control for each:
+
+| Captured | Control |
+|---|---|
+| Video and report screenshot of the app | `BugseeSecureView`; `Bugsee.startBlackout()` / `endBlackout()` (video, screenshot, touches and the view hierarchy stop; logs and data continue); the `capture.video` / `capture.screenshot` options |
+| Flutter widget tree (boxes and widget type names only: no text, labels, field values, keys, semantics or route names; a `BugseeSecureView` subtree is one node) | `captureViewHierarchy: false`; built only while the SDK is launched and the app is in the foreground |
+| `dart:io` network traffic (opt-in) | `installNetworkCapture` is never called by `launch`; `setNetworkFilter` runs first and **fails closed** (a throw, a wrong type or a hang drops the event); the SDK's default sanitizer still runs after it; text bodies only, up to `captureNetworkBodySizeLimit` (20 KiB default, capped at 2 MiB); requests to Bugsee itself are never recorded |
+| `print` / `debugPrint` (opt-in) and `Bugsee.log` | `setLogFilter` (fails closed), `captureLogsLevel`; **the SDKs have no log sanitizer** |
+| Dart errors (exception text and stack) | the text is whatever your error says (a `FlutterError` contributes its summary only); the SDKs' filters do not apply to it |
+| Attributes, events, traces, breadcrumbs, user identifier | what you pass |
+| Everything the SDK itself captures (device and OS info, SDK logs, touches, crashes) | the SDK's options |
+
+Know these limits:
+
+- **Android logcat echo.** The SDK's own console capture records the same `print` again, raw, as source `LogCat` with tag `flutter`
+  (the `FlutterError` dump of a real app included), and **the Dart log filter does not apply to that echo**. On Android add a native
+  `Bugsee.setLogEventFilter` that drops `LogSource.LogCat` events tagged `flutter` (a debug build warns once; the Kotlin snippet is in
+  [doc/logs.md](doc/logs.md)). iOS recorded no echo on the simulator.
+- **Android HTTP breadcrumbs** (with `captureBreadcrumbs` on) keep the URL's query as given; the SDK relies on a breadcrumb filter. Redact the
+  URL in the network filter, which runs first.
+- **Secure views** do not cover a region's first frame, pixels drawn outside its subtree (an `Overlay` magnifier or tooltip), and are
+  verified in portrait on iOS only; see the widget's dartdoc.
+- Nothing is recorded, and nothing is queued, before the SDK is launching or launched.
+
+## Platform support and limits
+
+| Area | State |
+|---|---|
+| Android | API 21+. Verified on emulators (API 28 to 33): launch, auto-init, crash recovery, handlers, exceptions (debug and R8 `--obfuscate` release), view hierarchy, network, logs, attachments, `createReport`, secure regions at three densities, hot restart |
+| iOS | 15.0+. Verified on simulators (iOS 26.5 and 27.0) for everything the simulator permits |
+| iOS simulator | The SDK's simulator slice has **no crash reporter** (no recovered crash reports) and files **no logged exceptions**, so Dart error reports and crash recovery cannot be tried there; use a physical iPhone. Release and profile builds cannot run on a simulator |
+| Secure regions | Not covered for the first frame of a newly appearing region; only the implicit view (id 0) is placed |
+| Isolates | The API works from the main isolate: a call from a background isolate is a `BugseeException`. Network and log capture and the error handlers belong to the isolate that installed them; `listenToIsolateErrors` reports an isolate you spawn. Hot restart is handled (a new isolate takes over) |
+| Web, desktop | The calls do nothing; `launch` throws |
+| tvOS, visionOS | Not covered |
+| Real devices | **Partly exercised.** Integration tests ran on one Android 14 phone, an iPhone XS and an iPhone 16 Pro: `view_hierarchy_test` fails on the debug builds of the Android phone and the iPhone XS (it passes in profile builds), the iPhone 16 Pro ran only `attachments`, `network` and `logs`, and the device harness scenarios (recovered iOS crash, iOS exception bundles) were not run on a phone. Most evidence is from emulators and simulators ([doc/verification.md](doc/verification.md), including what was not covered) |
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Android build fails Gradle task validation on `injectBugsee...BuildId` | The Gradle plugin is older than 4.1.0: use 4.1.0 (4.0.x needed an ordering workaround, `mustRunAfter("copyFlutterAssets<Variant>")` on each `injectBugsee<Variant>BuildId` task) |
+| No native crashes on Android, build green | The `bugsee-android-ndk` artefact is not on the classpath (this plugin declares it: check `./gradlew :app:dependencies \| grep bugsee-android-ndk`) or `detect.crash-ndk` is off |
+| Android extensions (e.g. the feedback chat) silently never register | The Gradle plugin is older than 4.0.7 (4.0.6 strips the extension providers and injects nothing): use 4.1.0 |
+| `Bugsee.launch` answers `alreadyRunning` and options are ignored | Android auto-init: the manifest has `com.bugsee.app-token`; see "Launching twice" |
+| Wrapper identity missing from a report recovered after a crash | The wrapper must be registered natively before the SDK launches, which this plugin does from a content provider (initOrder 200). Do not add a provider of your own named `Bugsee<Anything>InitProvider`: the Gradle plugin deletes it from the APK |
+| `flutter pub get` fails with "only Swift Package Manager compatible" | Flutter older than 3.50.0 (3.41.0 for the SwiftPM check alone) |
+| iOS: package resolution or deployment target error | Raise the deployment target to 15.0; run `flutter config --enable-swift-package-manager` where it is not the default |
+| Gradle cannot parse the JDK version | A JDK newer than the Gradle in use understands: use 17 or 21 |
+| Black Android report screenshot | Android SDK older than 7.5.0 (bugsee-android#316: it skipped Flutter's default `SurfaceView`); 7.5.0 captures it, with the secure regions redacted (measured) |
+| Events, traces, logs, notifications or uploads vanish | They are dropped before `launch` and after `stop`; nothing is queued |
+| Dart errors are not reported | `installErrorHandlers` was called before Crashlytics (it replaced the handlers): check `Bugsee.errorHandlersActive`; or the call was before launch |
+| Obfuscated stacks are not readable | Upload the `--split-debug-info` symbols of that exact build (doc/exceptions.md, section 5) |
+| iOS: nothing arrives from the simulator | The simulator has no crash reporter and files no logged exceptions (above) |
+
+Option values read back from the SDK (`getLaunchOptions`) show enums as the SDK's internal integers: that is intended
+(enums cross the bridge by value, never by ordinal). Secure-rectangle units, the native lifecycle and the other workbook traps are
+handled inside the plugin; where and how they are guarded is in [doc/workbook-conformance.md](doc/workbook-conformance.md).
+
+## More
+
+- [doc/README.md](doc/README.md): every documentation page. [doc/architecture.md](doc/architecture.md): how the plugin is built.
+- [doc/migration-from-9x.md](doc/migration-from-9x.md): from the 9.x plugin.
+- [PLAN.md](PLAN.md): project status, decisions, open questions and the release checklist. [CHANGELOG.md](CHANGELOG.md).
+- [example/](example/README.md): the example app (launch, data, network, logs, exceptions, attachments, view hierarchy, feedback).
+  The device verification harness is [`scripts/device/`](scripts/device) (not run in CI). [.github/CI.md](.github/CI.md): the checks.

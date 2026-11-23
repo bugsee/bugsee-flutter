@@ -1,0 +1,23 @@
+{
+  "pins" : [
+    {
+      "identity" : "feedback-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/bugsee/feedback-spm",
+      "state" : {
+        "revision" : "879875ed3b02e6e20f03cb1336868472ea3cbe95",
+        "version" : "7.1.0"
+      }
+    },
+    {
+      "identity" : "spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/bugsee/spm",
+      "state" : {
+        "revision" : "465ec10d05313bca91254a0c8b7adf266d456c93",
+        "version" : "7.1.0"
+      }
+    }
+  ],
+  "version" : 2
+}

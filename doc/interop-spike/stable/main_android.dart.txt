@@ -1,0 +1,79 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
+import 'package:flutter/widgets.dart';
+import 'package:jni/jni.dart';
+import 'src/spike_store.g.dart';
+
+final out = StringBuffer();
+void say(String l) {
+  out.writeln(l);
+  // ignore: avoid_print
+  print('SPIKE2 $l');
+}
+
+double us(Stopwatch s, int n) => s.elapsedMicroseconds / n;
+
+void bench(String name, void Function() f, {int n = 20000}) {
+  for (var i = 0; i < 2000; i++) {
+    f();
+  }
+  final s = Stopwatch()..start();
+  for (var i = 0; i < n; i++) {
+    f();
+  }
+  say('$name ${us(s, n).toStringAsFixed(2)} us/call');
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    say('thread=${SpikeStore.thread()?.toDartString()}');
+    for (var r = 0; r < 2; r++) {
+      bench('r$r jni ping', SpikeStore.ping);
+      bench('r$r jni echo', () => SpikeStore.echo(42));
+      // 64 rectangles, flat l,t,r,b: build the JIntArray each call (what a publish would do)
+      final ints = Int32List.fromList(List.generate(256, (i) => i));
+      bench('r$r jni publish(256 ints, array built per call)', () {
+        final a = JIntArray.of(ints);
+        SpikeStore.publish(a);
+        a.release();
+      }, n: 5000);
+      final reused = JIntArray.of(ints);
+      bench('r$r jni publish(256 ints, array reused)', () => SpikeStore.publish(reused), n: 5000);
+    }
+    // native to Dart, same thread / worker, blocking callback and async callback
+    final seen = <String>[];
+    SpikeStore.listener = SpikeStore$Listener.implement(
+      $SpikeStore$Listener(onEvent: (n) => seen.add(n!.toDartString())),
+    );
+    SpikeStore.fire('main'.toJString(), false);
+    say('after fire(main): $seen');
+    SpikeStore.fire('worker'.toJString(), true);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    say('after fire(worker): $seen');
+    SpikeStore.listener = SpikeStore$Listener.implement(
+      $SpikeStore$Listener(onEvent: (n) => seen.add('async:${n!.toDartString()}'), onEvent$async: true),
+    );
+    SpikeStore.fire('worker2'.toJString(), true);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    say('after async fire(worker2): $seen');
+    // a background isolate calling the same static store
+    final fromIsolate = await Isolate.run(() {
+      SpikeStore.publish(JIntArray.of(Int32List.fromList([1, 2, 3, 4])));
+      return '${SpikeStore.last()} on ${SpikeStore.thread()?.toDartString()}';
+    });
+    say('isolate: $fromIsolate');
+    try {
+      SpikeStore.publish(JIntArray(0));
+    } catch (e) {
+      say('java exception surfaces as: ${e.runtimeType}: $e');
+    }
+  } catch (e, st) {
+    say('FAILED $e\n$st');
+  }
+  say('DONE ${Platform.operatingSystem}');
+  File('${Directory.systemTemp.path}/spike.txt').writeAsStringSync(out.toString());
+  runApp(const SizedBox());
+}

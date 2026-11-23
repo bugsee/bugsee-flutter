@@ -1,0 +1,83 @@
+import 'dart:async';
+import 'dart:ffi' as ffi;
+import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
+import 'package:ffi/ffi.dart';
+import 'package:flutter/widgets.dart';
+import 'package:objective_c/objective_c.dart' as objc;
+import 'src/spike_store_objc.g.dart';
+
+final out = StringBuffer();
+void say(String l) {
+  out.writeln(l);
+  File('${Directory.systemTemp.path}/spike.txt').writeAsStringSync(out.toString());
+}
+
+void bench(String name, void Function() f, {int n = 20000}) {
+  for (var i = 0; i < 2000; i++) {
+    f();
+  }
+  final s = Stopwatch()..start();
+  for (var i = 0; i < n; i++) {
+    f();
+  }
+  say('$name ${(s.elapsedMicroseconds / n).toStringAsFixed(2)} us/call');
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    say('thread=${SpikeStore.threadName().toDartString()}');
+    for (var r = 0; r < 2; r++) {
+      bench('r$r objc ping', SpikeStore.ping);
+      bench('r$r objc echo', () => SpikeStore.echo(42));
+      final ints = Int32List.fromList(List.generate(256, (i) => i));
+      final p = calloc<ffi.Int32>(256);
+      p.asTypedList(256).setAll(0, ints);
+      bench('r$r objc publishInts(256 ints, pointer reused)', () => SpikeStore.publishInts(p, count: 256), n: 5000);
+      bench('r$r objc publishInts(256 ints, copied into native memory per call)', () {
+        final q = calloc<ffi.Int32>(256);
+        q.asTypedList(256).setAll(0, ints);
+        SpikeStore.publishInts(q, count: 256);
+        calloc.free(q);
+      }, n: 5000);
+      bench('r$r objc publishData(NSData of 1024 bytes built per call)', () {
+        SpikeStore.publishData(ints.buffer.asUint8List().toNSData());
+      }, n: 5000);
+    }
+    final seen = <String>[];
+    // blocking block (the native thread waits for Dart) vs listener block (fire and forget)
+    SpikeStore.fire(
+      'main'.toNSString(),
+      onWorker: false,
+      listener: ObjCBlock_ffiVoid_NSString.blocking((s) => seen.add(s.toDartString())),
+    );
+    say('after fire(main, blocking): $seen');
+    SpikeStore.fire(
+      'worker-listener'.toNSString(),
+      onWorker: true,
+      listener: ObjCBlock_ffiVoid_NSString.listener((s) => seen.add('listener:${s.toDartString()}')),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    say('after fire(worker, listener): $seen');
+    SpikeStore.fire(
+      'worker-blocking'.toNSString(),
+      onWorker: true,
+      listener: ObjCBlock_ffiVoid_NSString.blocking((s) => seen.add('blocking:${s.toDartString()}')),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    say('after fire(worker, blocking): $seen');
+    final fromIsolate = await Isolate.run(() {
+      final q = calloc<ffi.Int32>(4);
+      SpikeStore.publishInts(q, count: 4);
+      calloc.free(q);
+      return '${SpikeStore.last()} on ${SpikeStore.threadName().toDartString()}';
+    });
+    say('isolate: $fromIsolate');
+  } catch (e, st) {
+    say('FAILED $e\n$st');
+  }
+  say('DONE');
+  runApp(const SizedBox());
+}

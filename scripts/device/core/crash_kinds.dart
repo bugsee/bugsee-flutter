@@ -1,0 +1,140 @@
+// The ways the verification app takes itself down or fails (example/lib/crash_lab.dart) and what the
+// harness expects of each. One table, compared by test/device_harness_test.dart with the app's list,
+// so a kind added on one side only fails a test instead of silently never running.
+
+/// Where the failure happens.
+enum CrashLayer {
+  /// Native code in the process (FFI into libc raising a signal): the NDK crash handler's job.
+  native,
+
+  /// The platform's own language (Java on Android): the SDK's uncaught-exception handler.
+  platform,
+
+  /// Dart: the handlers `Bugsee.installErrorHandlers` installs (nothing dies).
+  dart,
+}
+
+class CrashKind {
+  const CrashKind(
+    this.name,
+    this.layer, {
+    this.signal,
+    this.iosSignal,
+    this.marker,
+    this.expectReport = true,
+    this.alsoContains = const [],
+    this.platforms = const {'android', 'ios'},
+  });
+
+  /// The `crash <name>` command.
+  final String name;
+  final CrashLayer layer;
+
+  /// The signal number the kernel logs and the minidump records (native kinds).
+  final int? signal;
+
+  /// The number on iOS where Darwin differs from Linux/Android (`SIGBUS` is 10, 7 is `SIGEMT`).
+  final int? iosSignal;
+
+  /// [signal] as the iOS kernel numbers it.
+  int? get signalOnIos => iosSignal ?? signal;
+
+  /// Text that must be in the report's crash entry (the exception's message).
+  final String? marker;
+
+  /// False for a failure that, by design, no report records (the harness then proves the absence
+  /// against a positive control).
+  final bool expectReport;
+
+  /// More text the report must hold (a cause chain).
+  final List<String> alsoContains;
+
+  /// Where the kind exists (Java is Android's, Objective-C and Swift iOS's).
+  final Set<String> platforms;
+
+  bool get fatal => layer != CrashLayer.dart;
+}
+
+/// The name the iOS report's `signal.name` holds for a signal number (measured on an iPhone XS, iOS 18.7.9,
+/// SDK 7.1.0: every native kind and the Swift trap recorded exactly this, `exception_type: native`,
+/// `handled: false`). The report's `signal` has no `number`, only `name`, `addr` and `code`.
+const iosReportSignalNames = <int, String>{
+  4: 'SIGILL',
+  5: 'SIGTRAP',
+  6: 'SIGABRT',
+  10: 'SIGBUS', // Darwin's number; 7 is SIGEMT there
+  8: 'SIGFPE',
+  11: 'SIGSEGV',
+};
+
+/// The positive control of the absence check (`crash control-async` in the app): not a kind of the
+/// matrix, so the matrix never runs it, and a marker no kind's marker contains.
+const crashControlMarker = 'verify-control-async';
+
+const crashKindTable = <CrashKind>[
+  CrashKind('ffi-segv', CrashLayer.native, signal: 11),
+  CrashKind('ffi-abort', CrashLayer.native, signal: 6),
+  CrashKind('ffi-fpe', CrashLayer.native, signal: 8),
+  CrashKind('ffi-bus', CrashLayer.native, signal: 7, iosSignal: 10),
+  CrashKind('ffi-ill', CrashLayer.native, signal: 4),
+  CrashKind(
+    'java-main',
+    CrashLayer.platform,
+    marker: 'verify-java-main',
+    platforms: {'android'},
+  ),
+  CrashKind(
+    'java-thread',
+    CrashLayer.platform,
+    marker: 'verify-java-thread',
+    platforms: {'android'},
+  ),
+  CrashKind(
+    'java-nested',
+    CrashLayer.platform,
+    marker: 'verify-java-outer',
+    alsoContains: ['verify-java-cause'],
+    platforms: {'android'},
+  ),
+  // iOS: an uncaught Objective-C exception on the main thread and on a worker, and a Swift runtime trap.
+  CrashKind(
+    'objc-main',
+    CrashLayer.platform,
+    marker: 'verify-objc-main',
+    platforms: {'ios'},
+  ),
+  CrashKind(
+    'objc-thread',
+    CrashLayer.platform,
+    marker: 'verify-objc-thread',
+    platforms: {'ios'},
+  ),
+  // A Swift runtime trap (`fatalError`) is a SIGTRAP, not an exception: the report holds the signal and
+  // the stack, not the message (which Swift prints to stderr), so there is no marker to look for.
+  CrashKind('swift-trap', CrashLayer.native, signal: 5, platforms: {'ios'}),
+  CrashKind(
+    'dart-sync-framework',
+    CrashLayer.dart,
+    marker: 'verify-dart-sync-framework',
+  ),
+  CrashKind('dart-async', CrashLayer.dart, marker: 'verify-dart-async'),
+  CrashKind('dart-zone', CrashLayer.dart, marker: 'verify-dart-zone'),
+  CrashKind(
+    'dart-isolate',
+    CrashLayer.dart,
+    marker: 'verify-dart-isolate-listened',
+  ),
+  CrashKind(
+    'dart-isolate-unlistened',
+    CrashLayer.dart,
+    marker: 'verify-dart-isolate-unlistened',
+    expectReport: false,
+  ),
+  CrashKind(
+    'dart-platform-dispatcher',
+    CrashLayer.dart,
+    marker: 'verify-dart-platform-dispatcher',
+  ),
+  CrashKind('dart-timer', CrashLayer.dart, marker: 'verify-dart-timer'),
+  CrashKind('dart-stream', CrashLayer.dart, marker: 'verify-dart-stream'),
+];

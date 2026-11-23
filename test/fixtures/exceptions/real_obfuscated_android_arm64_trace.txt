@@ -1,0 +1,9 @@
+*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+pid: 7277, tid: 519499960016, name 2.ui
+os: android arch: arm64 comp: yes sim: no
+build_id: '7a3ef930595208393fa36f079aa65921'
+isolate_dso_base: 77fd30e000, vm_dso_base: 77fd30e000
+isolate_instructions: 77fd3c4a40, vm_instructions: 77fd3ae000
+    #00 abs 00000077fd527faf virt 0000000000219faf _kDartIsolateSnapshotInstructions+0x16356f
+    #01 abs 00000077fd5674ab virt 00000000002594ab _kDartIsolateSnapshotInstructions+0x1a2a6b
+<asynchronous suspension>

@@ -1,412 +1,309 @@
-/// This is a sample Flutter app  that demonstrates how to catch various kinds
-/// of errors in Flutter apps and report them to Bugsee.
-
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
-import 'dart:math';
 
-// This imports the Bugsee plugin
-import 'package:bugsee_flutter/bugsee.dart';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:video_player/video_player.dart';
+import 'package:bugsee_flutter/bugsee_flutter.dart';
+import 'package:material_ui/material_ui.dart';
 
-void onBugseeLifecycleEvent(BugseeLifecycleEventType e) {
-  print(e);
+import 'attachments_screen.dart';
+import 'exceptions_screen.dart';
+import 'feedback_screen.dart';
+import 'facade_screen.dart';
+import 'logs_screen.dart';
+import 'view_hierarchy_screen.dart';
+import 'network_screen.dart';
+
+/// The application token from the Bugsee dashboard. Pass your own with
+/// `--dart-define=BUGSEE_TOKEN=...`; the default is a placeholder, so the SDK launches but its
+/// reports are not delivered anywhere.
+const defaultToken = String.fromEnvironment(
+  'BUGSEE_TOKEN',
+  defaultValue: 'EXAMPLE-APP-TOKEN',
+);
+
+/// An on-premises or test server, if any (`--dart-define=BUGSEE_ENDPOINT=https://...`).
+const endpoint = String.fromEnvironment('BUGSEE_ENDPOINT');
+
+/// One configuration for both platforms. An option that exists on one platform only (the video
+/// mode is Android's, the AVPlayer capture is iOS's) is ignored on the other, with a warning in
+/// the debug console, so a shared configuration can set both.
+BugseeOptions exampleOptions() => BugseeOptions(
+  endpoint: endpoint.isEmpty ? null : endpoint,
+  captureVideo: true,
+  captureNetwork: true,
+  captureLogs: true,
+  captureLogsLevel: LogLevel.info,
+  captureBreadcrumbs:
+      true, // off by default on both SDKs; Bugsee.addBreadcrumb needs it
+  captureVideoFrameRate: FrameRate.medium,
+  configDuration: 45,
+  configWifiOnlyUpload: false,
+  detectHang: true,
+  reportingDefaultsCrashPriority: ReportSeverity.critical,
+  captureVideoMode: VideoMode.v2, // Android only
+  captureAvPlayer: true, // iOS only
+);
+
+/// What the example does with a report before and after the SDK builds it. Idempotent, as
+/// `onAfterReportCreated` must be: it may run again for the same report.
+const exampleReportHandler = BugseeReportHandler(
+  onBeforeReportCreated: _beforeReport,
+  onAfterReportCreated: _afterReport,
+);
+
+Future<void> _beforeReport(ReportProxy report) =>
+    report.setAttribute('example.phase', 'before');
+
+Future<void> _afterReport(ReportProxy report) async {
+  await report.replaceLabels(['flutter-example']);
+  await report.setAttribute('example.phase', 'after');
 }
 
-Future<BugseeLogEvent> onBugseeLogEvent(BugseeLogEvent logEvent) {
-  logEvent.text = "Filtered: ${logEvent.text}";
-  return Future.value(logEvent);
-}
-
-Future<BugseeNetworkEvent> onBugseeNetworkEvent(BugseeNetworkEvent e) {
-  e.url = "<redacted>";
-  return Future.value(e);
-}
-
-Future<List<BugseeAttachment>> onBugseeAttachmentsRequest(BugseeReport report) {
-  var attachments = <BugseeAttachment>[];
-  var list = utf8.encode("This is the contents of the attachment!");
-  attachments.add(BugseeAttachment("testAttachment", "", list));
-  return Future.value(attachments);
-}
-
-Future<void> configureBugsee() async {
-  Bugsee.setLogFilter(onBugseeLogEvent);
-  Bugsee.setNetworkFilter(onBugseeNetworkEvent);
-  Bugsee.setLifecycleCallback(onBugseeLifecycleEvent);
-  Bugsee.setAttachmentsCallback(onBugseeAttachmentsRequest);
-
-  var bgColor = Color.fromARGB(255, 100, 150, 180);
-
-  await Bugsee.appearance.iOS.setReportBackgroundColor(bgColor);
-  await Bugsee.appearance.android.setReportBackgroundColor(bgColor);
-
-  await Bugsee.appearance.iOS
-      .setReportSummaryPlaceholder('Some summary, please');
-  await Bugsee.appearance.iOS
-      .setReportDescriptionPlaceholder('More, more and more details here');
-  await Bugsee.appearance.iOS
-      .setReportEmailPlaceholder('Identify yourself, please');
-  await Bugsee.appearance.iOS
-      .setReportLabelsPlaceholder('Labels.For.Devs [Comma separated]');
-}
-
-BugseeLaunchOptions? createLaunchOptions() {
-  if (Platform.isAndroid) {
-    var options = AndroidLaunchOptions();
-    // You can set Android-specific options here
-
-    options.videoQuality = BugseeVideoQuality.medium;
-
-    return options;
-  }
-
-  if (Platform.isIOS) {
-    var options = IOSLaunchOptions();
-    // You can set iOS-specific options here
-
-    // options.captureAVPlayer = true;
-
-    return options;
-  }
-
-  return null;
-}
-
-String getApplicationToken() {
-  return Platform.isAndroid
-      ? 'aad134bc-9944-472e-89b7-b26974d874a9'
-      : (Platform.isIOS ? '1fcf9b8d-92f2-4ca5-b68f-4d6bc3e4b733' : '');
-}
-
-Future<void> launchBugsee(
-    void Function(bool isBugseeLaunched) appRunner) async {
-  var launchOptions = createLaunchOptions();
-
-  // Set all the required launch options to the desired state
-
-  await Bugsee.launch(getApplicationToken(),
-      appRunCallback: appRunner, launchOptions: launchOptions);
-}
-
-Future<void> main() async {
-  // This is required to let Bugsee intercept network requests
-  HttpOverrides.global = Bugsee.defaultHttpOverrides;
-
-  await launchBugsee((bool isBugseeLaunched) async {
-    if (isBugseeLaunched) {
-      await configureBugsee();
-    }
-    runApp(const CrashyApp());
+void main() {
+  // Everything runs inside one guarded zone: it reports what escapes (an error nobody caught), and it
+  // records `print` once the capture is installed. The bindings are initialized in it too, so
+  // `runApp` shares their zone.
+  Bugsee.runGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Records what the app prints (`print`, `debugPrint`) into the report's log, with the plugin's
+    // own source: the app's deliberate `Bugsee.log` calls stay distinguishable. Filter it with
+    // `Bugsee.setLogFilter`.
+    Bugsee.installLogCapture();
+    // Records the app's `dart:io` HTTP traffic from the moment the SDK is launched (the SDKs'
+    // own interception cannot see it); chained to any HttpOverrides the app installs.
+    Bugsee.installNetworkCapture();
+    // Before launch, so reports the SDK recovers while launching are seen too.
+    await Bugsee.setReportHandler(exampleReportHandler);
+    runApp(const ExampleApp());
   });
 }
 
-class CrashyApp extends StatelessWidget {
-  const CrashyApp({super.key});
+class ExampleApp extends StatelessWidget {
+  const ExampleApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Crashy',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: MyHomePage(),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Bugsee example',
+    theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+    home: const HomeScreen(),
+  );
 }
 
-class MyHomePage extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Crashy'),
-      ),
-      body: SingleChildScrollView(
-          child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            ElevatedButton(
-              child: Text('Dart exception'),
-              onPressed: () {
-                throw StateError('This is a Dart exception.');
-              },
-            ),
-            ElevatedButton(
-              child: Text('async Dart exception'),
-              onPressed: () async {
-                foo() async {
-                  throw StateError('This is an async Dart exception.');
-                }
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-                bar() async {
-                  await foo();
-                }
+class _HomeScreenState extends State<HomeScreen> {
+  int _page = 0;
 
-                await bar();
-              },
-            ),
-            ElevatedButton(
-              child: Text('Java exception'),
-              onPressed: () async {
-                Bugsee.testExceptionCrash();
-              },
-            ),
-            ElevatedButton(
-              child: Text('Handled exception'),
-              onPressed: () async {
-                try {
-                  throw FormatException('Expected at least 1 section');
-                } catch (ex, st) {
-                  Bugsee.logException(ex, st);
-                }
-              },
-            ),
-            ElevatedButton(
-              child: Text('Handled empty exception'),
-              onPressed: () {
-                Bugsee.logException(
-                    StateError(
-                        'This is a Dart exception with empty stack trace.'),
-                    '');
-              },
-            ),
-            ElevatedButton(
-              child: Text('Exception in another isolate'),
-              onPressed: () async {
-                Isolate isolate = await Isolate.spawn((dynamic arg) {
-                  throw StateError('This is an exception in another isolate.');
-                }, "", paused: true, errorsAreFatal: false);
-                isolate.addBugseeErrorListener();
-                if (isolate.pauseCapability != null) {
-                  isolate.resume(isolate.pauseCapability!);
-                }
-
-                // BugseeIsolate.spawn((message) {
-                //   throw StateError('This is an exception in another isolate.');
-                // }, null);
-              },
-            ),
-            BugseeSecureView(
-                enabled: true,
-                child: ElevatedButton(
-                  child: Text('Log messages'),
-                  onPressed: () {
-                    print("This is a message posted with print() call");
-                    Bugsee.log("This is a test console message");
-                    Bugsee.log("This is a test console ERROR message",
-                        BugseeLogLevel.error);
-                    Bugsee.log("This is a test console DEBUG message",
-                        BugseeLogLevel.debug);
-                    Bugsee.log("This is a test console INFO message",
-                        BugseeLogLevel.info);
-                    Bugsee.log("This is a test console WARNING message",
-                        BugseeLogLevel.warning);
-                  },
-                )),
-            ElevatedButton(
-              child: Text('Network request'),
-              onPressed: () async {
-                // var httpClient = HttpClient();
-                // var request = await httpClient.getUrl(
-                //     Uri.parse('https://jsonplaceholder.typicode.com/posts'));
-                // var response = await request.close();
-                // var responseBody =
-                //     await response.transform(utf8.decoder).join();
-
-                var response = await http.post(
-                  Uri.parse('https://reqres.in/api/users'),
-                  headers: <String, String>{
-                    'Content-Type': 'application/json; charset=UTF-8',
-                  },
-                  body: jsonEncode(<String, String>{
-                    'title': 'Some fancy title',
-                  }),
-                );
-                var responseBody = response.body;
-
-                print(
-                    'Received network response. Length: ${responseBody.length}');
-              },
-            ),
-            ElevatedButton(
-              child: Text('Custom events'),
-              onPressed: () async {
-                Map<String, dynamic> params = <String, dynamic>{};
-                params['string'] = 'test';
-                params['int'] = 5;
-                params['float'] = 0.55;
-                params['bool'] = true;
-                Bugsee.event('event', params);
-                Bugsee.trace('number', 5);
-                Bugsee.trace('float', 0.55);
-                Bugsee.trace('string', 'test');
-                Bugsee.trace('bool', true);
-                Bugsee.trace('map', params);
-                Bugsee.setAttribute('age', 36);
-                Bugsee.setAttribute('name', 'John Doe');
-                Bugsee.setAttribute('married', false);
-              },
-            ),
-            ElevatedButton(
-              child: Text('Show report dialog'),
-              onPressed: () {
-                Bugsee.showReportDialog('Test summary', 'Test description');
-              },
-            ),
-            TextField(
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                )),
-            ElevatedButton(
-              child: Text('Upload report'),
-              onPressed: () {
-                Bugsee.upload('Test summary', 'Test description');
-              },
-            ),
-            ElevatedButton(
-              child: Text('Show Feedback'),
-              onPressed: () {
-                Bugsee.showFeedbackUI();
-              },
-            ),
-            ElevatedButton(
-              child: Text('Add secure rect'),
-              onPressed: () {
-                Bugsee.addSecureRect(Rectangle(20, 20, 100, 100));
-              },
-            ),
-            ElevatedButton(
-              child: Text('Get all secure rects'),
-              onPressed: () async {
-                dynamic rects = await Bugsee.getAllSecureRects();
-                print(rects);
-              },
-            ),
-            ElevatedButton(
-              child: Text('Capture view hierarchy'),
-              onPressed: () async {
-                await Bugsee.captureViewHierarchy();
-              },
-            ),
-            ElevatedButton(
-              child: Text('Show video'),
-              onPressed: () async {
-                showDialog(
-                    context: context,
-                    builder: (BuildContext context) =>
-                        _buildVideoPopupDialog(context));
-              },
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-            ElevatedButton(
-              child: Text('Dummy button'),
-              onPressed: () async {},
-            ),
-          ],
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: IndexedStack(
+      index: _page,
+      children: const [
+        LaunchScreen(),
+        FacadeScreen(),
+        ExceptionsScreen(),
+        AttachmentsScreen(),
+        NetworkScreen(),
+        LogsScreen(),
+        FeedbackScreen(),
+        ViewHierarchyScreen(),
+      ],
+    ),
+    bottomNavigationBar: NavigationBar(
+      selectedIndex: _page,
+      onDestinationSelected: (i) => setState(() => _page = i),
+      destinations: const [
+        NavigationDestination(
+          key: Key('tab-launch'),
+          icon: Icon(Icons.power_settings_new),
+          label: 'Launch',
         ),
-      )),
-    );
-  }
-
-  Widget _buildVideoPopupDialog(BuildContext context) {
-    return Dialog(
-        child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(children: <Widget>[
-              VideoWidget(),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: const Text('Close'),
-              ),
-            ])));
-  }
+        NavigationDestination(
+          key: Key('tab-facade'),
+          icon: Icon(Icons.bug_report_outlined),
+          label: 'Data',
+        ),
+        NavigationDestination(
+          key: Key('tab-errors'),
+          icon: Icon(Icons.error_outline),
+          label: 'Errors',
+        ),
+        NavigationDestination(
+          key: Key('tab-files'),
+          icon: Icon(Icons.attach_file),
+          label: 'Files',
+        ),
+        NavigationDestination(
+          key: Key('tab-network'),
+          icon: Icon(Icons.swap_vert),
+          label: 'Network',
+        ),
+        NavigationDestination(
+          key: Key('tab-logs'),
+          icon: Icon(Icons.notes),
+          label: 'Logs',
+        ),
+        NavigationDestination(
+          key: Key('tab-feedback'),
+          icon: Icon(Icons.chat_bubble_outline),
+          label: 'Chat',
+        ),
+        NavigationDestination(
+          key: Key('tab-view-hierarchy'),
+          icon: Icon(Icons.account_tree_outlined),
+          label: 'Hierarchy',
+        ),
+      ],
+    ),
+  );
 }
 
-/// Stateful widget to fetch and then display video content.
-class VideoWidget extends StatefulWidget {
-  const VideoWidget({super.key});
+class LaunchScreen extends StatefulWidget {
+  const LaunchScreen({super.key});
 
   @override
-  _VideoWidgetState createState() => _VideoWidgetState();
+  State<LaunchScreen> createState() => _LaunchScreenState();
 }
 
-class _VideoWidgetState extends State<VideoWidget> {
-  late VideoPlayerController _controller;
+class _LaunchScreenState extends State<LaunchScreen> {
+  final _token = TextEditingController(text: defaultToken);
+  final _log = <String>[];
+  late final StreamSubscription<BugseeStatus> _transitions;
+  BugseeStatus _status = BugseeStatus.stopped;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(
-        'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4'))
-      ..initialize().then((_) {
-        // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
-        setState(() {});
-      });
-
-    _controller.play();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          _controller.value.isInitialized
-              ? AspectRatio(
-                  aspectRatio: _controller.value.aspectRatio,
-                  child: VideoPlayer(_controller),
-                )
-              : Container(),
-        ]);
+    _transitions = Bugsee.statusChanges.listen((status) {
+      _note('status -> ${status.name}');
+      setState(() => _status = status);
+    });
+    // The SDK's own answer, for a launch made before this screen listened.
+    Bugsee.getStatus().then((status) {
+      if (mounted) setState(() => _status = status);
+    });
   }
 
   @override
   void dispose() {
+    _transitions.cancel();
+    _token.dispose();
     super.dispose();
-    _controller.dispose();
+  }
+
+  void _note(String line) {
+    debugPrint('example: $line');
+    if (mounted) setState(() => _log.insert(0, line));
+  }
+
+  Future<void> _run(String name, Future<Object?> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      _note('$name -> ${await action()}');
+    } on BugseeLaunchException catch (e) {
+      _note('$name failed: ${e.reason.name} (${e.message})');
+    } on BugseeException catch (e) {
+      _note('$name failed: ${e.message}');
+    } on ArgumentError catch (e) {
+      _note('$name: bad options: ${e.message}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final launched = _status == BugseeStatus.launched;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Bugsee')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _token,
+                decoration: const InputDecoration(
+                  labelText: 'Application token',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('launch'),
+                      onPressed: _busy
+                          ? null
+                          : () => _run(
+                              'launch',
+                              () => Bugsee.launch(
+                                _token.text,
+                                options: exampleOptions(),
+                              ),
+                            ),
+                      child: const Text('Launch'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      key: const Key('stop'),
+                      onPressed: _busy ? null : () => _run('stop', Bugsee.stop),
+                      child: const Text('Stop'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                key: const Key('options'),
+                onPressed: _busy
+                    ? null
+                    : () => _run('launch options', () async {
+                        final options = await Bugsee.getLaunchOptions();
+                        final shown = {
+                          for (final k in [
+                            'com.bugsee.option.config.duration',
+                            'com.bugsee.option.capture.logs.level',
+                            'com.bugsee.option.capture.video.frame-rate',
+                            'com.bugsee.option.capture.video.mode',
+                            'com.bugsee.option.reporting.defaults.crash-priority',
+                            'com.bugsee.option.detect.hang',
+                          ])
+                            k.substring('com.bugsee.option.'.length):
+                                options[k],
+                        };
+                        return shown;
+                      }),
+                child: const Text('Show launch options'),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Status: ${_status.name}${launched ? ' (capturing)' : ''}',
+                key: const Key('status'),
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const Divider(height: 24),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _log.length,
+                  itemBuilder: (_, i) => Text(
+                    _log[i],
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

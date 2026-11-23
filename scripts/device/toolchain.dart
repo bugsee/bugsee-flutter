@@ -1,0 +1,166 @@
+// The toolchain a run used, found and recorded: Flutter, Dart, JDK, Android SDK, Xcode. The report
+// prints it (doc/verification.md quotes it) because a result is only reproducible with it.
+import 'dart:convert';
+import 'dart:io';
+
+import 'core/expectations.dart';
+import 'shell.dart';
+
+class Toolchain {
+  Toolchain({
+    required this.repoRoot,
+    required this.workDir,
+    required this.flutter,
+    required this.javaHome,
+    required this.gradleHome,
+    required this.androidHome,
+  });
+
+  final String repoRoot;
+  final String workDir;
+  final String flutter;
+  final String? javaHome;
+  final String gradleHome;
+  final String androidHome;
+
+  static Toolchain detect(String repoRoot, String workDir) {
+    final env = Platform.environment;
+    final home = env['HOME'] ?? '';
+    // The floor of native-versions.json (flutter.min) under fvm, the version the harness is pinned to.
+    final floor = (jsonDecode(
+      File('$repoRoot/native-versions.json').readAsStringSync(),
+    ) as Map)['flutter']['min'];
+    final fvm = '$home/fvm/versions/$floor/bin/flutter';
+    final flutter =
+        env['VERIFY_FLUTTER'] ?? (File(fvm).existsSync() ? fvm : 'flutter');
+    final androidHome =
+        env['ANDROID_HOME'] ??
+        env['ANDROID_SDK_ROOT'] ??
+        '$home/Library/Android/sdk';
+    // 17 or 21 only (native-versions.json android.jdk): what CI runs and the SDK documents.
+    var java = env['VERIFY_JAVA_HOME'] ?? env['JAVA_HOME'];
+    if (java == null || !_javaOk(java)) {
+      final r = Process.runSync('/usr/libexec/java_home', ['-v', '21']);
+      if (r.exitCode == 0) java = (r.stdout as String).trim();
+    }
+    return Toolchain(
+      repoRoot: repoRoot,
+      workDir: workDir,
+      flutter: flutter,
+      javaHome: java,
+      gradleHome: env['VERIFY_GRADLE_HOME'] ?? '$workDir/gradle-home',
+      androidHome: androidHome,
+    );
+  }
+
+  static bool _javaOk(String home) {
+    final release = File('$home/release');
+    if (!release.existsSync()) return false;
+    final m = RegExp(r'JAVA_VERSION="(\d+)')
+        .firstMatch(release.readAsStringSync());
+    final major = int.tryParse(m?.group(1) ?? '');
+    return major == 17 || major == 21;
+  }
+
+  /// The environment Gradle-backed builds run in: JDK 17/21, a private Gradle home, no daemon.
+  Map<String, String> get buildEnv => {
+    ...Platform.environment,
+    if (javaHome != null) 'JAVA_HOME': javaHome!,
+    if (javaHome != null)
+      'GRADLE_OPTS':
+          '-Dorg.gradle.java.home=$javaHome -Dorg.gradle.daemon=false',
+    'GRADLE_USER_HOME': gradleHome,
+    'ANDROID_HOME': androidHome,
+    'PATH':
+        '${File(flutter).parent.path}:$androidHome/platform-tools:$androidHome/cmdline-tools/latest/bin:'
+        '${Platform.environment['PATH']}',
+  };
+
+  /// The `dart` next to the Flutter executable (its own `bin/`), or plain `dart` when [flutter] is a bare
+  /// command name. Never derived by editing the path text (a checkout may live in a directory named flutter).
+  String get dartExecutable =>
+      flutter.contains('/') ? '${File(flutter).parent.path}/dart' : 'dart';
+
+  String get adbPath => '$androidHome/platform-tools/adb';
+
+  String get apkanalyzer {
+    final tools = Directory('$androidHome/cmdline-tools');
+    if (tools.existsSync()) {
+      final dirs = tools.listSync().whereType<Directory>().toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+      for (final d in dirs) {
+        final f = File('${d.path}/bin/apkanalyzer');
+        if (f.existsSync()) return f.path;
+      }
+    }
+    return 'apkanalyzer';
+  }
+
+  /// `flutter --version --machine`, plus what the report needs.
+  Future<Map<String, String>> describe() async {
+    final fv = await sh([flutter, '--version', '--machine'], env: buildEnv);
+    final m = (jsonDecode(fv.stdout.substring(fv.stdout.indexOf('{'))) as Map)
+        .cast<String, Object?>();
+    final java = javaHome == null
+        ? 'none'
+        : (await sh(['$javaHome/bin/java', '-version'])).stderr
+              .split('\n')
+              .first;
+    final xcode = Platform.isMacOS
+        ? (await sh(['xcodebuild', '-version'])).text.replaceAll('\n', ' ')
+        : 'n/a';
+    return {
+      'flutter': '${m['frameworkVersion']}',
+      'flutterChannel': '${m['channel']}',
+      'dart': '${m['dartSdkVersion']}'.split(' ').first,
+      'engine': '${m['engineRevision']}',
+      'java': java,
+      'javaHome': '$javaHome',
+      'xcode': xcode,
+      'host': (await sh(['uname', '-a'])).text,
+    };
+  }
+
+  /// The expectation for a build in [mode].
+  Future<BuildExpectation> expectation(String mode) async {
+    final d = await describe();
+    final pubspec = File('$repoRoot/pubspec.yaml').readAsStringSync();
+    final version = RegExp(
+      r'^version:\s*(\S+)',
+      multiLine: true,
+    ).firstMatch(pubspec)!.group(1)!;
+    return BuildExpectation(
+      pins: Pins.read(repoRoot),
+      wrapperVersion: version,
+      flutterVersion: d['flutter']!,
+      dartVersion: d['dart']!,
+      engineRevision: d['engine']!.substring(0, 10),
+      mode: mode,
+    );
+  }
+}
+
+/// `BUGSEE_VERIFY_DEBUGGABLE_RELEASE=1` while BUILDING: the release builds are made debuggable so a
+/// device without root can be read with `run-as`. Everything else about them is the release build
+/// (R8, `--obfuscate`, the Gradle plugin), but they are not what an app store ships, so a result
+/// taken with it says so (the report's `releaseDebuggable`) and the harness proves the build is
+/// debuggable when asked for it.
+bool get debuggableRelease =>
+    Platform.environment['BUGSEE_VERIFY_DEBUGGABLE_RELEASE'] == '1';
+
+/// The address the mock API binds and the harness talks to: loopback by default; the LAN address of
+/// the Mac for a physical iPhone (`BUGSEE_VERIFY_MOCK_BIND`, one address, never all interfaces).
+String get mockHost =>
+    Platform.environment['BUGSEE_VERIFY_MOCK_BIND'] ?? '127.0.0.1';
+
+/// The host the app's own `dart:io` request goes to in the network check. Bugsee's own traffic is never
+/// captured and is told apart BY HOST (not port), so it must differ from the endpoint's: on an emulator
+/// that is 10.0.2.2 against 127.0.0.1; on a phone both would be 127.0.0.1 (adb reverse), so `localhost`.
+String get netHost => verifyHost == '127.0.0.1' ? 'localhost' : '127.0.0.1';
+
+/// Where the app reaches the host's mock API. The emulator's alias for the host is the default; a
+/// PHYSICAL device has none: set `BUGSEE_VERIFY_HOST=127.0.0.1` and the harness's `adb reverse`
+/// (it already forwards the port) carries it. Baked into the build, so a build made for one is
+/// not reusable for the other.
+String get verifyHost =>
+    Platform.environment['BUGSEE_VERIFY_HOST'] ?? '10.0.2.2';

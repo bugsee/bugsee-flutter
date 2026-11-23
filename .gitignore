@@ -1,40 +1,34 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
 .DS_Store
 .atom/
-.dart_tool/
-.idea
-.packages
-.fvm/
-.pub/
-.flutter-plugins-dependencies
-.vscode/
-.idea/
-.gradle/
-ios/.generated/
-packages
-pubspec.lock
-gen
-.fvmrc
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
-example/android/.gradle/
-example/.dart_tool/
-example/.idea/
-example/.packages
-example/.pub/
-example/build/
-example/.packages
-example/pubspec.lock
-example/.flutter-plugins-dependencies
-example/.flutter-plugins
-example/android/app/.cxx/
-
-android/.gradle/
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
 .idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+# The repository is a pub workspace and its one lock file (pubspec.lock at the root, covering the
+# plugin, the feedback package and the example app) IS committed, so CI and the example builds
+# resolve the same versions every run. It is not published: .pubignore drops it.
+**/doc/api/
 .dart_tool/
-.packages
-.pub/
-build/
-deploy/
-.packages
-pubspec.lock
 .flutter-plugins-dependencies
-.flutter-plugins
+/build/
+/coverage/

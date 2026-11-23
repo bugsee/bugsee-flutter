@@ -1,0 +1,33 @@
+{
+  "_comment": "The network wire vocabulary Dart sends and both natives understand. Compared with Dart (test/network_drift_test.dart), with the Java/ObjC sources (same test) and with the REAL SDK enums and constants (NetworkWireParityTest.java, BGSFlutterNetworkOpsTests.m). Stages are the SDKs' own (Android NetworkEventStage#toString; iOS has no redirect stage and spells abort `cancel`); reasons are NetworkBodyAbsenceReason values (Android) and BugseeNetworkBody* (iOS).",
+  "stages": ["before", "redirect", "complete", "error", "abort"],
+  "androidStageEnum": {
+    "before": "RequestStarted",
+    "redirect": "Redirect",
+    "complete": "RequestCompleted",
+    "error": "RequestErrored",
+    "abort": "RequestAborted"
+  },
+  "iosStageConstants": {
+    "before": "BugseeNetworkEventBegin",
+    "complete": "BugseeNetworkEventComplete",
+    "error": "BugseeNetworkEventError",
+    "abort": "BugseeNetworkEventCancel"
+  },
+  "noBodyReasons": {
+    "noData": "no_data",
+    "sizeTooLarge": "size_too_large",
+    "unsupportedContentType": "unsupported_content_type",
+    "noContentType": "no_content_type",
+    "cantReadData": "cant_read_data"
+  },
+  "iosReasonConstants": {
+    "sizeTooLarge": "BugseeNetworkBodySizeTooLarge",
+    "unsupportedContentType": "BugseeNetworkBodyUnsupportedContentType",
+    "noContentType": "BugseeNetworkBodyNoContentType",
+    "cantReadData": "BugseeNetworkBodyCantReadData"
+  },
+  "maxAgeMs": 3600000,
+  "mechanism": "dart:io",
+  "filterTimeoutSeconds": 10
+}

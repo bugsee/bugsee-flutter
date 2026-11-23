@@ -1,0 +1,761 @@
+// The public entry point. Everything behind it is `BugseeRuntime`, which a test can replace.
+import 'dart:async' show ZoneSpecification, runZoned, runZonedGuarded;
+import 'dart:isolate' show Isolate;
+
+import 'package:flutter/foundation.dart'
+    show ErrorDescription, FlutterError, FlutterErrorDetails;
+import 'package:meta/meta.dart' show visibleForTesting;
+
+import 'bugsee_runtime.dart';
+import 'errors.dart';
+import 'exceptions/error_capture.dart';
+import 'facade/breadcrumb.dart';
+import 'launch.dart';
+import 'lifecycle_event.dart';
+import 'logs/log_event.dart';
+import 'network/network_event.dart';
+import 'network/network_pipeline.dart' show NetworkCaptureStats;
+import 'options/bugsee_options.g.dart';
+import 'report/created_report.dart';
+import 'report/report_enums.dart';
+import 'report/report_handler.dart';
+import 'status.dart';
+
+/// Replaces the native side (and everything else the facade uses). For tests only: not exported
+/// from package:bugsee_flutter, so `BugseeRuntime` is not part of the public signature.
+@visibleForTesting
+void debugSetBugseeRuntime(BugseeRuntime runtime) => Bugsee._runtime = runtime;
+
+/// The Bugsee SDK.
+///
+/// ```dart
+/// final result = await Bugsee.launch(
+///   'YOUR_APP_TOKEN',
+///   options: const BugseeOptions(captureVideo: true, detectHang: true),
+/// );
+/// ```
+///
+/// Android and iOS are two SDKs behind one set of options (`BugseeOptions`). Launching is
+/// asynchronous in both: [launch] completes once the SDK reports that capture started; follow
+/// the transitions with [statusChanges].
+abstract final class Bugsee {
+  static BugseeRuntime _runtime = BugseeRuntime();
+
+  /// Launches the SDK with the application [token] from the Bugsee dashboard.
+  ///
+  /// [options] configure the SDK for this launch. They are ignored when the SDK is already
+  /// running (see [LaunchResult.alreadyRunning]); stop it first to change them.
+  ///
+  /// Completes with what happened. This is when the SDK answered, which is not always "capture
+  /// started":
+  ///  * [LaunchResult.launched]: the SDK launched and capture started;
+  ///  * [LaunchResult.alreadyRunning]: the SDK was already `launching` or `launched`; nothing was
+  ///    changed and these options were not applied (if it is still `launching`, capture has not
+  ///    started: see [waitUntilLaunched]);
+  ///  * [LaunchResult.deferred]: iOS, the app is not active yet; the SDK starts when it is. Not a
+  ///    failure: do not write `if (result != LaunchResult.launched)`; see [waitUntilLaunched].
+  ///
+  /// Throws a [BugseeLaunchException] when the SDK did not launch (a blank token, a stop still in
+  /// progress, a refusal, an exception native side, an unsupported platform), and an
+  /// [ArgumentError] for an option that cannot be honoured on any platform (an unknown key in
+  /// `BugseeOptions.custom`, a bad endpoint). An option that exists on the other platform only is
+  /// not an error: it is skipped, with a warning in debug builds.
+  ///
+  /// Registers the Flutter wrapper's identity with the SDK first (it is in place from process
+  /// start; the Flutter, Dart and engine versions are added before the launch).
+  static Future<LaunchResult> launch(
+    String token, {
+    BugseeOptions options = const BugseeOptions(),
+  }) => _runtime.launch(token, options);
+
+  /// Completes with whether the SDK is launched, waiting for a launch that is still starting:
+  /// the answer to [LaunchResult.deferred] (iOS, the usual result of launching before `runApp`)
+  /// and to [LaunchResult.alreadyRunning] while the SDK is still `launching`.
+  ///
+  /// `true` as soon as the status is `launched`. `false` when the launch failed (the status went
+  /// back to `stopped` after `launching`) or nothing happened within [timeout]. A deferred launch
+  /// that never starts (the app is never active) times out. Never throws for a failed launch.
+  static Future<bool> waitUntilLaunched({
+    Duration timeout = const Duration(seconds: 30),
+  }) => _runtime.waitUntilLaunched(timeout);
+
+  /// Stops the SDK; completes when it has stopped (at once if it was not running). A launch
+  /// before that is refused ([LaunchFailure.stopping]).
+  ///
+  /// The next [launch] applies the options it is given: this is how the options change.
+  static Future<void> stop() => _runtime.stop();
+
+  /// The status the SDK last announced to this app (`launching`, `launched`, `stopping`,
+  /// `stopped`), or [BugseeStatus.stopped] before it announced one.
+  ///
+  /// Kept from the SDK's lifecycle events, so it is not available the instant the app starts:
+  /// the first call attaches to the SDK, and a launch made natively before that (the Android
+  /// manifest auto-init) is reported once attached. Use [getStatus] for the SDK's own answer.
+  static BugseeStatus get status {
+    _runtime.ensureStartedInBackground();
+    return _runtime.status;
+  }
+
+  /// Every status transition, from when a listener subscribes: only `launching`, `launched`,
+  /// `stopping` and `stopped`; no other SDK event changes the status.
+  ///
+  /// A broadcast stream. A transition that happened before the first call into this plugin is
+  /// delivered when it attaches (the latest status is replayed).
+  static Stream<BugseeStatus> get statusChanges {
+    _runtime.ensureStartedInBackground();
+    return _runtime.statusChanges;
+  }
+
+  /// The SDK's current status, read from the SDK.
+  static Future<BugseeStatus> getStatus() => _runtime.getStatus();
+
+  /// Whether the SDK is launched and capturing (`status == launched`, read from the SDK). False
+  /// during the launch window, while capture is still starting.
+  static Future<bool> isLaunched() async =>
+      await _runtime.getStatus() == BugseeStatus.launched;
+
+  /// The launch options in effect: what the app supplied, merged over the SDK's defaults.
+  ///
+  /// Keyed by `com.bugsee.option.*`; enums as the SDK's internal integer, floats as `double` (with
+  /// the precision of a 32-bit float). Before the first launch these are the SDK's defaults, which
+  /// differ between Android and iOS for a few options. Internal (`$$`) options are never included.
+  /// Both SDKs, at the versions this plugin pins, return the merged set here (the 6.x iOS SDK
+  /// returned only what differed from its defaults).
+  static Future<Map<String, Object>> getLaunchOptions() =>
+      _runtime.launchOptions(hostOnly: false);
+
+  /// The options the app supplied to the last launch (empty before the first), without the
+  /// defaults [getLaunchOptions] merges them over. Replaced, not merged, by the next launch.
+  ///
+  /// The two platforms do NOT agree on what counts as supplied: Android reports every recognised
+  /// option the app passed, iOS reports only those whose value differs from the iOS default (an
+  /// option set to its default is absent there). So on iOS "absent" does not mean "the app did not
+  /// set it"; use [getLaunchOptions] for what is in effect.
+  static Future<Map<String, Object>> getHostLaunchOptions() =>
+      _runtime.launchOptions(hostOnly: true);
+
+  // ---- Attributes -------------------------------------------------------------------------------
+
+  /// Sets a custom attribute that is attached to every report from now on, and persists across
+  /// launches (the SDKs store it on the device).
+  ///
+  /// [value] is a [String] (at most 1024 UTF-16 units), a [bool], an [int] or a finite [double]
+  /// below the largest 32-bit float in magnitude: the intersection of what Android and iOS store.
+  /// Set it again to replace it.
+  ///
+  /// Throws a [BugseeAttributeException]: `invalidName` (empty), `invalidValue` (another type, too
+  /// long, not finite: nothing reaches the SDK) or `rejected`. The SDKs drop a value over their size
+  /// limits without saying so (one value, or all attributes together, which differ between Android
+  /// and iOS: about 800 ASCII characters on iOS, 25 KB in all on Android); this reads the value
+  /// back and reports it as `rejected`, and the previous value stays. Android stores a non-integer
+  /// as a 32-bit float, so `0.1` is read back as `0.1`, and a double with more digits is narrowed the same way by `getAttribute` and
+  /// `getAllAttributes` (`3.141592653589793` reads `3.1415927`); iOS keeps the double.
+  ///
+  /// Works before [launch] on both platforms: the SDKs keep attributes outside the session.
+  static Future<void> setAttribute(String name, Object value) =>
+      _runtime.setAttribute(name, value);
+
+  /// The attribute's value, or `null` when it is not set: a [String], [bool], [int], [double], or
+  /// (Android only, for a set of strings the app set natively) a `List<String>`.
+  static Future<Object?> getAttribute(String name) =>
+      _runtime.getAttribute(name);
+
+  /// Every attribute (same value types as [getAttribute]); empty when none. Not modifiable.
+  static Future<Map<String, Object>> getAllAttributes() =>
+      _runtime.getAllAttributes();
+
+  /// Removes one attribute; does nothing when it is not set.
+  static Future<void> clearAttribute(String name) =>
+      _runtime.clearAttribute(name);
+
+  /// Removes every attribute.
+  static Future<void> clearAllAttributes() => _runtime.clearAllAttributes();
+
+  // ---- User identity ----------------------------------------------------------------------------
+
+  /// Sets the identifier of the current user, attached to every report from now on and persisted
+  /// across launches. If it is an email address the server may link reports to that user's account.
+  /// An empty string clears it (the same as [clearUserIdentifier] on both platforms; Android alone
+  /// would store an empty identifier).
+  ///
+  /// The SDKs have this one field: there is no separate name or email. Works before [launch] on
+  /// both platforms (Android: preferences, iOS: the Keychain, with `NSUserDefaults` as a fallback).
+  static Future<void> setUserIdentifier(String identifier) =>
+      _runtime.setUserIdentifier(identifier);
+
+  /// The identifier set with [setUserIdentifier], or `null` when there is none.
+  static Future<String?> getUserIdentifier() => _runtime.getUserIdentifier();
+
+  /// Clears the identifier: reports are no longer associated with a user.
+  static Future<void> clearUserIdentifier() => _runtime.setUserIdentifier(null);
+
+  // ---- Events, traces, logs ---------------------------------------------------------------------
+
+  /// Records a named event in the report's timeline, with optional [params].
+  ///
+  /// [params] holds strings, numbers, bools, `null`, and lists and maps (string keys) of those,
+  /// at most 16 levels deep; a finite number below 2^63. Anything else is a
+  /// [BugseeArgumentException], thrown before the SDK is touched, naming the path of the bad value.
+  /// The map is copied, so changing it afterwards changes nothing.
+  ///
+  /// **Dropped before [launch]** (and after stop) on both platforms; nothing is queued. During
+  /// `launching` iOS keeps the call; Android keeps it once its capture provider exists.
+  static Future<void> event(String name, [Map<String, Object?>? params]) =>
+      _runtime.event(name, params);
+
+  /// Records a named trace value: how a value changed over time before a problem. [value] is a
+  /// [String], [bool], [int] or finite [double] (below 2^63).
+  ///
+  /// Dropped before [launch], like [event].
+  static Future<void> trace(String name, Object value) =>
+      _runtime.trace(name, value);
+
+  /// Adds a line to the SDK's log, at [level] (default [LogLevel.info]). This is the app-level
+  /// `Bugsee.log`: it does not print to the console, it is recorded as the application's own
+  /// deliberate line (source `Bugsee`), and it bypasses the app's log filter. The capture of Dart's
+  /// `print` and `debugPrint` is separate ([installLogCapture]) and is recorded with another source
+  /// (`Custom`), so the two stay distinguishable in the report.
+  ///
+  /// Dropped before [launch] on both platforms.
+  static Future<void> log(String message, {LogLevel level = LogLevel.info}) =>
+      _runtime.log(message, level);
+
+  /// Adds a [BugseeBreadcrumb] to the report's trail. Completes with whether the SDK was handed
+  /// it; `false` means it was not: breadcrumb capture is off (**the default on both SDKs**: enable
+  /// it with `BugseeOptions(captureBreadcrumbs: true)`), or the SDK is not launching or launched
+  /// (before launch, and after [stop]). Handing it over
+  /// is not proof it is recorded (the app's breadcrumb filter, set natively, may drop it).
+  static Future<bool> addBreadcrumb(BugseeBreadcrumb breadcrumb) =>
+      _runtime.addBreadcrumb(breadcrumb);
+
+  // ---- Notifications, blackout, reports ---------------------------------------------------------
+
+  /// Sends a notification to the app's configured messaging integrations (Slack, Teams, ...)
+  /// without creating a bug report: no video, logs or events are attached. The SDK keeps it on the
+  /// device and uploads in batches, so nothing is lost offline; [urgent] posts it at once, ahead of
+  /// older queued ones, when a session and network exist.
+  ///
+  /// [title] must not be blank. [severity] is optional. [fields] are extra rows; their order is kept
+  /// on Android (the iOS SDK takes an unordered dictionary).
+  ///
+  /// **Ignored before [launch]** on both platforms (the SDK logs it); nothing is queued.
+  static Future<void> notify(
+    String title, {
+    String? body,
+    ReportSeverity? severity,
+    Map<String, String>? fields,
+    bool urgent = false,
+  }) => _runtime.notify(
+    title,
+    body: body,
+    severity: severity,
+    fields: fields,
+    urgent: urgent,
+  );
+
+  /// Asks the SDK to capture the view hierarchy now and keep it in the capture buffer, so it is in
+  /// any report created afterwards (the SDK also captures it for every report on its own, at the
+  /// moment the report is made). The SDK's own tree (native views) goes in, and the Flutter widget
+  /// tree beside it: this call first brings the plugin's copy of the Flutter tree up to date, so a
+  /// capture right after a screen change shows the new screen.
+  ///
+  /// The Flutter tree carries no text (no labels, field values, keys or semantics) and a
+  /// [BugseeSecureView] subtree is a single node with only its box; see `doc/view-hierarchy.md`.
+  ///
+  /// A no-op, on both platforms, before [launch], after [stop], and when the
+  /// `captureViewHierarchy` launch option is off; nothing is queued.
+  static Future<void> captureViewHierarchy() => _runtime.captureViewHierarchy();
+
+  /// Stops recording everything that describes the screen: the video (black frames), the report
+  /// screenshot, touch recording and the view hierarchy. Logs, network events, traces and the
+  /// rest keep being captured. End it with [endBlackout]; there is no pause and no resume.
+  ///
+  /// **May be called before [launch]** on both platforms: capture then starts blacked out
+  /// ([isBlackout] reflects it at once). On Android a blackout lasts from launch to [stop] (stopping
+  /// ends it, with a `BlackoutEnded` lifecycle event) and a later launch starts without one, except
+  /// one requested WHILE the SDK is stopping, which the stop hands to the next launch; iOS keeps the
+  /// flag until [endBlackout].
+  static Future<void> startBlackout() => _runtime.startBlackout();
+
+  /// Resumes what [startBlackout] suppressed. Before [launch] it cancels an earlier
+  /// [startBlackout]. Android ignores it while the SDK is stopping (the stop ends the blackout).
+  static Future<void> endBlackout() => _runtime.endBlackout();
+
+  /// Whether a blackout is in effect, as [startBlackout] and [endBlackout] left it.
+  static Future<bool> isBlackout() => _runtime.isBlackout();
+
+  /// Opens the SDK's bug report dialog, optionally pre-filled. The dialog runs the report
+  /// handler's `onBeforeReportCreated` before it opens.
+  ///
+  /// A no-op before [launch] (and, on iOS, while `launching`: it needs `launched`), and while a
+  /// dialog is already showing. Without a [severity] the SDK applies its default bug priority.
+  static Future<void> showReportDialog({
+    String? summary,
+    String? description,
+    ReportSeverity? severity,
+    List<String>? labels,
+  }) => _runtime.showReportDialog(
+    summary: summary,
+    description: description,
+    severity: severity,
+    labels: labels,
+  );
+
+  /// Creates and uploads a bug report at once, without UI, from what the SDK has captured.
+  ///
+  /// A no-op before [launch]. Without a [severity] the SDK applies its default bug priority. To
+  /// edit a report as it is created, use [setReportHandler] (`ReportProxy.addAttachment` attaches
+  /// files from there); to fill one in yourself and send it, use [createReport].
+  static Future<void> upload(
+    String summary,
+    String description, {
+    ReportSeverity? severity,
+    List<String>? labels,
+  }) =>
+      _runtime.upload(summary, description, severity: severity, labels: labels);
+
+  // ---- Network capture --------------------------------------------------------------------------
+
+  /// Starts recording the app's HTTP traffic from Dart into the report: everything built on
+  /// `dart:io`'s `HttpClient` (`package:http`, `dio`'s default adapter, `Image.network`, the
+  /// WebSocket handshake, ...). The SDKs' own interception cannot see it (Dart does not use the
+  /// platform's networking stack), so this plugin captures it in Dart and hands each event to the
+  /// SDK, which applies its network options and privacy rules exactly as it does to the traffic it
+  /// intercepts itself. Call it **once, early in `main`**, before the app makes a request:
+  ///
+  /// ```dart
+  /// void main() {
+  ///   Bugsee.installNetworkCapture();
+  ///   runApp(const MyApp());
+  /// }
+  /// ```
+  ///
+  /// Installs `HttpOverrides` **in front of** whatever `HttpOverrides` the app has installed: it
+  /// chains to them (clients, certificate callbacks, proxy settings and `findProxy` are theirs and
+  /// untouched). So install it **after** the app sets its own `HttpOverrides.global`; one set
+  /// afterwards without chaining replaces this capture, and calling this again puts it back in
+  /// front. Idempotent: calling it again while it is in effect does nothing. Returns whether
+  /// the capture is in effect, `false` on a platform with no SDK (desktop, web).
+  ///
+  /// Nothing is recorded until the SDK is `launched`, and only while `capture.network` is on
+  /// (`BugseeOptions.captureNetwork`, on by default); a request that began before the launch is
+  /// never recorded. Bodies follow `captureNetworkBodySizeLimit` (20 KiB by default; a longer body
+  /// is dropped, not cut) and `captureNetworkBodyWithoutType`; only text is kept. Requests to
+  /// Bugsee itself are never recorded. See `doc/network.md` for the full list of what is and is
+  /// not captured.
+  ///
+  /// **Limits**: other isolates (their own `HttpOverrides`, and no channel to the SDK), a client
+  /// made before this call by code that keeps it (a static `HttpClient`, the first `WebSocket`),
+  /// an app that replaces `HttpOverrides` without chaining to the current ones, and a zone that
+  /// scopes its own overrides are not captured. Native networking plugins (`cronet_http`,
+  /// `cupertino_http`, a WebView) are captured by the SDK's own interception instead.
+  ///
+  /// Throws a [BugseeException] when called from a background isolate.
+  static bool installNetworkCapture() => _runtime.installNetworkCapture();
+
+  /// Stops recording. Restores the `HttpOverrides` that were in place before when this capture is
+  /// still the one set; if the app chained its own over it, it stays in the chain and forwards
+  /// without recording. Clients already created stop recording too, and so does an exchange in flight (its response is no longer recorded). Events already queued are
+  /// still submitted to the SDK (unless it is no longer launched). [installNetworkCapture] starts it again.
+  static void uninstallNetworkCapture() => _runtime.uninstallNetworkCapture();
+
+  /// Whether [installNetworkCapture] was called and not undone.
+  static bool get networkCaptureInstalled => _runtime.networkCaptureInstalled;
+
+  /// Sets the filter every captured event goes through **before** it is handed to the SDK; `null`
+  /// removes it. Return the event (changed in place or a copy) to record it, `null` to drop it:
+  ///
+  /// ```dart
+  /// Bugsee.setNetworkFilter((event) {
+  ///   if (Uri.parse(event.url).host == 'internal.example.com') return null; // not recorded
+  ///   event.headers.remove('x-session');
+  ///   return event;
+  /// });
+  /// ```
+  ///
+  /// The filter runs in Dart, so it cannot be bypassed: nothing reaches the SDK without passing
+  /// it. It sees the event raw (the SDK's default sanitizer runs after it, on what it returns,
+  /// and so does a filter the app set on the native SDK). It runs on the isolate that made the
+  /// request (normally the UI isolate), one event at a time, in order, **never inside the HTTP
+  /// call**: the request is not held up. A slow synchronous filter still takes UI time: keep it
+  /// fast. It may return a `Future`.
+  ///
+  /// **Fails closed.** A filter that throws, returns something other than a `BugseeNetworkEvent`
+  /// or `null`, or returns a future that does not complete within [timeout] drops that event (and
+  /// a debug warning is printed once; [networkCaptureStats] counts them). A filter that never
+  /// answers therefore drops every event it is given, at one per [timeout] while the queue
+  /// fills and the rest are dropped. [timeout] defaults to 10 seconds, the SDK's own network
+  /// filter timeout, and must be positive and at most 5 minutes (a [BugseeArgumentException]
+  /// otherwise).
+  static void setNetworkFilter(
+    BugseeNetworkFilter? filter, {
+    // The SDK's own network filter timeout; `test/network_drift_test.dart` compares the copies.
+    Duration timeout = const Duration(seconds: 10),
+  }) => _runtime.setNetworkFilter(filter, timeout);
+
+  /// The filter set with [setNetworkFilter], or `null`.
+  static BugseeNetworkFilter? get networkFilter => _runtime.networkFilter;
+
+  /// What happened to the captured events so far (for diagnosis): captured, submitted to the SDK's wrapper channel (not the same as recorded: the SDK still drops on a retired channel or a stopped provider, silently),
+  /// dropped by a full queue, by the filter, or by a failure to deliver.
+  static NetworkCaptureStats get networkCaptureStats =>
+      _runtime.networkCaptureStats;
+
+  // ---- Log capture ------------------------------------------------------------------------------
+
+  /// Starts recording what the app prints from Dart into the report's log, attributed to the
+  /// **plugin** (the SDK records it with source `Custom`, the wrapper's own, not as the app's
+  /// deliberate [log] calls, which stay `Bugsee`). Call it once, early in `main`:
+  ///
+  /// ```dart
+  /// void main() {
+  ///   // The bindings and `runApp` share one zone, and it is the one that records `print`.
+  ///   Bugsee.runWithLogCapture(() {
+  ///     WidgetsFlutterBinding.ensureInitialized();
+  ///     Bugsee.installLogCapture();
+  ///     runApp(const MyApp());
+  ///   });
+  /// }
+  /// ```
+  ///
+  /// What is recorded: `debugPrint` (chained: the callback that was installed is still called, with
+  /// the same arguments, and put back by [uninstallLogCapture]) and `print` called inside a zone that
+  /// carries [logCaptureZoneSpecification] ([runWithLogCapture], [runGuarded], or your own
+  /// `runZoned`). A `print` in the root zone cannot be hooked in Dart and is not recorded; neither is
+  /// `dart:developer`'s `log` (it does not reach the console either), `stdout`/`stderr` writes, nor
+  /// output of another isolate; send those with [forwardLog]. `FlutterError`'s diagnostics dump (the
+  /// widget trees in its text) and the plugin's own messages are never recorded. The original output
+  /// always happens, first and unchanged; nothing is swallowed.
+  ///
+  /// [level] is the level `print` and `debugPrint` lines are recorded at: they carry none (default
+  /// [LogLevel.info]). A line is cut to 4000 characters, at most
+  /// 500 lines a second are taken (a burst of 1000), and a
+  /// slow native side drops the newest lines; [logCaptureStats] counts every drop.
+  ///
+  /// Nothing is recorded while the SDK is neither launching nor launched (a line printed before
+  /// [launch] is dropped, not buffered), nor while `capture.logs` is off
+  /// (`BugseeOptions.captureLogs`), nor below
+  /// `capture.logs.level`. **Privacy**: every line THIS capture records runs through [setLogFilter]
+  /// first (in Dart, before anything leaves the isolate), then through the SDK's own log filter, the
+  /// app's, if it set one on the native SDK; the SDK has no default log sanitizer. See `doc/logs.md`.
+  ///
+  /// **Android: the Dart filter does NOT cover the SDK's own logcat capture.** The SDK also reads the
+  /// process's logcat, where the engine writes every `print` and `debugPrint` (source `LogCat`, tag
+  /// `flutter`), and records those lines RAW, with the same text, whatever [setLogFilter] did to this
+  /// capture's copy. The same holds for the `FlutterError` dump on a real app (its widget tree is
+  /// printed to logcat; only this capture's own copy is withheld). No option turns that route off
+  /// alone (`captureLogs` turns off both). To redact or drop there, set a native log filter in the
+  /// host app (it runs on every non-`Bugsee` source):
+  ///
+  /// ```kotlin
+  /// Bugsee.setLogEventFilter { event, callback ->
+  ///     when {
+  ///         // the plugin's own lines (source Custom) were filtered in Dart already
+  ///         event.logSource == LogSource.LogCat && event.tag == "flutter" -> callback.run(null) // drop the echo
+  ///         else -> callback.run(event)
+  ///     }
+  /// }
+  /// ```
+  ///
+  /// iOS recorded no such echo on the simulator (not verified on a device). A debug build warns once
+  /// on Android when a filter is set. See `doc/logs.md`.
+  ///
+  /// Returns whether the capture is in effect, `false` on a platform with no SDK. Idempotent. Throws a
+  /// [BugseeException] when called from a background isolate.
+  static bool installLogCapture({LogLevel level = LogLevel.info}) =>
+      _runtime.installLogCapture(level);
+
+  /// Stops recording: `debugPrint` is put back when it is still the hook, and the zone hook records
+  /// nothing. Lines already queued are still handed to the SDK. [installLogCapture] starts it again.
+  static void uninstallLogCapture() => _runtime.uninstallLogCapture();
+
+  /// Whether [installLogCapture] was called and not undone.
+  static bool get logCaptureInstalled => _runtime.logCaptureInstalled;
+
+  /// The [ZoneSpecification] whose `print` hook records into the report (once [installLogCapture]
+  /// was called; inert before). Use it to build a zone yourself:
+  /// `runZonedGuarded(body, onError, zoneSpecification: Bugsee.logCaptureZoneSpecification)`. A zone
+  /// can have one `print` handler: to have your own too, nest the zones ([runWithLogCapture] inside
+  /// yours records the line your code printed; yours inside records what yours lets through).
+  static ZoneSpecification get logCaptureZoneSpecification =>
+      _runtime.logs.zoneSpecification;
+
+  /// Runs [body] in a zone that records `print` output (see [installLogCapture]). Returns what
+  /// [body] returns; errors are not handled (use [runGuarded] for that: it records `print` too).
+  static R runWithLogCapture<R>(R Function() body) =>
+      runZoned<R>(body, zoneSpecification: logCaptureZoneSpecification);
+
+  /// Records a line your own logging produced (`package:logging`, a logger of yours) the way
+  /// [installLogCapture] records `print`: filtered by [setLogFilter] and then by the SDK's log filter,
+  /// attributed to the plugin, subject to the same gates and limits. It is **not** [log]: it is
+  /// recorded with source `Custom`, not as a deliberate application line, and goes through the
+  /// filters. [tag] is recorded on Android only. Returns whether the capture took it (`false` when
+  /// [installLogCapture] was not called). Never throws.
+  ///
+  /// ```dart
+  /// Logger.root.onRecord.listen((r) => Bugsee.forwardLog(
+  ///   '${r.loggerName}: ${r.message}',
+  ///   level: logLevelForLoggingValue(r.level.value),
+  ///   tag: r.loggerName,
+  /// ));
+  /// ```
+  ///
+  /// The plugin does not depend on `package:logging`: [logLevelForLoggingValue] maps its `Level.value`.
+  static bool forwardLog(
+    String message, {
+    LogLevel level = LogLevel.info,
+    String? tag,
+  }) => _runtime.logs.forward(message, level, tag);
+
+  /// Sets the filter every captured line goes through **before** it is handed to the SDK; `null`
+  /// removes it. Return the event (changed in place or a copy) to record it, `null` to drop it:
+  ///
+  /// ```dart
+  /// Bugsee.setLogFilter((event) {
+  ///   if (event.message.contains('password')) return null;            // not recorded
+  ///   event.message = event.message.replaceAll(RegExp(r'\b\d{16}\b'), '<card>');
+  ///   return event;
+  /// });
+  /// ```
+  ///
+  /// This is where redaction of what this capture records belongs: it runs in Dart, so nothing this
+  /// capture records can skip it, and it sees the line before anything leaves the isolate. The SDK then
+  /// runs the app's own filter on what it returns (a filter set on the native SDK), and the SDK has
+  /// **no default log sanitizer**: what this filter does not remove is recorded. **On Android the SDK's
+  /// own logcat capture records the same `print` / `debugPrint` text again, raw (source `LogCat`, tag
+  /// `flutter`), and that route does not pass through this filter**: it needs a native
+  /// `Bugsee.setLogEventFilter` that drops or redacts `LogSource.LogCat` events tagged `flutter` (a
+  /// Kotlin snippet is in [installLogCapture]; a debug build warns once when this filter is set on
+  /// Android). It runs on the isolate that printed, one line at a time and in order,
+  /// never inside the `print` call; keep it fast, it may return a `Future`. Anything it prints is not
+  /// recorded.
+  ///
+  /// **Fails closed.** A filter that throws, returns something other than a `BugseeLogEvent` or `null`,
+  /// or a future that does not complete within [timeout] drops that line (a debug warning is printed
+  /// once; [logCaptureStats] counts them). [timeout] defaults to 10 seconds, the SDK's own log filter
+  /// timeout, and must be positive and at most 5 minutes (a [BugseeArgumentException] otherwise).
+  static void setLogFilter(
+    BugseeLogFilter? filter, {
+    // The SDK's own log filter timeout; `test/logs_drift_test.dart` compares the copies.
+    Duration timeout = const Duration(seconds: 10),
+  }) => _runtime.setLogFilter(filter, timeout);
+
+  /// The filter set with [setLogFilter], or `null`.
+  static BugseeLogFilter? get logFilter => _runtime.logFilter;
+
+  /// What happened to the captured lines so far (for diagnosis): captured, submitted to the SDK's
+  /// wrapper channel (not the same as recorded), dropped by the rate limit, a full queue, the gates,
+  /// the filter, or a failure to deliver.
+  static LogCaptureStats get logCaptureStats => _runtime.logCaptureStats;
+
+  /// Asks the SDK for a report to fill in and send yourself: add attachments, a screenshot, labels and
+  /// attributes to the returned [CreatedReport], then [CreatedReport.upload] it. Completes with `null`
+  /// when the SDK made none (it is not launched).
+  ///
+  /// One created report may be outstanding at a time ([CreateReportException] `busy`). The plugin holds
+  /// it natively for [timeToLive] (default ten minutes, between one second and one hour) and then
+  /// discards it, so a report the app forgot never stays in the SDK's hands; every later call on it
+  /// throws a [CreatedReportClosedError]. The SDKs have no way to cancel a created report: a discarded
+  /// one is simply never sent.
+  ///
+  /// Android and iOS hand the app different objects, so [CreatedReport] documents what differs
+  /// (iOS: at most 3 in-memory attachments of at most 3 MiB, no `mimeType`, no id). The report
+  /// handler ([setReportHandler]) runs for it too: Android runs the before phase inside this call and
+  /// the after phase at [CreatedReport.upload]; iOS runs both at upload.
+  static Future<CreatedReport?> createReport({
+    Duration timeToLive = const Duration(minutes: 10),
+  }) => _runtime.createReport(timeToLive: timeToLive);
+
+  // ---- Report handler and lifecycle events ------------------------------------------------------
+
+  /// The handler set with [setReportHandler], or `null`.
+  static BugseeReportHandler? get reportHandler => _runtime.reportHandler;
+
+  /// Sets the handler the SDK hands each report to, before and after it is built; `null` (or a
+  /// handler with neither phase) clears it. A later call replaces it. Completes when the native
+  /// side knows which phases have a handler; with none, the SDK is never kept waiting for Dart.
+  ///
+  /// Register it **before [launch]** to see reports the SDK recovers while launching. Read
+  /// [BugseeReportHandler] for the delivery rules (`onBeforeReportCreated` at most once,
+  /// `onAfterReportCreated` at least once and idempotent), and [ReportProxy] for what a handler can
+  /// change, including its attachments and screenshots.
+  static Future<void> setReportHandler(BugseeReportHandler? handler) =>
+      _runtime.setReportHandler(handler);
+
+  /// Every SDK lifecycle event ([LifecycleEvent]), from when a listener subscribes, including
+  /// names this version does not know. A broadcast stream; the status transitions are also on
+  /// [statusChanges]. Events the SDK raised before the plugin attached are delivered when it does
+  /// (the first call into this class attaches it); what a late listener misses is described on
+  /// [LifecycleEvent].
+  static Stream<LifecycleEvent> get lifecycleEvents {
+    _runtime.ensureStartedInBackground();
+    return _runtime.lifecycleEvents;
+  }
+
+  // ---- Dart errors ------------------------------------------------------------------------------
+
+  /// Reports a handled Dart [error] to Bugsee as an **error** report, with the [stackTrace] it was
+  /// caught with: `catch (error, stack) { Bugsee.logException(error, stack); }`. Without a stack the
+  /// current one is taken at this call (it starts where you called). Mirrors the SDKs' and the React
+  /// Native `logException`. For an unhandled error (a crash report) see [logUnhandledException]; for a
+  /// grouping domain, [reportException].
+  ///
+  /// Any object can be thrown in Dart, so any object is accepted: its type (`StateError`,
+  /// `FormatException`, ...) and `toString()` are what is reported. A [FlutterError] contributes its
+  /// summary only. The stack is sent as the VM printed it: in a build with `--obfuscate` or
+  /// `--split-debug-info` the backend symbolicates it from the symbols you upload (see
+  /// doc/exceptions.md, which also has what each SDK does with the call). There is no severity:
+  /// neither SDK takes one for an exception; set it in a report handler ([setReportHandler]).
+  ///
+  /// Completes with whether the SDK was handed the error; `false` before [launch] and after [stop],
+  /// where both SDKs drop it (nothing is queued). Throws a [BugseeException] when native cannot be
+  /// reached; never because of [error].
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
+  static Future<bool> logException(Object error, [StackTrace? stackTrace]) =>
+      _runtime.logException(
+        error,
+        stackTrace ?? StackTrace.current,
+        handled: true,
+        stackCaptured: stackTrace == null,
+      );
+
+  /// Reports an unhandled Dart [error] as a **crash** report (the app lives on: both SDKs file it
+  /// under crashes, for what a Flutter app has no way to terminate over). This is for an error you
+  /// caught at the top of something yourself; the hooks of [installErrorHandlers] do not use it
+  /// unless told to (`reportAsCrash: true`). Like the SDKs' `logUnhandledException`; the same answer and failures as
+  /// [logException]. Android's SDK writes the report on the calling thread (the plugin calls it from its own thread) and iOS delivers it at
+  /// the next launch, one at a time (doc/exceptions.md).
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
+  static Future<bool> logUnhandledException(
+    Object error, [
+    StackTrace? stackTrace,
+  ]) => _runtime.logException(
+    error,
+    stackTrace ?? StackTrace.current,
+    handled: false,
+    stackCaptured: stackTrace == null,
+  );
+
+  /// [logException] / [logUnhandledException] in one call with the options Dart cannot put on those
+  /// two (an optional positional stack and named options do not mix): [handled] (default `true`: an
+  /// error report; `false` a crash report) and the grouping [domain] (1 to 256 characters; the issues
+  /// of one domain group together on the dashboard; on iOS dropped when [handled] is false, where the
+  /// SDK has none). A bad [domain] is a [BugseeArgumentException].
+  // Takes StackTrace.current in its own body: the plugin's frame must be exactly one, and the
+  // signature drops it by position in a build with no names (doc/exceptions.md).
+  @pragma('vm:never-inline')
+  static Future<bool> reportException(
+    Object error, {
+    StackTrace? stackTrace,
+    bool handled = true,
+    String? domain,
+  }) => _runtime.logException(
+    error,
+    stackTrace ?? StackTrace.current,
+    handled: handled,
+    domain: domain,
+    stackCaptured: stackTrace == null,
+  );
+
+  /// Starts reporting the Dart errors nobody handled, chained to whatever handlers are installed.
+  ///
+  /// Opt-in: nothing is installed until this is called, and launching does not call it. It hooks
+  /// `FlutterError.onError` ([flutterErrors]), `PlatformDispatcher.instance.onError`
+  /// ([platformErrors]) and the root isolate's error listener ([isolateErrors]); errors in a zone
+  /// you create need [runGuarded], and in isolates you spawn [listenToIsolateErrors].
+  ///
+  /// It never replaces or swallows a handler: the one that was installed before (the app's,
+  /// Crashlytics', Sentry's) is still called, and its answer is returned; without one the engine
+  /// reports the error as it would have. **Call it AFTER the tools that assign these handlers**:
+  /// Crashlytics' documented setup (`FlutterError.onError = recordFlutterFatalError`) REPLACES
+  /// the handler, so a Bugsee installed before it is dropped from the chain and reports nothing
+  /// ([errorHandlersActive] tells; a debug build says so at [launch]). A tool that wraps the
+  /// current handler (Sentry's `init`) keeps ours in its chain either way. A second call while
+  /// installed does nothing. Hot restart starts clean (the handlers are Dart statics of the new
+  /// isolate).
+  ///
+  /// An error is reported once (the same object, or the same text, seen twice within a second counts
+  /// as one: a root-zone error reaches both `PlatformDispatcher.onError` and the isolate listener),
+  /// the same error at most once in 30 s and at most 10 reports in 60 s: a build error that repeats
+  /// every frame opens one report, not sixty. `FlutterErrorDetails.silent` errors are not reported.
+  /// Nothing from `FlutterErrorDetails` but the exception and its stack is read (no widget trees, no
+  /// information collector).
+  ///
+  /// By default they are filed as **error** reports ([reportAsCrash] `false`): a Dart error never
+  /// ends the app (neither SDK terminates it), the React Native SDK files only fatal JS errors as
+  /// crashes, and a crash report counts against crash-free sessions and, on iOS, replaces the one
+  /// stored crash report (so ten a minute would still deliver only the last, at the next launch).
+  /// `reportAsCrash: true` files **crash** reports instead (what 9.x did for `FlutterError.onError`);
+  /// an error the previous `PlatformDispatcher` handler says it handled (`true`) is never a crash.
+  /// The simulator files nothing on iOS (doc/exceptions.md). Nothing is reported while `detect.crash`
+  /// was false in the last launch made through [launch].
+  static void installErrorHandlers({
+    bool flutterErrors = true,
+    bool platformErrors = true,
+    bool isolateErrors = true,
+    bool reportAsCrash = false,
+  }) => _runtime.errorCapture.install(
+    flutterErrors: flutterErrors,
+    platformErrors: platformErrors,
+    isolateErrors: isolateErrors,
+    reportAsCrash: reportAsCrash,
+  );
+
+  /// Removes what [installErrorHandlers] installed, putting the previous handlers back when ours
+  /// are still the current ones. If another tool wrapped ours since, they cannot be unlinked: they
+  /// stay in that tool's chain and pass every error on, reporting nothing.
+  static void uninstallErrorHandlers() => _runtime.errorCapture.uninstall();
+
+  /// Whether [installErrorHandlers] was called (and not undone).
+  static bool get errorHandlersInstalled => _runtime.errorCapture.isInstalled;
+
+  /// Whether [installErrorHandlers] is in effect AND its handlers are still the current
+  /// `FlutterError.onError` / `PlatformDispatcher.onError`. `false` after another tool replaced them
+  /// (install after it); also `false` when a tool wrapped them, in which case Bugsee still reports
+  /// whenever that tool calls the handler it wrapped, which cannot be told from here.
+  static bool get errorHandlersActive => _runtime.errorCapture.isActive;
+
+  /// `runZonedGuarded` that reports what escapes [body] (errors from timers, futures and microtasks
+  /// started in it) and then calls [onError]; without [onError] the error goes to
+  /// `FlutterError.reportError`, so it is still printed and still reaches the app's handlers.
+  /// Reported like the installed handlers report: an error report, or a crash report when
+  /// [installErrorHandlers] was told `reportAsCrash: true`. The zone also records `print` output once
+  /// [installLogCapture] is called ([logCaptureZoneSpecification]).
+  static R? runGuarded<R>(
+    R Function() body, {
+    void Function(Object error, StackTrace stack)? onError,
+  }) {
+    return runZonedGuarded<R>(
+      body,
+      (error, stack) {
+        _runtime.errorCapture.captureZoneError(error, stack);
+        if (onError != null) {
+          onError(error, stack);
+        } else {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stack,
+              library: 'bugsee_flutter',
+              context: ErrorDescription(
+                'in a zone guarded by Bugsee.runGuarded',
+              ),
+            ),
+          );
+        }
+      },
+      // The zone also carries the `print` hook of [installLogCapture] (inert until it is installed).
+      zoneSpecification: _runtime.logs.zoneSpecification,
+    );
+  }
+
+  /// Reports the errors that [isolate] (one you spawned) does not catch, until you call `cancel` on
+  /// the result. Start the isolate paused, add the listener, then resume it: an isolate that exits
+  /// first is missed. Works whether or not [installErrorHandlers] was called.
+  static IsolateErrorListener listenToIsolateErrors(Isolate isolate) =>
+      _runtime.errorCapture.listenTo(isolate);
+}

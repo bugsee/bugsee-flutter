@@ -1,0 +1,302 @@
+// The Dart end of the native bridge. Internal: not exported from
+// package:bugsee_flutter; the public `Bugsee` facade (lib/src/bugsee.dart) is built on it.
+import 'dart:async';
+
+import 'package:flutter/foundation.dart'
+    show ErrorDescription, FlutterError, FlutterErrorDetails;
+import 'package:flutter/services.dart' show BinaryMessenger;
+
+import '../report/report_handler.dart';
+import '../report/report_proxy.dart';
+import '../status.dart';
+import 'lifecycle.dart';
+import 'messages.g.dart';
+import 'runtime_facts.dart';
+
+export '../report/report_handler.dart' show ReportHandler;
+
+/// Receives the SDK's lifecycle events from native, delivers report-handler
+/// requests, and refines the wrapper identity.
+///
+/// Native keeps events in a bounded buffer until [start] attaches (see
+/// `LifecycleHub` / `BGSFlutterLifecycleHub`: capacity 64, oldest dropped), then
+/// flushes them in order, so `Launching`/`Launched` that happened before Dart
+/// was up are not lost.
+class BugseeBridge implements BugseeBridgeFlutterApi {
+  BugseeBridge({BugseeBridgeHostApi? host, BinaryMessenger? messenger})
+    : _host = host ?? BugseeBridgeHostApi(binaryMessenger: messenger),
+      _messenger = messenger;
+
+  final BugseeBridgeHostApi _host;
+  final BinaryMessenger? _messenger;
+  final StreamController<LifecycleEvent> _events =
+      StreamController<LifecycleEvent>.broadcast();
+  Future<void>? _started;
+  bool _attached = false;
+  bool _identitySent = false;
+  bool _phasesSent = false;
+  BugseeStatus? _status;
+  ReportHandler? _onBefore;
+  ReportHandler? _onAfter;
+  final Set<String> _delivered = <String>{};
+
+  /// How many delivery ids are remembered for de-duplication. Old ones are
+  /// forgotten first.
+  static const int deliveredCapacity = 128;
+
+  /// Every lifecycle event, in the order native delivered them, including names
+  /// this version does not know. A broadcast stream: a listener sees events from
+  /// when it subscribes; [status] keeps the latest transition for later readers.
+  Stream<LifecycleEvent> get lifecycleEvents => _events.stream;
+
+  /// A status change, only when a Launching/Launched/Stopping/Stopped event
+  /// arrives; every other event produces nothing here.
+  Stream<BugseeStatus> get statusChanges =>
+      _events.stream.map(statusForEvent).where((s) => s != null).cast();
+
+  /// The latest status transition seen, or `null` if none has arrived. Kept
+  /// whether or not anyone listened, so a late reader is not misled by a missed
+  /// broadcast event. `null` means unknown, not stopped.
+  BugseeStatus? get status => _status;
+
+  /// Attaches to native and refines the wrapper identity. Idempotent while it
+  /// succeeds: later calls return the first call's future. If either step fails
+  /// the error is thrown (after both were tried) and the next call retries.
+  ///
+  /// The handler is registered BEFORE native is told to flush, or the flushed
+  /// events would arrive at nothing.
+  ///
+  /// It also sweeps the previous isolate's report deliveries (once, shared with
+  /// `setReportHandlers`, whichever comes first) and tells native which report-handler
+  /// phases have a Dart handler now (none, for a new isolate), so a hot restart is not
+  /// waited on for a handler it has not registered.
+  Future<void> start({RuntimeFacts? facts, String? build}) =>
+      _started ??= _start(facts ?? RuntimeFacts.current(), build);
+
+  Future<void> _start(RuntimeFacts facts, String? build) async {
+    BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
+    // Independent: a failure to attach must not stop the identity from being sent,
+    // nor the other way round. A retry repeats only the step that has not succeeded:
+    // attaching again would make native replay events this bridge already got.
+    Object? error;
+    StackTrace? stack;
+    if (!_attached) {
+      try {
+        await _host.attachLifecycle();
+        _attached = true;
+      } catch (e, s) {
+        error = e;
+        stack = s;
+      }
+    }
+    if (!_phasesSent) {
+      try {
+        await _sweepPreviousIsolate();
+        await _host.setReportHandlerPhases(_onBefore != null, _onAfter != null);
+        _phasesSent = true;
+      } catch (e, s) {
+        error ??= e;
+        stack ??= s;
+      }
+    }
+    if (!_identitySent) {
+      final identity = WrapperIdentity.from(facts, build: build);
+      try {
+        await _host.setWrapperIdentity(
+          WrapperIdentityMessage(
+            type: identity.type,
+            version: identity.version,
+            build: identity.build,
+            context: identity.context,
+          ),
+        );
+        _identitySent = true;
+      } catch (e, s) {
+        error ??= e;
+        stack ??= s;
+      }
+    }
+    if (error != null) {
+      // Not cached: a later start() tries the failed step again.
+      _started = null;
+      Error.throwWithStackTrace(error, stack!);
+    }
+  }
+
+  @override
+  void onLifecycleEvent(LifecycleEventMessage event) {
+    final e = LifecycleEvent(
+      event.name,
+      reportId: event.reportId,
+      data: {
+        for (final entry in (event.data ?? const <String, String>{}).entries)
+          entry.key: entry.value,
+      },
+    );
+    final s = statusForEvent(e);
+    if (s != null) _status = s;
+    _events.add(e);
+  }
+
+  Future<void>? _swept;
+
+  /// This isolate is new (a hot restart makes a fresh one): native completes what it had
+  /// handed to the previous isolate instead of leaving each report to wait for its deadline.
+  /// Once per isolate and always BEFORE the first phase registration, whichever of `start()`
+  /// and `setReportHandlers` comes first (a registration before the sweep would be wiped by
+  /// it, and one without it would leave the old deliveries waiting). A failure is not cached.
+  Future<void> _sweepPreviousIsolate() => _swept ??= () async {
+    try {
+      await _host.resetReportHandlers();
+    } catch (_) {
+      _swept = null;
+      rethrow;
+    }
+  }();
+
+  /// Registers the report handlers (either may be `null`: no handler for that phase).
+  ///
+  /// With a phase unregistered native completes the SDK's callback at once and never
+  /// calls Dart for it. `onBefore` is at most once and may be skipped; `onAfter` is at
+  /// least once and may run again, in a later process, for a report that already carries
+  /// part of the first run's contribution (workbook 7.2): the handler must be idempotent.
+  /// Within this isolate a second delivery of the same report and phase is not run again
+  /// (see [deliveredCapacity]); it is completed at once.
+  Future<void> setReportHandlers({
+    ReportHandler? onBefore,
+    ReportHandler? onAfter,
+  }) {
+    // One at a time, in call order: the snapshot, the native call and the rollback of one
+    // registration must not interleave with another's, or a failure could restore handlers an
+    // earlier call installed and split Dart from native (which holds the last SUCCESSFUL call's).
+    final run = _handlerChain.then(
+      (_) => _setReportHandlers(onBefore, onAfter),
+    );
+    _handlerChain = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<void> _handlerChain = Future<void>.value();
+
+  Future<void> _setReportHandlers(
+    ReportHandler? onBefore,
+    ReportHandler? onAfter,
+  ) async {
+    final previousBefore = _onBefore;
+    final previousAfter = _onAfter;
+    final previousPhasesSent = _phasesSent;
+    _onBefore = onBefore;
+    _onAfter = onAfter;
+    // The receiver first, then the flag: native must not call before Dart can answer.
+    BugseeBridgeFlutterApi.setUp(this, binaryMessenger: _messenger);
+    try {
+      await _sweepPreviousIsolate();
+      await _host.setReportHandlerPhases(onBefore != null, onAfter != null);
+    } catch (_) {
+      // Native still has the old phases, so the old handlers keep running: one truth.
+      _onBefore = previousBefore;
+      _onAfter = previousAfter;
+      _phasesSent = previousPhasesSent;
+      rethrow;
+    }
+    _phasesSent = true;
+  }
+
+  @override
+  void onReportHandlerRequest(ReportHandlerRequestMessage request) {
+    // Native does not wait for this reply; the SDK's completion runs when this
+    // isolate completes the handle (or the deadline passes). Return at once.
+    unawaited(_deliverReport(request));
+  }
+
+  Future<void> _deliverReport(ReportHandlerRequestMessage request) async {
+    final handler = request.after ? _onAfter : _onBefore;
+    if (handler == null || !_remember(request.deliveryId)) {
+      // Nothing to run (a stale flag natively) or this report and phase was already
+      // handled here: do not run the handler twice, and do not leave the SDK waiting.
+      await _complete(request.handle);
+      return;
+    }
+    final proxy = createReportProxy(
+      id: request.reportId,
+      typeName: request.type,
+      deliveryId: request.deliveryId,
+      handle: request.handle,
+      host: _host,
+    );
+    // Native closes the report at its deadline whatever Dart does; closing here too
+    // makes a late edit fail without a round trip. `deadlineMs` is what native had left
+    // when it sent the request, so this closes no later than native does.
+    var overran = false;
+    final deadline = Timer(Duration(milliseconds: request.deadlineMs), () {
+      overran = true;
+      closeReportProxy(proxy);
+    });
+    try {
+      await handler(proxy);
+    } catch (error, stack) {
+      _reportSafely(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'bugsee_flutter',
+          context: ErrorDescription('while running a Bugsee report handler'),
+        ),
+      );
+    } finally {
+      deadline.cancel();
+      if (overran) {
+        // Not only an edit that failed: a handler that ran past the budget and made no further
+        // edit would otherwise look like a success.
+        _reportSafely(
+          FlutterErrorDetails(
+            exception: StateError(
+              'A Bugsee report handler for report ${request.reportId} ran past its '
+              '${request.deadlineMs} ms budget (the SDK deadline less a margin). The SDK '
+              'carried on without it and any edit it made after that was not applied.',
+            ),
+            library: 'bugsee_flutter',
+            context: ErrorDescription('while running a Bugsee report handler'),
+          ),
+        );
+      }
+      // Closed BEFORE the completion crosses, so nothing a stray continuation does
+      // afterwards can be sent as if it were still live.
+      closeReportProxy(proxy);
+      await _complete(request.handle);
+    }
+  }
+
+  /// Reports to the app's error handler; one that itself throws must not keep the SDK's
+  /// completion from running (native would then wait out its deadline).
+  void _reportSafely(FlutterErrorDetails details) {
+    try {
+      FlutterError.reportError(details);
+    } catch (_) {
+      // Nothing left to tell.
+    }
+  }
+
+  /// Whether this delivery id is new. Remembers it either way.
+  bool _remember(String deliveryId) {
+    if (!_delivered.add(deliveryId)) {
+      // Most recently seen last, so the oldest is the one forgotten.
+      _delivered
+        ..remove(deliveryId)
+        ..add(deliveryId);
+      return false;
+    }
+    if (_delivered.length > deliveredCapacity) {
+      _delivered.remove(_delivered.first);
+    }
+    return true;
+  }
+
+  Future<void> _complete(String handle) async {
+    try {
+      await _host.completeReportHandler(handle);
+    } catch (_) {
+      // Native completes on its own deadline: nothing more to do from here.
+    }
+  }
+}

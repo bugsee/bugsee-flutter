@@ -1,30 +1,43 @@
 name: bugsee_flutter
-description: Bugsee is a mobile SDK that adds crucial information to your bug and crash reports incuding video, network traffic, console logs and many other important traces from your app.
-version: 99.99.99
+description: Bugsee adds video, network traffic, console logs and other traces from your app to every bug and crash report.
+version: 10.0.0-dev.1
 homepage: https://www.bugsee.com/
 documentation: https://docs.bugsee.com/sdk/flutter/installation/
-issue_tracker: https://github.com/bugsee/flutter-bugsee/issues
-repository: https://github.com/bugsee/flutter-bugsee
+repository: https://github.com/bugsee/bugsee-flutter
+issue_tracker: https://github.com/bugsee/bugsee-flutter/issues
+
+workspace:
+  - packages/bugsee_flutter_feedback
+  - example
 
 environment:
-  sdk: ^3.0.0
-  flutter: ">=3.0.0"
+  # Floors come from native-versions.json (flutter.min / flutter.dart).
+  sdk: ^3.14.0
+  flutter: ">=3.50.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  stack_trace: ">=1.0.0 <2.0.0"
-  crypto: ^3.0.3
-  convert: ^3.1.1
+  # Imported by the generated bridge (lib/src/bridge/messages.g.dart); Flutter 3.50.0
+  # requires ^1.19.0 itself (the constraint here stays loose).
+  meta: ^1.17.0
+  # Parses the stack of a Dart error into frames (VM, `package:stack_trace` and async-gap formats);
+  # Flutter 3.50.0's flutter_test requires ^1.12.2 (the constraint here stays loose).
+  stack_trace: ^1.11.0
 
 dev_dependencies:
-  lints: ^3.0.0
+  flutter_test:
+    sdk: flutter
+  fake_async: ^1.3.3
+  flutter_lints: ^5.0.0
+  material_ui: ^1.11.0
+  native_stack_traces: ^0.7.1
 
 flutter:
   plugin:
     platforms:
       android:
-        package: com.bugsee
-        pluginClass: BugseePlugin
+        package: com.bugsee.flutter
+        pluginClass: BugseeFlutterPlugin
       ios:
-        pluginClass: BugseePlugin
+        pluginClass: BugseeFlutterPlugin

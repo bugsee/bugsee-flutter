@@ -123,24 +123,43 @@ class _PropsGuard {
   final File backup;
   bool _active = false;
   List<int>? _original;
+  String? _originalMode;
 
   static void _private(File f) {
     if (!f.existsSync()) f.createSync();
     Process.runSync('chmod', ['600', f.path]);
   }
 
+  /// The octal permission bits of [f] (`stat -f %Lp` on macOS, `stat -c %a` on Linux), or null.
+  static String? _mode(File f) {
+    for (final args in [
+      ['-f', '%Lp', f.path],
+      ['-c', '%a', f.path],
+    ]) {
+      final r = Process.runSync('stat', args);
+      final out = '${r.stdout}'.trim();
+      if (r.exitCode == 0 && RegExp(r'^[0-7]{3,4}$').hasMatch(out)) return out;
+    }
+    return null;
+  }
+
+  /// Registered BEFORE anything is touched (the caller assigns the guard first), so a failure at any step,
+  /// including a write that truncated the file, still restores. The original's mode is narrowed to 600 before
+  /// the run token is written into it and put back by [restore].
   void install(String content) {
+    _active = true;
     if (file.existsSync()) {
       _original = file.readAsBytesSync();
+      _originalMode = _mode(file);
       _private(backup);
       backup.writeAsBytesSync(_original!);
+      _private(file); // narrow BEFORE the token goes in, whatever mode the developer's file had
       say(
         'example/android/bugsee.properties exists: its content is saved to ${backup.path} and restored after the build',
       );
     } else {
       _private(file);
     }
-    _active = true;
     file.writeAsStringSync(content);
   }
 
@@ -153,6 +172,8 @@ class _PropsGuard {
         if (file.existsSync()) file.deleteSync();
       } else {
         file.writeAsBytesSync(original);
+        final mode = _originalMode;
+        if (mode != null) Process.runSync('chmod', [mode, file.path]);
         if (backup.existsSync()) backup.deleteSync();
       }
     } on Object {
@@ -345,23 +366,37 @@ class _Job {
   String get stagedApk => '$stage/app-release.apk';
   String get stagedDsyms => '$_workDir/dsyms';
 
+  String get _identityFile => '$stage/identity.json';
+
+  /// What the staged build was made for. The app token is compiled into it, so a reused build must be run with
+  /// the same app and endpoint. Only a SHA-256 of the token is kept (never the token or a prefix).
+  Future<Map<String, Object?>> _identity() async {
+    final h = await sh(['shasum', '-a', '256'], stdin: token);
+    if (!h.ok) invalid('could not fingerprint the app token: ${h.stderr}');
+    return {
+      'platform': platform,
+      'endpoint': endpoint,
+      'app': h.text.split(' ').first,
+    };
+  }
+
   Future<void> build() async {
     Directory(symbolsDir).createSync(recursive: true);
     if (!reuse) {
       final bugseeProps = File('$example/android/bugsee.properties');
-      if (!ios) {
-        // The Gradle plugin reads the app token here (gitignored) and uploads the native libraries' symbols
-        // when the release variant is assembled. A developer's own file is saved and restored, never lost;
-        // the guard is also undone by every exit path (`_cleanupSync`).
-        _propsGuard =
-            _PropsGuard(
-              bugseeProps,
-              File('$_workDir/bugsee.properties.original'),
-            )..install(
-              'app_token=$token\n${endpoint.isEmpty ? '' : 'plugin.endpoint=$endpoint\n'}',
-            );
-      }
       try {
+        if (!ios) {
+          // The Gradle plugin reads the app token here (gitignored) and uploads the native libraries' symbols
+          // when the release variant is assembled. A developer's own file is saved and restored, never lost;
+          // the guard is registered first and also undone by every exit path (`_cleanupSync`).
+          final guard = _propsGuard = _PropsGuard(
+            bugseeProps,
+            File('$_workDir/bugsee.properties.original'),
+          );
+          guard.install(
+            'app_token=$token\n${endpoint.isEmpty ? '' : 'plugin.endpoint=$endpoint\n'}',
+          );
+        }
         say(
           'building ${ios ? 'ios' : 'apk'} release (obfuscated), build $runId',
         );
@@ -393,8 +428,19 @@ class _Job {
         _propsGuard?.restore();
       }
       await _stageBuild();
-    } else if (!Directory(stage).existsSync()) {
-      invalid('--reuse-build: there is no staged build in $stage');
+      File(_identityFile).writeAsStringSync(jsonEncode(await _identity()));
+    } else {
+      if (!Directory(stage).existsSync() || !File(_identityFile).existsSync()) {
+        invalid(
+          '--reuse-build: there is no staged build (with its identity) in $stage',
+        );
+      }
+      final recorded = jsonDecode(File(_identityFile).readAsStringSync());
+      final bad = reuseIdentityProblems(
+        (recorded as Map).cast<String, Object?>(),
+        await _identity(),
+      );
+      if (bad.isNotEmpty) invalid('--reuse-build: ${bad.join('; ')}');
     }
     // guard: the symbols are the platform's format
     final files = Directory(symbolsDir)
@@ -662,7 +708,7 @@ class _Job {
         }
       }
     } finally {
-      File(consoleFile).writeAsStringSync(all.toString());
+      _saveConsole(all);
       await sh([
         ...ctl,
         'device',
@@ -782,11 +828,20 @@ class _Job {
         }
       }
     } finally {
-      File(consoleFile).writeAsStringSync(all.toString());
+      _saveConsole(all);
       await a(['shell', 'am', 'force-stop', _androidPackage]);
       await a(['uninstall', _androidPackage]);
     }
     _checkEvents('android');
+  }
+
+  /// Saving the console must never stop the device cleanup (uninstall) that follows it.
+  void _saveConsole(StringBuffer all) {
+    try {
+      File(consoleFile).writeAsStringSync(all.toString());
+    } on Object catch (e) {
+      say('WARNING: could not save $consoleFile: ${failureText(e, _secrets)}');
+    }
   }
 
   void _checkEvents(String os) {
@@ -827,9 +882,11 @@ class _Job {
       final passes = <({bool ok, int reports})>[];
       var unstable = false;
       while (true) {
-        final reports = await _readOnce(client, base, serverToken, appId, end);
+        final pass = await _readOnce(client, base, serverToken, appId, end);
+        final reports = pass.reports;
         problems = readbackProblems(
           reports,
+          unreadRecordings: pass.unread,
           expectedDartNames: _expectedDart,
           expectedNativeFrames: [
             'crash_lab.dart',
@@ -843,11 +900,12 @@ class _Job {
             .isBefore(end);
         if (problems.isEmpty) {
           // Found everything, but a report that arrives later could still be raw: read again until two
-          // consecutive passes agree (at least one confirming pass, even at the deadline).
+          // consecutive passes agree. No confirming pass is scheduled past the deadline: the run then ends
+          // NOT CONFIRMED (exit 1) and says it was one pass short.
           say(
             'backend: everything expected is there; reading again to catch a late report',
           );
-          if (!more && passes.length >= 2) {
+          if (!more) {
             unstable = true;
             break;
           }
@@ -878,9 +936,10 @@ class _Job {
     }
   }
 
-  /// One pass: the issues of this build, then the crash reports of their recordings. Errors are said and give
-  /// whatever was read (the caller polls again).
-  Future<List<String>> _readOnce(
+  /// One pass: the issues of this build, then the crash reports of THIS run's recordings. Errors are said; a
+  /// recording (or an issue's recording list) that could not be read is COUNTED as unread, never skipped
+  /// silently, and one failing recording does not stop the others.
+  Future<({List<String> reports, int unread})> _readOnce(
     HttpClient client,
     String base,
     String serverToken,
@@ -888,6 +947,7 @@ class _Job {
     DateTime end,
   ) async {
     final reports = <String>[];
+    var unread = 0;
     try {
       final r = await _get(
         client,
@@ -915,6 +975,7 @@ class _Job {
       for (final issue in mine) {
         final id = issue['_id'];
         say('issue $id type=${issue['type']} summary="${issue['summary']}"');
+        List list;
         try {
           final recs = await _get(
             client,
@@ -922,26 +983,35 @@ class _Job {
             serverToken,
             end,
           );
-          final list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
-          for (final rec in list) {
-            final rid = (rec as Map)['_id'];
-            // An issue spans runs (same error, older build): only THIS run's recordings are evidence.
-            switch (recordingScope(
-              rec.cast<String, Object?>(),
-              runId: runId,
-              buildNumber: buildNumber,
-              since: startedAt.subtract(const Duration(minutes: 2)),
-            )) {
-              case RecordingScope.mine:
-                break;
-              case RecordingScope.other:
-                say('  recording $rid: another build, ignored');
-                continue;
-              case RecordingScope.unknown:
-                invalid(
-                  'recording $rid of issue $id has neither an app version nor a creation time: it cannot be tied to this run, nothing can be verified',
-                );
-            }
+          list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
+        } on HarnessFailure {
+          rethrow;
+        } on Object catch (e) {
+          say('  recording list of issue $id: ${redact('$e', _secrets)}');
+          unread++;
+          continue;
+        }
+        for (final rec in list) {
+          final rid = (rec as Map)['_id'];
+          // An issue spans runs (same error, older build, an earlier attempt): only THIS attempt's recordings
+          // are evidence.
+          switch (recordingScope(
+            rec.cast<String, Object?>(),
+            runId: runId,
+            buildNumber: buildNumber,
+            since: startedAt.subtract(const Duration(minutes: 2)),
+          )) {
+            case RecordingScope.mine:
+              break;
+            case RecordingScope.other:
+              say('  recording $rid: another build or attempt, ignored');
+              continue;
+            case RecordingScope.unknown:
+              invalid(
+                'recording $rid of issue $id has neither an app version nor a creation time: it cannot be tied to this run, nothing can be verified',
+              );
+          }
+          try {
             final text = await _getText(
               client,
               '${base}applications/$appId/issues/$id/recordings/$rid/crash_report',
@@ -955,11 +1025,12 @@ class _Job {
             say(
               '  recording $rid: ${text.split('\n').length} lines, ${raw.length} raw frame line(s)',
             );
+          } on HarnessFailure {
+            rethrow;
+          } on Object catch (e) {
+            say('  recording $rid read: ${redact('$e', _secrets)}');
+            unread++;
           }
-        } on HarnessFailure {
-          rethrow;
-        } on Object catch (e) {
-          say('  recording read: ${redact('$e', _secrets)}');
         }
       }
     } on HarnessFailure {
@@ -967,7 +1038,7 @@ class _Job {
     } on Object catch (e) {
       say('backend read: ${redact('$e', _secrets)}');
     }
-    return reports;
+    return (reports: reports, unread: unread);
   }
 
   /// A GET answered within the run's remaining time: the connection, the headers and the body each bounded,

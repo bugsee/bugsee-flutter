@@ -141,9 +141,11 @@ String? symbolsFormat(List<int> head) {
 /// A name in a summary, a log line or a message has none, so it never counts as evidence.
 final _sourceFrame = RegExp(r'\.(dart|java|kt|swift|mm?|cc?|cpp):\d+');
 
+/// [name] as a whole identifier in the line: `e2eHandledSiteHelper` is not `e2eHandledSite`.
 bool _hasFrameWith(String report, String name) {
+  final whole = RegExp('(?<![\\w\$])${RegExp.escape(name)}(?![\\w\$])');
   for (final l in const LineSplitter().convert(report)) {
-    if (l.contains(name) && _sourceFrame.hasMatch(l)) return true;
+    if (whole.hasMatch(l) && _sourceFrame.hasMatch(l)) return true;
   }
   return false;
 }
@@ -161,10 +163,16 @@ List<String> readbackProblems(
   List<String> reports, {
   required List<String> expectedDartNames,
   required List<String> expectedNativeFrames,
+  int unreadRecordings = 0,
 }) {
   final problems = <String>[];
+  if (unreadRecordings > 0) {
+    // a verdict on the readable subset is not a verdict: the unread one may be the raw one
+    problems.add('$unreadRecordings selected recording(s) could not be read');
+  }
   if (reports.isEmpty) {
     return [
+      ...problems,
       'the backend returned no report for this build: nothing was verified',
     ];
   }
@@ -228,6 +236,17 @@ bool readbackSettled(List<({bool ok, int reports})> passes) {
   final b = passes.last;
   return a.ok && b.ok && a.reports == b.reports;
 }
+
+/// What differs between the identity a staged build was made for and the current run's: a reused build carries
+/// the app token and endpoint it was compiled with, so a different app or endpoint must not reuse it.
+List<String> reuseIdentityProblems(
+  Map<String, Object?> recorded,
+  Map<String, Object?> current,
+) => [
+  for (final k in const ['platform', 'endpoint', 'app'])
+    if (recorded[k] != current[k])
+      'the staged build was made for another $k (it has the old one compiled in); build again',
+];
 
 /// Why a poll that ended on a good pass is still not settled (a message only; the exit code is the same).
 String readbackUnsettledWhy(List<({bool ok, int reports})> passes) {

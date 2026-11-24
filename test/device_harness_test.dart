@@ -1728,6 +1728,13 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         expect(gone(0, '100\n', ''), isFalse); // still alive
         expect(gone(1, '', 'error: device offline'), isNull);
         expect(gone(255, '', 'adb: no devices'), isNull);
+        // the harness's own timeout answer (code 124, text on stderr) is a failure, not a dead process
+        expect(
+          gone(124, '', 'timeout after 0:02:00: adb shell pidof x'),
+          isNull,
+        );
+        // an adb failure with the PID gone from view must never read as "gone"
+        expect(gone(1, '', 'error: closed'), isNull);
         expect(gone(0, '', ''), isTrue);
       });
 
@@ -1918,6 +1925,77 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
           isEmpty,
         );
       });
+    });
+
+    test('a name is matched whole, not as a prefix of another function', () {
+      const helper = '#0 e2eHandledSiteHelper (e2e_main.dart:40:5)';
+      expect(
+        readbackProblems(
+          [helper],
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeFrames: [],
+        ),
+        anyElement(contains('"e2eHandledSite"')),
+      );
+      expect(
+        readbackProblems(
+          ['#0 e2eHandledSite (e2e_main.dart:40:5)'],
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeFrames: [],
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a recording that could not be read means no verdict on the rest', () {
+      const good = '#0 e2eHandledSite (e2e_main.dart:40:5)';
+      expect(
+        readbackProblems(
+          [good],
+          unreadRecordings: 1,
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeFrames: [],
+        ),
+        anyElement(contains('could not be read')),
+      );
+      expect(
+        readbackProblems(
+          [],
+          unreadRecordings: 2,
+          expectedDartNames: [],
+          expectedNativeFrames: [],
+        ),
+        hasLength(2),
+      );
+    });
+
+    test('a reused build must be for the same platform, endpoint and app', () {
+      const a = {'platform': 'ios', 'endpoint': '', 'app': 'h1'};
+      expect(reuseIdentityProblems(a, {...a}), isEmpty);
+      expect(reuseIdentityProblems(a, {...a, 'app': 'h2'}), hasLength(1));
+      expect(
+        reuseIdentityProblems(a, {
+          ...a,
+          'endpoint': 'https://apidev.bugsee.com',
+        }),
+        hasLength(1),
+      );
+      expect(
+        reuseIdentityProblems(a, {...a, 'platform': 'android'}),
+        hasLength(1),
+      );
+    });
+
+    test('the Java crash search stops at the next FATAL EXCEPTION block (another process)', () {
+      const log =
+          'E AndroidRuntime: FATAL EXCEPTION: main\n'
+          'E AndroidRuntime: Process: pkg, PID: 100\n'
+          'E AndroidRuntime: java.lang.RuntimeException: other\n'
+          'E AndroidRuntime: FATAL EXCEPTION: main\n'
+          'E AndroidRuntime: Process: pkg, PID: 200\n'
+          'E AndroidRuntime: java.lang.IllegalStateException: verify-java-main';
+      expect(parseFatalException(log, 200, 'verify-java-main'), isTrue);
+      expect(parseFatalException(log, 100, 'verify-java-main'), isFalse);
     });
 
     test('the unsettled message says which it is', () {

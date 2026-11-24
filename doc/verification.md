@@ -468,15 +468,24 @@ tokens. The two probe requests of that discovery left one empty `uploading` symb
 | Dart symbols (`symbols.py`, `-t <token> -v <build> -d <dir> -e https://apidev.bugsee.com/v2/`) | `app.ios-arm64.symbols` (Mach-O, 1.9 MB): POST `.../symbols` 200, PUT of the zip to the presigned S3 URL 200 (`symbols.py` exit 0) | three files (`android-arm64`, `-arm`, `-x64`, ELF): POST 200, PUT 200 (4.2 MB zip), exit 0 |
 | native symbols | `bugsee-cli debug-files upload --type dsym` (0.8.0, `BUGSEE_APP_TOKEN` in the environment): exit 0; `App`, `Runner`, `Flutter` dSYMs uploaded, `Bugsee` already on the server | Bugsee Gradle plugin 4.1.1 (`ndk { enabled }`, token and `plugin.endpoint` in the Gradle-root `bugsee.properties`, removed after the build): **not confirmed**, the plugin prints nothing at the default log level |
 | device run | 4 launches, all `launched`; launch 2 died of signal 11, launch 3 ended after the Objective-C exception (devicectl exit 1); the app's events and the SDK's report-handler lines show reports built in launches 1 to 3 | the same sequence; both crash launches ended (the process was gone within 90 s) |
-| the backend's answer | **not read** | **not read** |
+| the backend's answer (read 2026-11-24, see below) | Dart native crash and Swift crash symbolicated; **Dart exceptions stay raw (backend bug, fix in review)** | everything symbolicated |
 
-**What was NOT verified, and why: the backend's symbolicated frames, on both platforms.** Reading an issue back needs the public API's organisation
-**server token** (`x-auth-servertoken`, `appserver` `public_api/middleware/auth.js`; routes `GET /v2/partner/applications/:app_id/issues[/:id/recordings/:rid/crash_report]`)
-or the dashboard / MCP login; an app token only uploads (the symbols endpoint accepts it) and cannot list issues. None was available to the run, so the script ended
-`UNVERIFIED` (exit 3) and nothing here says the backend symbolicated or failed to. The readback half of the script is written from the appserver source and has
-**never been run** against a backend; its first run may need the response shapes adjusted. To finish the check: open the issues of versions `9.1123.2012` (iOS) and `9.1123.2016` (Android) on apidev and look at the frames
-(or set `BUGSEE_SERVER_TOKEN`, the apidev organisation's, and the application ids and run again: a new run id, because the script does not read an old build). Expected `e2eHandledSite`,
-`e2eUnhandledSite`, `e2eUncaughtThrower` (file `e2e_main.dart`), and for the native crashes `AppDelegate` (iOS, `objc-main`) and `MainActivity` (Android, `java-main`).
+**Backend read-back (2026-11-24, via the Bugsee staging MCP, apidev; apps `AFTA` Android flutter and `IFTA` iOS flutter, issues of the two versions above).**
+
+* **Android (9.1123.2016): everything symbolicated**, all five issues `ready`: the unhandled Dart crash shows `Bugsee.logUnhandledException (.../lib/src/bugsee.dart:638:30)`,
+  `e2eUnhandledSite (.../e2e_main.dart:52:16)`, `_phases (.../e2e_main.dart:114:13)`; the handled errors show `e2eHandledSite`, `e2eUncaughtThrower`; the Java crash resolves
+  to `MainActivity.java:28` (the R8 `mapping.txt` record exists, so the Gradle plugin upload is confirmed); the ffi segfault to `crash (crash_lab.dart:54)`. A Dart 3.14 stack
+  with the header stripped by the worker decodes.
+* **iOS (9.1123.2012): native crashes symbolicated, Dart exceptions not.** The ffi segfault shows the full chain from `crash (crash_lab.dart:54)` through the Flutter engine
+  to UIKit and the Swift crash `AppDelegate.swift:32`. The Dart exceptions (`IFTA-5` handled, `IFTA-6` unhandled) are `ready` but still raw
+  (`#00 abs ... _kDartSnapshotText+0x18a287`).
+* **Root cause (reproduced with the worker's own code against staging data):** two ready symbol records share the build-id UUID `44db9327...`, both format `dsym`: the
+  `App.framework` dSYM and `app.ios-arm64.symbols`. The appserver batch lookup (`formatBatch`) keeps one per format, returned the App dSYM, and `dart_symbolize` on a file without
+  Dart information exits 0 echoing its input, so the issue was marked `ready` with raw frames. With the `.symbols` record the same crash document symbolicates. Nothing in the
+  wrapper or the upload is at fault (both records are the correct files). Fixes in review: bugsee-appserver#280 (batch returns every record as `candidates`) and
+  bugsee-background-worker#182 (tries each, accepts the first that decodes, warns when none does). Until both are deployed, an iOS Dart exception stays raw; not re-measured after the fixes.
+* Not verified: the production backend (the tokens exist on apidev only); Flutter 3.41; whether iOS needs the App dSYM at all (it carries no Dart code: uploading only the
+  `.symbols` file would also avoid the collision, untested).
 
 Findings of the build of this check, each a fact about the toolchain and not about the wrapper:
 
@@ -531,10 +540,9 @@ For follow-up (SDK or environment, not fixed here):
 * A handler that overruns the SDK's deadline, and a hot restart while a delivery is in flight.
 * The Gradle plugin 4.0.6 broken arm (only the fixed arm was run; the detection is unit-tested).
 * x86_64 and armeabi-v7a ABIs, a second display, rotation, split screen, a density change *during* a report.
-* Server-side processing: the mock API stands in for the backend in scenarios 1 to 10. Scenario 11 (2026-11-23) uploaded the Dart symbols (both platforms) and the iOS
-  dSYMs to apidev (accepted, 2xx) and ran the crashes on the devices, but the backend's symbolicated frames were NOT read (no server token): whether apidev symbolicated
-  anything is unknown. Its `dart_symbolize` was run offline on the Android arm64 Dart 3.14 artifacts only (see scenario 4); a real iOS stack was not decoded. Android native
-  symbols through the Gradle plugin: upload not confirmed. The default (production) endpoint was not used: the given tokens exist on apidev only.
+* Server-side processing: the mock API stands in for the backend in scenarios 1 to 10. Scenario 11 (2026-11-23/24) ran against apidev and read the result back:
+  Android (including Dart 3.14 stacks) and iOS native crashes are symbolicated, iOS Dart exceptions stayed raw because of the backend collision described there (fixes in review).
+  The default (production) endpoint was not used: the given tokens exist on apidev only.
 * Dart `Isolate` errors and `reportAsCrash: true` in a release build.
 
 ## Extending it

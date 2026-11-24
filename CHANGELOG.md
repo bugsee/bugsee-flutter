@@ -5,8 +5,9 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 
 ### Known gaps
 
-* Symbolication was exercised end to end up to the upload (Dart symbols and iOS dSYMs accepted by apidev, obfuscated release builds crashed on an iPhone XS and an
-  Android phone) but the backend's symbolicated frames were not read back, and the production endpoint was not used (`doc/verification.md` scenario 11).
+* Symbolication was exercised end to end on apidev (obfuscated release builds on an iPhone XS and an Android phone): Android, including Dart 3.14 stacks, and iOS native
+  crashes are symbolicated; **iOS Dart exceptions stayed raw** because of a backend symbol-lookup collision (fixes in review: bugsee-appserver#280, bugsee-background-worker#182).
+  The production endpoint was not used (`doc/verification.md` scenario 11).
 
 ### Features
 

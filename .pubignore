@@ -46,4 +46,5 @@ migrate_working_dir/
 # The device verification harness (doc/verification.md) and the app it drives: dev tooling, never published.
 /scripts/device/
 /example/lib/verify_main.dart
+/example/lib/e2e_main.dart
 /test/device_harness_test.dart

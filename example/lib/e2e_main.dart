@@ -94,9 +94,19 @@ Future<void> _phases() async {
     token,
     options: BugseeOptions(endpoint: _endpoint.isEmpty ? null : _endpoint),
   );
-  _emit('launch', {'result': launch.name});
-  if (launch.name != 'launched') {
-    _emit('invalid', {'why': 'launch answered ${launch.name}'});
+  // iOS answers `deferred` while the app is not active yet; the SDK then starts by itself. Capture has
+  // started only once the status says so, so the phase runs after that and the event carries the outcome.
+  var result = launch.name;
+  if (launch == LaunchResult.deferred) {
+    result = await Bugsee.waitUntilLaunched()
+        ? 'launched'
+        : 'deferred-never-launched';
+  }
+  _emit('launch', {'result': result, 'answer': launch.name});
+  if (result != 'launched') {
+    _emit('invalid', {
+      'why': 'launch answered ${launch.name}, outcome $result',
+    });
     return;
   }
   await Bugsee.setAttribute('e2e_run', _run);

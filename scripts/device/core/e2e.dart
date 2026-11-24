@@ -229,6 +229,53 @@ bool readbackSettled(List<({bool ok, int reports})> passes) {
   return a.ok && b.ok && a.reports == b.reports;
 }
 
+/// Why a poll that ended on a good pass is still not settled (a message only; the exit code is the same).
+String readbackUnsettledWhy(List<({bool ok, int reports})> passes) {
+  if (passes.length >= 2 &&
+      passes[passes.length - 2].ok &&
+      passes.last.ok &&
+      passes[passes.length - 2].reports != passes.last.reports) {
+    return 'the set of reports kept changing (${passes[passes.length - 2].reports} then ${passes.last.reports})';
+  }
+  return 'one confirming pass short: the last pass found everything, the one before it did not (or there was only one), so a late raw report could not be ruled out';
+}
+
+enum RecordingScope { mine, other, unknown }
+
+/// Whether a recording of an issue belongs to THIS run. The partner API lists, per recording, its own
+/// `environment.app.version` / `build` and `created_on` (appserver `public_api/components/recordings/formatter.js`).
+/// The version decides when present (and the build too, when both sides have one); without a version the creation
+/// time must be at or after [since] (the run's start less a margin). With neither: [RecordingScope.unknown], and the
+/// caller fails closed.
+RecordingScope recordingScope(
+  Map<String, Object?> recording, {
+  required String runId,
+  String? buildNumber,
+  required DateTime since,
+}) {
+  final env = recording['environment'];
+  final app = env is Map ? env['app'] : null;
+  final version = app is Map ? app['version'] : null;
+  if (version != null && '$version'.isNotEmpty) {
+    if ('$version' != runId) return RecordingScope.other;
+    final build = (app as Map)['build'];
+    if (build != null &&
+        '$build'.isNotEmpty &&
+        buildNumber != null &&
+        '$build' != buildNumber) {
+      return RecordingScope.other;
+    }
+    // The same compiled version can have an earlier attempt (`--reuse-build`): when the recording says when it
+    // was created, it must also be from THIS attempt.
+    final created = DateTime.tryParse('${recording['created_on'] ?? ''}');
+    if (created != null && created.isBefore(since)) return RecordingScope.other;
+    return RecordingScope.mine;
+  }
+  final created = DateTime.tryParse('${recording['created_on'] ?? ''}');
+  if (created == null) return RecordingScope.unknown;
+  return created.isBefore(since) ? RecordingScope.other : RecordingScope.mine;
+}
+
 /// An unexpected failure as text for the log: the exception's message passed through [redact] (a
 /// `ProcessException` prints its whole command line, which holds `-t <token>` and the server token).
 String failureText(Object error, Iterable<String> secrets) =>

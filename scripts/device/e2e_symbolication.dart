@@ -41,6 +41,9 @@
 // token-bearing example/android/bugsee.properties can stay, and the next run saves it as "the developer's own"
 // and restores it; delete it by hand.
 //
+// The read-back keeps only the recordings of THIS run (each recording's own app version/build, else its creation
+// time), because an issue spans runs of the same error.
+//
 // ALL of the checks below the first run (the read-back, the Android pid and logcat evidence, the iOS signal 6 /
 // exit-code rule, the libapp.so guard, the staging, the properties guard) have never run on a device or a backend.
 import 'dart:async';
@@ -304,6 +307,9 @@ class _Job {
   final String token;
   final String runId;
   final bool reuse;
+
+  /// When this process started: the floor for a recording's creation time when it carries no app version.
+  final DateTime startedAt = DateTime.now();
   bool get ios => platform == 'ios';
 
   /// `BUGSEE_ENDPOINT` (a version-less base such as https://apidev.bugsee.com): empty means the default,
@@ -919,6 +925,23 @@ class _Job {
           final list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
           for (final rec in list) {
             final rid = (rec as Map)['_id'];
+            // An issue spans runs (same error, older build): only THIS run's recordings are evidence.
+            switch (recordingScope(
+              rec.cast<String, Object?>(),
+              runId: runId,
+              buildNumber: buildNumber,
+              since: startedAt.subtract(const Duration(minutes: 2)),
+            )) {
+              case RecordingScope.mine:
+                break;
+              case RecordingScope.other:
+                say('  recording $rid: another build, ignored');
+                continue;
+              case RecordingScope.unknown:
+                invalid(
+                  'recording $rid of issue $id has neither an app version nor a creation time: it cannot be tied to this run, nothing can be verified',
+                );
+            }
             final text = await _getText(
               client,
               '${base}applications/$appId/issues/$id/recordings/$rid/crash_report',
@@ -933,10 +956,14 @@ class _Job {
               '  recording $rid: ${text.split('\n').length} lines, ${raw.length} raw frame line(s)',
             );
           }
+        } on HarnessFailure {
+          rethrow;
         } on Object catch (e) {
           say('  recording read: ${redact('$e', _secrets)}');
         }
       }
+    } on HarnessFailure {
+      rethrow;
     } on Object catch (e) {
       say('backend read: ${redact('$e', _secrets)}');
     }

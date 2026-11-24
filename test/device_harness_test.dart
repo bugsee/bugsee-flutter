@@ -1815,6 +1815,122 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect('$e', contains(token));
     });
 
+    group('a recording of an older run in the same issue is not evidence', () {
+      final since = DateTime.utc(2026, 11, 24, 10);
+      RecordingScope scope(Map<String, Object?> r) => recordingScope(
+        r,
+        runId: '9.261124.100500',
+        buildNumber: '100500',
+        since: since,
+      );
+      Map<String, Object?> rec(String v, [String? build]) => {
+        '_id': 'r',
+        'environment': {
+          'app': {'version': v, if (build != null) 'build': build},
+        },
+      };
+
+      test('by app version and build', () {
+        expect(scope(rec('9.261124.100500', '100500')), RecordingScope.mine);
+        expect(scope(rec('9.261123.200000', '200000')), RecordingScope.other);
+        expect(scope(rec('9.261124.100500', '999')), RecordingScope.other);
+        expect(scope(rec('9.261124.100500')), RecordingScope.mine);
+        // the same version from an earlier attempt of a reused build is not this attempt's
+        expect(
+          scope({
+            ...rec('9.261124.100500', '100500'),
+            'created_on': '2026-11-24T08:00:00Z',
+          }),
+          RecordingScope.other,
+        );
+        expect(
+          scope({
+            ...rec('9.261124.100500', '100500'),
+            'created_on': '2026-11-24T10:02:00Z',
+          }),
+          RecordingScope.mine,
+        );
+      });
+
+      test('without a version, by creation time; with neither, unknown (fail closed)', () {
+        expect(
+          scope({'created_on': '2026-11-24T10:03:00.000Z'}),
+          RecordingScope.mine,
+        );
+        expect(
+          scope({'created_on': '2026-11-23T10:03:00.000Z'}),
+          RecordingScope.other,
+        );
+        expect(scope({'_id': 'r'}), RecordingScope.unknown);
+        expect(scope({'created_on': 'garbage'}), RecordingScope.unknown);
+        // the version wins over a fresh timestamp
+        expect(
+          scope({
+            ...rec('9.261123.200000'),
+            'created_on': '2026-11-24T10:03:00Z',
+          }),
+          RecordingScope.other,
+        );
+      });
+
+      test('an old recording, once dropped, can neither satisfy nor fail the verdict', () {
+        const frame = '#0 AppDelegate.application (AppDelegate.swift:32)';
+        const old = '$frame\n#1 abs 0000007f virt 12 _kDartSnapshotText+0x42';
+        const dart =
+            '#0 e2eHandledSite (e2e_main.dart:40:5)\n#1 e2eUnhandledSite (e2e_main.dart:52:16)\n#2 e2eUncaughtThrower (e2e_main.dart:70:1)';
+        const ffi = '#0 crash (crash_lab.dart:54:3)';
+        final mine = [
+          for (final r in [
+            (rec('9.261124.100500', '100500'), dart),
+            (rec('9.261124.100500', '100500'), ffi),
+            (rec('9.261123.200000', '200000'), old),
+          ])
+            if (scope(r.$1) == RecordingScope.mine) r.$2,
+        ];
+        // an old good frame must not supply the missing platform report: this run's is missing, so it fails
+        expect(
+          readbackProblems(
+            mine,
+            expectedDartNames: [
+              'e2eHandledSite',
+              'e2eUnhandledSite',
+              'e2eUncaughtThrower',
+            ],
+            expectedNativeFrames: ['crash_lab.dart', 'AppDelegate.swift'],
+          ),
+          anyElement(contains('AppDelegate.swift')),
+        );
+        // and an old RAW recording does not fail a run whose own reports are clean
+        final clean = [
+          ...mine,
+          '#0 AppDelegate.application (AppDelegate.swift:32)',
+        ];
+        expect(
+          readbackProblems(
+            clean,
+            expectedDartNames: [
+              'e2eHandledSite',
+              'e2eUnhandledSite',
+              'e2eUncaughtThrower',
+            ],
+            expectedNativeFrames: ['crash_lab.dart', 'AppDelegate.swift'],
+          ),
+          isEmpty,
+        );
+      });
+    });
+
+    test('the unsettled message says which it is', () {
+      expect(
+        readbackUnsettledWhy([(ok: true, reports: 3), (ok: true, reports: 4)]),
+        contains('kept changing'),
+      );
+      expect(
+        readbackUnsettledWhy([(ok: false, reports: 3), (ok: true, reports: 3)]),
+        contains('one confirming pass short'),
+      );
+    });
+
     test('the read-back stops only after two agreeing good passes', () {
       const ok3 = (ok: true, reports: 3);
       expect(readbackSettled([ok3]), isFalse);

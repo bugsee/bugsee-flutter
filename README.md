@@ -365,7 +365,13 @@ every build you ship.
 | iOS native frames (the app, `Flutter.framework`) | the build's dSYMs | **manual in a Flutter app**: a Run Script phase after "Embed Frameworks" running `bugsee-cli xcode upload-dsyms --app-token "$BUGSEE_APP_TOKEN"` ([Bugsee CLI, Xcode](https://docs.bugsee.com/cli/xcode/)), or `bugsee-cli debug-files upload <archive>/dSYMs --type dsym --version <v> --build <n>` in CI; with Xcode 15 and newer set `ENABLE_USER_SCRIPT_SANDBOXING = NO` on the target; `$BUGSEE_APP_TOKEN` must exist in the script's environment (a user-defined build setting of the target named `BUGSEE_APP_TOKEN` does that), and the CLI fails the build, exit code 20, when it is missing or empty |
 
 Dart symbols and iOS dSYMs are not uploaded for you by this package: nothing in a Flutter build calls the Bugsee uploader. The iOS
-row is taken from Bugsee's CLI documentation and has not been measured with a Flutter build here.
+dSYM upload was run once with a Flutter build (an iPhone XS, apidev, `doc/verification.md` scenario 11).
+
+**Known issue, iOS Dart frames.** On iOS the Dart `app.ios-arm64.symbols` file and the `App.framework` dSYM carry the same UUID. When both
+are uploaded (the flow above), the backend currently may pick the dSYM, which has no Dart information, and leave the Dart frames of an
+obfuscated build raw (`_kDartSnapshotText+0x...`) while the issue is `ready`. Fixes are in review (bugsee-appserver#280,
+bugsee-background-worker#182); until they are deployed, expect this. Native iOS frames and everything on Android were symbolicated in the same
+run. Uploading only the `.symbols` file may avoid it; that was not tried. This note goes away once the fixes are deployed and the run is repeated.
 
 ## Privacy model
 

@@ -39,4 +39,4 @@ SDK has launched).
 ## The verification app
 
 `lib/verify_main.dart` is a second entry point driven by the device verification harness (`scripts/device/`, results in
-[`doc/verification.md`](../doc/verification.md)). It is not part of the published package.
+[`doc/verification.md`](../doc/verification.md)). It is not part of the published package (nor is `lib/e2e_main.dart`, the entry point of the end-to-end symbolication run).

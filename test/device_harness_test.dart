@@ -20,6 +20,8 @@ import '../scripts/device/core/lan_host.dart';
 import '../scripts/device/core/expectations.dart';
 import '../scripts/device/core/image.dart';
 import '../scripts/device/core/crash_kinds.dart';
+import '../scripts/device/core/e2e.dart';
+import '../scripts/device/core/props_guard.dart';
 import '../scripts/device/core/log_parsers.dart';
 import '../scripts/device/core/symbols.dart';
 import '../scripts/device/core/zip.dart';
@@ -1208,6 +1210,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         'scripts/device/',
         'test/device_harness_test.dart',
         'example/lib/verify_main.dart',
+        'example/lib/e2e_main.dart',
       ]) {
         expect(ignore, contains('/$path'), reason: '.pubignore: $path');
         expect(
@@ -1222,6 +1225,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         'scripts/device/',
         'test/device_harness_test.dart',
         'example/lib/verify_main.dart',
+        'example/lib/e2e_main.dart',
         'packages/',
         'pigeons/',
         'ios/wrapper_tests/',
@@ -1505,5 +1509,789 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         expect(failing.status, Status.fail);
       },
     );
+  });
+
+  group('the end-to-end symbolication run (e2e_symbolication.dart)', () {
+    const post200 =
+        'HTTP POST https://api.bugsee.com/v2/apps/<APP_TOKEN>/symbols -> 200 (request body 90 bytes)\n';
+
+    test('redact removes every secret and ignores trivial ones', () {
+      const t = 'GET /apps/app-token-secret/symbols server=SRV-TOKEN-1234';
+      final r = redact(t, ['app-token-secret', 'SRV-TOKEN-1234', 'ab']);
+      expect(r, isNot(contains('app-token')));
+      expect(r, isNot(contains('SRV-TOKEN')));
+      expect(r.split('<REDACTED>').length, 3);
+    });
+
+    test(
+      'events of another run are dropped; a truncated line does not throw',
+      () {
+        const console =
+            'noise\nE2E|{"kind":"start","run":"9.1.1","phase":0}\n'
+            'E2E|{"kind":"start","run":"OLD","phase":0}\nE2E|{"kind":"sta';
+        final e = e2eEvents(console, '9.1.1');
+        expect(e, hasLength(1));
+        expect(e.single['phase'], 0);
+      },
+    );
+
+    test('symbols.py exiting 0 after a refused POST is NOT an upload', () {
+      // the pinned script returns None from a non-2xx POST and exits 0
+      expect(symbolsUploadProblems('', 0), isNotEmpty);
+      expect(
+        symbolsUploadProblems(
+          'HTTP POST https://x/apps/<APP_TOKEN>/symbols -> 403 (request body 90 bytes)\n',
+          0,
+        ),
+        anyElement(contains('403')),
+      );
+      expect(symbolsUploadProblems(post200, 0), anyElement(contains('no PUT')));
+      expect(
+        symbolsUploadProblems(
+          '${post200}HTTP PUT https://s3.example/k?<query-dropped> -> 200 (request body 5 bytes)\n',
+          0,
+        ),
+        isEmpty,
+      );
+      expect(
+        symbolsUploadProblems(
+          '${post200}HTTP PUT https://s3/k -> 403 (request body 1 bytes)\n',
+          0,
+        ),
+        anyElement(contains('403')),
+      );
+    });
+
+    test(
+      'the device run needs all four phases, launched, release, two crashes',
+      () {
+        List<Map<String, Object?>> good() => [
+          for (var p = 0; p < 4; p++) ...[
+            {'kind': 'start', 'phase': p, 'mode': 'release', 'os': 'ios'},
+            {'kind': 'launch', 'result': 'launched'},
+            if (p == 0) {'kind': 'reported'},
+            if (p == 1 || p == 2) {'kind': 'crashing'},
+          ],
+        ];
+        expect(phaseProblems(good(), os: 'ios', release: true), isEmpty);
+        expect(
+          phaseProblems(good().sublist(4), os: 'ios', release: true),
+          isNotEmpty,
+        );
+        expect(
+          phaseProblems(
+            good()
+                .map((e) => e['kind'] == 'start' ? {...e, 'mode': 'debug'} : e)
+                .toList(),
+            os: 'ios',
+            release: true,
+          ),
+          anyElement(contains('release')),
+        );
+        expect(
+          phaseProblems(
+            good()
+                .map(
+                  (e) => e['kind'] == 'launch'
+                      ? {...e, 'result': 'already-running'}
+                      : e,
+                )
+                .toList(),
+            os: 'ios',
+            release: true,
+          ),
+          isNotEmpty,
+        );
+      },
+    );
+
+    test('run ids differ per second, day and year and are valid as an iOS short version', () {
+      final a = runIdFor(DateTime(2026, 11, 23, 14, 5, 7));
+      expect(a, '9.261123.140507');
+      expect(runIdFor(DateTime(2026, 11, 23, 14, 5, 8)), isNot(a));
+      expect(runIdFor(DateTime(2027, 11, 23, 14, 5, 7)), isNot(a));
+      expect(RegExp(r'^\d+\.\d+\.\d+$').hasMatch(a), isTrue);
+    });
+
+    test('the symbols file must be the platform format', () {
+      expect(symbolsFormat([0x7f, 0x45, 0x4c, 0x46, 2, 1]), 'elf');
+      expect(symbolsFormat([0xcf, 0xfa, 0xed, 0xfe, 12, 0]), 'macho');
+      expect(symbolsFormat([0x50, 0x4b, 3, 4]), isNull);
+    });
+
+    group('the read-back verdict', () {
+      const dart = ['e2eHandledSite', 'e2eUnhandledSite', 'e2eUncaughtThrower'];
+      const native = ['crash_lab.dart', 'AppDelegate.swift'];
+      const dartReport =
+          '#0 e2eHandledSite (package:x/e2e_main.dart:40:5)\n#1 e2eUnhandledSite (e2e_main.dart:52:16)\n'
+          '#2 e2eUncaughtThrower (e2e_main.dart:70:1)';
+      const ffiReport = '#0 crash (package:x/crash_lab.dart:54:3)\n#1 UIKit';
+      const platformReport =
+          '#0 AppDelegate.application (AppDelegate.swift:32)';
+      List<String> problems(List<String> reports) => readbackProblems(
+        reports,
+        expectedDartNames: dart,
+        expectedNativeFrames: native,
+      );
+
+      test('fully symbolicated reports pass', () {
+        expect(problems([dartReport, ffiReport, platformReport]), isEmpty);
+      });
+
+      test('every name present but ONE raw frame still fails', () {
+        final p = problems([
+          '$dartReport\n#3 abs 0000007f virt 12 _kDartSnapshotText+0x42',
+          ffiReport,
+          platformReport,
+        ]);
+        expect(p, hasLength(1));
+        expect(p.single, contains('raw frame'));
+      });
+
+      test(
+        'a name in a summary or log line, not in a frame, does not count',
+        () {
+          final p = problems([
+            'summary: e2eHandledSite failed\n#1 e2eUnhandledSite (e2e_main.dart:52:16)\n#2 e2eUncaughtThrower (e2e_main.dart:70:1)',
+            ffiReport,
+            platformReport,
+          ]);
+          expect(p, anyElement(contains('"e2eHandledSite"')));
+        },
+      );
+
+      test('the native frames need a report each; one report cannot be both crashes', () {
+        expect(
+          problems([dartReport, '$ffiReport\n$platformReport']),
+          anyElement(contains('distinct reports')),
+        );
+        expect(
+          problems([dartReport, ffiReport]),
+          anyElement(contains('AppDelegate.swift')),
+        );
+      });
+
+      test('raw addresses without the names, and no reports at all, fail', () {
+        expect(
+          readbackProblems(
+            ['#0 abs 0000 virt 1234 _kDartSnapshotText+0x42'],
+            expectedDartNames: ['e2eHandledSite'],
+            expectedNativeFrames: [],
+          ),
+          hasLength(2),
+        );
+        expect(
+          readbackProblems([], expectedDartNames: [], expectedNativeFrames: []),
+          anyElement(contains('nothing was verified')),
+        );
+      });
+    });
+
+    group('what ended a crash launch', () {
+      test('iOS: ffi-segv needs signal 11; objc-main signal 6 or a non-zero exit with no signal', () {
+        const segv = 'App terminated due to signal 11.';
+        expect(iosCrashExitProblems('ffi-segv', segv, 1), isEmpty);
+        // a `crashing` marker followed by the previous console child's SIGTERM is not a crash
+        expect(
+          iosCrashExitProblems(
+            'ffi-segv',
+            'App terminated due to signal 15.',
+            1,
+          ),
+          isNotEmpty,
+        );
+        expect(iosCrashExitProblems('ffi-segv', '', 0), isNotEmpty);
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            'App terminated due to signal 6.',
+            1,
+          ),
+          isEmpty,
+        );
+        // no signal line: a non-zero exit needs the runtime's uncaught-exception line as well
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            "E2E|{\"kind\":\"crashing\"}\n*** Terminating app due to uncaught exception 'VerifyException', reason: 'verify-objc-main'",
+            1,
+          ),
+          isEmpty,
+        );
+        // a lost device after the marker: non-zero exit, no termination evidence
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            'E2E|{"kind":"crashing","crash":"objc-main"}\nThe device was disconnected.',
+            1,
+          ),
+          anyElement(contains('not confirmed')),
+        );
+        expect(iosCrashExitProblems('objc-main', '', 1), isNotEmpty);
+        expect(iosCrashExitProblems('objc-main', '', 0), isNotEmpty);
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            'App terminated due to signal 15.',
+            1,
+          ),
+          isNotEmpty,
+        );
+      });
+
+      test('Android: an adb failure is not process death', () {
+        bool? gone(int code, String out, String err) =>
+            androidPidGone(code: code, stdout: out, stderr: err, pid: 100);
+        expect(gone(1, '', ''), isTrue); // pidof: no such process
+        expect(gone(0, '200\n', ''), isTrue); // restarted under another pid
+        expect(gone(0, '100\n', ''), isFalse); // still alive
+        expect(gone(1, '', 'error: device offline'), isNull);
+        expect(gone(255, '', 'adb: no devices'), isNull);
+        // the harness's own timeout answer (code 124, text on stderr) is a failure, not a dead process
+        expect(
+          gone(124, '', 'timeout after 0:02:00: adb shell pidof x'),
+          isNull,
+        );
+        // an adb failure with the PID gone from view must never read as "gone"
+        expect(gone(1, '', 'error: closed'), isNull);
+        expect(gone(0, '', ''), isTrue);
+      });
+
+      test('Android: the crash evidence is the pid\'s own', () {
+        const segv =
+            'F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 100 (x), pid 100 (pkg)';
+        expect(androidCrashProblems('ffi-segv', segv, 100), isEmpty);
+        expect(androidCrashProblems('ffi-segv', segv, 101), isNotEmpty);
+        expect(androidCrashProblems('ffi-segv', '', 100), isNotEmpty);
+        const java =
+            'E AndroidRuntime: FATAL EXCEPTION: main\nE AndroidRuntime: Process: pkg, PID: 100\nE AndroidRuntime: java.lang.IllegalStateException: verify-java-main';
+        expect(androidCrashProblems('java-main', java, 100), isEmpty);
+        expect(androidCrashProblems('java-main', java, 7), isNotEmpty);
+      });
+    });
+
+    test('symbols_logged.py: a failed request prints no URL query, token or original message', () {
+      try {
+        if (Process.runSync('python3', ['--version']).exitCode != 0) {
+          markTestSkipped('python3 is not usable here');
+          return;
+        }
+      } on ProcessException {
+        markTestSkipped('python3 is not installed');
+        return;
+      }
+      final dir = Directory.systemTemp.createTempSync('symlog');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      // a stand-in `requests` whose transport failure carries the whole URL, as urllib3's does
+      Directory('${dir.path}/requests').createSync();
+      File('${dir.path}/requests/__init__.py').writeAsStringSync(
+        'class _E:\n'
+        '    class RequestException(Exception):\n'
+        '        pass\n'
+        'exceptions = _E\n'
+        'class Session:\n'
+        '    def send(self, request, **kw):\n'
+        '        raise OSError("connect failed " + request.url)\n',
+      );
+      File('${dir.path}/fake_symbols.py').writeAsStringSync(
+        'import requests\n'
+        'class R:\n'
+        '    method = "PUT"\n'
+        '    url = "https://s3.example/key/APPTOKEN12345?X-Amz-Signature=SIGSECRET"\n'
+        '    headers = {}\n'
+        'requests.Session().send(R())\n',
+      );
+      final r = Process.runSync(
+        'python3',
+        [
+          '${Directory.current.path}/scripts/device/symbols_logged.py',
+          '${dir.path}/fake_symbols.py',
+          '-t',
+          'APPTOKEN12345',
+        ],
+        environment: {'PYTHONPATH': dir.path},
+      );
+      final all = '${r.stdout}\n${r.stderr}';
+      expect(r.exitCode, isNot(0));
+      expect(all, contains('FAILED (OSError)'));
+      expect(all, isNot(contains('SIGSECRET')));
+      expect(all, isNot(contains('APPTOKEN12345')));
+      expect(all, isNot(contains('connect failed')));
+    });
+
+    test('symbols_logged.py: a non-2xx answer prints the error code only, never the body', () {
+      try {
+        if (Process.runSync('python3', ['--version']).exitCode != 0) {
+          markTestSkipped('python3 is not usable here');
+          return;
+        }
+      } on ProcessException {
+        markTestSkipped('python3 is not installed');
+        return;
+      }
+      final dir = Directory.systemTemp.createTempSync('symlog2');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      Directory('${dir.path}/requests').createSync();
+      File('${dir.path}/requests/__init__.py').writeAsStringSync(
+        'class _E:\n'
+        '    class RequestException(Exception):\n'
+        '        pass\n'
+        'exceptions = _E\n'
+        'class _Resp:\n'
+        '    ok = False\n'
+        '    status_code = 403\n'
+        '    text = "<Error><Code>SignatureDoesNotMatch</Code><AWSAccessKeyId>AKIAFAKEKEY123</AWSAccessKeyId><StringToSign>STS-SECRET</StringToSign></Error>"\n'
+        'class Session:\n'
+        '    def send(self, request, **kw):\n'
+        '        return _Resp()\n',
+      );
+      File('${dir.path}/fake_symbols.py').writeAsStringSync(
+        'import requests\n'
+        'class R:\n'
+        '    method = "PUT"\n'
+        '    url = "https://s3.example/key?X-Amz-Signature=SIGSECRET"\n'
+        '    headers = {}\n'
+        'requests.Session().send(R())\n',
+      );
+      final r = Process.runSync(
+        'python3',
+        [
+          '${Directory.current.path}/scripts/device/symbols_logged.py',
+          '${dir.path}/fake_symbols.py',
+          '-t',
+          'APPTOKEN12345',
+        ],
+        environment: {'PYTHONPATH': dir.path},
+      );
+      final all = '${r.stdout}\n${r.stderr}';
+      expect(all, contains('403'));
+      expect(all, contains('SignatureDoesNotMatch'));
+      expect(all, isNot(contains('AKIAFAKEKEY123')));
+      expect(all, isNot(contains('STS-SECRET')));
+      expect(all, isNot(contains('SIGSECRET')));
+    });
+
+    test('readTimeLimit: bounded by the deadline plus a short grace, null after it', () {
+      final end = DateTime(2026, 1, 1, 12);
+      expect(
+        readTimeLimit(end.subtract(const Duration(minutes: 10)), end),
+        const Duration(minutes: 2),
+      );
+      expect(
+        readTimeLimit(end.subtract(const Duration(seconds: 31)), end),
+        const Duration(seconds: 51),
+      );
+      expect(
+        readTimeLimit(end.add(const Duration(seconds: 5)), end),
+        const Duration(seconds: 15),
+      );
+      expect(readTimeLimit(end.add(const Duration(seconds: 20)), end), isNull);
+      expect(readTimeLimit(end.add(const Duration(minutes: 1)), end), isNull);
+    });
+
+    test('an unexpected exception is logged redacted (a ProcessException holds the command line)', () {
+      const token = 'FAKE-APP-TOKEN-0123456789';
+      const server = 'FAKE-SERVER-TOKEN-987654';
+      final e = ProcessException('python3', [
+        'x.py',
+        '-t',
+        token,
+        '-v',
+        '9.1.1',
+      ], 'No such file');
+      final text = failureText(e, [token, server]);
+      expect(text, contains('ProcessException'));
+      expect(text, isNot(contains(token)));
+      expect(text, contains('<REDACTED>'));
+      expect(
+        failureText(StateError('key=$server'), [token, server]),
+        isNot(contains(server)),
+      );
+      // and unredacted it WOULD leak, so the test shows what it guards
+      expect('$e', contains(token));
+    });
+
+    group('a recording of an older run in the same issue is not evidence', () {
+      final since = DateTime.utc(2026, 11, 24, 10);
+      RecordingScope scope(Map<String, Object?> r) => recordingScope(
+        r,
+        runId: '9.261124.100500',
+        buildNumber: '100500',
+        since: since,
+      );
+      Map<String, Object?> rec(String v, [String? build]) => {
+        '_id': 'r',
+        'environment': {
+          'app': {'version': v, if (build != null) 'build': build},
+        },
+      };
+
+      test('by app version and build', () {
+        expect(scope(rec('9.261124.100500', '100500')), RecordingScope.mine);
+        expect(scope(rec('9.261123.200000', '200000')), RecordingScope.other);
+        expect(scope(rec('9.261124.100500', '999')), RecordingScope.other);
+        expect(scope(rec('9.261124.100500')), RecordingScope.mine);
+        // the same version from an earlier attempt of a reused build is not this attempt's
+        expect(
+          scope({
+            ...rec('9.261124.100500', '100500'),
+            'created_on': '2026-11-24T08:00:00Z',
+          }),
+          RecordingScope.other,
+        );
+        expect(
+          scope({
+            ...rec('9.261124.100500', '100500'),
+            'created_on': '2026-11-24T10:02:00Z',
+          }),
+          RecordingScope.mine,
+        );
+      });
+
+      test('without a version, by creation time; with neither, unknown (fail closed)', () {
+        expect(
+          scope({'created_on': '2026-11-24T10:03:00.000Z'}),
+          RecordingScope.mine,
+        );
+        expect(
+          scope({'created_on': '2026-11-23T10:03:00.000Z'}),
+          RecordingScope.other,
+        );
+        expect(scope({'_id': 'r'}), RecordingScope.unknown);
+        expect(scope({'created_on': 'garbage'}), RecordingScope.unknown);
+        // the version wins over a fresh timestamp
+        expect(
+          scope({
+            ...rec('9.261123.200000'),
+            'created_on': '2026-11-24T10:03:00Z',
+          }),
+          RecordingScope.other,
+        );
+      });
+
+      test('an old recording, once dropped, can neither satisfy nor fail the verdict', () {
+        const frame = '#0 AppDelegate.application (AppDelegate.swift:32)';
+        const old = '$frame\n#1 abs 0000007f virt 12 _kDartSnapshotText+0x42';
+        const dart =
+            '#0 e2eHandledSite (e2e_main.dart:40:5)\n#1 e2eUnhandledSite (e2e_main.dart:52:16)\n#2 e2eUncaughtThrower (e2e_main.dart:70:1)';
+        const ffi = '#0 crash (crash_lab.dart:54:3)';
+        final mine = [
+          for (final r in [
+            (rec('9.261124.100500', '100500'), dart),
+            (rec('9.261124.100500', '100500'), ffi),
+            (rec('9.261123.200000', '200000'), old),
+          ])
+            if (scope(r.$1) == RecordingScope.mine) r.$2,
+        ];
+        // an old good frame must not supply the missing platform report: this run's is missing, so it fails
+        expect(
+          readbackProblems(
+            mine,
+            expectedDartNames: [
+              'e2eHandledSite',
+              'e2eUnhandledSite',
+              'e2eUncaughtThrower',
+            ],
+            expectedNativeFrames: ['crash_lab.dart', 'AppDelegate.swift'],
+          ),
+          anyElement(contains('AppDelegate.swift')),
+        );
+        // and an old RAW recording does not fail a run whose own reports are clean
+        final clean = [
+          ...mine,
+          '#0 AppDelegate.application (AppDelegate.swift:32)',
+        ];
+        expect(
+          readbackProblems(
+            clean,
+            expectedDartNames: [
+              'e2eHandledSite',
+              'e2eUnhandledSite',
+              'e2eUncaughtThrower',
+            ],
+            expectedNativeFrames: ['crash_lab.dart', 'AppDelegate.swift'],
+          ),
+          isEmpty,
+        );
+      });
+    });
+
+    group('recording scope details', () {
+      final since = DateTime.utc(2026, 11, 24, 9);
+      Map<String, Object?> rec(String build, {String? created}) => {
+        'environment': {
+          'app': {'version': '9.261124.093015', 'build': build},
+        },
+        if (created != null) 'created_on': created,
+      };
+      RecordingScope scope(Map<String, Object?> r, {bool reuse = false}) =>
+          recordingScope(
+            r,
+            runId: '9.261124.093015',
+            buildNumber: '093015',
+            since: since,
+            requireCreatedOn: reuse,
+          );
+
+      test('a build with leading zeros equals the integer Android stores', () {
+        expect(scope(rec('93015')), RecordingScope.mine); // versionCode 93015
+        expect(scope(rec('093015')), RecordingScope.mine);
+        expect(scope(rec('93016')), RecordingScope.other);
+        expect(scope(rec('abc')), RecordingScope.unknown); // fail closed
+        expect(
+          recordingScope(
+            rec('93015'),
+            runId: '9.261124.093015',
+            buildNumber: '93015',
+            since: since,
+          ),
+          RecordingScope.mine,
+        );
+      });
+
+      test('created_on needs an offset; a reused build needs created_on', () {
+        expect(
+          scope(rec('93015', created: '2026-11-24T09:05:00')),
+          RecordingScope.mine, // no reuse: the version alone decides
+        );
+        expect(
+          scope(rec('93015', created: '2026-11-24T09:05:00'), reuse: true),
+          RecordingScope
+              .unknown, // an offset-less time would be read as local time
+        );
+        expect(scope(rec('93015'), reuse: true), RecordingScope.unknown);
+        expect(
+          scope(rec('93015', created: '2026-11-24T09:05:00.000Z'), reuse: true),
+          RecordingScope.mine,
+        );
+        expect(
+          scope(
+            rec('93015', created: '2026-11-24T10:05:00+01:00'),
+            reuse: true,
+          ),
+          RecordingScope.mine, // 09:05Z
+        );
+        expect(
+          scope({'created_on': '2026-11-24T09:05:00'}),
+          RecordingScope.unknown, // no version and no offset
+        );
+      });
+
+      test('only an explicit crash_report: false is "no crash report"', () {
+        expect(recordingHasCrashReport({'crash_report': false}), isFalse);
+        expect(recordingHasCrashReport({'crash_report': true}), isTrue);
+        expect(recordingHasCrashReport({'_id': 'x'}), isTrue);
+      });
+    });
+
+    group('the properties guard', () {
+      late Directory dir;
+      setUp(() => dir = Directory.systemTemp.createTempSync('props'));
+      tearDown(() {
+        Process.runSync('chmod', ['-R', 'u+rwx', dir.path]);
+        dir.deleteSync(recursive: true);
+      });
+      String mode(File f) {
+        final r = Process.runSync('stat', ['-f', '%Lp', f.path]);
+        return r.exitCode == 0
+            ? '${r.stdout}'.trim()
+            : '${Process.runSync('stat', ['-c', '%a', f.path]).stdout}'.trim();
+      }
+
+      test("a developer's file is narrowed while it holds the token, then restored with its mode", () {
+        final f = File('${dir.path}/bugsee.properties')
+          ..writeAsStringSync('app_token=mine\nother=1\n');
+        Process.runSync('chmod', ['644', f.path]);
+        final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
+        g.install('app_token=RUN-FAKE\n');
+        expect(mode(f), '600');
+        expect(f.readAsStringSync(), contains('RUN-FAKE'));
+        g.restore();
+        expect(f.readAsStringSync(), 'app_token=mine\nother=1\n');
+        expect(mode(f), '644');
+        expect(File('${dir.path}/orig').existsSync(), isFalse);
+      });
+
+      test('a file whose mode cannot be changed aborts before the token is written', () {
+        if (Process.runSync('id', ['-u']).stdout.toString().trim() == '0') {
+          markTestSkipped('root can chmod anything');
+          return;
+        }
+        // a symlink to a root-owned file: reading works, chmod fails
+        final target = File('/etc/hosts');
+        if (!target.existsSync()) {
+          markTestSkipped('no /etc/hosts');
+          return;
+        }
+        final link = Link('${dir.path}/bugsee.properties')
+          ..createSync(target.path);
+        final g = PropsGuard(File(link.path), File('${dir.path}/orig'), (_) {});
+        final before = target.readAsStringSync();
+        expect(
+          () => g.install('app_token=RUN-FAKE\n'),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(target.readAsStringSync(), before);
+        expect(target.readAsStringSync(), isNot(contains('RUN-FAKE')));
+        g.restore();
+        expect(target.readAsStringSync(), before);
+      });
+
+      test('a symlinked file: the TARGET mode is captured and restored', () {
+        final target = File('${dir.path}/real.properties')
+          ..writeAsStringSync('app_token=mine\n');
+        Process.runSync('chmod', ['640', target.path]);
+        final link = Link('${dir.path}/bugsee.properties')
+          ..createSync(target.path);
+        final g = PropsGuard(File(link.path), File('${dir.path}/orig'), (_) {});
+        g.install('app_token=RUN-FAKE\n');
+        expect(mode(target), '600');
+        g.restore();
+        expect(target.readAsStringSync(), 'app_token=mine\n');
+        expect(mode(target), '640');
+      });
+
+      test('a file the run created is deleted', () {
+        final f = File('${dir.path}/bugsee.properties');
+        final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
+        g.install('app_token=RUN-FAKE\n');
+        expect(mode(f), '600');
+        g.restore();
+        expect(f.existsSync(), isFalse);
+      });
+
+      test("a developer's file that cannot be read is never deleted", () {
+        if (Process.runSync('id', ['-u']).stdout.toString().trim() == '0') {
+          markTestSkipped('root can read a mode 000 file');
+          return;
+        }
+        final f = File('${dir.path}/bugsee.properties')
+          ..writeAsStringSync('app_token=mine\n');
+        Process.runSync('chmod', ['000', f.path]);
+        final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
+        expect(
+          () => g.install('app_token=RUN-FAKE\n'),
+          throwsA(isA<FileSystemException>()),
+        );
+        g.restore();
+        expect(f.existsSync(), isTrue);
+        Process.runSync('chmod', ['600', f.path]);
+        expect(f.readAsStringSync(), 'app_token=mine\n');
+      });
+    });
+
+    test('a name is matched whole, not as a prefix of another function', () {
+      const helper = '#0 e2eHandledSiteHelper (e2e_main.dart:40:5)';
+      expect(
+        readbackProblems(
+          [helper],
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeFrames: [],
+        ),
+        anyElement(contains('"e2eHandledSite"')),
+      );
+      expect(
+        readbackProblems(
+          ['#0 e2eHandledSite (e2e_main.dart:40:5)'],
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeFrames: [],
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a recording that could not be read means no verdict on the rest', () {
+      const good = '#0 e2eHandledSite (e2e_main.dart:40:5)';
+      expect(
+        readbackProblems(
+          [good],
+          unreadRecordings: 1,
+          expectedDartNames: ['e2eHandledSite'],
+          expectedNativeFrames: [],
+        ),
+        anyElement(contains('could not be read')),
+      );
+      expect(
+        readbackProblems(
+          [],
+          unreadRecordings: 2,
+          expectedDartNames: [],
+          expectedNativeFrames: [],
+        ),
+        hasLength(2),
+      );
+    });
+
+    test('a reused build must be for the same platform, endpoint and app', () {
+      const a = {'platform': 'ios', 'endpoint': '', 'app': 'h1'};
+      expect(reuseIdentityProblems(a, {...a}), isEmpty);
+      expect(reuseIdentityProblems(a, {...a, 'app': 'h2'}), hasLength(1));
+      expect(
+        reuseIdentityProblems(a, {
+          ...a,
+          'endpoint': 'https://apidev.bugsee.com',
+        }),
+        hasLength(1),
+      );
+      expect(
+        reuseIdentityProblems(a, {...a, 'platform': 'android'}),
+        hasLength(1),
+      );
+    });
+
+    test('the Java crash search stops at the next FATAL EXCEPTION block (another process)', () {
+      const log =
+          'E AndroidRuntime: FATAL EXCEPTION: main\n'
+          'E AndroidRuntime: Process: pkg, PID: 100\n'
+          'E AndroidRuntime: java.lang.RuntimeException: other\n'
+          'E AndroidRuntime: FATAL EXCEPTION: main\n'
+          'E AndroidRuntime: Process: pkg, PID: 200\n'
+          'E AndroidRuntime: java.lang.IllegalStateException: verify-java-main';
+      expect(parseFatalException(log, 200, 'verify-java-main'), isTrue);
+      expect(parseFatalException(log, 100, 'verify-java-main'), isFalse);
+    });
+
+    test('the Java crash search stops at a header line, not at the words in a message', () {
+      const log =
+          'E AndroidRuntime: FATAL EXCEPTION: main\n'
+          'E AndroidRuntime: Process: pkg, PID: 100\n'
+          'E AndroidRuntime: java.lang.RuntimeException: FATAL EXCEPTION in worker\n'
+          'E AndroidRuntime: Caused by: java.lang.IllegalStateException: verify-java-main';
+      expect(parseFatalException(log, 100, 'verify-java-main'), isTrue);
+    });
+
+    test('the unsettled message says which it is', () {
+      expect(
+        readbackUnsettledWhy([(ok: true, reports: 3), (ok: true, reports: 4)]),
+        contains('kept changing'),
+      );
+      expect(
+        readbackUnsettledWhy([(ok: false, reports: 3), (ok: true, reports: 3)]),
+        contains('one confirming pass short'),
+      );
+    });
+
+    test('the read-back stops only after two agreeing good passes', () {
+      const ok3 = (ok: true, reports: 3);
+      expect(readbackSettled([ok3]), isFalse);
+      expect(readbackSettled([ok3, ok3]), isTrue);
+      expect(
+        readbackSettled([ok3, (ok: true, reports: 4)]),
+        isFalse,
+      ); // a late report arrived
+      expect(readbackSettled([(ok: false, reports: 3), ok3]), isFalse);
+      expect(readbackSettled([ok3, (ok: false, reports: 3)]), isFalse);
+      expect(readbackSettled([]), isFalse);
+    });
+
+    test('raw frame lines are found, symbolicated ones are not', () {
+      expect(
+        rawFrameLines(
+          '    #00 abs 0000007f virt 000000000012 _kDartSnapshotText+0x42 (x)',
+        ),
+        hasLength(1),
+      );
+      expect(rawFrameLines('#0 e2eHandledSite (e2e_main.dart:40)'), isEmpty);
+    });
   });
 }

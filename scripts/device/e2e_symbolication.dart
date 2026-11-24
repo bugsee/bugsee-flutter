@@ -51,6 +51,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'core/e2e.dart';
+import 'core/props_guard.dart';
 import 'shell.dart';
 import 'toolchain.dart';
 
@@ -106,82 +107,12 @@ Never invalid(String why) => throw HarnessFailure(why);
 /// Everything the process must undo however it ends. Synchronous, idempotent: `main`'s `finally` and the
 /// signal handlers both call it.
 Child? _activeChild;
-_PropsGuard? _propsGuard;
+PropsGuard? _propsGuard;
 void _cleanupSync() {
   _activeChild?.process.kill(ProcessSignal.sigterm);
   _propsGuard?.restore();
   _unlock();
   _save();
-}
-
-/// Writes the Gradle plugin's `bugsee.properties` (the app token) for one build and puts back what was there.
-/// A developer's own file is copied to the work directory first (private mode) and restored byte for byte; a
-/// file this run created is deleted. The file is created private BEFORE the token is written.
-class _PropsGuard {
-  _PropsGuard(this.file, this.backup);
-  final File file;
-  final File backup;
-  bool _active = false;
-  List<int>? _original;
-  String? _originalMode;
-
-  static void _private(File f) {
-    if (!f.existsSync()) f.createSync();
-    Process.runSync('chmod', ['600', f.path]);
-  }
-
-  /// The octal permission bits of [f] (`stat -f %Lp` on macOS, `stat -c %a` on Linux), or null.
-  static String? _mode(File f) {
-    for (final args in [
-      ['-f', '%Lp', f.path],
-      ['-c', '%a', f.path],
-    ]) {
-      final r = Process.runSync('stat', args);
-      final out = '${r.stdout}'.trim();
-      if (r.exitCode == 0 && RegExp(r'^[0-7]{3,4}$').hasMatch(out)) return out;
-    }
-    return null;
-  }
-
-  /// Registered BEFORE anything is touched (the caller assigns the guard first), so a failure at any step,
-  /// including a write that truncated the file, still restores. The original's mode is narrowed to 600 before
-  /// the run token is written into it and put back by [restore].
-  void install(String content) {
-    _active = true;
-    if (file.existsSync()) {
-      _original = file.readAsBytesSync();
-      _originalMode = _mode(file);
-      _private(backup);
-      backup.writeAsBytesSync(_original!);
-      _private(file); // narrow BEFORE the token goes in, whatever mode the developer's file had
-      say(
-        'example/android/bugsee.properties exists: its content is saved to ${backup.path} and restored after the build',
-      );
-    } else {
-      _private(file);
-    }
-    file.writeAsStringSync(content);
-  }
-
-  void restore() {
-    if (!_active) return;
-    _active = false;
-    try {
-      final original = _original;
-      if (original == null) {
-        if (file.existsSync()) file.deleteSync();
-      } else {
-        file.writeAsBytesSync(original);
-        final mode = _originalMode;
-        if (mode != null) Process.runSync('chmod', [mode, file.path]);
-        if (backup.existsSync()) backup.deleteSync();
-      }
-    } on Object {
-      stderr.writeln(
-        'WARNING: could not restore ${file.path}; it may still hold the run token (a saved copy of the original is ${backup.path})',
-      );
-    }
-  }
 }
 
 late String _workDir;
@@ -389,9 +320,10 @@ class _Job {
           // The Gradle plugin reads the app token here (gitignored) and uploads the native libraries' symbols
           // when the release variant is assembled. A developer's own file is saved and restored, never lost;
           // the guard is registered first and also undone by every exit path (`_cleanupSync`).
-          final guard = _propsGuard = _PropsGuard(
+          final guard = _propsGuard = PropsGuard(
             bugseeProps,
             File('$_workDir/bugsee.properties.original'),
+            say,
           );
           guard.install(
             'app_token=$token\n${endpoint.isEmpty ? '' : 'plugin.endpoint=$endpoint\n'}',
@@ -428,7 +360,7 @@ class _Job {
         _propsGuard?.restore();
       }
       await _stageBuild();
-      File(_identityFile).writeAsStringSync(jsonEncode(await _identity()));
+      writePrivate(File(_identityFile), jsonEncode(await _identity()));
     } else {
       if (!Directory(stage).existsSync() || !File(_identityFile).existsSync()) {
         invalid(
@@ -916,9 +848,7 @@ class _Job {
         await delay(30);
       }
       if (unstable) {
-        say(
-          'NOT CONFIRMED: the set of reports kept changing until the deadline',
-        );
+        say('NOT CONFIRMED at the deadline: ${readbackUnsettledWhy(passes)}');
         return 1;
       }
       if (problems.isNotEmpty) {
@@ -999,7 +929,8 @@ class _Job {
             rec.cast<String, Object?>(),
             runId: runId,
             buildNumber: buildNumber,
-            since: startedAt.subtract(const Duration(minutes: 2)),
+            since: startedAt.subtract(recordingMargin),
+            requireCreatedOn: reuse,
           )) {
             case RecordingScope.mine:
               break;
@@ -1010,6 +941,13 @@ class _Job {
               invalid(
                 'recording $rid of issue $id has neither an app version nor a creation time: it cannot be tied to this run, nothing can be verified',
               );
+          }
+          if (!recordingHasCrashReport(rec.cast<String, Object?>())) {
+            // the API's own list entry says there is none (a handled error without crash data): not unread
+            say(
+              '  recording $rid: the API lists no crash report for it, skipped',
+            );
+            continue;
           }
           try {
             final text = await _getText(

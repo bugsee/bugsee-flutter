@@ -21,6 +21,7 @@ import '../scripts/device/core/expectations.dart';
 import '../scripts/device/core/image.dart';
 import '../scripts/device/core/crash_kinds.dart';
 import '../scripts/device/core/e2e.dart';
+import '../scripts/device/core/props_guard.dart';
 import '../scripts/device/core/log_parsers.dart';
 import '../scripts/device/core/symbols.dart';
 import '../scripts/device/core/zip.dart';
@@ -1924,6 +1925,131 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
           ),
           isEmpty,
         );
+      });
+    });
+
+    group('recording scope details', () {
+      final since = DateTime.utc(2026, 11, 24, 9);
+      Map<String, Object?> rec(String build, {String? created}) => {
+        'environment': {
+          'app': {'version': '9.261124.093015', 'build': build},
+        },
+        if (created != null) 'created_on': created,
+      };
+      RecordingScope scope(Map<String, Object?> r, {bool reuse = false}) =>
+          recordingScope(
+            r,
+            runId: '9.261124.093015',
+            buildNumber: '093015',
+            since: since,
+            requireCreatedOn: reuse,
+          );
+
+      test('a build with leading zeros equals the integer Android stores', () {
+        expect(scope(rec('93015')), RecordingScope.mine); // versionCode 93015
+        expect(scope(rec('093015')), RecordingScope.mine);
+        expect(scope(rec('93016')), RecordingScope.other);
+        expect(scope(rec('abc')), RecordingScope.unknown); // fail closed
+        expect(
+          recordingScope(
+            rec('93015'),
+            runId: '9.261124.093015',
+            buildNumber: '93015',
+            since: since,
+          ),
+          RecordingScope.mine,
+        );
+      });
+
+      test('created_on needs an offset; a reused build needs created_on', () {
+        expect(
+          scope(rec('93015', created: '2026-11-24T09:05:00')),
+          RecordingScope.mine, // no reuse: the version alone decides
+        );
+        expect(
+          scope(rec('93015', created: '2026-11-24T09:05:00'), reuse: true),
+          RecordingScope
+              .unknown, // an offset-less time would be read as local time
+        );
+        expect(scope(rec('93015'), reuse: true), RecordingScope.unknown);
+        expect(
+          scope(rec('93015', created: '2026-11-24T09:05:00.000Z'), reuse: true),
+          RecordingScope.mine,
+        );
+        expect(
+          scope(
+            rec('93015', created: '2026-11-24T10:05:00+01:00'),
+            reuse: true,
+          ),
+          RecordingScope.mine, // 09:05Z
+        );
+        expect(
+          scope({'created_on': '2026-11-24T09:05:00'}),
+          RecordingScope.unknown, // no version and no offset
+        );
+      });
+
+      test('only an explicit crash_report: false is "no crash report"', () {
+        expect(recordingHasCrashReport({'crash_report': false}), isFalse);
+        expect(recordingHasCrashReport({'crash_report': true}), isTrue);
+        expect(recordingHasCrashReport({'_id': 'x'}), isTrue);
+      });
+    });
+
+    group('the properties guard', () {
+      late Directory dir;
+      setUp(() => dir = Directory.systemTemp.createTempSync('props'));
+      tearDown(() {
+        Process.runSync('chmod', ['-R', 'u+rwx', dir.path]);
+        dir.deleteSync(recursive: true);
+      });
+      String mode(File f) {
+        final r = Process.runSync('stat', ['-f', '%Lp', f.path]);
+        return r.exitCode == 0
+            ? '${r.stdout}'.trim()
+            : '${Process.runSync('stat', ['-c', '%a', f.path]).stdout}'.trim();
+      }
+
+      test("a developer's file is narrowed while it holds the token, then restored with its mode", () {
+        final f = File('${dir.path}/bugsee.properties')
+          ..writeAsStringSync('app_token=mine\nother=1\n');
+        Process.runSync('chmod', ['644', f.path]);
+        final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
+        g.install('app_token=RUN-FAKE\n');
+        expect(mode(f), '600');
+        expect(f.readAsStringSync(), contains('RUN-FAKE'));
+        g.restore();
+        expect(f.readAsStringSync(), 'app_token=mine\nother=1\n');
+        expect(mode(f), '644');
+        expect(File('${dir.path}/orig').existsSync(), isFalse);
+      });
+
+      test('a file the run created is deleted', () {
+        final f = File('${dir.path}/bugsee.properties');
+        final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
+        g.install('app_token=RUN-FAKE\n');
+        expect(mode(f), '600');
+        g.restore();
+        expect(f.existsSync(), isFalse);
+      });
+
+      test("a developer's file that cannot be read is never deleted", () {
+        if (Process.runSync('id', ['-u']).stdout.toString().trim() == '0') {
+          markTestSkipped('root can read a mode 000 file');
+          return;
+        }
+        final f = File('${dir.path}/bugsee.properties')
+          ..writeAsStringSync('app_token=mine\n');
+        Process.runSync('chmod', ['000', f.path]);
+        final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
+        expect(
+          () => g.install('app_token=RUN-FAKE\n'),
+          throwsA(isA<FileSystemException>()),
+        );
+        g.restore();
+        expect(f.existsSync(), isTrue);
+        Process.runSync('chmod', ['600', f.path]);
+        expect(f.readAsStringSync(), 'app_token=mine\n');
       });
     });
 

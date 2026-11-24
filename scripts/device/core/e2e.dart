@@ -261,39 +261,67 @@ String readbackUnsettledWhy(List<({bool ok, int reports})> passes) {
 
 enum RecordingScope { mine, other, unknown }
 
+/// How far before the run's start a recording may be created and still count (clock skew between this machine
+/// and the backend).
+const recordingMargin = Duration(minutes: 2);
+
+/// The numeric value of a build string, so `093015` (what `--build-number` was given) equals `93015` (the
+/// integer Android stores as versionCode); null when either is not a number.
+bool? _sameBuild(String a, String b) {
+  final x = int.tryParse(a.trim());
+  final y = int.tryParse(b.trim());
+  if (x == null || y == null) return null;
+  return x == y;
+}
+
+/// A `created_on` with an explicit offset (`Z` or `+hh:mm`), as the API prints it (`toISOString()`); a string
+/// without one would be read as THIS machine's local time, so it counts as unknown.
+DateTime? _createdOn(Object? v) {
+  final s = '${v ?? ''}';
+  if (!RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(s)) return null;
+  return DateTime.tryParse(s);
+}
+
 /// Whether a recording of an issue belongs to THIS run. The partner API lists, per recording, its own
 /// `environment.app.version` / `build` and `created_on` (appserver `public_api/components/recordings/formatter.js`).
-/// The version decides when present (and the build too, when both sides have one); without a version the creation
-/// time must be at or after [since] (the run's start less a margin). With neither: [RecordingScope.unknown], and the
-/// caller fails closed.
+/// The version decides when present, and the build too when both sides have one (compared as numbers; one that
+/// is not a number is [RecordingScope.unknown]). The creation time must be at or after [since] (the run's start
+/// less [recordingMargin]) when there is no version, and also with a version when [requireCreatedOn] is set (a
+/// reused build: the same version may have an earlier attempt). A missing or offset-less creation time where one
+/// is required is [RecordingScope.unknown]; the caller fails closed.
 RecordingScope recordingScope(
   Map<String, Object?> recording, {
   required String runId,
   String? buildNumber,
   required DateTime since,
+  bool requireCreatedOn = false,
 }) {
   final env = recording['environment'];
   final app = env is Map ? env['app'] : null;
   final version = app is Map ? app['version'] : null;
+  final created = _createdOn(recording['created_on']);
   if (version != null && '$version'.isNotEmpty) {
     if ('$version' != runId) return RecordingScope.other;
     final build = (app as Map)['build'];
-    if (build != null &&
-        '$build'.isNotEmpty &&
-        buildNumber != null &&
-        '$build' != buildNumber) {
-      return RecordingScope.other;
+    if (build != null && '$build'.isNotEmpty && buildNumber != null) {
+      final same = _sameBuild('$build', buildNumber);
+      if (same == null) return RecordingScope.unknown;
+      if (!same) return RecordingScope.other;
     }
-    // The same compiled version can have an earlier attempt (`--reuse-build`): when the recording says when it
-    // was created, it must also be from THIS attempt.
-    final created = DateTime.tryParse('${recording['created_on'] ?? ''}');
-    if (created != null && created.isBefore(since)) return RecordingScope.other;
-    return RecordingScope.mine;
+    if (created == null) {
+      return requireCreatedOn ? RecordingScope.unknown : RecordingScope.mine;
+    }
+    return created.isBefore(since) ? RecordingScope.other : RecordingScope.mine;
   }
-  final created = DateTime.tryParse('${recording['created_on'] ?? ''}');
   if (created == null) return RecordingScope.unknown;
   return created.isBefore(since) ? RecordingScope.other : RecordingScope.mine;
 }
+
+/// Whether the API says a recording has a crash report: its list entry carries `crash_report` (a bool,
+/// `formatRecording`). Only an explicit `false` is a definitive "none" (the report endpoint would answer
+/// `RecordingDoesNotHaveCrashData`); anything else is fetched.
+bool recordingHasCrashReport(Map<String, Object?> recording) =>
+    recording['crash_report'] != false;
 
 /// An unexpected failure as text for the log: the exception's message passed through [redact] (a
 /// `ProcessException` prints its whole command line, which holds `-t <token>` and the server token).

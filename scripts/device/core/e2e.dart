@@ -323,6 +323,21 @@ RecordingScope recordingScope(
 bool recordingHasCrashReport(Map<String, Object?> recording) =>
     recording['crash_report'] != false;
 
+/// The shortest time a read-back pass is worth starting with.
+const Duration minPassBudget = Duration(seconds: 30);
+
+/// How long one read may take: the time left to [end] plus a short grace (so the last reads of a pass can finish),
+/// at most 2 minutes, and `null` once even the grace is over (no read starts then, it counts as unread).
+Duration? readTimeLimit(
+  DateTime now,
+  DateTime end, {
+  Duration grace = const Duration(seconds: 20),
+}) {
+  final left = end.add(grace).difference(now);
+  if (left <= Duration.zero) return null;
+  return left > const Duration(minutes: 2) ? const Duration(minutes: 2) : left;
+}
+
 /// An unexpected failure as text for the log: the exception's message passed through [redact] (a
 /// `ProcessException` prints its whole command line, which holds `-t <token>` and the server token).
 String failureText(Object error, Iterable<String> secrets) =>
@@ -342,7 +357,8 @@ List<String> rawFrameLines(String report) => [
 /// nothing: the launch could have been ended by anything else (a SIGTERM from the previous console child).
 /// `ffi-segv` must have ended with `App terminated due to signal 11`. `objc-main` is an uncaught Objective-C
 /// exception, which aborts (signal 6); devicectl may report no signal for it, then a non-zero exit is accepted
-/// (measured once: exit 1), but any OTHER signal (15 above all) is a failure.
+/// only together with the runtime's `Terminating app due to uncaught exception 'VerifyException'` line (a lost device
+/// exits non-zero too), and any OTHER signal (15 above all) is a failure.
 List<String> iosCrashExitProblems(String crash, String console, int exitCode) {
   final signal = parseTerminatedSignal(console);
   switch (crash) {
@@ -352,9 +368,17 @@ List<String> iosCrashExitProblems(String crash, String console, int exitCode) {
           : ['ffi-segv ended with ${signal == null ? 'no signal line' : 'signal $signal'}, expected signal 11'];
     case 'objc-main':
       if (signal == 6) return const [];
-      if (signal == null && exitCode != 0) return const [];
+      // No signal line: a non-zero exit alone proves nothing (a lost device or tunnel exits non-zero too). The
+      // runtime's own line for an uncaught exception, naming the app's exception, must be in the console.
+      if (signal == null &&
+          exitCode != 0 &&
+          console.contains(
+            "Terminating app due to uncaught exception 'VerifyException'",
+          )) {
+        return const [];
+      }
       return [
-        'objc-main ended with ${signal == null ? 'no signal line and devicectl exit 0' : 'signal $signal'}, expected signal 6 (or a non-zero exit without a signal)',
+        'objc-main ended with ${signal == null ? (exitCode == 0 ? 'no signal line and devicectl exit 0' : 'no signal line and no uncaught-exception line (the crash is not confirmed)') : 'signal $signal'}, expected signal 6 (or a non-zero exit with the uncaught VerifyException line)',
       ];
   }
   return ['unknown crash kind $crash'];

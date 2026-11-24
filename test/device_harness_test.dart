@@ -1709,7 +1709,25 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
           ),
           isEmpty,
         );
-        expect(iosCrashExitProblems('objc-main', '', 1), isEmpty);
+        // no signal line: a non-zero exit needs the runtime's uncaught-exception line as well
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            "E2E|{\"kind\":\"crashing\"}\n*** Terminating app due to uncaught exception 'VerifyException', reason: 'verify-objc-main'",
+            1,
+          ),
+          isEmpty,
+        );
+        // a lost device after the marker: non-zero exit, no termination evidence
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            'E2E|{"kind":"crashing","crash":"objc-main"}\nThe device was disconnected.',
+            1,
+          ),
+          anyElement(contains('not confirmed')),
+        );
+        expect(iosCrashExitProblems('objc-main', '', 1), isNotEmpty);
         expect(iosCrashExitProblems('objc-main', '', 0), isNotEmpty);
         expect(
           iosCrashExitProblems(
@@ -1799,6 +1817,76 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(all, isNot(contains('SIGSECRET')));
       expect(all, isNot(contains('APPTOKEN12345')));
       expect(all, isNot(contains('connect failed')));
+    });
+
+    test('symbols_logged.py: a non-2xx answer prints the error code only, never the body', () {
+      try {
+        if (Process.runSync('python3', ['--version']).exitCode != 0) {
+          markTestSkipped('python3 is not usable here');
+          return;
+        }
+      } on ProcessException {
+        markTestSkipped('python3 is not installed');
+        return;
+      }
+      final dir = Directory.systemTemp.createTempSync('symlog2');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      Directory('${dir.path}/requests').createSync();
+      File('${dir.path}/requests/__init__.py').writeAsStringSync(
+        'class _E:\n'
+        '    class RequestException(Exception):\n'
+        '        pass\n'
+        'exceptions = _E\n'
+        'class _Resp:\n'
+        '    ok = False\n'
+        '    status_code = 403\n'
+        '    text = "<Error><Code>SignatureDoesNotMatch</Code><AWSAccessKeyId>AKIAFAKEKEY123</AWSAccessKeyId><StringToSign>STS-SECRET</StringToSign></Error>"\n'
+        'class Session:\n'
+        '    def send(self, request, **kw):\n'
+        '        return _Resp()\n',
+      );
+      File('${dir.path}/fake_symbols.py').writeAsStringSync(
+        'import requests\n'
+        'class R:\n'
+        '    method = "PUT"\n'
+        '    url = "https://s3.example/key?X-Amz-Signature=SIGSECRET"\n'
+        '    headers = {}\n'
+        'requests.Session().send(R())\n',
+      );
+      final r = Process.runSync(
+        'python3',
+        [
+          '${Directory.current.path}/scripts/device/symbols_logged.py',
+          '${dir.path}/fake_symbols.py',
+          '-t',
+          'APPTOKEN12345',
+        ],
+        environment: {'PYTHONPATH': dir.path},
+      );
+      final all = '${r.stdout}\n${r.stderr}';
+      expect(all, contains('403'));
+      expect(all, contains('SignatureDoesNotMatch'));
+      expect(all, isNot(contains('AKIAFAKEKEY123')));
+      expect(all, isNot(contains('STS-SECRET')));
+      expect(all, isNot(contains('SIGSECRET')));
+    });
+
+    test('readTimeLimit: bounded by the deadline plus a short grace, null after it', () {
+      final end = DateTime(2026, 1, 1, 12);
+      expect(
+        readTimeLimit(end.subtract(const Duration(minutes: 10)), end),
+        const Duration(minutes: 2),
+      );
+      expect(
+        readTimeLimit(end.subtract(const Duration(seconds: 31)), end),
+        const Duration(seconds: 51),
+      );
+      expect(
+        readTimeLimit(end.add(const Duration(seconds: 5)), end),
+        const Duration(seconds: 15),
+      );
+      expect(readTimeLimit(end.add(const Duration(seconds: 20)), end), isNull);
+      expect(readTimeLimit(end.add(const Duration(minutes: 1)), end), isNull);
     });
 
     test('an unexpected exception is logged redacted (a ProcessException holds the command line)', () {
@@ -2022,6 +2110,31 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         expect(f.readAsStringSync(), 'app_token=mine\nother=1\n');
         expect(mode(f), '644');
         expect(File('${dir.path}/orig').existsSync(), isFalse);
+      });
+
+      test('a file whose mode cannot be changed aborts before the token is written', () {
+        if (Process.runSync('id', ['-u']).stdout.toString().trim() == '0') {
+          markTestSkipped('root can chmod anything');
+          return;
+        }
+        // a symlink to a root-owned file: reading works, chmod fails
+        final target = File('/etc/hosts');
+        if (!target.existsSync()) {
+          markTestSkipped('no /etc/hosts');
+          return;
+        }
+        final link = Link('${dir.path}/bugsee.properties')
+          ..createSync(target.path);
+        final g = PropsGuard(File(link.path), File('${dir.path}/orig'), (_) {});
+        final before = target.readAsStringSync();
+        expect(
+          () => g.install('app_token=RUN-FAKE\n'),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(target.readAsStringSync(), before);
+        expect(target.readAsStringSync(), isNot(contains('RUN-FAKE')));
+        g.restore();
+        expect(target.readAsStringSync(), before);
       });
 
       test('a file the run created is deleted', () {

@@ -8,6 +8,7 @@ URL), and a presigned upload URL is shown as host and path only (its query holds
 request (no connection, a reset) prints `HTTP <method> <url> -> FAILED (<exception type>)` and raises a
 new error that carries no part of the original message.
 """
+import re
 import runpy
 import sys
 from urllib.parse import urlsplit
@@ -45,8 +46,10 @@ def send(self, request, **kwargs):
     size = request.headers.get('Content-Length', '?')
     print(f'HTTP {request.method} {redact(request.url)} -> {response.status_code} (request body {size} bytes)', flush=True)
     if not response.ok:
-        body = (response.text or '')[:300].replace(token, '<APP_TOKEN>') if token else (response.text or '')[:300]
-        print(f'HTTP error body: {body}', flush=True)
+        # Never the body: an S3 error answer echoes signing material (AWSAccessKeyId, StringToSign, ...). Only
+        # the error code, from an allow-list of characters, is useful and safe to print.
+        m = re.search(r'<Code>([A-Za-z0-9_.-]{1,64})</Code>', response.text or '')
+        print(f'HTTP error code: {m.group(1) if m else "-"}', flush=True)
     return response
 
 

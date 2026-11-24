@@ -768,15 +768,25 @@ class _Job {
   }
 
   /// Saving the console must never stop the device cleanup (uninstall) that follows it.
+  bool _consoleSaved = false;
+
   void _saveConsole(StringBuffer all) {
     try {
       File(consoleFile).writeAsStringSync(all.toString());
+      _consoleSaved = true;
     } on Object catch (e) {
+      _consoleSaved = false;
       say('WARNING: could not save $consoleFile: ${failureText(e, _secrets)}');
     }
   }
 
   void _checkEvents(String os) {
+    // After the cleanup: a failed save can leave an EARLIER console.txt of a reused build with this run's id.
+    if (!_consoleSaved) {
+      invalid(
+        'the console of this run could not be saved, so its events cannot be checked',
+      );
+    }
     final events = e2eEvents(File(consoleFile).readAsStringSync(), runId);
     say('${events.length} events of run $runId in the console');
     final problems = phaseProblems(events, os: os, release: true);
@@ -827,8 +837,9 @@ class _Job {
         );
         passes.add((ok: problems.isEmpty, reports: reports.length));
         if (readbackSettled(passes)) break;
+        // another pass needs the 30 s wait AND time to read in: never start one that begins at the deadline
         final more = DateTime.now()
-            .add(const Duration(seconds: 30))
+            .add(const Duration(seconds: 30) + minPassBudget)
             .isBefore(end);
         if (problems.isEmpty) {
           // Found everything, but a report that arrives later could still be raw: read again until two
@@ -987,13 +998,12 @@ class _Job {
     String serverToken,
     DateTime end,
   ) async {
-    final left = end.difference(DateTime.now());
-    // at least a few seconds even at the deadline: the last pass must be able to finish its reads
-    final limit = left < const Duration(seconds: 20)
-        ? const Duration(seconds: 20)
-        : (left > const Duration(minutes: 2)
-              ? const Duration(minutes: 2)
-              : left);
+    final limit = readTimeLimit(DateTime.now(), end);
+    if (limit == null) {
+      throw StateError(
+        'GET ${Uri.parse(url).path} not started: past the deadline',
+      );
+    }
     HttpClientRequest? req;
     try {
       req = await c.getUrl(Uri.parse(url)).timeout(limit);

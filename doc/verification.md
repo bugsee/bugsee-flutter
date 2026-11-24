@@ -135,7 +135,7 @@ harness was run again on a new simulator (iPhone 17, iOS 26.5, Xcode 27.1) with 
 | 8 | Hot restart | PASS | PASS |
 | 9 | Report screenshot by render mode | PASS at Android 7.5.0: content and the secure box redacted in BOTH modes, screenshot and video (at 7.4.2: KNOWN-GAP, all black in the default SurfaceView mode) | not applicable (the iOS screenshot has content, scenario 7) |
 | 10 | Crash and error matrix: native signals, Java, Dart routes | PASS on a physical phone at Android 7.5.1: see section 10 | not run (no iOS device harness yet) |
-| 11 | End-to-end symbolication, real backend | UPLOADED and crashed on the phone; backend frames NOT READ (no server token); apidev only | UPLOADED and crashed on an iPhone XS; backend frames NOT READ; apidev only |
+| 11 | End-to-end symbolication, real backend | UPLOADED, crashed on the phone, read back (apidev, by hand through the staging MCP): everything symbolicated, Java, native and Dart | UPLOADED, crashed on an iPhone XS, read back (apidev, by hand): native frames symbolicated, **Dart exceptions raw** (backend symbol-record collision, fixes in review: bugsee-appserver#280, bugsee-background-worker#182); not re-measured after the fixes |
 
 ## Scenarios
 
@@ -433,8 +433,8 @@ copy decodes both forms. The backend works today only because it strips the head
 iOS: a Flutter 3.50 `--release --obfuscate --split-debug-info` build (`example`, `lib/verify_main.dart`, no codesign) writes `app.ios-arm64.symbols`, a Mach-O
 file (`file`: "Mach-O 64-bit dSYM companion file arm64") with `LC_UUID` and the symbols `_kDartSnapshotText`, `_kDartSnapshotData` and `_kDartSnapshotBss`.
 `dart_symbolize` (and 0.7.1) read it: a SYNTHETIC header-less stack (frames written by hand from the file's own symbol addresses, not captured on a phone)
-came out as the right functions with file:line. Not verified: a real iOS stack (its header, whether its frames carry `virt`, the form of its `build_id`,
-which should be the `LC_UUID` as 32 hex digits, which the worker looks up by that and by the upper-case dashed UUID), and the iOS upload path.
+came out as the right functions with file:line. A real iOS stack and the iOS upload path were measured later, in scenario 11 (a real device stack, uploaded and read back: the `.symbols` decode, but a
+second record with the same UUID can make the backend pick the wrong file, see there).
 
 ### 11. End-to-end symbolication against a Bugsee backend (2026-11-23)
 
@@ -442,17 +442,23 @@ which should be the `LC_UUID` as 32 hex digits, which the worker looks up by tha
 `test/device_harness_test.dart`; `scripts/device/symbols_logged.py` runs the pinned `symbols.py` unchanged and prints each HTTP exchange). No mock.
 
 ```bash
-BUGSEE_IOS_TOKEN=... [BUGSEE_ENDPOINT=https://apidev.bugsee.com] \
-  dart scripts/device/e2e_symbolication.dart ios --udid <UDID>            # [--run-id <id> --reuse-build]
-BUGSEE_ANDROID_TOKEN=... dart scripts/device/e2e_symbolication.dart android --serial <serial>
-# reading the backend back (without these the run ends UNVERIFIED, exit 3, never a pass):
-BUGSEE_SERVER_TOKEN=... BUGSEE_IOS_APP_ID=... (or BUGSEE_ANDROID_APP_ID=...)
+# tokens live in the environment (or a private file you `source`), never in the command line or the repository;
+# the optional variables go on the same invocation (or are exported first)
+export BUGSEE_ENDPOINT=https://apidev.bugsee.com        # optional: empty = the default (production) endpoint
+export BUGSEE_SERVER_TOKEN=...                          # to read the backend back (without it, and the app id, the run ends UNVERIFIED, exit 3, never a pass)
+export E2E_DEVLOCK=/path/to/lock.sh                     # optional device lock script (acquire|release <device> ...); or --devlock, or --no-lock
+
+BUGSEE_IOS_TOKEN=... BUGSEE_IOS_APP_ID=... \
+  dart scripts/device/e2e_symbolication.dart ios --udid "$UDID"            # [--run-id <id>]; --reuse-build needs --run-id
+BUGSEE_ANDROID_TOKEN=... BUGSEE_ANDROID_APP_ID=... \
+  dart scripts/device/e2e_symbolication.dart android --serial "$SERIAL"
 ```
 
-Per run: a unique build string `9.MMDD.HHMM` (build name and the symbols' `-v`); a release build with `--obfuscate --split-debug-info` of the e2e app;
-guards that make a run INVALID: the `.symbols` are the platform's format (ELF / Mach-O), the app's own function name is not in the shipped binary (iOS: `strings`
-on `App.framework/App`), the pinned `symbols.py` hash, the upload (see below), the device lock, four launches all `launched` in release mode, two crashes after which the
-process really ended. The app (`e2e_main.dart`) keeps a phase counter in its temp directory: launch 1 reports a handled error, an uncaught error and `logUnhandledException`
+Per run: a unique build string `9.YYMMDD.HHMMSS` (build name and the symbols' `-v`; a fresh run whose work directory exists is refused, `--reuse-build` needs the `--run-id`); a release build with `--obfuscate --split-debug-info` of the e2e app,
+staged into the run's work directory (the app or APK and the dSYMs: install and upload use the staged copy; two runs must not build in one checkout at the same time);
+guards that make a run INVALID: the `.symbols` are the platform's format (ELF / Mach-O), the app's own function name is not in the shipped binary (`strings` on
+`App.framework/App` for iOS, on `libapp.so` of the APK for Android), the pinned `symbols.py` hash, the upload (see below), the device lock, four launches all `launched` in release mode, two crashes after which the
+process really ended of that crash (iOS: devicectl's `terminated due to signal 11` for `ffi-segv`, signal 6 or a non-zero exit with no signal for `objc-main`; Android: the pid of the launch is gone, confirmed by a successful `pidof` and not an adb failure, and logcat has `Fatal signal 11` or the `FATAL EXCEPTION` for that pid). A failed check unwinds through the cleanup (console saved, app uninstalled, `example/android/bugsee.properties` restored: a developer's own file is saved to the work directory and put back, a file the run created is deleted, also on Ctrl-C) before the exit. The app (`e2e_main.dart`) keeps a phase counter in its temp directory: launch 1 reports a handled error, an uncaught error and `logUnhandledException`
 from three sites named `e2eHandledSite`, `e2eUncaughtThrower`, `e2eUnhandledSite`; launch 2 dies of `ffi-segv`; launch 3 (uploads the recovered report) dies of `objc-main`
 (iOS) / `java-main` (Android); launch 4 uploads the last recovered report. The token is a `--dart-define` of a local build (an environment variable given to
 `devicectl process launch` did not reach the app; Android has none), never printed or saved: every line passes `redact`.
@@ -466,9 +472,11 @@ tokens. The two probe requests of that discovery left one empty `uploading` symb
 | --- | --- | --- |
 | build | `9.1123.2012`, Flutter 3.50.0, release, `--obfuscate`; guard: `e2eHandledSite` absent from `App` | `9.1123.2016`, Flutter 3.50.0, JDK 21, release APK, R8, `--obfuscate` |
 | Dart symbols (`symbols.py`, `-t <token> -v <build> -d <dir> -e https://apidev.bugsee.com/v2/`) | `app.ios-arm64.symbols` (Mach-O, 1.9 MB): POST `.../symbols` 200, PUT of the zip to the presigned S3 URL 200 (`symbols.py` exit 0) | three files (`android-arm64`, `-arm`, `-x64`, ELF): POST 200, PUT 200 (4.2 MB zip), exit 0 |
-| native symbols | `bugsee-cli debug-files upload --type dsym` (0.8.0, `BUGSEE_APP_TOKEN` in the environment): exit 0; `App`, `Runner`, `Flutter` dSYMs uploaded, `Bugsee` already on the server | Bugsee Gradle plugin 4.1.1 (`ndk { enabled }`, token and `plugin.endpoint` in the Gradle-root `bugsee.properties`, removed after the build): **not confirmed**, the plugin prints nothing at the default log level |
+| native symbols | `bugsee-cli debug-files upload --type dsym` (0.8.0, `BUGSEE_APP_TOKEN` in the environment): exit 0; `App`, `Runner`, `Flutter` dSYMs uploaded, `Bugsee` already on the server | Bugsee Gradle plugin 4.1.1 (`ndk { enabled }`, token and `plugin.endpoint` in the Gradle-root `bugsee.properties`, restored or removed after the build): the plugin prints nothing at the default log level, but the R8 `mapping.txt` record exists on the backend, so the upload is **confirmed** by the read-back |
 | device run | 4 launches, all `launched`; launch 2 died of signal 11, launch 3 ended after the Objective-C exception (devicectl exit 1); the app's events and the SDK's report-handler lines show reports built in launches 1 to 3 | the same sequence; both crash launches ended (the process was gone within 90 s) |
 | the backend's answer (read 2026-11-24, see below) | Dart native crash and Swift crash symbolicated; **Dart exceptions stay raw (backend bug, fix in review)** | everything symbolicated |
+
+**The harness's own read-back (`readBack`) has not run against a backend yet.** The verdict reads the issues of the run's build, polls until the expected content is there or `--readback-wait-minutes` (default 15) passes, and is VERIFIED only when no report holds a raw frame, each expected Dart name is in a symbolicated frame (a line with `file:line`; a name in a summary does not count), and a native frame of the ffi crash (`crash_lab.dart`) and one of the platform crash (`AppDelegate.swift` / `MainActivity.java`) are in reports of their own. It reads one page of 100 issues and says so when the page is full (the partner API's paging was not verified here). The results below were read by hand.
 
 **Backend read-back (2026-11-24, via the Bugsee staging MCP, apidev; apps `AFTA` Android flutter and `IFTA` iOS flutter, issues of the two versions above).**
 
@@ -486,6 +494,7 @@ tokens. The two probe requests of that discovery left one empty `uploading` symb
   bugsee-background-worker#182 (tries each, accepts the first that decodes, warns when none does). Until both are deployed, an iOS Dart exception stays raw; not re-measured after the fixes.
 * Not verified: the production backend (the tokens exist on apidev only); Flutter 3.41; whether iOS needs the App dSYM at all (it carries no Dart code: uploading only the
   `.symbols` file would also avoid the collision, untested).
+* **What a user sees today** is in the README (symbols section) and `doc/exceptions.md` section 5: the documented iOS flow uploads both records.
 
 Findings of the build of this check, each a fact about the toolchain and not about the wrapper:
 

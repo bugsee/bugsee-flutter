@@ -213,6 +213,11 @@ It zips `build/symbols/*.symbols` with a manifest (`{'target':'flutter','items':
 `POST {endpoint}apps/{token}/symbols` (`{uuid, version, build}`), then `PUT`s the zip to the presigned URL it
 returns. Keep the symbols of every release you ship; the build id ties a stack to them.
 
+**Known issue (iOS).** The `.symbols` file of an iOS build and the `App.framework` dSYM share one UUID. With both uploaded, the backend
+currently may select the dSYM, which holds no Dart information, so the Dart frames stay raw (`_kDartSnapshotText+0x...`) on a `ready` issue,
+until bugsee-appserver#280 and bugsee-background-worker#182 are deployed (measured on apidev, `doc/verification.md` scenario 11; Android is
+unaffected). Not verified: whether uploading only the `.symbols` file avoids it. Remove this note when the fixes are deployed and the run is repeated.
+
 **Verifying a build's symbols against a captured stack, offline:**
 
 ```bash

@@ -7,7 +7,8 @@ should stay on 9.x: there is no compatibility layer (the decision is open), see 
 
 * Symbolication was exercised end to end on apidev (obfuscated release builds on an iPhone XS and an Android phone): Android, including Dart 3.14 stacks, and iOS native
   crashes are symbolicated; **iOS Dart exceptions stayed raw** because of a backend symbol-lookup collision (fixes in review: bugsee-appserver#280, bugsee-background-worker#182).
-  The production endpoint was not used (`doc/verification.md` scenario 11).
+  The production endpoint was not used (`doc/verification.md` scenario 11). The harness's own read-back of the backend has not run; the results were read by hand.
+  On iOS the Dart `.symbols` file and the `App.framework` dSYM share one UUID, so the documented upload flow can leave Dart frames raw until those fixes are deployed (README, symbols section).
 
 ### Features
 

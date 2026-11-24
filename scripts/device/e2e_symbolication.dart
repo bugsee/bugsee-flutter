@@ -802,6 +802,9 @@ class _Job {
   /// reported (this build's issues could be on a later one) instead of being silently trusted.
   static const _pageLimit = 100;
 
+  /// At most this many pages of the issue list are read (a bound, not an expectation).
+  static const _maxPages = 20;
+
   Future<int> readBack(String serverToken, String appId, Duration wait) async {
     if (serverToken.isEmpty || appId.isEmpty) {
       say(
@@ -895,17 +898,36 @@ class _Job {
     final reports = <String>[];
     var unread = 0;
     try {
-      final r = await _get(
-        client,
-        '${base}applications/$appId/issues?limit=$_pageLimit',
-        serverToken,
-        end,
-      ) as Map;
-      final objects = r['objects'];
-      if (objects is! List) {
-        throw StateError('the issue list has no "objects" list');
+      // The server filters by this run's version (`filters` is JSON, `version`: the issues that have that
+      // version); the answer is still filtered here (below) and paged by `offset` until a short page.
+      // Read from the appserver's public API code, not measured against a backend.
+      final filter = Uri.encodeQueryComponent(jsonEncode({'version': runId}));
+      final objs = <Map>[];
+      var complete = false;
+      for (var page = 0; page < _maxPages; page++) {
+        final r = await _get(
+          client,
+          '${base}applications/$appId/issues?limit=$_pageLimit&offset=${page * _pageLimit}&filters=$filter',
+          serverToken,
+          end,
+        ) as Map;
+        final objects = r['objects'];
+        if (objects is! List) {
+          throw StateError('the issue list has no "objects" list');
+        }
+        objs.addAll(objects.cast<Map>());
+        if (objects.length < _pageLimit) {
+          complete = true;
+          break;
+        }
       }
-      final objs = objects.cast<Map>();
+      if (!complete) {
+        // never a verdict on part of the list
+        say(
+          'the issue list is longer than ${_maxPages * _pageLimit} entries: this build\'s issues may be beyond what is read; the read counts as incomplete',
+        );
+        unread++;
+      }
       final mine = [
         for (final i in objs)
           if (((i['statistics'] as Map?)?['versions'] as Map?)?.keys.any(
@@ -917,14 +939,6 @@ class _Job {
       say(
         'backend: ${objs.length} issues listed, ${mine.length} with version $runId',
       );
-      if (objs.length >= _pageLimit) {
-        // The paging contract was not verified, so a full page cannot show this build's issues are all here:
-        // an incomplete read, never a verdict.
-        say(
-          'the page is full ($_pageLimit): this build\'s issues may be on a later page, which this run does not read; the read counts as incomplete',
-        );
-        unread++;
-      }
       for (final issue in mine) {
         final id = issue['_id'];
         say('issue $id type=${issue['type']} summary="${issue['summary']}"');

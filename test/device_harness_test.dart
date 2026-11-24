@@ -2137,6 +2137,20 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         expect(target.readAsStringSync(), before);
       });
 
+      test('a symlinked file: the TARGET mode is captured and restored', () {
+        final target = File('${dir.path}/real.properties')
+          ..writeAsStringSync('app_token=mine\n');
+        Process.runSync('chmod', ['640', target.path]);
+        final link = Link('${dir.path}/bugsee.properties')
+          ..createSync(target.path);
+        final g = PropsGuard(File(link.path), File('${dir.path}/orig'), (_) {});
+        g.install('app_token=RUN-FAKE\n');
+        expect(mode(target), '600');
+        g.restore();
+        expect(target.readAsStringSync(), 'app_token=mine\n');
+        expect(mode(target), '640');
+      });
+
       test('a file the run created is deleted', () {
         final f = File('${dir.path}/bugsee.properties');
         final g = PropsGuard(f, File('${dir.path}/orig'), (_) {});
@@ -2235,6 +2249,15 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
           'E AndroidRuntime: java.lang.IllegalStateException: verify-java-main';
       expect(parseFatalException(log, 200, 'verify-java-main'), isTrue);
       expect(parseFatalException(log, 100, 'verify-java-main'), isFalse);
+    });
+
+    test('the Java crash search stops at a header line, not at the words in a message', () {
+      const log =
+          'E AndroidRuntime: FATAL EXCEPTION: main\n'
+          'E AndroidRuntime: Process: pkg, PID: 100\n'
+          'E AndroidRuntime: java.lang.RuntimeException: FATAL EXCEPTION in worker\n'
+          'E AndroidRuntime: Caused by: java.lang.IllegalStateException: verify-java-main';
+      expect(parseFatalException(log, 100, 'verify-java-main'), isTrue);
     });
 
     test('the unsettled message says which it is', () {

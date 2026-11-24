@@ -857,6 +857,11 @@ class _Job {
           if (!more) break;
         }
         await delay(30);
+        // the wait used up the time: a pass that would start at the deadline is not started
+        if (!DateTime.now().add(minPassBudget).isBefore(end)) {
+          if (problems.isEmpty) unstable = true;
+          break;
+        }
       }
       if (unstable) {
         say('NOT CONFIRMED at the deadline: ${readbackUnsettledWhy(passes)}');
@@ -896,7 +901,11 @@ class _Job {
         serverToken,
         end,
       ) as Map;
-      final objs = (r['objects'] as List).cast<Map>();
+      final objects = r['objects'];
+      if (objects is! List) {
+        throw StateError('the issue list has no "objects" list');
+      }
+      final objs = objects.cast<Map>();
       final mine = [
         for (final i in objs)
           if (((i['statistics'] as Map?)?['versions'] as Map?)?.keys.any(
@@ -909,9 +918,12 @@ class _Job {
         'backend: ${objs.length} issues listed, ${mine.length} with version $runId',
       );
       if (objs.length >= _pageLimit) {
+        // The paging contract was not verified, so a full page cannot show this build's issues are all here:
+        // an incomplete read, never a verdict.
         say(
-          'WARNING: the page is full ($_pageLimit): this build\'s issues may be on a later page, which this run does not read',
+          'the page is full ($_pageLimit): this build\'s issues may be on a later page, which this run does not read; the read counts as incomplete',
         );
+        unread++;
       }
       for (final issue in mine) {
         final id = issue['_id'];
@@ -924,7 +936,16 @@ class _Job {
             serverToken,
             end,
           );
-          list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
+          final l = recs is Map ? recs['objects'] : recs;
+          if (l is! List) {
+            // an explicit empty list is accepted; a missing one is an unreadable answer
+            say(
+              '  recording list of issue $id: no "objects" list in the answer',
+            );
+            unread++;
+            continue;
+          }
+          list = l;
         } on HarnessFailure {
           rethrow;
         } on Object catch (e) {
@@ -933,7 +954,14 @@ class _Job {
           continue;
         }
         for (final rec in list) {
-          final rid = (rec as Map)['_id'];
+          if (rec is! Map) {
+            say(
+              '  recording list of issue $id: an entry that is not an object',
+            );
+            unread++;
+            continue;
+          }
+          final rid = rec['_id'];
           // An issue spans runs (same error, older build, an earlier attempt): only THIS attempt's recordings
           // are evidence.
           switch (recordingScope(
@@ -985,7 +1013,9 @@ class _Job {
     } on HarnessFailure {
       rethrow;
     } on Object catch (e) {
+      // the traversal aborted part-way: the pass is incomplete, whatever was read before it
       say('backend read: ${redact('$e', _secrets)}');
+      unread++;
     }
     return (reports: reports, unread: unread);
   }
@@ -1004,12 +1034,19 @@ class _Job {
         'GET ${Uri.parse(url).path} not started: past the deadline',
       );
     }
+    // ONE bound for the whole read (connection, headers, body): the time left to it, recomputed per stage
+    final stop = DateTime.now().add(limit);
+    Duration left() {
+      final d = stop.difference(DateTime.now());
+      return d > Duration.zero ? d : const Duration(milliseconds: 1);
+    }
+
     HttpClientRequest? req;
     try {
-      req = await c.getUrl(Uri.parse(url)).timeout(limit);
+      req = await c.getUrl(Uri.parse(url)).timeout(left());
       req.headers.set('x-auth-servertoken', serverToken);
-      final res = await req.close().timeout(limit);
-      final body = await res.transform(utf8.decoder).join().timeout(limit);
+      final res = await req.close().timeout(left());
+      final body = await res.transform(utf8.decoder).join().timeout(left());
       if (res.statusCode != 200) {
         throw StateError(
           'GET ${Uri.parse(url).path} -> ${res.statusCode} ${redact(body, _secrets)}',

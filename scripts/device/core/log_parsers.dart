@@ -209,7 +209,7 @@ ExitInfo? parseExitInfo(String dumpsys, int pid) {
 /// crash of an earlier run in the same logcat does not count.
 bool parseFatalException(String log, int pid, String marker) {
   for (final m in RegExp(
-    r'FATAL EXCEPTION[^\n]*\n[^\n]*Process:[^\n]*PID:\s*(\d+)[^\n]*\n((?:(?!FATAL EXCEPTION)[\s\S]){0,600})',
+    r'FATAL EXCEPTION[^\n]*\n[^\n]*Process:[^\n]*PID:\s*(\d+)[^\n]*\n((?:(?!\n[^\n]*AndroidRuntime:\s*FATAL EXCEPTION:)[\s\S]){0,600})',
   ).allMatches(log)) {
     if (int.parse(m.group(1)!) != pid) continue;
     if (m.group(2)!.contains(marker)) return true;

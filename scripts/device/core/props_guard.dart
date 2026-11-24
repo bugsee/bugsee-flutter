@@ -36,8 +36,13 @@ class PropsGuard {
   /// The octal permission bits of [f] (`stat -f %Lp` on macOS, `stat -c %a` on Linux), or null.
   static String? _mode(File f) {
     for (final args in [
-      ['-f', '%Lp', f.path],
-      ['-c', '%a', f.path],
+      [
+        '-L',
+        '-f',
+        '%Lp',
+        f.path,
+      ], // -L: a symlink's TARGET, which chmod and the writes change
+      ['-L', '-c', '%a', f.path],
     ]) {
       final r = Process.runSync('stat', args);
       final out = '${r.stdout}'.trim();
@@ -91,7 +96,16 @@ class PropsGuard {
                 .every((i) => current[i] == original[i]);
         if (!same) file.writeAsBytesSync(original);
         final mode = _originalMode;
-        if (mode != null) Process.runSync('chmod', [mode, file.path]);
+        if (mode != null) {
+          final r = Process.runSync('chmod', [mode, file.path]);
+          if (r.exitCode != 0) {
+            // keep the saved copy: the file may still be narrower than the developer's own mode
+            stderr.writeln(
+              'WARNING: could not restore the mode $mode of ${file.path} (chmod exit ${r.exitCode}); a saved copy is ${backup.path}',
+            );
+            return;
+          }
+        }
         if (backup.existsSync()) backup.deleteSync();
       }
       // existed but never read: nothing was changed (the read came first), nothing to put back

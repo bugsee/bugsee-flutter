@@ -4,7 +4,9 @@ host, path with the app token redacted, and status. Used by scripts/device/e2e_s
     python3 symbols_logged.py <path to symbols.py> <the arguments symbols.py takes: -t -v -d -e>
 
 The uploader's own exit code is the exit code here. The token is never printed (it is replaced in every
-URL), and a presigned upload URL is shown as host and path only (its query holds a signature).
+URL), and a presigned upload URL is shown as host and path only (its query holds a signature). A failed
+request (no connection, a reset) prints `HTTP <method> <url> -> FAILED (<exception type>)` and raises a
+new error that carries no part of the original message.
 """
 import runpy
 import sys
@@ -30,7 +32,16 @@ _send = requests.Session.send
 
 
 def send(self, request, **kwargs):
-    response = _send(self, request, **kwargs)
+    try:
+        response = _send(self, request, **kwargs)
+    except Exception as e:
+        # A transport failure's message (urllib3) can hold the full URL, with the presigned query or the
+        # app token in the path. Say method, sanitized URL and the exception type only, and raise a fresh
+        # error without the original chain.
+        print(f'HTTP {request.method} {redact(request.url)} -> FAILED ({type(e).__name__})', flush=True)
+        raise requests.exceptions.RequestException(
+            f'{request.method} {redact(request.url)} failed: {type(e).__name__}'
+        ) from None
     size = request.headers.get('Content-Length', '?')
     print(f'HTTP {request.method} {redact(request.url)} -> {response.status_code} (request body {size} bytes)', flush=True)
     if not response.ok:

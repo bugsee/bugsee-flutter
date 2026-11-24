@@ -1209,6 +1209,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         'scripts/device/',
         'test/device_harness_test.dart',
         'example/lib/verify_main.dart',
+        'example/lib/e2e_main.dart',
       ]) {
         expect(ignore, contains('/$path'), reason: '.pubignore: $path');
         expect(
@@ -1223,6 +1224,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
         'scripts/device/',
         'test/device_harness_test.dart',
         'example/lib/verify_main.dart',
+        'example/lib/e2e_main.dart',
         'packages/',
         'pigeons/',
         'ios/wrapper_tests/',
@@ -1602,10 +1604,11 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       },
     );
 
-    test('run ids are unique per minute and valid as an iOS short version', () {
-      final a = runIdFor(DateTime(2026, 11, 23, 14, 5));
-      expect(a, '9.1123.1405');
-      expect(runIdFor(DateTime(2026, 11, 23, 14, 6)), isNot(a));
+    test('run ids differ per second, day and year and are valid as an iOS short version', () {
+      final a = runIdFor(DateTime(2026, 11, 23, 14, 5, 7));
+      expect(a, '9.261123.140507');
+      expect(runIdFor(DateTime(2026, 11, 23, 14, 5, 8)), isNot(a));
+      expect(runIdFor(DateTime(2027, 11, 23, 14, 5, 7)), isNot(a));
       expect(RegExp(r'^\d+\.\d+\.\d+$').hasMatch(a), isTrue);
     });
 
@@ -1615,30 +1618,176 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(symbolsFormat([0x50, 0x4b, 3, 4]), isNull);
     });
 
-    test('a backend report with raw frames or without the names is not symbolicated', () {
-      const good =
-          '#0 e2eHandledSite (e2e_main.dart:40)\n#1 e2eUnhandledSite\n#2 e2eUncaughtThrower\nAppDelegate';
+    group('the read-back verdict', () {
       const dart = ['e2eHandledSite', 'e2eUnhandledSite', 'e2eUncaughtThrower'];
-      expect(
-        readbackProblems(
-          [good],
-          expectedDartNames: dart,
-          expectedNativeNames: ['AppDelegate'],
-        ),
-        isEmpty,
+      const native = ['crash_lab.dart', 'AppDelegate.swift'];
+      const dartReport =
+          '#0 e2eHandledSite (package:x/e2e_main.dart:40:5)\n#1 e2eUnhandledSite (e2e_main.dart:52:16)\n'
+          '#2 e2eUncaughtThrower (e2e_main.dart:70:1)';
+      const ffiReport = '#0 crash (package:x/crash_lab.dart:54:3)\n#1 UIKit';
+      const platformReport =
+          '#0 AppDelegate.application (AppDelegate.swift:32)';
+      List<String> problems(List<String> reports) => readbackProblems(
+        reports,
+        expectedDartNames: dart,
+        expectedNativeFrames: native,
       );
-      expect(
-        readbackProblems(
-          ['#0 abs 0000 virt 1234 _kDartSnapshotText+0x42'],
-          expectedDartNames: ['e2eHandledSite'],
-          expectedNativeNames: [],
-        ),
-        isNotEmpty,
+
+      test('fully symbolicated reports pass', () {
+        expect(problems([dartReport, ffiReport, platformReport]), isEmpty);
+      });
+
+      test('every name present but ONE raw frame still fails', () {
+        final p = problems([
+          '$dartReport\n#3 abs 0000007f virt 12 _kDartSnapshotText+0x42',
+          ffiReport,
+          platformReport,
+        ]);
+        expect(p, hasLength(1));
+        expect(p.single, contains('raw frame'));
+      });
+
+      test(
+        'a name in a summary or log line, not in a frame, does not count',
+        () {
+          final p = problems([
+            'summary: e2eHandledSite failed\n#1 e2eUnhandledSite (e2e_main.dart:52:16)\n#2 e2eUncaughtThrower (e2e_main.dart:70:1)',
+            ffiReport,
+            platformReport,
+          ]);
+          expect(p, anyElement(contains('"e2eHandledSite"')));
+        },
       );
-      expect(
-        readbackProblems([], expectedDartNames: [], expectedNativeNames: []),
-        anyElement(contains('nothing was verified')),
+
+      test('the native frames need a report each; one report cannot be both crashes', () {
+        expect(
+          problems([dartReport, '$ffiReport\n$platformReport']),
+          anyElement(contains('distinct reports')),
+        );
+        expect(
+          problems([dartReport, ffiReport]),
+          anyElement(contains('AppDelegate.swift')),
+        );
+      });
+
+      test('raw addresses without the names, and no reports at all, fail', () {
+        expect(
+          readbackProblems(
+            ['#0 abs 0000 virt 1234 _kDartSnapshotText+0x42'],
+            expectedDartNames: ['e2eHandledSite'],
+            expectedNativeFrames: [],
+          ),
+          hasLength(2),
+        );
+        expect(
+          readbackProblems([], expectedDartNames: [], expectedNativeFrames: []),
+          anyElement(contains('nothing was verified')),
+        );
+      });
+    });
+
+    group('what ended a crash launch', () {
+      test('iOS: ffi-segv needs signal 11; objc-main signal 6 or a non-zero exit with no signal', () {
+        const segv = 'App terminated due to signal 11.';
+        expect(iosCrashExitProblems('ffi-segv', segv, 1), isEmpty);
+        // a `crashing` marker followed by the previous console child's SIGTERM is not a crash
+        expect(
+          iosCrashExitProblems(
+            'ffi-segv',
+            'App terminated due to signal 15.',
+            1,
+          ),
+          isNotEmpty,
+        );
+        expect(iosCrashExitProblems('ffi-segv', '', 0), isNotEmpty);
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            'App terminated due to signal 6.',
+            1,
+          ),
+          isEmpty,
+        );
+        expect(iosCrashExitProblems('objc-main', '', 1), isEmpty);
+        expect(iosCrashExitProblems('objc-main', '', 0), isNotEmpty);
+        expect(
+          iosCrashExitProblems(
+            'objc-main',
+            'App terminated due to signal 15.',
+            1,
+          ),
+          isNotEmpty,
+        );
+      });
+
+      test('Android: an adb failure is not process death', () {
+        bool? gone(int code, String out, String err) =>
+            androidPidGone(code: code, stdout: out, stderr: err, pid: 100);
+        expect(gone(1, '', ''), isTrue); // pidof: no such process
+        expect(gone(0, '200\n', ''), isTrue); // restarted under another pid
+        expect(gone(0, '100\n', ''), isFalse); // still alive
+        expect(gone(1, '', 'error: device offline'), isNull);
+        expect(gone(255, '', 'adb: no devices'), isNull);
+        expect(gone(0, '', ''), isTrue);
+      });
+
+      test('Android: the crash evidence is the pid\'s own', () {
+        const segv =
+            'F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 100 (x), pid 100 (pkg)';
+        expect(androidCrashProblems('ffi-segv', segv, 100), isEmpty);
+        expect(androidCrashProblems('ffi-segv', segv, 101), isNotEmpty);
+        expect(androidCrashProblems('ffi-segv', '', 100), isNotEmpty);
+        const java =
+            'E AndroidRuntime: FATAL EXCEPTION: main\nE AndroidRuntime: Process: pkg, PID: 100\nE AndroidRuntime: java.lang.IllegalStateException: verify-java-main';
+        expect(androidCrashProblems('java-main', java, 100), isEmpty);
+        expect(androidCrashProblems('java-main', java, 7), isNotEmpty);
+      });
+    });
+
+    test('symbols_logged.py: a failed request prints no URL query, token or original message', () {
+      if (Process.runSync('python3', ['--version']).exitCode != 0) {
+        return;
+      }
+      final dir = Directory.systemTemp.createTempSync('symlog');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      // a stand-in `requests` whose transport failure carries the whole URL, as urllib3's does
+      Directory('${dir.path}/requests').createSync();
+      File('${dir.path}/requests/__init__.py').writeAsStringSync(
+        'class _E:\n'
+        '    class RequestException(Exception):\n'
+        '        pass\n'
+        'exceptions = _E\n'
+        'class Session:\n'
+        '    def send(self, request, **kw):\n'
+        '        raise OSError("connect failed " + request.url)\n',
       );
+      File('${dir.path}/fake_symbols.py').writeAsStringSync(
+        'import requests\n'
+        'class R:\n'
+        '    method = "PUT"\n'
+        '    url = "https://s3.example/key/APPTOKEN12345?X-Amz-Signature=SIGSECRET"\n'
+        '    headers = {}\n'
+        'requests.Session().send(R())\n',
+      );
+      final r = Process.runSync(
+        'python3',
+        [
+          '${Directory.current.path}/scripts/device/symbols_logged.py',
+          '${dir.path}/fake_symbols.py',
+          '-t',
+          'APPTOKEN12345',
+        ],
+        environment: {'PYTHONPATH': dir.path},
+      );
+      final all = '${r.stdout}\n${r.stderr}';
+      expect(r.exitCode, isNot(0));
+      expect(all, contains('FAILED (OSError)'));
+      expect(all, isNot(contains('SIGSECRET')));
+      expect(all, isNot(contains('APPTOKEN12345')));
+      expect(all, isNot(contains('connect failed')));
+    });
+
+    test('raw frame lines are found, symbolicated ones are not', () {
       expect(
         rawFrameLines(
           '    #00 abs 0000007f virt 000000000012 _kDartSnapshotText+0x42 (x)',

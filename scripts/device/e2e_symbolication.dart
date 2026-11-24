@@ -4,6 +4,10 @@
 //   BUGSEE_IOS_TOKEN=... dart scripts/device/e2e_symbolication.dart ios --udid <UDID>
 //   BUGSEE_ANDROID_TOKEN=... dart scripts/device/e2e_symbolication.dart android --serial <adb serial>
 //
+// Device lock: optional. `--devlock <script>` or E2E_DEVLOCK names a script taking `acquire|release <device> ...`;
+// without either the run takes no lock (and says so); `--no-lock` skips it even when configured.
+// `--reuse-build` re-runs an already built run and needs `--run-id` (the staged build of that run is used).
+//
 // Reading the result back needs a credential an app token is not: the organisation's SERVER token of the
 // public API (`x-auth-servertoken`) and the application's id:
 //   BUGSEE_SERVER_TOKEN=... BUGSEE_IOS_APP_ID=... (or BUGSEE_ANDROID_APP_ID=...)
@@ -11,18 +15,27 @@
 // passes without having read the backend's symbolicated frames.
 //
 // What one run does:
-//   1. a unique build string (`9.MMDD.HHMM`, the run id), a release build with `--obfuscate --split-debug-info`
-//      of example/lib/e2e_main.dart; guards: the symbols are the platform's format, the app's own function
-//      names are NOT in the shipped binary (obfuscation took place)
+//   1. a unique build string (`9.YYMMDD.HHMMSS`, the run id), a release build with `--obfuscate --split-debug-info`
+//      of example/lib/e2e_main.dart, staged into the run's work directory (the app, the APK, the dSYMs: install and
+//      upload use the staged copy only); guards: the symbols are the platform's format, the app's own function
+//      names are NOT in the shipped binary (obfuscation took place; iOS: App.framework/App, Android: libapp.so of the APK)
 //   2. uploads: the Dart symbols with the pinned symbols.py (HTTP statuses recorded), the native symbols
 //      (iOS: the dSYM with bugsee-cli; Android: the Bugsee Gradle plugin during the release build)
 //   3. installs, launches 4 times (doc: example/lib/e2e_main.dart): Dart errors; a native-signal crash;
 //      a platform-language crash; the upload of the last recovered report
-//   4. reads the backend: the issues whose versions contain the run id, their crash reports; expects the
-//      app's readable function names and no raw addresses
+//   4. reads the backend (until the expected content is there or the deadline): the issues whose versions contain
+//      the run id, their crash reports; expects the app's readable function names in symbolicated FRAMES, a native
+//      frame of the ffi crash and one of the platform crash, each in a report of its own, and NO raw frame anywhere
 //
 // Exit: 0 verified, 3 UNVERIFIED (everything ran, nothing could be read back), 1 INVALID or FAILED, 64 usage.
 // No token is ever printed or saved: every line goes through `redact`.
+//
+// This is a RUN with its own verdict, not a scenario of the harness (`Run.guard` / `Run.expect`): it ends in a
+// verdict and exit code (0/1/3) that a scenario has no place for. Its checks are the pure functions of
+// core/e2e.dart, each tested in test/device_harness_test.dart. A failed check throws `HarnessFailure`; `main`
+// unwinds through the `finally` blocks (console save, uninstall, restoring example/android/bugsee.properties,
+// the device lock) BEFORE exiting. A signal (Ctrl-C, kill) runs the same synchronous cleanup.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -36,7 +49,9 @@ const _symbolsPySha =
     'ef2ed4c25b87da764fd5b70238a41d776f6aa88b5e3174faa4e33de2f08453f7';
 const _iosBundle = 'com.bugsee.bugseeFlutterExample';
 const _androidPackage = 'com.bugsee.bugsee_flutter_example';
-const _devlock = '/Volumes/External2TB/tmp-claude/device-locks/devlock.sh';
+
+/// The lock script (`--devlock` or E2E_DEVLOCK); empty = no lock.
+String _devlock = '';
 
 const _expectedDart = [
   'e2eHandledSite',
@@ -60,14 +75,81 @@ void _unlock() {
   final d = _lockedDevice;
   if (d == null) return;
   _lockedDevice = null;
-  Process.runSync(_devlock, ['release', d, 'claude-e2e-symbolication']);
+  try {
+    Process.runSync(_devlock, ['release', d, 'claude-e2e-symbolication']);
+  } on Object {
+    // best effort
+  }
 }
 
-Never invalid(String why) {
-  say('INVALID: $why');
-  _save();
+/// A check of the run failed: unwinds to `main`, which cleans up and exits 1.
+class HarnessFailure implements Exception {
+  HarnessFailure(this.why);
+  final String why;
+  @override
+  String toString() => why;
+}
+
+Never invalid(String why) => throw HarnessFailure(why);
+
+/// Everything the process must undo however it ends. Synchronous, idempotent: `main`'s `finally` and the
+/// signal handlers both call it.
+Child? _activeChild;
+_PropsGuard? _propsGuard;
+void _cleanupSync() {
+  _activeChild?.process.kill(ProcessSignal.sigterm);
+  _propsGuard?.restore();
   _unlock();
-  exit(1);
+  _save();
+}
+
+/// Writes the Gradle plugin's `bugsee.properties` (the app token) for one build and puts back what was there.
+/// A developer's own file is copied to the work directory first (private mode) and restored byte for byte; a
+/// file this run created is deleted. The file is created private BEFORE the token is written.
+class _PropsGuard {
+  _PropsGuard(this.file, this.backup);
+  final File file;
+  final File backup;
+  bool _active = false;
+  List<int>? _original;
+
+  static void _private(File f) {
+    if (!f.existsSync()) f.createSync();
+    Process.runSync('chmod', ['600', f.path]);
+  }
+
+  void install(String content) {
+    if (file.existsSync()) {
+      _original = file.readAsBytesSync();
+      _private(backup);
+      backup.writeAsBytesSync(_original!);
+      say(
+        'example/android/bugsee.properties exists: its content is saved to ${backup.path} and restored after the build',
+      );
+    } else {
+      _private(file);
+    }
+    _active = true;
+    file.writeAsStringSync(content);
+  }
+
+  void restore() {
+    if (!_active) return;
+    _active = false;
+    try {
+      final original = _original;
+      if (original == null) {
+        if (file.existsSync()) file.deleteSync();
+      } else {
+        file.writeAsBytesSync(original);
+        if (backup.existsSync()) backup.deleteSync();
+      }
+    } on Object {
+      stderr.writeln(
+        'WARNING: could not restore ${file.path}; it may still hold the run token (a saved copy of the original is ${backup.path})',
+      );
+    }
+  }
 }
 
 late String _workDir;
@@ -80,10 +162,32 @@ void _save() {
 }
 
 Future<void> main(List<String> args) async {
+  final signals = [
+    for (final sig in [ProcessSignal.sigint, ProcessSignal.sigterm])
+      sig.watch().listen((_) {
+        _cleanupSync();
+        exit(130);
+      }),
+  ];
+  var code = 1;
+  try {
+    code = await _run(args);
+  } on HarnessFailure catch (e) {
+    say('INVALID: ${e.why}');
+  } finally {
+    _cleanupSync();
+    for (final s in signals) {
+      await s.cancel();
+    }
+  }
+  exit(code);
+}
+
+Future<int> _run(List<String> args) async {
   if (args.isEmpty || !{'ios', 'android'}.contains(args.first)) {
     stderr.writeln(
       'usage: e2e_symbolication.dart ios --udid <UDID> | android --serial <serial> '
-      '[--run-id <id>] [--reuse-build] [--no-lock] [--readback-wait-minutes N]',
+      '[--run-id <id>] [--reuse-build (needs --run-id)] [--devlock <script> | --no-lock] [--readback-wait-minutes N]',
     );
     exit(64);
   }
@@ -113,27 +217,48 @@ Future<void> main(List<String> args) async {
     stderr.writeln('the device is required (the run never picks one)');
     exit(64);
   }
+  final reuse = args.contains('--reuse-build');
+  if (reuse && opt('--run-id') == null) {
+    stderr.writeln(
+      '--reuse-build needs --run-id <the id of the run whose staged build is reused>',
+    );
+    exit(64);
+  }
+  final noLock = args.contains('--no-lock');
+  _devlock = opt('--devlock') ?? env['E2E_DEVLOCK'] ?? '';
+  if (!noLock && _devlock.isNotEmpty && !File(_devlock).existsSync()) {
+    stderr.writeln(
+      'the device lock script "$_devlock" does not exist: fix --devlock / E2E_DEVLOCK, or pass --no-lock to run without a lock',
+    );
+    exit(64);
+  }
   final repo = Directory.current.path.endsWith('/scripts/device')
       ? Directory.current.parent.parent.path
       : Directory.current.path;
   final runId = opt('--run-id') ?? runIdFor(DateTime.now());
-  _workDir =
+  final workDir =
       '${env['E2E_WORK_DIR'] ?? '${Directory.systemTemp.path}/bugsee-e2e'}/$platform-$runId';
+  if (!reuse && Directory(workDir).existsSync()) {
+    stderr.writeln(
+      'the work directory $workDir already exists: a fresh run needs a build id of its own (another --run-id, or --reuse-build to re-run that build)',
+    );
+    exit(64);
+  }
+  _workDir = workDir;
   Directory(_workDir).createSync(recursive: true);
   final tc = Toolchain.detect(repo, _workDir);
   say('run $runId on $platform $device, work dir $_workDir');
   say('flutter ${(await tc.describe())['flutter']}, java ${tc.javaHome}');
-  final job = _Job(
-    tc,
-    platform,
-    device,
-    token,
-    runId,
-    opt('--reuse-build') != null,
-  );
+  final job = _Job(tc, platform, device, token, runId, reuse);
 
   var locked = false;
-  if (!args.contains('--no-lock')) {
+  if (noLock) {
+    say('no device lock (--no-lock)');
+  } else if (_devlock.isEmpty) {
+    say(
+      'no device lock: neither --devlock nor E2E_DEVLOCK is set; make sure nothing else uses $device',
+    );
+  } else {
     final r = await sh([
       _devlock,
       'acquire',
@@ -153,13 +278,11 @@ Future<void> main(List<String> args) async {
   } finally {
     if (locked) _unlock();
   }
-  final verdict = await job.readBack(
+  return job.readBack(
     serverToken,
     appId,
     Duration(minutes: int.tryParse(opt('--readback-wait-minutes') ?? '') ?? 15),
   );
-  _save();
-  exit(verdict);
 }
 
 class _Job {
@@ -197,19 +320,31 @@ class _Job {
     '--dart-define=BUGSEE_E2E_TOKEN=$token',
   ];
 
+  /// Where this run's build is kept: install and upload read ONLY from here, so another build of the same
+  /// checkout (the shared `example/build`) cannot change what this run installs. The copy is taken right after
+  /// the build; two runs must still not BUILD in one checkout at the same time.
+  String get stage => '$_workDir/stage';
+  String get stagedApp => '$stage/Runner.app';
+  String get stagedApk => '$stage/app-release.apk';
+  String get stagedDsyms => '$_workDir/dsyms';
+
   Future<void> build() async {
     Directory(symbolsDir).createSync(recursive: true);
-    final bugseeProps = File('$example/android/bugsee.properties');
-    if (!ios && !reuse) {
-      // The Gradle plugin reads the app token here (gitignored) and uploads the native libraries' symbols
-      // when the release variant is assembled. Removed in the `finally` below.
-      bugseeProps.writeAsStringSync(
-        'app_token=$token\n${endpoint.isEmpty ? '' : 'plugin.endpoint=$endpoint\n'}',
-      );
-      await sh(['chmod', '600', bugseeProps.path]);
-    }
-    try {
-      if (!reuse) {
+    if (!reuse) {
+      final bugseeProps = File('$example/android/bugsee.properties');
+      if (!ios) {
+        // The Gradle plugin reads the app token here (gitignored) and uploads the native libraries' symbols
+        // when the release variant is assembled. A developer's own file is saved and restored, never lost;
+        // the guard is also undone by every exit path (`_cleanupSync`).
+        _propsGuard =
+            _PropsGuard(
+              bugseeProps,
+              File('$_workDir/bugsee.properties.original'),
+            )..install(
+              'app_token=$token\n${endpoint.isEmpty ? '' : 'plugin.endpoint=$endpoint\n'}',
+            );
+      }
+      try {
         say(
           'building ${ios ? 'ios' : 'apk'} release (obfuscated), build $runId',
         );
@@ -237,9 +372,12 @@ class _Job {
           );
           if (up.isEmpty) nativeUploadSeen = false;
         }
+      } finally {
+        _propsGuard?.restore();
       }
-    } finally {
-      if (!ios && bugseeProps.existsSync()) bugseeProps.deleteSync();
+      await _stageBuild();
+    } else if (!Directory(stage).existsSync()) {
+      invalid('--reuse-build: there is no staged build in $stage');
     }
     // guard: the symbols are the platform's format
     final files = Directory(symbolsDir)
@@ -258,25 +396,84 @@ class _Job {
       if (fmt != want) invalid('${f.path} is $fmt, expected $want');
       say('symbols: ${f.path.split('/').last} ($fmt, ${f.lengthSync()} bytes)');
     }
-    // guard: obfuscation took place: the app's own function name is not in the shipped binary
-    final binary = ios
-        ? '$example/build/ios/iphoneos/Runner.app/Frameworks/App.framework/App'
-        : null;
-    if (binary != null) {
-      final s = await sh([
-        'strings',
-        '-a',
-        binary,
-      ], timeout: const Duration(minutes: 3));
-      if (s.stdout.contains('e2eHandledSite')) {
+    await _obfuscationGuard();
+  }
+
+  /// Copies what the run installs and uploads out of the shared build tree.
+  Future<void> _stageBuild() async {
+    Directory(stage).createSync(recursive: true);
+    if (ios) {
+      final src = '$example/build/ios/iphoneos/Runner.app';
+      if (!Directory(src).existsSync()) invalid('the build left no $src');
+      final c = await sh(['cp', '-R', src, stagedApp]);
+      if (!c.ok) invalid('staging Runner.app failed: ${c.text}');
+      final dsyms = Directory('$example/build/ios')
+          .listSync(recursive: true)
+          .whereType<Directory>()
+          .where((d) => d.path.endsWith('.dSYM'))
+          .map((d) => d.path)
+          .toList();
+      say('dSYMs of the build: $dsyms');
+      if (dsyms.isEmpty) {
         invalid(
-          'the shipped App binary still contains "e2eHandledSite": not obfuscated, a readable backend name would prove nothing',
+          'no .dSYM was produced by the release build: the native iOS frames cannot be symbolicated',
         );
       }
-      say(
-        'obfuscation guard: "e2eHandledSite" is not in the shipped App binary',
+      Directory(stagedDsyms).createSync(recursive: true);
+      for (final d in dsyms) {
+        final c = await sh(['cp', '-R', d, stagedDsyms]);
+        if (!c.ok) invalid('staging $d failed: ${c.text}');
+      }
+    } else {
+      final src = '$example/build/app/outputs/flutter-apk/app-release.apk';
+      if (!File(src).existsSync()) invalid('the build left no $src');
+      File(src).copySync(stagedApk);
+    }
+  }
+
+  /// guard: obfuscation took place: the app's own function name is not in the shipped binary (staged copy).
+  /// Without obfuscation the VM prints readable names itself and a readable backend name would prove nothing.
+  Future<void> _obfuscationGuard() async {
+    String binary;
+    if (ios) {
+      binary = '$stagedApp/Frameworks/App.framework/App';
+    } else {
+      binary = '$stage/libapp.so';
+      if (!File(binary).existsSync()) {
+        final u = await sh([
+          'unzip',
+          '-o',
+          '-j',
+          stagedApk,
+          'lib/arm64-v8a/libapp.so',
+          '-d',
+          stage,
+        ]);
+        if (!u.ok) {
+          invalid(
+            'could not read lib/arm64-v8a/libapp.so of the APK: ${u.text}',
+          );
+        }
+      }
+    }
+    final s = await sh([
+      'strings',
+      '-a',
+      binary,
+    ], timeout: const Duration(minutes: 3));
+    if (!s.ok) {
+      invalid(
+        '`strings` failed on $binary, the obfuscation guard proves nothing: ${s.text}',
       );
     }
+    if (s.stdout.contains('e2eHandledSite')) {
+      invalid(
+        'the shipped ${binary.split('/').last} still contains "e2eHandledSite": not obfuscated, a readable backend name would prove nothing',
+      );
+    }
+    say(
+      'obfuscation guard: "e2eHandledSite" is not in the shipped ${binary.split('/').last}',
+    );
   }
 
   bool nativeUploadSeen = true;
@@ -316,23 +513,7 @@ class _Job {
     if (ios) {
       // The native side: the dSYM of this build, with bugsee-cli (docs: /cli/xcode, /cli/debug-files).
       final cli = Platform.environment['BUGSEE_CLI'] ?? 'bugsee-cli';
-      final dsyms = Directory('$example/build/ios')
-          .listSync(recursive: true)
-          .whereType<Directory>()
-          .where((d) => d.path.endsWith('.dSYM'))
-          .map((d) => d.path)
-          .toList();
-      say('dSYMs of the build: $dsyms');
-      if (dsyms.isEmpty) {
-        invalid(
-          'no .dSYM was produced by the release build: the native iOS frames cannot be symbolicated',
-        );
-      }
-      final dir = '$_workDir/dsyms';
-      Directory(dir).createSync(recursive: true);
-      for (final d in dsyms) {
-        await sh(['cp', '-R', d, dir]);
-      }
+      final dir = stagedDsyms;
       final up = await sh(
         [
           cli,
@@ -392,7 +573,7 @@ class _Job {
 
   Future<void> _runIos() async {
     final ctl = ['xcrun', 'devicectl'];
-    final app = '$example/build/ios/iphoneos/Runner.app';
+    final app = stagedApp;
     await sh([
       ...ctl,
       'device',
@@ -418,36 +599,50 @@ class _Job {
       for (var phase = 0; phase < 4; phase++) {
         say('launch ${phase + 1} of 4 (phase $phase)');
         final c = await _iosLaunch();
-        final wantsExit = phase == 1 || phase == 2;
-        final marker = wantsExit ? '"kind":"crashing"' : '"kind":"phase-done"';
-        final ok = await c.waitFor(marker, timeout: const Duration(minutes: 5));
-        if (!ok) {
-          all.write(redact(c.output.toString(), _secrets));
-          invalid(
-            'phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}:\n${redact(c.output.toString(), _secrets)}',
+        _activeChild = c;
+        try {
+          final wantsExit = phase == 1 || phase == 2;
+          final marker = wantsExit
+              ? '"kind":"crashing"'
+              : '"kind":"phase-done"';
+          final ok = await c.waitFor(
+            marker,
+            timeout: const Duration(minutes: 5),
           );
-        }
-        if (wantsExit) {
-          final code = await c.process.exitCode.timeout(
-            const Duration(seconds: 90),
-            onTimeout: () => -999,
-          );
-          await c.drained();
-          if (code == -999) {
-            await c.stop();
-            all.write(redact(c.output.toString(), _secrets));
+          if (!ok) {
             invalid(
-              'phase $phase announced a crash and the process did not end within 90 s',
+              'phase $phase never reached ${wantsExit ? 'its crash' : 'its end'}:\n${redact(c.output.toString(), _secrets)}',
             );
           }
-          say('phase $phase: the process ended (devicectl exit $code)');
-        } else {
+          if (wantsExit) {
+            final code = await c.process.exitCode.timeout(
+              const Duration(seconds: 90),
+              onTimeout: () => -999,
+            );
+            await c.drained();
+            if (code == -999) {
+              invalid(
+                'phase $phase announced a crash and the process did not end within 90 s',
+              );
+            }
+            say('phase $phase: the process ended (devicectl exit $code)');
+            final kind = phase == 1 ? 'ffi-segv' : 'objc-main';
+            final bad = iosCrashExitProblems(kind, c.output.toString(), code);
+            if (bad.isNotEmpty) {
+              invalid('phase $phase: ${bad.join('; ')}');
+            }
+          } else {
+            await c.stop();
+            // Stopping the console child makes devicectl terminate the app it launched, and not at once: the next
+            // launch of the run was found killed by that SIGTERM 0.2 s after it started (run 7). Let it finish.
+            await delay(10);
+          }
+        } finally {
+          // the output of this launch is saved whichever way it ended, the child never outlives it
+          all.writeln(redact(c.output.toString(), _secrets));
           await c.stop();
-          // Stopping the console child makes devicectl terminate the app it launched, and not at once: the next
-          // launch of the run was found killed by that SIGTERM 0.2 s after it started (run 7). Let it finish.
-          await delay(10);
+          _activeChild = null;
         }
-        all.writeln(redact(c.output.toString(), _secrets));
       }
     } finally {
       File(consoleFile).writeAsStringSync(all.toString());
@@ -474,7 +669,7 @@ class _Job {
     if (state != 'device') {
       invalid('$device is "$state" over adb, not "device"');
     }
-    final apk = '$example/build/app/outputs/flutter-apk/app-release.apk';
+    final apk = stagedApk;
     await a(['uninstall', _androidPackage]);
     final inst = await a([
       'install',
@@ -500,6 +695,21 @@ class _Job {
           '$_androidPackage/.MainActivity',
         ]);
         if (!l.ok) invalid('am start failed: ${l.text}');
+        // The pid of THIS launch, read while the process is alive (it crashes right after its marker): the crash
+        // evidence below is about this pid and no other.
+        final pid = await until<int>(
+          () async {
+            final r = await a(['shell', 'pidof', _androidPackage]);
+            return r.ok
+                ? int.tryParse(r.text.split(RegExp(r'\s+')).first)
+                : null;
+          },
+          timeout: const Duration(seconds: 20),
+          every: const Duration(seconds: 1),
+        );
+        if (pid == null) {
+          invalid('phase $phase: no pid for $_androidPackage after am start');
+        }
         final wantsExit = phase == 1 || phase == 2;
         final marker = wantsExit ? '"kind":"crashing"' : '"kind":"phase-done"';
         final end = DateTime.now().add(const Duration(minutes: 5));
@@ -520,20 +730,38 @@ class _Job {
           );
         }
         if (wantsExit) {
+          // Gone means a successful `pidof` that no longer lists the pid; an adb failure is inconclusive
+          // and polls on (it ends as "still alive" only if it never clears).
           final gone = await until<bool>(
-            () async =>
-                (await a(['shell', 'pidof', _androidPackage])).text.isEmpty
-                ? true
-                : null,
+            () async {
+              final r = await a(['shell', 'pidof', _androidPackage]);
+              return androidPidGone(
+                        code: r.code,
+                        stdout: r.stdout,
+                        stderr: r.stderr,
+                        pid: pid,
+                      ) ==
+                      true
+                  ? true
+                  : null;
+            },
             timeout: const Duration(seconds: 90),
             every: const Duration(seconds: 2),
           );
           if (gone != true) {
             invalid(
-              'phase $phase announced a crash and the process is still alive after 90 s',
+              'phase $phase announced a crash and the process (pid $pid) is not confirmed gone after 90 s',
             );
           }
-          say('phase $phase: the process ended');
+          // and it died OF the announced crash (its pid, its signal or exception), not of anything else
+          final kind = phase == 1 ? 'ffi-segv' : 'java-main';
+          final bad = androidCrashProblems(
+            kind,
+            (await a(['logcat', '-d'])).stdout,
+            pid,
+          );
+          if (bad.isNotEmpty) invalid('phase $phase: ${bad.join('; ')}');
+          say('phase $phase: process $pid ended of $kind');
         }
       }
     } finally {
@@ -556,6 +784,10 @@ class _Job {
 
   // ---- the backend --------------------------------------------------------------------------------
 
+  /// The page size asked of the issue list. The partner API's paging was not verified here, so a FULL page is
+  /// reported (this build's issues could be on a later one) instead of being silently trusted.
+  static const _pageLimit = 100;
+
   Future<int> readBack(String serverToken, String appId, Duration wait) async {
     if (serverToken.isEmpty || appId.isEmpty) {
       say(
@@ -569,99 +801,155 @@ class _Job {
     final base =
         '${endpoint.isEmpty ? 'https://api.bugsee.com' : endpoint}/v2/partner/';
     final client = HttpClient();
-    Future<Object?> get(String path) async {
-      final req = await client.getUrl(Uri.parse('$base$path'));
-      req.headers.set('x-auth-servertoken', serverToken);
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-      if (res.statusCode != 200) {
-        throw StateError(
-          'GET $path -> ${res.statusCode} ${redact(body, _secrets)}',
-        );
-      }
-      final v = jsonDecode(body);
-      return v is Map && v.containsKey('result') ? v['result'] : v;
-    }
-
     final end = DateTime.now().add(wait);
-    List<Map<String, Object?>> mine = [];
-    while (DateTime.now().isBefore(end)) {
-      try {
-        final r = await get('applications/$appId/issues?limit=100') as Map;
-        final objs = (r['objects'] as List).cast<Map>();
-        mine = [
-          for (final i in objs)
-            if (((i['statistics'] as Map?)?['versions'] as Map?)?.keys.any(
-                  (k) => '$k' == runId,
-                ) ??
-                false)
-              i.cast<String, Object?>(),
-        ];
-        say(
-          'backend: ${objs.length} issues listed, ${mine.length} with version $runId',
+    try {
+      // The poll ends when the EXPECTED CONTENT is there (no raw frame, every name in a frame), or at the
+      // deadline. Issues appear before their symbolication and the crashes are the last uploaded, so a count
+      // of issues says nothing; each pass reads the issues and their reports again.
+      var problems = <String>['nothing was read yet'];
+      while (true) {
+        final reports = await _readOnce(client, base, serverToken, appId, end);
+        problems = readbackProblems(
+          reports,
+          expectedDartNames: _expectedDart,
+          expectedNativeFrames: [
+            'crash_lab.dart',
+            ios ? 'AppDelegate.swift' : 'MainActivity.java',
+          ],
         );
-        if (mine.length >= 3) break; // handled+uncaught are error issues, the crashes are issues too
-      } on Object catch (e) {
-        say('backend read: $e');
-      }
-      await delay(30);
-    }
-    final reports = <String>[];
-    for (final issue in mine) {
-      final id = issue['_id'];
-      say('issue $id type=${issue['type']} summary="${issue['summary']}"');
-      try {
-        final recs = await get('applications/$appId/issues/$id/recordings');
-        final list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
-        for (final rec in list.take(3)) {
-          final rid = (rec as Map)['_id'];
-          final text = await _text(
-            client,
-            '${base}applications/$appId/issues/$id/recordings/$rid/crash_report',
-            serverToken,
-          );
-          reports.add(text);
-          File('$_workDir/backend-$id-$rid.txt')
-              .writeAsStringSync(redact(text, _secrets));
-          final raw = rawFrameLines(text);
-          say(
-            '  recording $rid: ${text.split('\n').length} lines, ${raw.length} raw frame line(s)',
-          );
-          for (final l
-              in text
-                  .split('\n')
-                  .where((l) => _expectedDart.any(l.contains))
-                  .take(6)) {
-            say('    $l');
-          }
+        if (problems.isEmpty) break;
+        say('backend: not yet: ${problems.join('; ')}');
+        if (!DateTime.now().add(const Duration(seconds: 30)).isBefore(end)) {
+          break;
         }
-      } on Object catch (e) {
-        say('  recording read: $e');
+        await delay(30);
       }
+      if (problems.isNotEmpty) {
+        say(
+          'NOT SYMBOLICATED (or not found) at the deadline: ${problems.join('; ')}',
+        );
+        return 1;
+      }
+      say(
+        'VERIFIED: the backend shows ${_expectedDart.join(', ')} in symbolicated frames, a native frame of the ffi crash and one of the platform crash in reports of their own, and no raw frame',
+      );
+      return 0;
+    } finally {
+      client.close(force: true);
     }
-    final problems = readbackProblems(
-      reports,
-      expectedDartNames: _expectedDart,
-      expectedNativeNames: [ios ? 'AppDelegate' : 'MainActivity'],
-    );
-    if (problems.isNotEmpty) {
-      say('NOT SYMBOLICATED (or not found): ${problems.join('; ')}');
-      return 1;
-    }
-    say(
-      'VERIFIED: the backend shows the readable names ${_expectedDart.join(', ')} and the native side',
-    );
-    return 0;
   }
 
-  Future<String> _text(HttpClient c, String url, String serverToken) async {
-    final req = await c.getUrl(Uri.parse(url));
-    req.headers.set('x-auth-servertoken', serverToken);
-    final res = await req.close();
-    final body = await res.transform(utf8.decoder).join();
-    if (res.statusCode != 200) {
-      throw StateError('GET crash_report -> ${res.statusCode}');
+  /// One pass: the issues of this build, then the crash reports of their recordings. Errors are said and give
+  /// whatever was read (the caller polls again).
+  Future<List<String>> _readOnce(
+    HttpClient client,
+    String base,
+    String serverToken,
+    String appId,
+    DateTime end,
+  ) async {
+    final reports = <String>[];
+    try {
+      final r = await _get(
+        client,
+        '${base}applications/$appId/issues?limit=$_pageLimit',
+        serverToken,
+        end,
+      ) as Map;
+      final objs = (r['objects'] as List).cast<Map>();
+      final mine = [
+        for (final i in objs)
+          if (((i['statistics'] as Map?)?['versions'] as Map?)?.keys.any(
+                (k) => '$k' == runId,
+              ) ??
+              false)
+            i.cast<String, Object?>(),
+      ];
+      say(
+        'backend: ${objs.length} issues listed, ${mine.length} with version $runId',
+      );
+      if (objs.length >= _pageLimit) {
+        say(
+          'WARNING: the page is full ($_pageLimit): this build\'s issues may be on a later page, which this run does not read',
+        );
+      }
+      for (final issue in mine) {
+        final id = issue['_id'];
+        say('issue $id type=${issue['type']} summary="${issue['summary']}"');
+        try {
+          final recs = await _get(
+            client,
+            '${base}applications/$appId/issues/$id/recordings',
+            serverToken,
+            end,
+          );
+          final list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
+          for (final rec in list.take(3)) {
+            final rid = (rec as Map)['_id'];
+            final text = await _getText(
+              client,
+              '${base}applications/$appId/issues/$id/recordings/$rid/crash_report',
+              serverToken,
+              end,
+            );
+            reports.add(text);
+            File('$_workDir/backend-$id-$rid.txt')
+                .writeAsStringSync(redact(text, _secrets));
+            final raw = rawFrameLines(text);
+            say(
+              '  recording $rid: ${text.split('\n').length} lines, ${raw.length} raw frame line(s)',
+            );
+          }
+        } on Object catch (e) {
+          say('  recording read: ${redact('$e', _secrets)}');
+        }
+      }
+    } on Object catch (e) {
+      say('backend read: ${redact('$e', _secrets)}');
     }
-    return body;
+    return reports;
+  }
+
+  /// A GET answered within the run's remaining time: the connection, the headers and the body each bounded,
+  /// the request aborted when one is not.
+  Future<String> _getText(
+    HttpClient c,
+    String url,
+    String serverToken,
+    DateTime end,
+  ) async {
+    final left = end.difference(DateTime.now());
+    // at least a few seconds even at the deadline: the last pass must be able to finish its reads
+    final limit = left < const Duration(seconds: 20)
+        ? const Duration(seconds: 20)
+        : (left > const Duration(minutes: 2)
+              ? const Duration(minutes: 2)
+              : left);
+    HttpClientRequest? req;
+    try {
+      req = await c.getUrl(Uri.parse(url)).timeout(limit);
+      req.headers.set('x-auth-servertoken', serverToken);
+      final res = await req.close().timeout(limit);
+      final body = await res.transform(utf8.decoder).join().timeout(limit);
+      if (res.statusCode != 200) {
+        throw StateError(
+          'GET ${Uri.parse(url).path} -> ${res.statusCode} ${redact(body, _secrets)}',
+        );
+      }
+      return body;
+    } on TimeoutException {
+      req?.abort();
+      throw StateError('GET ${Uri.parse(url).path} timed out after $limit');
+    }
+  }
+
+  Future<Object?> _get(
+    HttpClient c,
+    String url,
+    String serverToken,
+    DateTime end,
+  ) async {
+    final v = jsonDecode(await _getText(c, url, serverToken, end));
+    return v is Map && v.containsKey('result') ? v['result'] : v;
   }
 }

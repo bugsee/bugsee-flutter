@@ -3,6 +3,8 @@
 // each failing on the input it exists to refuse.
 import 'dart:convert';
 
+import 'log_parsers.dart';
+
 /// Replaces every secret in [text] with a marker. Everything the run prints or saves goes through this.
 String redact(String text, Iterable<String> secrets) {
   var out = text;
@@ -111,11 +113,13 @@ List<String> phaseProblems(
   return problems;
 }
 
-/// The unique build string of a run: `9.MMDD.HHMM` (three integers, valid as an iOS short version and an
-/// Android versionName), so two runs in different minutes never share a build, and a backend row is told apart.
+/// The unique build string of a run: `9.YYMMDD.HHMMSS` (three integers, valid as an iOS short version and an
+/// Android versionName). Two runs in different seconds, days or years never share a build, so a backend row is
+/// told apart by its version; the runner also refuses a fresh run whose work directory (named by this id) exists.
 String runIdFor(DateTime now) {
   String two(int n) => n.toString().padLeft(2, '0');
-  return '9.${two(now.month)}${two(now.day)}.${two(now.hour)}${two(now.minute)}';
+  return '9.${two(now.year % 100)}${two(now.month)}${two(now.day)}.'
+      '${two(now.hour)}${two(now.minute)}${two(now.second)}';
 }
 
 /// A `.symbols` file's format by magic bytes: `elf` (Android), `macho` (iOS), or null.
@@ -133,14 +137,30 @@ String? symbolsFormat(List<int> head) {
   return null;
 }
 
+/// A line of a rendered report that is a symbolicated FRAME: it carries a source position (`file.ext:line`).
+/// A name in a summary, a log line or a message has none, so it never counts as evidence.
+final _sourceFrame = RegExp(r'\.(dart|java|kt|swift|mm?|cc?|cpp):\d+');
+
+bool _hasFrameWith(String report, String name) {
+  for (final l in const LineSplitter().convert(report)) {
+    if (l.contains(name) && _sourceFrame.hasMatch(l)) return true;
+  }
+  return false;
+}
+
 /// What the backend's rendering of the run's reports must hold for the run to count as symbolicated.
 /// [reports] are the texts of the crash reports found for the run's build. Returns the problems:
-/// each expected readable name must appear, and the readable names must not be the only thing there
-/// (an obfuscated build whose frames are still `_kDartSnapshotText+0x...` has failed, whatever else matches).
+/// * no report at all: nothing was verified;
+/// * ANY raw frame line in ANY report (`_kDartSnapshotText+0x...`, a frame left as an address) fails the run,
+///   whatever else matches;
+/// * each expected Dart name must be in a symbolicated frame (a line with a source position), not just mentioned;
+/// * each expected native frame ([expectedNativeFrames], a name or a source file such as `crash_lab.dart`) likewise,
+///   and each in a report of its OWN (the native-signal report and the platform-language report are different
+///   crashes; one report cannot stand for both).
 List<String> readbackProblems(
   List<String> reports, {
   required List<String> expectedDartNames,
-  required List<String> expectedNativeNames,
+  required List<String> expectedNativeFrames,
 }) {
   final problems = <String>[];
   if (reports.isEmpty) {
@@ -148,10 +168,52 @@ List<String> readbackProblems(
       'the backend returned no report for this build: nothing was verified',
     ];
   }
-  final all = reports.join('\n');
-  for (final n in [...expectedDartNames, ...expectedNativeNames]) {
-    if (!all.contains(n)) {
-      problems.add('"$n" is in none of the ${reports.length} report(s)');
+  for (var i = 0; i < reports.length; i++) {
+    final raw = rawFrameLines(reports[i]);
+    if (raw.isNotEmpty) {
+      problems.add(
+        'report ${i + 1} has ${raw.length} raw frame line(s), e.g. "${raw.first}"',
+      );
+    }
+  }
+  for (final n in expectedDartNames) {
+    if (!reports.any((r) => _hasFrameWith(r, n))) {
+      problems.add(
+        '"$n" is in no symbolicated frame of the ${reports.length} report(s)',
+      );
+    }
+  }
+  // each native frame needs a report of its own: a small backtracking assignment
+  final candidates = [
+    for (final n in expectedNativeFrames)
+      [
+        for (var i = 0; i < reports.length; i++)
+          if (_hasFrameWith(reports[i], n)) i,
+      ],
+  ];
+  for (var k = 0; k < candidates.length; k++) {
+    if (candidates[k].isEmpty) {
+      problems.add(
+        'native frame "${expectedNativeFrames[k]}" is in no symbolicated frame of the ${reports.length} report(s)',
+      );
+    }
+  }
+  if (candidates.every((c) => c.isNotEmpty)) {
+    bool assign(int k, Set<int> used) {
+      if (k == candidates.length) return true;
+      for (final i in candidates[k]) {
+        if (used.add(i)) {
+          if (assign(k + 1, used)) return true;
+          used.remove(i);
+        }
+      }
+      return false;
+    }
+
+    if (!assign(0, {})) {
+      problems.add(
+        'the expected native frames ${expectedNativeFrames.join(', ')} are not in distinct reports (one crash per frame is expected)',
+      );
     }
   }
   return problems;
@@ -165,3 +227,62 @@ List<String> rawFrameLines(String report) => [
     ).hasMatch(l))
       l.trim(),
 ];
+
+/// What is wrong with how an iOS crash launch ended. [crash] is the app's own `crashing` kind (`ffi-segv`, or
+/// `objc-main`), [console] the drained devicectl output, [exitCode] devicectl's. A `crashing` line alone proves
+/// nothing: the launch could have been ended by anything else (a SIGTERM from the previous console child).
+/// `ffi-segv` must have ended with `App terminated due to signal 11`. `objc-main` is an uncaught Objective-C
+/// exception, which aborts (signal 6); devicectl may report no signal for it, then a non-zero exit is accepted
+/// (measured once: exit 1), but any OTHER signal (15 above all) is a failure.
+List<String> iosCrashExitProblems(String crash, String console, int exitCode) {
+  final signal = parseTerminatedSignal(console);
+  switch (crash) {
+    case 'ffi-segv':
+      return signal == 11
+          ? const []
+          : ['ffi-segv ended with ${signal == null ? 'no signal line' : 'signal $signal'}, expected signal 11'];
+    case 'objc-main':
+      if (signal == 6) return const [];
+      if (signal == null && exitCode != 0) return const [];
+      return [
+        'objc-main ended with ${signal == null ? 'no signal line and devicectl exit 0' : 'signal $signal'}, expected signal 6 (or a non-zero exit without a signal)',
+      ];
+  }
+  return ['unknown crash kind $crash'];
+}
+
+/// Whether the app process [pid] is gone, from one `adb shell pidof <package>` answer; `null` when the answer
+/// proves nothing (an adb failure: a disconnect, `device offline`, anything on stderr). Only a successful `pidof`
+/// that does not list [pid], or its documented "no process" answer (exit 1, nothing at all printed), is "gone".
+bool? androidPidGone({
+  required int code,
+  required String stdout,
+  required String stderr,
+  required int pid,
+}) {
+  if (code == 0) {
+    return !stdout.trim().split(RegExp(r'\s+')).contains('$pid');
+  }
+  if (code == 1 && stdout.trim().isEmpty && stderr.trim().isEmpty) return true;
+  return null;
+}
+
+/// What is wrong with the evidence that process [pid] died of the crash [crash] (`ffi-segv` or `java-main`), from
+/// a full `logcat -d`: the kernel/debuggerd line `Fatal signal 11` for THAT pid, or the Java `FATAL EXCEPTION`
+/// naming `verify-java-main` for it. A process that merely vanished is not a crash.
+List<String> androidCrashProblems(String crash, String logcat, int pid) {
+  switch (crash) {
+    case 'ffi-segv':
+      final f = parseFatalSignal(logcat, pid);
+      return f?.number == 11
+          ? const []
+          : [
+              'no "Fatal signal 11" for pid $pid in logcat (${f == null ? 'none' : 'signal ${f.number}'})',
+            ];
+    case 'java-main':
+      return parseFatalException(logcat, pid, 'verify-java-main')
+          ? const []
+          : ['no FATAL EXCEPTION naming verify-java-main for pid $pid in logcat'];
+  }
+  return ['unknown crash kind $crash'];
+}

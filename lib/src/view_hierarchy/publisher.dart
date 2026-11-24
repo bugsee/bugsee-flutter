@@ -18,6 +18,13 @@
 //    is already due (an animation is running) the budget is a share of one frame at the display's
 //    refresh rate ([frameShare], never over the limit's own budget), so it fits the slack of a
 //    120 Hz frame as well as a 60 Hz one; with nothing due the full budget applies;
+//  * a walk taken after a quiet stretch is SLICED: it runs a couple of milliseconds at a time (a share
+//    of one frame, [sliceShare]), each slice from its own timer, so an input or a frame that arrives
+//    meanwhile waits for one slice and not for the whole walk. The walk is STRICT: a frame that is
+//    drawn or due while it is under way abandons it (the tree it was reading is gone) and the next
+//    quiet stretch starts over; after [maxAbandons] abandoned walks in a row, or when a snapshot is
+//    needed at once (nothing held natively, a stretch of frames that never stops, an explicit
+//    capture), the walk is taken in one piece as before;
 //  * a walk is only taken when the app has been quiet: no frame for [busyGap]. A walk straight
 //    after a frame lands next to the following frame of a scroll, a fling, an animation or a
 //    route transition, and delays it; after a quiet stretch it can only collide with an input
@@ -38,6 +45,15 @@ import 'hierarchy_builder.dart';
 /// Sends one message to native. Returns whether it was applied.
 typedef ViewHierarchySender = Future<bool> Function(ViewHierarchyMessage m);
 
+/// Starts a resumable walk (replaced in tests). `null`: nothing to describe.
+typedef ViewHierarchyWalkStarter = HierarchyWalk? Function(
+  HierarchyLimits limits,
+  Duration Function() now,
+);
+
+/// Schedules the next slice of a walk: after whatever event is already waiting. A test holds it.
+typedef ViewHierarchySliceScheduler = Timer Function(void Function() run);
+
 /// Builds a snapshot (replaced in tests).
 typedef ViewHierarchyBuilder = HierarchySnapshot? Function(
   HierarchyLimits limits,
@@ -56,17 +72,32 @@ class ViewHierarchyPublisher {
     this.busyCap = const Duration(seconds: 3),
     this.frameShare = 0.35,
     this.minBudget = const Duration(milliseconds: 2),
+    this.sliceShare = 0.12,
+    this.minSlice = const Duration(milliseconds: 1),
+    this.maxSlice = const Duration(milliseconds: 4),
+    this.slicedBudget = const Duration(milliseconds: 100),
+    this.maxAbandons = 3,
     Duration Function()? frameInterval,
     bool Function()? framePending,
     Duration Function()? clock,
     ViewHierarchyBuilder? builder,
+    ViewHierarchyWalkStarter? walkStarter,
+    ViewHierarchySliceScheduler? sliceScheduler,
   }) : epoch = epoch ?? newIsolateEpoch(),
        _frameInterval = frameInterval ?? _displayFrameInterval,
        _framePending = framePending ?? _schedulerFramePending,
        _now = clock ?? _stopwatchClock(),
        _builder =
            builder ??
-           ((limits, now) => buildViewHierarchy(limits: limits, clock: now));
+           ((limits, now) => buildViewHierarchy(limits: limits, clock: now)),
+       // A test that supplies its own builder gets no slicing unless it supplies a walk too.
+       _sliceScheduler = sliceScheduler ?? _nextEvent,
+       _walkStarter =
+           walkStarter ??
+           (builder == null
+               ? ((limits, now) =>
+                     HierarchyWalk.start(limits: limits, clock: now))
+               : null);
 
   /// One frame at the display's refresh rate (60 Hz when it is unknown).
   static Duration _displayFrameInterval() {
@@ -129,10 +160,35 @@ class ViewHierarchyPublisher {
   /// The share of one frame a walk may take while a frame is due, and the least it is given.
   final double frameShare;
   final Duration minBudget;
+
+  /// The length of one slice of a sliced walk: this share of one frame at the display's refresh
+  /// rate (0.12 of 16.7 ms is 2 ms; of 8.3 ms, 1 ms), kept between [minSlice] and [maxSlice]. A
+  /// slice is a time between two chances for an input or a frame to be handled.
+  final double sliceShare;
+  final Duration minSlice;
+  final Duration maxSlice;
+
+  /// How much time, summed over its slices, a sliced walk may spend before the rest is cut (the
+  /// jank of each slice is bounded by the slice, so the total may be larger than [limits]'s).
+  final Duration slicedBudget;
+
+  /// After this many sliced walks in a row that a frame abandoned, the next walk is taken in one
+  /// piece: a screen that draws a frame every so often must still get a complete snapshot.
+  final int maxAbandons;
   final Duration Function() _frameInterval;
   final bool Function() _framePending;
   final Duration Function() _now;
   final ViewHierarchyBuilder _builder;
+  final ViewHierarchyWalkStarter? _walkStarter;
+  final ViewHierarchySliceScheduler _sliceScheduler;
+
+  static Timer _nextEvent(void Function() run) => Timer(Duration.zero, run);
+
+  /// The sliced walk under way, its next slice's timer, and how many walks in a row a frame
+  /// abandoned.
+  HierarchyWalk? _walk;
+  Timer? _sliceTimer;
+  int _abandons = 0;
 
   bool _active = false;
   bool _frameArmed = false;
@@ -151,6 +207,10 @@ class ViewHierarchyPublisher {
   /// `false` after a failed send: native's state is unknown, so the next result is sent even if
   /// it equals [_lastSent], and an empty one is sent too.
   bool _nativeKnown = true;
+
+  /// Whether a sliced walk is under way. For tests.
+  @visibleForTesting
+  bool get walking => _walk != null;
 
   /// How many messages were sent. For tests.
   @visibleForTesting
@@ -177,6 +237,8 @@ class ViewHierarchyPublisher {
   /// stale hierarchy (idempotent). The clear is retried until it lands.
   Future<void> deactivate() async {
     _active = false;
+    _abandonWalk(counted: false);
+    _abandons = 0;
     _timer?.cancel();
     _timer = null;
     _settleTimer?.cancel();
@@ -193,8 +255,10 @@ class ViewHierarchyPublisher {
   /// not active. For `Bugsee.captureViewHierarchy`: the SDK's pass then sees the screen as it is.
   Future<void> flush() async {
     if (!_active) return;
+    _abandonWalk(counted: false); // the explicit walk replaces it, in one piece
     await _awaitScheduledFrame();
     if (!_active) return;
+    _abandonWalk(counted: false);
     _dirty = false;
     await _buildAndSend(explicit: true);
   }
@@ -236,6 +300,8 @@ class ViewHierarchyPublisher {
     final Duration? last = _lastFrameAt;
     _lastFrameAt = now;
     if (last == null || now - last >= busyGap) _busySince = now;
+    // The tree a sliced walk was reading may be gone: strict, start over after the quiet.
+    _abandonWalk();
     _dirty = true;
     _armFrame();
     _consider();
@@ -276,7 +342,7 @@ class ViewHierarchyPublisher {
   }
 
   void _consider() {
-    if (!_active || !_dirty) return;
+    if (!_active || !_dirty || _walk != null) return;
     final Duration now = _now();
     if (_busy(now)) {
       _armSettle();
@@ -292,7 +358,94 @@ class ViewHierarchyPublisher {
       _busySince = now;
     }
     _dirty = false;
-    unawaited(_buildAndSend());
+    if (_sliceable(now)) {
+      _startSlicedWalk();
+    } else {
+      unawaited(_buildAndSend());
+    }
+  }
+
+  /// Whether the walk about to be taken is sliced: after a real quiet stretch with nothing due,
+  /// while native holds a snapshot (so a slow walk costs a stale answer at worst, not none) and
+  /// walks have not been starved by frames. Every other walk is taken in one piece, as it was
+  /// before slicing existed: the first snapshot, one forced by [busyCap], one after
+  /// [maxAbandons] abandoned walks, an explicit capture.
+  bool _sliceable(Duration now) {
+    if (_walkStarter == null || _abandons >= maxAbandons) return false;
+    if (_lastSent == null || !_nativeKnown) return false;
+    final Duration? last = _lastFrameAt;
+    if (last != null && now - last < busyGap) return false;
+    return !_framePending();
+  }
+
+  /// The length of a slice now. For tests.
+  @visibleForTesting
+  Duration get sliceLengthForTest => _sliceLength();
+
+  /// One slice of the walk: a share of one frame, between [minSlice] and [maxSlice].
+  Duration _sliceLength() {
+    Duration slice = _frameInterval() * sliceShare;
+    if (slice < minSlice) slice = minSlice;
+    if (slice > maxSlice) slice = maxSlice;
+    return slice;
+  }
+
+  void _startSlicedWalk() {
+    HierarchyWalk? walk;
+    try {
+      walk = _walkStarter!(limits.withBudget(slicedBudget), _now);
+    } catch (_) {
+      walk = null; // fail closed, as an error in a walk in one piece
+    }
+    if (walk == null) {
+      unawaited(_finishBuild(null, Duration.zero));
+      return;
+    }
+    _walk = walk;
+    _runSlice();
+  }
+
+  void _runSlice() {
+    _sliceTimer = null;
+    final HierarchyWalk? walk = _walk;
+    if (walk == null) return;
+    // A frame is due: it will draw into the tree being read. Do not spend a slice on a walk it
+    // is about to void (its own post-frame callback abandons it, counted once).
+    if (!_active || _framePending()) {
+      _abandonWalk();
+      return;
+    }
+    bool done;
+    try {
+      done = walk.step(_sliceLength());
+    } catch (_) {
+      done = true;
+    }
+    if (!done) {
+      // The next slice is a timer of its own: whatever input or frame is waiting is handled first.
+      _sliceTimer = _sliceScheduler(_runSlice);
+      return;
+    }
+    _walk = null;
+    if (walk.invalid) {
+      // The tree changed with no frame seen: start over after the quiet, never use a mixed one.
+      _abandons++;
+      _dirty = true;
+      _armSettle();
+      return;
+    }
+    unawaited(_finishBuild(walk.result, walk.spent));
+  }
+
+  /// Gives up the walk under way. [counted]: a frame (or the lack of a quiet stretch) abandoned
+  /// it, which counts towards [maxAbandons]; a stop or an explicit capture does not.
+  void _abandonWalk({bool counted = true}) {
+    _sliceTimer?.cancel();
+    _sliceTimer = null;
+    if (_walk == null) return;
+    _walk = null;
+    if (counted) _abandons++;
+    _dirty = true;
   }
 
   void _armTimer(Duration wait) {
@@ -339,7 +492,13 @@ class ViewHierarchyPublisher {
     } catch (_) {
       snapshot = null; // fail closed: nothing is sent as a hierarchy
     }
-    final Duration cost = _now() - started;
+    await _finishBuild(snapshot, _now() - started);
+  }
+
+  /// What follows a walk, sliced or not: spaces the next one by its [cost], and sends the
+  /// [snapshot] when it is not what native holds.
+  Future<void> _finishBuild(HierarchySnapshot? snapshot, Duration cost) async {
+    _abandons = 0; // a walk completed: frames have not starved them
     final Duration spaced = cost * 20;
     Duration gap = spaced > minInterval ? spaced : minInterval;
     if (gap > maxInterval) gap = maxInterval;
@@ -373,6 +532,9 @@ class ViewHierarchyPublisher {
     } catch (_) {
       // Only the newest attempt decides what native holds.
       if (sequence != _sequence) return;
+      // A sliced walk that is under way would finish into the backoff and send before it ends:
+      // the retry is the next walk, in one piece, from the timer below.
+      _abandonWalk(counted: false);
       _nativeKnown = false;
       _failures++;
       _dirty = true;
@@ -385,6 +547,7 @@ class ViewHierarchyPublisher {
   @visibleForTesting
   void dispose() {
     _active = false;
+    _abandonWalk(counted: false);
     _timer?.cancel();
     _timer = null;
     _settleTimer?.cancel();

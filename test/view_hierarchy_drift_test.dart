@@ -393,7 +393,167 @@ void main() {
       );
       expect(branch, contains('_Node(secureNodeClassName)'));
       expect(branch, isNot(contains('e.widget')));
-      expect(branch, isNot(contains('_children(')), reason: 'nothing below it');
+      expect(
+        branch,
+        isNot(contains('_pushChildren(')),
+        reason: 'nothing below it',
+      );
+    });
+  });
+
+  group('the walk is sliced strictly, and only the publisher slices', () {
+    final src = code('lib/src/view_hierarchy/hierarchy_builder.dart');
+    final pub = code('lib/src/view_hierarchy/publisher.dart');
+    final doc = File('doc/view-hierarchy.md').readAsStringSync();
+
+    test('the walker is synchronous and holds no timer, frame or future', () {
+      // Where a walk stops is a time slice handed to `step`; when the next one runs is the
+      // publisher's (a frame abandons the walk). The walker must not learn either.
+      for (final pattern in [
+        r'SchedulerBinding',
+        r'\bTimer\b',
+        r'addPostFrameCallback',
+        r'\bFuture\b',
+        r'\basync\b',
+        r'\bawait\b',
+        r'Isolate',
+      ]) {
+        expect(
+          RegExp(pattern).hasMatch(src),
+          isFalse,
+          reason: 'hierarchy_builder.dart mentions $pattern',
+        );
+      }
+    });
+
+    test('there is no recursion into the tree: children are listed, then visited from one loop', () {
+      final visitors = RegExp(r'debugVisitOnstageChildren\((\w+)\)')
+          .allMatches(src)
+          .map((m) => m.group(1))
+          .toList();
+      // The list of children of a level, the containment scan and the search for the view (both read,
+      // neither builds a node).
+      expect(visitors.toSet(), {'_collect', 'visit'});
+      expect(visitors.where((v) => v == '_collect'), hasLength(1));
+      expect(
+        RegExp(r'\b_visit\(').allMatches(src),
+        hasLength(2),
+        reason: 'its definition and the one call, in the loop',
+      );
+      expect(body(src, 'void _walkSome()'), contains('_visit(child'));
+    });
+
+    test('the caps and the clock are the walk\'s, not a slice\'s', () {
+      expect(body(src, 'bool _capped('), contains('_elapsed()'));
+      expect(
+        src,
+        matches(
+          RegExp(
+            r'Duration _elapsed\(\)\s*=>\s*_spent \+ \(now\(\) - _sliceStart\)',
+            dotAll: true,
+          ),
+        ),
+      );
+      expect(body(src, 'bool step('), contains('_spent +='));
+      // The scan of an off-screen box gives up on a COUNT (the same tree, the same snapshot however it
+      // is sliced), never on a time.
+      expect(src, contains('static const int _maxScan = 2000;'));
+      expect(
+        body(src, 'bool _containedBelow('),
+        contains('++scanned > _maxScan'),
+      );
+      expect(
+        body(src, 'bool _containedBelow('),
+        isNot(contains('now()')),
+        reason: 'a time limit on the scan would make the output depend on the machine',
+      );
+      expect(doc, contains('gives up after 2000 elements'));
+    });
+
+    test('a walk that resumes into a changed tree fails closed', () {
+      expect(body(src, 'bool step('), contains('_stillMounted()'));
+      expect(body(src, 'void _walkSome()'), contains('mounted'));
+      expect(
+        body(src, 'bool _stillMounted()'),
+        allOf(
+          contains('_view.mounted'),
+          contains('_view.renderObject.attached'),
+        ),
+        reason:
+            'the view is the root of every level and on no frame of its own',
+      );
+      expect(
+        body(pub, 'Future<void> _publish('),
+        contains('_abandonWalk(counted: false)'),
+        reason:
+            'a failed send must not let a sliced walk finish into the backoff',
+      );
+    });
+
+    test(
+      'a frame abandons the walk; a due frame ends it at its next slice',
+      () {
+        expect(
+          body(pub, 'void _onFrame('),
+          allOf(contains('_abandonWalk()'), contains('_consider()')),
+        );
+        expect(
+          body(pub, 'void _onFrame(').indexOf('_abandonWalk()'),
+          lessThan(body(pub, 'void _onFrame(').indexOf('_consider()')),
+        );
+        expect(body(pub, 'void _runSlice()'), contains('_framePending()'));
+      },
+    );
+
+    test('only a walk after a real quiet stretch is sliced, and never a forced one', () {
+      final b = body(pub, 'bool _sliceable(');
+      expect(b, contains('maxAbandons'));
+      expect(
+        b,
+        contains('_lastSent == null'),
+        reason: 'nothing held: one piece',
+      );
+      expect(b, contains('busyGap'));
+      expect(b, contains('_framePending()'));
+      // An explicit capture, and a retry after a failed send, take a walk in one piece.
+      expect(
+        body(pub, 'Future<void> flush()'),
+        contains('_buildAndSend(explicit: true)'),
+      );
+      expect(
+        body(pub, 'Future<void> flush()'),
+        isNot(contains('_startSlicedWalk')),
+      );
+      expect(
+        RegExp(r'\b_startSlicedWalk\(').allMatches(pub),
+        hasLength(2),
+        reason: 'its definition and the one call, in _consider',
+      );
+    });
+
+    test('a slice runs from its own timer, never inside a frame', () {
+      expect(RegExp(r'Timer\(').allMatches(pub).length, greaterThan(0));
+      expect(
+        RegExp(r'addPostFrameCallback').allMatches(pub),
+        hasLength(1),
+        reason: 'the one that notices frames: no slice is run from a callback',
+      );
+      expect(body(pub, 'void _runSlice()'), contains('_sliceScheduler('));
+    });
+
+    test('the defaults are the ones the document states', () {
+      expect(pub, contains('this.sliceShare = 0.12'));
+      expect(pub, contains('this.minSlice = const Duration(milliseconds: 1)'));
+      expect(pub, contains('this.maxSlice = const Duration(milliseconds: 4)'));
+      expect(
+        pub,
+        contains('this.slicedBudget = const Duration(milliseconds: 100)'),
+      );
+      expect(pub, contains('this.maxAbandons = 3'));
+      expect(doc, contains('`sliceShare` = 0.12'));
+      expect(doc, contains('`slicedBudget` = 100 ms'));
+      expect(doc, contains('`maxAbandons` = 3'));
+      expect(doc, contains('between 1 and 4 ms'));
     });
   });
 }

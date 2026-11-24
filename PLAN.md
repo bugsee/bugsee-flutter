@@ -27,7 +27,7 @@ Contents: [Status](#status) | [Decisions taken](#decisions-taken) | [Open decisi
 | Device verification harness (emulator and simulator) | Done, not in CI | [verification](doc/verification.md) |
 | Documentation pass, migration guide | Done (this pass) | [doc/README.md](doc/README.md) |
 | **Not exposed on purpose** | APM transactions and spans, the appearance system, `relaunch`, secure rectangles and activities (replaced by `BugseeSecureView`), `deleteCollectedDataOnDevice`, native views | [api-surface](doc/api-surface.md) |
-| **Not verified** | the production backend; what a backend (apidev, 2026-11-23) made of the uploaded symbols and crashes: symbolication was read back by hand (apidev, 2026-11-24): Android and iOS native frames symbolicated, iOS Dart exceptions raw until bugsee-appserver#280 and bugsee-background-worker#182 are deployed; the harness's own read-back has never run, see scenario 11 | [verification](doc/verification.md) |
+| **Not verified** | the production backend; what a backend (apidev, 2026-11-23) made of the uploaded symbols and crashes: symbolication was read back by hand (apidev, 2026-11-24): Android and iOS native frames symbolicated, iOS Dart exceptions raw until bugsee-appserver#280 and bugsee-background-worker#182 are deployed; the harness's own read-back and its other later checks have never run on a device or backend, see scenario 11 | [verification](doc/verification.md) |
 
 ## Decisions taken
 

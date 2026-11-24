@@ -1745,7 +1745,13 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
     });
 
     test('symbols_logged.py: a failed request prints no URL query, token or original message', () {
-      if (Process.runSync('python3', ['--version']).exitCode != 0) {
+      try {
+        if (Process.runSync('python3', ['--version']).exitCode != 0) {
+          markTestSkipped('python3 is not usable here');
+          return;
+        }
+      } on ProcessException {
+        markTestSkipped('python3 is not installed');
         return;
       }
       final dir = Directory.systemTemp.createTempSync('symlog');
@@ -1785,6 +1791,41 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       expect(all, isNot(contains('SIGSECRET')));
       expect(all, isNot(contains('APPTOKEN12345')));
       expect(all, isNot(contains('connect failed')));
+    });
+
+    test('an unexpected exception is logged redacted (a ProcessException holds the command line)', () {
+      const token = 'FAKE-APP-TOKEN-0123456789';
+      const server = 'FAKE-SERVER-TOKEN-987654';
+      final e = ProcessException('python3', [
+        'x.py',
+        '-t',
+        token,
+        '-v',
+        '9.1.1',
+      ], 'No such file');
+      final text = failureText(e, [token, server]);
+      expect(text, contains('ProcessException'));
+      expect(text, isNot(contains(token)));
+      expect(text, contains('<REDACTED>'));
+      expect(
+        failureText(StateError('key=$server'), [token, server]),
+        isNot(contains(server)),
+      );
+      // and unredacted it WOULD leak, so the test shows what it guards
+      expect('$e', contains(token));
+    });
+
+    test('the read-back stops only after two agreeing good passes', () {
+      const ok3 = (ok: true, reports: 3);
+      expect(readbackSettled([ok3]), isFalse);
+      expect(readbackSettled([ok3, ok3]), isTrue);
+      expect(
+        readbackSettled([ok3, (ok: true, reports: 4)]),
+        isFalse,
+      ); // a late report arrived
+      expect(readbackSettled([(ok: false, reports: 3), ok3]), isFalse);
+      expect(readbackSettled([ok3, (ok: false, reports: 3)]), isFalse);
+      expect(readbackSettled([]), isFalse);
     });
 
     test('raw frame lines are found, symbolicated ones are not', () {

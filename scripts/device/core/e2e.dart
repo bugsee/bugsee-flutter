@@ -219,6 +219,21 @@ List<String> readbackProblems(
   return problems;
 }
 
+/// Whether the poll may stop with a pass: the last two passes both found everything expected AND saw the same
+/// number of reports. One good pass is not enough: the crash reports are the last uploaded and symbolicated, and a
+/// raw one arriving after a clean pass would be missed.
+bool readbackSettled(List<({bool ok, int reports})> passes) {
+  if (passes.length < 2) return false;
+  final a = passes[passes.length - 2];
+  final b = passes.last;
+  return a.ok && b.ok && a.reports == b.reports;
+}
+
+/// An unexpected failure as text for the log: the exception's message passed through [redact] (a
+/// `ProcessException` prints its whole command line, which holds `-t <token>` and the server token).
+String failureText(Object error, Iterable<String> secrets) =>
+    redact('${error.runtimeType}: $error', secrets);
+
 /// Frames that are still raw addresses in a rendered report (a symbolication that did not happen).
 List<String> rawFrameLines(String report) => [
   for (final l in const LineSplitter().convert(report))

@@ -34,7 +34,15 @@
 // verdict and exit code (0/1/3) that a scenario has no place for. Its checks are the pure functions of
 // core/e2e.dart, each tested in test/device_harness_test.dart. A failed check throws `HarnessFailure`; `main`
 // unwinds through the `finally` blocks (console save, uninstall, restoring example/android/bugsee.properties,
-// the device lock) BEFORE exiting. A signal (Ctrl-C, kill) runs the same synchronous cleanup.
+// the device lock) BEFORE exiting; an unexpected exception is printed through `redact` (`FAILED: ...`) and also
+// cleans up. A signal (Ctrl-C, kill) runs ONLY the synchronous subset: it kills the active devicectl child,
+// restores bugsee.properties, releases the lock and writes e2e-run.log. It does NOT uninstall the app, does NOT save
+// console.txt, and a `flutter build` already running keeps running (orphaned). SIGKILL runs nothing: a
+// token-bearing example/android/bugsee.properties can stay, and the next run saves it as "the developer's own"
+// and restores it; delete it by hand.
+//
+// ALL of the checks below the first run (the read-back, the Android pid and logcat evidence, the iOS signal 6 /
+// exit-code rule, the libapp.so guard, the staging, the properties guard) have never run on a device or a backend.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -59,7 +67,7 @@ const _expectedDart = [
   'e2eUncaughtThrower',
 ];
 
-late List<String> _secrets;
+List<String> _secrets = [];
 final _log = StringBuffer();
 
 void say(String s) {
@@ -174,6 +182,9 @@ Future<void> main(List<String> args) async {
     code = await _run(args);
   } on HarnessFailure catch (e) {
     say('INVALID: ${e.why}');
+  } on Object catch (e) {
+    // anything unexpected (a ProcessException carries the whole command line, `-t <token>` included)
+    say('FAILED: ${failureText(e, _secrets)}');
   } finally {
     _cleanupSync();
     for (final s in signals) {
@@ -300,7 +311,7 @@ class _Job {
   String get endpoint => (Platform.environment['BUGSEE_ENDPOINT'] ?? '')
       .replaceAll(RegExp(r'/+$'), '');
   String get symbolsDir => '$_workDir/symbols';
-  String get buildNumber => runId.split('.').last; // HHMM
+  String get buildNumber => runId.split('.').last; // HHMMSS
 
   String get example => '${tc.repoRoot}/example';
 
@@ -807,6 +818,8 @@ class _Job {
       // deadline. Issues appear before their symbolication and the crashes are the last uploaded, so a count
       // of issues says nothing; each pass reads the issues and their reports again.
       var problems = <String>['nothing was read yet'];
+      final passes = <({bool ok, int reports})>[];
+      var unstable = false;
       while (true) {
         final reports = await _readOnce(client, base, serverToken, appId, end);
         problems = readbackProblems(
@@ -817,12 +830,32 @@ class _Job {
             ios ? 'AppDelegate.swift' : 'MainActivity.java',
           ],
         );
-        if (problems.isEmpty) break;
-        say('backend: not yet: ${problems.join('; ')}');
-        if (!DateTime.now().add(const Duration(seconds: 30)).isBefore(end)) {
-          break;
+        passes.add((ok: problems.isEmpty, reports: reports.length));
+        if (readbackSettled(passes)) break;
+        final more = DateTime.now()
+            .add(const Duration(seconds: 30))
+            .isBefore(end);
+        if (problems.isEmpty) {
+          // Found everything, but a report that arrives later could still be raw: read again until two
+          // consecutive passes agree (at least one confirming pass, even at the deadline).
+          say(
+            'backend: everything expected is there; reading again to catch a late report',
+          );
+          if (!more && passes.length >= 2) {
+            unstable = true;
+            break;
+          }
+        } else {
+          say('backend: not yet: ${problems.join('; ')}');
+          if (!more) break;
         }
         await delay(30);
+      }
+      if (unstable) {
+        say(
+          'NOT CONFIRMED: the set of reports kept changing until the deadline',
+        );
+        return 1;
       }
       if (problems.isNotEmpty) {
         say(
@@ -884,7 +917,7 @@ class _Job {
             end,
           );
           final list = (recs is Map ? recs['objects'] : recs) as List? ?? [];
-          for (final rec in list.take(3)) {
+          for (final rec in list) {
             final rid = (rec as Map)['_id'];
             final text = await _getText(
               client,

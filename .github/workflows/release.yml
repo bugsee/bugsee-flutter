@@ -9,7 +9,7 @@ name: release
 #
 # Safety, in the order a run meets it:
 #   gate            read-only; tag is on main, tag == both pubspecs and both CHANGELOG tops, ci-ok was
-#                   green on the commit, format / codegen / analyze / test / pub dry-run / archive checks
+#                   green on the commit, format / codegen / analyze / test / pub dry-run / archive / pana checks
 #   publish-core    needs gate; `environment: pub.dev` (reviewers); the only job with id-token (core)
 #   publish-feedback  needs gate + publish-core; same environment; waits for the core to be live
 # test/native_versions_test.dart ("release workflow") fails if any of that is weakened.
@@ -110,6 +110,8 @@ jobs:
           scripts/check_pub_archive.sh "$RUNNER_TEMP/core.tar.gz"
       # Dry run of the sibling (and its archive check), from a copy of the tracked files.
       - run: scripts/publish_feedback.sh
+      # The pub.dev score of the core (the sibling is scored in publish-feedback, once the core is live).
+      - run: scripts/pana_check.sh .
       # Read-only: what the release would do (a rehearsal shows it without publishing).
       - name: What pub.dev has now
         env:
@@ -208,6 +210,11 @@ jobs:
           msg="bugsee_flutter_feedback is not on pub.dev yet: automated publishing needs an existing package. Publish the first version by hand (PLAN.md, release checklist), then enable automated publishing for it. SKIPPED."
           echo "::warning::$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+      # Scored like pub.dev will, before it is published: it resolves the core from pub.dev, so it can only
+      # run now. A score below the bar stops the release of this package (the core is already out).
+      - name: pana score of bugsee_flutter_feedback
+        if: steps.live.outputs.state == 'missing-version'
+        run: scripts/pana_check.sh packages/bugsee_flutter_feedback
       # The pub.dev credential, minted after the wait above (it is short-lived).
       - uses: dart-lang/setup-dart@v1
         if: github.event_name == 'push' && steps.live.outputs.state == 'missing-version'

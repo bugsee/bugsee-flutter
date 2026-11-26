@@ -200,6 +200,26 @@ jobs:
       # outside git: see the script for why it cannot be published from its own directory here.
       - run: scripts/publish_feedback.sh
 
+  pana:
+    # What pub.dev will score: the same tool (`pana`, pinned in the script), on the floor like the rest.
+    # Only the core: the feedback package needs the core's version from pub.dev, so release.yml scores it
+    # after the core is live.
+    name: pana (pub.dev score)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.50.0'
+          cache: true
+      - run: flutter config --enable-swift-package-manager
+      - run: flutter pub get --enforce-lockfile
+      - run: scripts/pana_check.sh .
+
   # The one stable name for branch protection: require `ci-ok` and nothing else, so
   # matrix legs can be renamed or added without touching repository settings.
   ci-ok:
@@ -207,7 +227,7 @@ jobs:
     # Must be `always()`, not `!cancelled()`: a skipped required check counts as passing,
     # so on a cancelled run ci-ok has to run and fail (cancelled needed jobs fail it below).
     if: always()
-    needs: [format, bridge-codegen, options-codegen, test, build-android, publish-check]
+    needs: [format, bridge-codegen, options-codegen, test, build-android, publish-check, pana]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

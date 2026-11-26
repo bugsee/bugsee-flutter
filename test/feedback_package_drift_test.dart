@@ -741,22 +741,20 @@ void main() {
       );
     });
 
-    test(
-      'no job was added for it (ci-ok and branch protection stay as they are)',
-      () {
-        final needs = RegExp(r'needs: \[([^\]]*)\]')
-            .firstMatch(job('ci-ok'))!
-            .group(1)!;
-        expect(needs.split(',').map((e) => e.trim()), [
-          'format',
-          'bridge-codegen',
-          'options-codegen',
-          'test',
-          'build-android',
-          'publish-check',
-        ]);
-      },
-    );
+    test('no job was added for it (`pana` scores the core only; ci-ok and branch protection stay as they are)', () {
+      final needs = RegExp(r'needs: \[([^\]]*)\]')
+          .firstMatch(job('ci-ok'))!
+          .group(1)!;
+      expect(needs.split(',').map((e) => e.trim()), [
+        'format',
+        'bridge-codegen',
+        'options-codegen',
+        'test',
+        'build-android',
+        'publish-check',
+        'pana',
+      ]);
+    });
 
     test('Dependabot watches the package (pub and Gradle, never bumping Bugsee artifacts)', () {
       final dep = liveOf(read('.github/dependabot.yml'));
@@ -1039,7 +1037,7 @@ exit 0
         r'^\s*- run: (flutter pub get.*)$',
         multiLine: true,
       ).allMatches(ci).map((m) => m.group(1)!).toList();
-      expect(lines, hasLength(4));
+      expect(lines, hasLength(5));
       for (final l in lines) {
         expect(
           l == 'flutter pub get --enforce-lockfile' || l == "flutter pub get \${{ matrix.channel == 'floor' && '--enforce-lockfile' || '' }}",

@@ -461,16 +461,17 @@ void main() {
       // Two matrices plus the format job pinned to the floor.
       expect(
         floor.allMatches(live).length,
-        6,
+        7,
         reason:
             'floor must be in both matrices, the format job, bridge-codegen, '
-            'options-codegen and publish-check',
+            'options-codegen, publish-check and pana',
       );
       for (final job in [
         'format',
         'bridge-codegen',
         'options-codegen',
         'publish-check',
+        'pana',
       ]) {
         expect(
           jobsOf(live)[job],
@@ -478,6 +479,11 @@ void main() {
           reason: '$job must run on the floor',
         );
       }
+      expect(
+        jobsOf(live)['pana'],
+        contains('scripts/pana_check.sh .'),
+        reason: 'the pana job scores the core',
+      );
     });
 
     test('runs on macOS and builds iOS and Android', () {
@@ -835,9 +841,20 @@ void main() {
         '- run: scripts/publish_feedback.sh\n',
         r'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main',
         'name == "ci-ok"',
+        'scripts/pana_check.sh .',
       ]) {
         expect(gate, contains(cmd), reason: cmd);
       }
+      // The feedback package is scored once the core is live and BEFORE it is published.
+      final fb = jobs['publish-feedback']!;
+      final score = fb.indexOf(
+        'scripts/pana_check.sh packages/bugsee_flutter_feedback',
+      );
+      expect(score, greaterThan(fb.indexOf('pub_dev_status.sh wait')));
+      expect(
+        score,
+        lessThan(fb.indexOf('scripts/publish_feedback.sh --publish')),
+      );
       expect(
         live,
         contains("sdk: '${flutterPin['dart']}'"),

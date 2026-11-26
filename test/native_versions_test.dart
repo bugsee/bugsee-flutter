@@ -30,6 +30,110 @@ Map<String, String> jobsOf(String live) {
   };
 }
 
+/// Why [text] (workflow file [name]) breaks the publishing rule, or an empty list.
+///
+/// Only `release.yml` publishes: a real publish (a `pub publish` that is neither `--dry-run` nor
+/// `--to-archive=`, or `publish_feedback.sh --publish`) must sit in a job that runs in the
+/// `pub.dev` environment, holds `id-token: write`, needs the `gate` job, and in a step that runs
+/// on a tag push only (`github.event_name == 'push'`). `id-token: write` exists only in such jobs.
+List<String> publishViolations(String name, String text) {
+  final out = <String>[];
+  final live = liveOf(text);
+  final isRelease = name == 'release.yml';
+  final realPublish = RegExp(
+    r'(?:(?:flutter|dart) pub publish|publish_feedback\.sh --publish)',
+  );
+  // Each command of a line is classified on its own: `pub publish --dry-run && pub publish --force`
+  // is a real publish.
+  bool isReal(String l) => l
+      .split(RegExp(r'&&|\|\||;|\|'))
+      .any(
+        (c) =>
+            realPublish.hasMatch(c) &&
+            !c.contains('--dry-run') &&
+            !c.contains('--to-archive='),
+      );
+  if (!live.contains('\njobs:')) return out;
+  final jobs = jobsOf(live);
+  for (final e in jobs.entries) {
+    final job = e.value;
+    final real = job.split('\n').where(isReal).toList();
+    final hasToken = RegExp(
+      r'^      id-token: write\s*$',
+      multiLine: true,
+    ).hasMatch(job);
+    final where = '$name job ${e.key}';
+    if (real.isNotEmpty && !isRelease) {
+      out.add('$where: only release.yml publishes');
+    }
+    if (hasToken && !isRelease) {
+      out.add('$where: id-token: write outside release.yml');
+    }
+    if (hasToken && real.isEmpty) {
+      out.add('$where: id-token: write outside a publishing job');
+    }
+    if (real.isEmpty) continue;
+    if (!RegExp(
+      r'^    environment: pub\.dev\s*$',
+      multiLine: true,
+    ).hasMatch(job)) {
+      out.add('$where: a publishing job must run in `environment: pub.dev`');
+    }
+    if (!hasToken) {
+      out.add('$where: a publishing job needs id-token: write (OIDC)');
+    }
+    final needs = RegExp(
+      r'^    needs: \[([^\]]*)\]',
+      multiLine: true,
+    ).firstMatch(job);
+    if (needs == null ||
+        !needs.group(1)!.split(',').map((e) => e.trim()).contains('gate')) {
+      out.add('$where: a publishing job must need the gate job');
+    }
+    // The job runs after a SUCCESSFUL gate: no condition may override that (`always()` runs a job
+    // after a failed need), and a failed gate must not be tolerated.
+    final jobIf = RegExp(r'^    if: (.*)$', multiLine: true).firstMatch(job);
+    if (jobIf != null &&
+        RegExp(r'always\(\)|cancelled\(\)|failure\(\)')
+            .hasMatch(jobIf.group(1)!)) {
+      out.add(
+        '$where: a job-level if must not run the job after a failed gate',
+      );
+    }
+    if (live.contains('continue-on-error')) {
+      out.add('$where: continue-on-error would let a failed gate pass');
+    }
+    final steps = job.split(RegExp(r'\n      - '));
+    for (final step in steps) {
+      if (!step.split('\n').any(isReal)) continue;
+      // `push` required, alone or AND-ed with more (never OR-ed with another event).
+      final cond = RegExp(r'^\s+if: (.*)$', multiLine: true).firstMatch(step);
+      if (cond == null ||
+          !RegExp(r"^github\.event_name == 'push'( && [^|]*)?$")
+              .hasMatch(cond.group(1)!.trim())) {
+        out.add('$where: a real publish step must run on a tag push only');
+      }
+    }
+    // pub.dev OIDC: setup-dart exchanges the runner token for PUB_TOKEN; before the publish.
+    final realAt = steps.indexWhere((st) => st.split('\n').any(isReal));
+    final oidcAt = steps.indexWhere(
+      (st) => st.contains('uses: dart-lang/setup-dart@v1'),
+    );
+    if (oidcAt < 0 || oidcAt > realAt) {
+      out.add(
+        '$where: a publishing job must run dart-lang/setup-dart (the pub.dev OIDC token) before the publish',
+      );
+    }
+  }
+  if (isRelease && jobs.containsKey('gate')) {
+    final gate = jobs['gate']!;
+    if (gate.contains('id-token') || gate.contains('environment:')) {
+      out.add('$name: the gate must not hold the OIDC token or an environment');
+    }
+  }
+  return out;
+}
+
 void main() {
   final pins = jsonDecode(read('native-versions.json')) as Map<String, dynamic>;
   final flutterPin = pins['flutter'] as Map<String, dynamic>;
@@ -452,6 +556,14 @@ void main() {
     test('every workflow is least-privilege', () {
       for (final f in ours) {
         final live = liveOf(read(f.path));
+        // The one write permission there is: the OIDC token of a publishing job in release.yml
+        // (where it may sit is checked by `only the release workflow publishes` below).
+        final noToken = f.path.endsWith('release.yml')
+            ? live.replaceAll(
+                RegExp(r'^      id-token: write\n', multiLine: true),
+                '',
+              )
+            : live;
         expect(
           live,
           matches(
@@ -460,7 +572,7 @@ void main() {
           reason: '${f.path}: top-level permissions must be contents: read',
         );
         expect(
-          live,
+          noToken,
           isNot(contains('write')),
           reason: '${f.path}: no write permission',
         );
@@ -493,18 +605,254 @@ void main() {
       }
     });
 
-    test('nothing publishes: pub publish is always a dry run', () {
-      for (final f in files) {
-        for (final l in liveOf(read(f.path)).split('\n')) {
-          if (RegExp(r'(flutter|dart) pub publish').hasMatch(l)) {
-            // `--to-archive` only writes the tarball: it never uploads.
-            expect(
-              l.contains('--dry-run') || l.contains('--to-archive='),
-              isTrue,
-              reason: '${f.path}: $l',
-            );
-          }
-        }
+    // Was "nothing publishes: pub publish is always a dry run". The release workflow now publishes
+    // (pub.dev automated publishing, OIDC), so the rule is where a publish may sit, not that there
+    // is none; every other workflow still only dry-runs or writes an archive.
+    test('only the release workflow publishes, only under the environment, only after the gate', () {
+      // The shared-workflow callers (claude-review.yml needs id-token: write for its own purpose)
+      // hold no `run:` lines; only our own workflows can publish.
+      for (final f in ours) {
+        final name = f.path.split('/').last;
+        expect(publishViolations(name, read(f.path)), isEmpty, reason: name);
+      }
+      // release.yml really has them (a rule that matched nothing would pass vacuously).
+      final jobs = jobsOf(liveOf(read('.github/workflows/release.yml')));
+      expect(jobs.keys, ['gate', 'publish-core', 'publish-feedback']);
+      expect(jobs['publish-core'], contains('flutter pub publish --force'));
+      expect(
+        jobs['publish-feedback'],
+        contains('scripts/publish_feedback.sh --publish --yes'),
+      );
+      expect(
+        jobs['publish-feedback'],
+        contains('needs: [gate, publish-core]'),
+        reason: 'the sibling depends on the core: it follows it',
+      );
+    });
+
+    test('the publishing rule fails when it is broken (mutations)', () {
+      final release = read('.github/workflows/release.yml');
+      final ci = read('.github/workflows/ci.yml');
+      List<String> v(String name, String text) => publishViolations(name, text);
+      String swap(String text, String from, String to) {
+        expect(text, contains(from), reason: 'the mutation must apply: $from');
+        return text.replaceFirst(from, to);
+      }
+
+      // A publish anywhere but release.yml (a dry run or an archive is fine).
+      expect(
+        v(
+          'ci.yml',
+          swap(
+            ci,
+            'flutter pub publish --dry-run',
+            'flutter pub publish --force',
+          ),
+        ),
+        contains(contains('only release.yml publishes')),
+      );
+      expect(
+        v(
+          'ci.yml',
+          swap(
+            ci,
+            '- run: scripts/publish_feedback.sh\n',
+            '- run: scripts/publish_feedback.sh --publish\n',
+          ),
+        ),
+        contains(contains('only release.yml publishes')),
+      );
+      // The OIDC token outside release.yml.
+      expect(
+        v(
+          'ci.yml',
+          swap(
+            ci,
+            '    timeout-minutes: 15\n',
+            '    timeout-minutes: 15\n    permissions:\n      id-token: write\n',
+          ),
+        ),
+        contains(contains('id-token: write outside release.yml')),
+      );
+      // A publishing job without the environment, without the token, without the gate.
+      expect(
+        v('release.yml', swap(release, '    environment: pub.dev\n', '')),
+        contains(contains('environment: pub.dev')),
+      );
+      expect(
+        v('release.yml', swap(release, '      id-token: write\n', '')),
+        contains(contains('needs id-token: write')),
+      );
+      expect(
+        v('release.yml', swap(release, '    needs: [gate]\n', '')),
+        contains(contains('must need the gate job')),
+      );
+      expect(
+        v(
+          'release.yml',
+          swap(release, 'needs: [gate, publish-core]', 'needs: [publish-core]'),
+        ),
+        contains(contains('must need the gate job')),
+      );
+      // The token in a job that publishes nothing (the gate).
+      expect(
+        v(
+          'release.yml',
+          swap(
+            release,
+            '      checks: read\n',
+            '      checks: read\n      id-token: write\n',
+          ),
+        ),
+        contains(contains('outside a publishing job')),
+      );
+      // A real publish that a manual run would reach.
+      expect(
+        v(
+          'release.yml',
+          swap(
+            release,
+            "        if: github.event_name == 'push' && steps.live.outputs.state != 'live'\n        run: flutter pub publish --force",
+            '        run: flutter pub publish --force',
+          ),
+        ),
+        contains(contains('tag push only')),
+      );
+      // A dry run chained to a real publish is a real publish.
+      expect(
+        v(
+          'ci.yml',
+          swap(
+            ci,
+            '- run: flutter pub publish --dry-run',
+            '- run: flutter pub publish --dry-run && flutter pub publish --force',
+          ),
+        ),
+        contains(contains('only release.yml publishes')),
+      );
+      // A condition that also admits a manual run.
+      expect(
+        v(
+          'release.yml',
+          release.replaceAll(
+            "if: github.event_name == 'push' && steps.live.outputs.state != 'live'",
+            "if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
+          ),
+        ),
+        contains(contains('tag push only')),
+      );
+      // A publishing job that runs after a failed gate.
+      expect(
+        v(
+          'release.yml',
+          swap(
+            release,
+            "    needs: [gate]\n    # A manual run",
+            "    needs: [gate]\n    if: always()\n    # A manual run",
+          ),
+        ),
+        contains(contains('after a failed gate')),
+      );
+      expect(
+        v(
+          'release.yml',
+          swap(
+            release,
+            '    timeout-minutes: 45\n    # checks: read',
+            '    timeout-minutes: 45\n    continue-on-error: true\n    # checks: read',
+          ),
+        ),
+        contains(contains('continue-on-error')),
+      );
+      // No pub.dev OIDC setup before the publish (nothing would authenticate it).
+      expect(
+        v(
+          'release.yml',
+          release.replaceAll(
+            RegExp(r'      - uses: dart-lang/setup-dart@v1\n(?:        .*\n)+'),
+            '',
+          ),
+        ),
+        contains(contains('dart-lang/setup-dart')),
+      );
+      expect(v('release.yml', release), isEmpty);
+    });
+
+    test('release.yml: version tag or by hand, dry run by default, never overlapping, the gate is ci.yml\'s checks', () {
+      final live = liveOf(read('.github/workflows/release.yml'));
+      final jobs = jobsOf(live);
+      expect(live, contains("tags: ['v[0-9]*.[0-9]*.[0-9]*']"));
+      expect(live, contains('workflow_dispatch:'));
+      expect(live, isNot(contains('pull_request')));
+      expect(live, isNot(contains('branches:')));
+      expect(
+        live,
+        matches(RegExp(r'dryRun:\n(?:\s+.*\n)*?\s+default: true\n')),
+      );
+      expect(
+        live,
+        contains(
+          r"group: ${{ github.event_name == 'push' && 'release' || format('release-dry-{0}', github.run_id) }}",
+        ),
+        reason: 'one release at a time; a rehearsal has its own group',
+      );
+      // Both publish jobs exist for a tag push only (the environment's tag rule would refuse a branch).
+      for (final j in ['publish-core', 'publish-feedback']) {
+        expect(
+          jobs[j],
+          contains("    if: github.event_name == 'push'\n"),
+          reason: j,
+        );
+      }
+      // A status read keeps its exit code: never `echo "...$(pub_dev_status.sh ...)"` in a publishing job.
+      for (final j in ['publish-core', 'publish-feedback']) {
+        expect(
+          jobs[j],
+          isNot(contains(r'echo "state=$(scripts/pub_dev_status')),
+          reason:
+              '$j: a failing status call would be lost and read as nothing to do',
+        );
+      }
+      expect(live, contains('cancel-in-progress: false'));
+      // The gate repeats ci.yml's format and codegen commands, on the floor.
+      final ci = liveOf(read('.github/workflows/ci.yml'));
+      final gate = jobs['gate']!;
+      for (final cmd in [
+        'dart format --output=none --set-exit-if-changed lib test example/lib example/integration_test scripts pigeons packages',
+        'dart scripts/generate_pigeon.dart --check',
+        'dart scripts/generate_pigeon.dart --package packages/bugsee_flutter_feedback --check',
+        'dart scripts/generate_options.dart --check',
+      ]) {
+        expect(ci, contains(cmd));
+        expect(gate, contains(cmd), reason: cmd);
+      }
+      for (final cmd in [
+        'flutter analyze',
+        'flutter test',
+        'flutter pub publish --dry-run',
+        r'scripts/check_pub_archive.sh "$RUNNER_TEMP/core.tar.gz"',
+        'scripts/check_release.sh',
+        '- run: scripts/publish_feedback.sh\n',
+        r'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main',
+        'name == "ci-ok"',
+      ]) {
+        expect(gate, contains(cmd), reason: cmd);
+      }
+      expect(
+        live,
+        contains("sdk: '${flutterPin['dart']}'"),
+        reason:
+            'the Dart of the OIDC setup is the one the floor Flutter bundles',
+      );
+      final floor = "flutter-version: '${flutterPin['min']}'";
+      expect(
+        "flutter-version: '".allMatches(live).length,
+        floor.allMatches(live).length,
+        reason: 'every Flutter in the release is the floor',
+      );
+      // Publishing jobs check out the gated commit, not whatever the tag points at later.
+      for (final j in ['publish-core', 'publish-feedback']) {
+        expect(jobs[j], contains(r'ref: ${{ github.sha }}'), reason: j);
       }
     });
 

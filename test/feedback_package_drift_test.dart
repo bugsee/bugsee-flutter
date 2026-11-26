@@ -727,6 +727,13 @@ void main() {
       expect(script, contains('check_pub_archive.sh'));
       expect(script, contains('cd packages/bugsee_flutter_feedback'));
       expect(script, contains('flutter pub publish'));
+      // `--yes` (no prompt: the release workflow has no tty) belongs to --publish only.
+      expect(script, contains('mode=(--force)'));
+      final yes = Process.runSync('bash', [
+        'scripts/publish_feedback.sh',
+        '--yes',
+      ]);
+      expect(yes.exitCode, 64, reason: 'a dry run must not accept --yes');
       expect(
         File('scripts/publish_feedback.sh').statSync().mode & 0x40,
         isNonZero,

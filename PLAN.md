@@ -129,7 +129,7 @@ never tags or publishes. The one-time setup (step 0) is by hand on pub.dev and G
    `feedback_version.dart` (Android's wrapper version is generated from `pubspec.yaml` into `BuildConfig`); add the `## <version>` entry at the top of both `CHANGELOG.md` files (the tests require it to be the pubspec version).
 4. **Verify on real hardware** at least one Android and one iOS device (the harness: `doc/verification.md`; iOS recovery and exception bundles
    need a device), then update `doc/verification.md`.
-5. **CI green** on the release commit: `format`, codegen checks, `analyze + test` on the floor and stable legs, `build apk`, `pub publish dry-run`, `pana` (the pub.dev score: `scripts/pana_check.sh .`), `ci-ok`.
+5. **CI green** on the release commit: `format`, codegen checks, `analyze + test` on the floor and stable legs, `build apk`, `pub publish dry-run`, `pana` (the pub.dev score: `scripts/pana_check.sh .`; every section full, the dependencies section may lose 10), `ci-ok`.
 6. **Dry runs, clean tree, Flutter 3.50.0** (the floor):
    ```sh
    flutter pub get --enforce-lockfile

@@ -45,6 +45,8 @@ migrate_working_dir/
 /packages/
 # The device verification harness (doc/verification.md) and the app it drives: dev tooling, never published.
 /scripts/device/
+# The pinned pana (pubspec + lock) that scripts/pana_check.sh runs: dev tooling.
+/tools/
 /example/lib/verify_main.dart
 /example/lib/e2e_main.dart
 /test/device_harness_test.dart

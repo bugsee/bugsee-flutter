@@ -13,7 +13,7 @@
 const String wrapperType = 'flutter';
 
 /// Must equal `version:` in pubspec.yaml.
-const String wrapperVersion = '10.0.0-dev.1';
+const String wrapperVersion = '10.0.0-beta.1';
 
 /// The version of this package (the same string as `version:` in its pubspec).
 ///

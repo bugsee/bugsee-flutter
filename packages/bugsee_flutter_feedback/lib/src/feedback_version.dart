@@ -8,7 +8,7 @@
 //    packages, because both read native-versions.json at release.
 
 /// Must equal `version:` in pubspec.yaml.
-const String feedbackVersion = '10.0.0-dev.1';
+const String feedbackVersion = '10.0.0-beta.1';
 
 /// Whether a core `bugsee_flutter` at [core] can be used with a feedback package at [feedback]:
 /// the same major and minor. A patch or pre-release difference is allowed (pub's constraint

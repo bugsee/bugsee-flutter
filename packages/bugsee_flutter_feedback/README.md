@@ -1,6 +1,6 @@
 # bugsee_flutter_feedback
 
-> **Version 10.0.0-dev.1, not published yet.** Released together with
+> **Version 10.0.0-beta.1, not published yet.** Released together with
 > [`bugsee_flutter`](https://pub.dev/packages/bugsee_flutter) at the same version; nothing here works without it.
 
 The in-app feedback chat for [`bugsee_flutter`](https://pub.dev/packages/bugsee_flutter): your users write to you from inside the
@@ -18,11 +18,11 @@ Add both packages, and nothing else:
 
 ```yaml
 dependencies:
-  bugsee_flutter: ^10.0.0-dev.1
-  bugsee_flutter_feedback: ^10.0.0-dev.1
+  bugsee_flutter: ^10.0.0-beta.1
+  bugsee_flutter_feedback: ^10.0.0-beta.1
 ```
 
-Use **the same version of both** (this package's `bugsee_flutter` constraint is `>=10.0.0-dev.1 <10.1.0`, and it
+Use **the same version of both** (this package's `bugsee_flutter` constraint is `>=10.0.0-beta.1 <10.1.0`, and it
 checks at run time that the core is the same major and minor): the two are released together and pin the same
 native SDK versions.
 

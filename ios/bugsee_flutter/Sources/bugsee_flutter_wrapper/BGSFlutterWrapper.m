@@ -17,7 +17,7 @@
 // pubspec.yaml, so the version is a literal;
 // test/wrapper_identity_test.dart fails if any copy drifts.
 static NSString *const BGSFlutterWrapperType = @"flutter";
-static NSString *const BGSFlutterWrapperVersion = @"10.0.0-dev.1";
+static NSString *const BGSFlutterWrapperVersion = @"10.0.0-beta.1";
 
 static NSString *const BGSFlutterUnknown = @"unknown";
 

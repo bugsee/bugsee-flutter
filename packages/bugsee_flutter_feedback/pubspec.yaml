@@ -1,6 +1,6 @@
 name: bugsee_flutter_feedback
 description: The in-app feedback chat for Bugsee on Flutter. Optional add-on to bugsee_flutter; apps that never show the chat do not need it.
-version: 10.0.0-dev.1
+version: 10.0.0-beta.1
 homepage: https://www.bugsee.com/
 documentation: https://docs.bugsee.com/sdk/flutter/installation/
 repository: https://github.com/bugsee/bugsee-flutter
@@ -23,7 +23,7 @@ dependencies:
   # at that version and stops before the next minor (pub warns about an exact pin, and a caret
   # would let a new core minor with other native pins in). test/feedback_package_drift_test.dart
   # asserts the lower bound IS the core's version.
-  bugsee_flutter: ">=10.0.0-dev.1 <10.1.0"
+  bugsee_flutter: ">=10.0.0-beta.1 <10.1.0"
   meta: ^1.17.0
 
 dev_dependencies:

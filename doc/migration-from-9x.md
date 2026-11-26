@@ -1,6 +1,6 @@
 # Migrating from 9.x to 10.x
 
-10.0.0-dev.1 is a rewrite for the Bugsee 7.x native SDKs and a **clean break** from the 9.x plugin (9.0.5 on the old `release`
+10.0.0-beta.1 is a rewrite for the Bugsee 7.x native SDKs and a **clean break** from the 9.x plugin (9.0.5 on the old `release`
 branch, which wrapped the 6.x SDKs: iOS 6.3.2, Android 6.0.4 per its `version.txt`).
 
 **There is no compatibility layer.** Whether to offer one (a thin `bugsee.dart` shim over the 10.x facade) has been deferred by the

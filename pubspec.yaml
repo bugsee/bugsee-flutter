@@ -1,6 +1,6 @@
 name: bugsee_flutter
 description: Bugsee adds video, network traffic, console logs and other traces from your app to every bug and crash report.
-version: 10.0.0-dev.1
+version: 10.0.0-beta.1
 homepage: https://www.bugsee.com/
 documentation: https://docs.bugsee.com/sdk/flutter/installation/
 repository: https://github.com/bugsee/bugsee-flutter

@@ -70,7 +70,7 @@ while the core is unpublished.
    ```
 
    This package asks nothing of the AGP and Gradle versions beyond what Flutter 3.50 itself supports: do not change your app's pair for it (an AGP needs a minimum
-   Gradle: 9.3 needs 9.5.0, 9.5 needs 9.6.0). CI builds the example on AGP 9.5.3 with Gradle 9.6.0, newer than Flutter 3.50 knows, and it builds; that is not a requirement.
+   Gradle: 9.3 needs 9.5.0, 9.5 needs 9.6.0). The pair the example app builds with in CI (`example/android`) is only what is tested here, not a requirement.
 
    (Groovy: `id 'com.bugsee.android.gradle' version '4.1.1' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
 

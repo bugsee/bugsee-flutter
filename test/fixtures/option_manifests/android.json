@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "sdk": "android",
-  "sdkVersion": "7.6.0",
+  "sdkVersion": "7.6.1",
   "buildConfiguration": "release",
-  "generatedAt": "2026-11-16T21:58:23Z",
+  "generatedAt": "2026-11-26T10:14:39Z",
   "options": [
     {"key": "com.bugsee.option.$$DEBUG", "type": "boolean", "default": false, "module": "bugsee-android", "hidden": true},
     {"key": "com.bugsee.option.$$ENDPOINT", "type": "string", "default": null, "module": "bugsee-android", "hidden": true},

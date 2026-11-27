@@ -39,7 +39,7 @@ flowchart TB
     iwrap --> istores
   end
 
-  sdk["Native Bugsee SDK<br/>Android 7.6.0 / iOS 7.1.0"]
+  sdk["Native Bugsee SDK<br/>Android 7.6.1 / iOS 7.1.0"]
 
   app --> facade
   bridge <--> aplug

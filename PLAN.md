@@ -194,6 +194,7 @@ Facts worth keeping from the work (each is in the doc named):
   (`capture.video.adaptive`, `config.max-data-size`). Moving the iOS pin to 7.0.0 (manifest of 2026-10-30) changed that: iOS gained
   `config.max-pending-reports` and `config.max-pending-report-age` (now 72 options, 71 public, 51 shared) and its `config.max-data-size` default went
   from 50 to 150 (as Android), so only `capture.video.adaptive` still differs.
+  Re-run 2026-11-27 at the current pins (Android `v7.6.1`, iOS `origin/release@b65bdca06` = 7.1.0): the vendored manifests equal the CDN files (`sync_option_manifests.dart --check`) and the source (`verify_option_manifests.dart`: Android 85 public keys, iOS 71), `extract_option_docs.dart --check` is current, the generated files are current; 88 / 72 options in all, one default difference between the platforms (`capture.video.adaptive`, reviewed), no key or default changed from 7.6.0. The report-enum and `vh` fixtures were not re-extracted: none of the source files they read changed between `v7.6.0` and `v7.6.1`.
 * **Pre-existing, worked around:** `flutter build ios --simulator` fails on Flutter 3.41 / Xcode 27.1 (an order-sensitive architecture check); the harness
   builds with `--config-only` plus `xcodebuild` for one simulator.
 

@@ -19,7 +19,7 @@ errors.
 | Flutter / Dart | 3.50.0 or newer / 3.14 or newer |
 | Android | `minSdk` 21; JDK 17 or 21 for the build (what CI runs and the SDK documents; the example also built a debug APK with JDK 25 on Gradle 9.3.1, measured, not a supported set); the Bugsee Gradle plugin **4.1.1** (mandatory, see below) |
 | iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
-| Native SDKs | Android `7.6.0`, iOS `7.1.0` (pinned in [`native-versions.json`](native-versions.json)) |
+| Native SDKs | Android `7.6.1`, iOS `7.1.0` (pinned in [`native-versions.json`](native-versions.json)) |
 | Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
 
 The Flutter floor is 3.50.0 (Dart 3.14): the 10.0 major builds on the release that ships Direct Interop, Android Gradle

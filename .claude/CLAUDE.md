@@ -4,10 +4,15 @@ Guidance for reviewers and agents working in this repository.
 
 ## Project
 
-`bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.6.0, iOS 7.1.0), version `10.0.0-beta.1`,
-unpublished, plus the separate `packages/bugsee_flutter_feedback`. The implementation is complete and merged into `main` (formerly `nextgen`);
-`PLAN.md` is the status, the decisions (D1 to D13), the open questions and the release checklist. The authoritative wrapper spec is
+`bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.6.1, iOS 7.1.0), version `10.0.0-beta.1`,
+the first public beta (not yet on pub.dev until the maintainer pushes the tag), plus the separate `packages/bugsee_flutter_feedback`. The implementation is complete and merged into `main`
+(the default branch, formerly `nextgen`); `PLAN.md` is the status, the decisions (D1 to D14), the open questions and the release checklist. The authoritative wrapper spec is
 `sdk/wrapper-workbook` in the `bugsee/specs` repository (refer to it by repo name); `doc/workbook-conformance.md` maps it to the code.
+
+Repo map: `lib/` (Dart facade and capture), `android/` and `ios/` (the wrapper, iOS as a Swift package), `pigeons/` (bridge definition and its generator
+package), `packages/bugsee_flutter_feedback/` (separate package, own bridge), `scripts/` (codegen, release and pub.dev helpers; `scripts/device/` is the
+device harness), `tools/pana/` (locked pana toolchain, never published), `test/` (unit tests and the drift guards), `example/` (app and device tests),
+`native-versions.json` (the pins), `.github/` (workflows, `CI.md`).
 
 Where to look: `doc/README.md` (index), `doc/architecture.md` (layers and rules), `doc/design-rules.md` (the detailed rules per area, the
 long form of everything below), `doc/api-surface.md`, `doc/verification.md` (device evidence), `.github/CI.md` (checks), `README.md` (users).
@@ -83,6 +88,68 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
 - **Docs**: a doc claim about code (a name, default, limit, command, path) is checked against the code; `README.md`, `CHANGELOG.md` (the newest entry is
   the pubspec version: `test/native_versions_test.dart`), `PLAN.md` and the pages in `doc/` change with the behaviour they describe.
 
+- **Release and publishing** (`.github/workflows/release.yml`, `.github/CI.md` "Releases", PLAN.md "Release checklist"): ONLY a pushed tag `v<version>`
+  publishes, core first, then the feedback package, over pub.dev's GitHub OIDC (no secret). The gate (read-only: tag on `main`, tag == both pubspecs
+  and both CHANGELOG tops, `ci-ok` green on the commit, format, codegen, analyze, test, dry runs, archive check, pana) runs before the two publish jobs,
+  which use the `pub.dev` environment (required reviewers). A manual `workflow_dispatch` is always a dry run. Tags `v*` are protected by a ruleset. Both are GitHub settings, not repo files (set up 2026-11: environment `pub.dev` with required reviewers and `v*` tags only, tag ruleset "Release tags (v*)"): before relying on them, check with `gh api repos/bugsee/bugsee-flutter/rulesets` and `gh api repos/bugsee/bugsee-flutter/environments/pub.dev`; PLAN.md step 0 lists how to recreate them. **An agent
+  never tags, pushes a tag, approves the environment or publishes**; it may run the dry run and report. `test/native_versions_test.dart` fails if the
+  workflow is weakened: change the guard in the same PR, with the reason. The first version of a new package is a manual publish
+  (`scripts/publish_feedback.sh --publish`); the Flutter version in every job is the floor, 3.50.0.
+- **pana** (the pub.dev score): `scripts/pana_check.sh .` (CI job `pana`, and the release gate), every section full, the dependencies section may lose
+  10. pana and its dependencies are pinned by `tools/pana/pubspec.lock` (`--enforce-lockfile`); the feedback package is scored in the release only after
+  the core is live (pana resolves the core from pub.dev), so it cannot be scored earlier.
+
+## Updating the underlying SDKs (native pins)
+
+The wrapper follows the native Bugsee SDKs (Android, iOS). When either releases, the wrapper adopts it in one PR. Do this in order; the drift guards
+(`flutter test`) fail on whatever you miss, so read their messages instead of guessing.
+
+### The launch-options golden file
+
+Every SDK release publishes an **immutable options manifest** (the golden file) to our CDN, written by the SDK's own build and deploy jobs from its live option
+registry (so it is complete: extension modules, options registered with a null default, hidden `$$` options, which a read of the source cannot see):
+
+`https://download.bugsee.com/sdk/options/<sdk>/<version>.json` (`<sdk>` is `android` or `ios`; template in `native-versions.json` `optionsManifest.urlTemplate`;
+format `manifestVersion` 1, spec in the `bugsee/specs` repository, `sdk/options`)
+
+- It never changes once published, so a fetched copy is the authority for the keys, types, enum values (by the SDK's INTERNAL value, never an ordinal) and defaults of
+  that version. If `sync_option_manifests.dart --check` fails, the pin moved without a re-sync or a fixture was edited by hand; upstream did not change.
+- Shape: `{manifestVersion, sdk, sdkVersion, buildConfiguration, generatedAt, options: [{key, type, default, module, hidden, enum?}]}`; an enum option carries `enum: {name, values: {constant: internal value}}`.
+- Every SDK that embeds a native SDK (this wrapper, and the other cross-platform wrappers) reads the manifest of the version it pins and adopts the differences in its own
+  launch options. Nothing here is written from memory of the SDK: the manifest is the input.
+- Where it is read: `scripts/sync_option_manifests.dart` fetches it and vendors it VERBATIM as `test/fixtures/option_manifests/{android,ios}.json` (the only network
+  step, also run weekly by `native-pins.yml --check`). `scripts/generate_options.dart` then writes `lib/src/options/option_registry.g.dart` and `bugsee_options.g.dart` (the typed
+  `BugseeOptions` and its enums) from the manifests plus `docs.json` (the SDKs' own prose, `scripts/extract_option_docs.dart`, private SDK checkouts). One flat `com.bugsee.option.*` map
+  goes to both platforms; a key or enum constant only one platform has is skipped on the other with a debug warning.
+- How it is analysed: diff the new manifest against the vendored one (`diff <(python3 -m json.tool new.json) <(python3 -m json.tool test/fixtures/option_manifests/<sdk>.json)`)
+  BEFORE overwriting, and write down what appeared, went, or changed type, default or enum values. Then `generate_options.dart` fails loudly on anything that needs a decision (a NEW enum
+  must be named in `enumFamilies`; a key with different types on the two platforms; one value with two names must be listed in `knownNameDivergences`), and
+  `test/option_manifests_test.dart` is STRICT on keys, types and enum values across platforms: a new default difference or one-sided enum member fails until you list it, with the reason.
+  The counts there (Android 88 / iOS 72 options) change deliberately with a changed surface. Also adapt the native side when needed: the Android enum table
+  (`LaunchOptionValuesTest.java`) and the iOS XCTest (`BGSFlutterLaunchOpsTests.m`).
+- A changed default is a behaviour change for users: say it in `CHANGELOG.md` and `doc/migration-from-9x.md` (for example the shake and notification-bar triggers off by default since
+  Android 7.6.0 / iOS 7.1.0).
+
+### Steps
+
+1. **Find and verify the version.** Android: Maven Central `com.bugsee:bugsee-android`, `-android-ndk` and `-android-feedback` (all three at the same version; the Gradle plugin `gradlePlugin`
+   moves separately and must be >= 4.0.7). iOS: the tag of `github.com/bugsee/spm` and `github.com/bugsee/feedback-spm` (use the same tag; the iOS source repository has no 7.x tag). `scripts/check_native_pins.dart`
+   (weekly in `native-pins.yml`) reports a newer Android 7.x. Read what changed (the SDK's change notes or the tag-to-tag compare): the wrapper SPI (`BugseeWrapperChannel` and friends) and
+   the options manifest are what can break the wrapper; SDK-internal fixes need only the pin.
+2. **`native-versions.json`**, the single source: `android.sdk`, `android.sdkBuild` (10 characters of the tag commit until a real run's banner replaces it), `ios.sdk`, `ios.sdkBuild`,
+   `ios.spmRevision`, `ios.feedbackSpmRevision` (`git ls-remote <spm url> <tag>`), and the `provenance` text (date, source, what changed, what is NOT verified). Never hardcode a version elsewhere.
+3. **The golden files.** `dart scripts/sync_option_manifests.dart` (analyse the diff as above), then `dart scripts/generate_options.dart`; commit the regenerated `.g.dart` files.
+4. **Fixtures read from SDK source** (private checkouts; run when the SDK changed, and update the `pins` or `sources` line when it did not): `scripts/extract_report_enums.dart` -> `test/fixtures/report_enums.json`,
+   `scripts/extract_data_requests.dart` -> `data_requests.json`, `scripts/extract_option_docs.dart` -> `docs.json`, and `scripts/verify_option_manifests.dart` as the independent read of the manifests.
+5. **Repeated literals** (a published copy has no `native-versions.json`): `packages/bugsee_flutter_feedback/android/build.gradle` (`feedbackSdkVersion`); iOS `Package.swift` of `ios/bugsee_flutter`,
+   `ios/wrapper_tests` and both feedback packages (`exact:` tags); the example's `Package.resolved` files (revisions); the harness test fixtures in `test/device_harness_test.dart` (banner text, Gradle
+   dependency lines); `test/option_manifests_test.dart` (counts and one message). The Android core reads `native-versions.json` itself.
+6. **Docs** that name a version: `README.md` (table), `CHANGELOG.md` (the newest entry and Requirements), `packages/bugsee_flutter_feedback/CHANGELOG.md`, `PLAN.md` (D1 and the open-decision text), this file, `doc/README.md`,
+   `doc/architecture.md`, `doc/migration-from-9x.md`. Do NOT rewrite statements about the version something happened in or was measured at (`doc/verification.md`, "since 7.6.0"): they are history.
+7. **Verify.** `flutter analyze && flutter test`, both `--check` generators, `build apk` and the iOS build in CI, then the device harness (`doc/verification.md`) which reads the banner and fixes `sdkBuild`.
+   State in the PR what was NOT run (a device, a backend).
+8. **Wrapper identity is separate**: the wrapper version (pubspec `version:`) does not change with a native bump; only a wrapper release changes it (PLAN.md "Release checklist", step 3).
+
 ## Checks
 
 ```bash
@@ -95,7 +162,13 @@ dart scripts/sync_option_manifests.dart --check      # network: the vendored man
 (cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest :bugsee_flutter_feedback:testDebugUnitTest)
 (cd ios/wrapper_tests && xcodebuild test -collect-test-diagnostics never -scheme bugsee_flutter_wrapper_tests -destination 'platform=iOS Simulator,name=<iPhone>')
 flutter pub publish --dry-run && scripts/publish_feedback.sh    # dry runs only; never publish from an agent
+scripts/pana_check.sh .                              # the pub.dev score (needs jq; pana runs from tools/pana)
+scripts/check_release.sh v<version>                  # tag vs both pubspecs and CHANGELOGs
 ```
+
+Environment notes: the Flutter 3.50.0 SDK is not on PATH by default (`~/fvm/versions/3.50.0/bin`). CI's recurring flake is a Maven Central 429 in the
+`build apk` jobs: re-run only the failed jobs of the NEWEST run (re-running an old run cancels the newest). Real devices only through the device lock script.
+The end-to-end symbolication run against a backend (`scripts/device/e2e_symbolication.dart`) needs app tokens and a device; its results are in `doc/verification.md`.
 
 Device and source-reading checks (not CI): `example/integration_test/*_test.dart` (`-d <emulator or simulator>`, some need `support/mock_api.py`
 and `--dart-define=BUGSEE_ENDPOINT=...`; see `.github/CI.md`), `dart scripts/device/verify.dart ...` (`doc/verification.md`),

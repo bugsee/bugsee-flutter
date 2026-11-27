@@ -17,7 +17,7 @@ errors.
 | | |
 |---|---|
 | Flutter / Dart | 3.50.0 or newer / 3.14 or newer |
-| Android | `minSdk` 21; JDK 17 or 21 for the build (what CI runs and the SDK documents; the example also built a debug APK with JDK 25 on Gradle 9.3.1, measured, not a supported set); the Bugsee Gradle plugin **4.1.1** (mandatory, see below) |
+| Android | `minSdk` 21; JDK 17 or 21 for the build (what CI runs and the SDK documents; the example also built a debug APK with JDK 25 once, on Gradle 9.3.1, measured, not a supported set); Android Gradle Plugin 9 with the Gradle it needs: keep what `flutter create` of 3.50 generates (AGP 9.3.1, Gradle 9.5.0; Flutter 3.50 knows AGP up to 9.4), see below; the Bugsee Gradle plugin **4.1.1** (mandatory, see below) |
 | iOS | 15.0 or newer; Swift Package Manager only (no CocoaPods: Bugsee publishes no pod and this plugin has no podspec) |
 | Native SDKs | Android `7.6.1`, iOS `7.1.0` (pinned in [`native-versions.json`](native-versions.json)) |
 | Not covered | web, desktop (the calls do nothing there), tvOS, visionOS, the Android leak module |
@@ -54,7 +54,7 @@ while the core is unpublished.
    ```kotlin
    plugins {
        id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-       id("com.android.application") version "9.5.3" apply false   // Flutter 3.50 requires AGP 9; AGP 9.5 needs Gradle 9.6 or newer (gradle-wrapper.properties)
+       id("com.android.application") version "9.3.1" apply false   // what the Flutter 3.50 template generates (AGP 9); keep your own version
        id("com.bugsee.android.gradle") version "4.1.1" apply false   // the version this release is tested with
    }
    ```
@@ -68,6 +68,9 @@ while the core is unpublished.
        id("com.bugsee.android.gradle")
    }
    ```
+
+   This package asks nothing of the AGP and Gradle versions beyond what Flutter 3.50 itself supports: do not change your app's pair for it (an AGP needs a minimum
+   Gradle: 9.3 needs 9.5.0, 9.5 needs 9.6.0). CI builds the example on AGP 9.5.3 with Gradle 9.6.0, newer than Flutter 3.50 knows, and it builds; that is not a requirement.
 
    (Groovy: `id 'com.bugsee.android.gradle' version '4.1.1' apply false` in `settings.gradle`, `id 'com.bugsee.android.gradle'` in `app/build.gradle`.)
 

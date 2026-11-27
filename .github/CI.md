@@ -131,7 +131,7 @@ Android builds need JDK 17 or 21 (`native-versions.json` `android.jdk`). CI uses
 JDK 25 (Android Studio's bundled JBR) is not in the supported set: the example built a debug APK with it on Gradle 9.3.1 (measured), but CI runs 21.
 Locally, point `JAVA_HOME` and `GRADLE_OPTS=-Dorg.gradle.java.home=...` at a 17 or 21 JDK.
 
-The example builds with Gradle 9.6.0 and Android Gradle Plugin 9.5.3 (Flutter 3.50 requires AGP 9; AGP 9.5 needs Gradle 9.6 at least), without the `kotlin-android` plugin;
+The example builds with Gradle 9.6.0 and Android Gradle Plugin 9.5.3 (newer than Flutter 3.50 knows, AGP up to 9.4, and than its template, AGP 9.3.1 with Gradle 9.5.0; AGP 9.5 needs Gradle 9.6 at least; the README tells apps to keep the template pair), without the `kotlin-android` plugin;
 `example/android/gradle.properties` keeps the two opt-outs Flutter's migrator writes (`android.builtInKotlin=false`, `android.newDsl=false`).
 The example and tests import `material_ui` (`package:flutter/material.dart` is deprecated since 3.47).
 

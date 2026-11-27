@@ -91,7 +91,7 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
 - **Release and publishing** (`.github/workflows/release.yml`, `.github/CI.md` "Releases", PLAN.md "Release checklist"): ONLY a pushed tag `v<version>`
   publishes, core first, then the feedback package, over pub.dev's GitHub OIDC (no secret). The gate (read-only: tag on `main`, tag == both pubspecs
   and both CHANGELOG tops, `ci-ok` green on the commit, format, codegen, analyze, test, dry runs, archive check, pana) runs before the two publish jobs,
-  which use the `pub.dev` environment (required reviewers). A manual `workflow_dispatch` is always a dry run. Tags `v*` are protected by a ruleset. **An agent
+  which use the `pub.dev` environment (required reviewers). A manual `workflow_dispatch` is always a dry run. Tags `v*` are protected by a ruleset. Both are GitHub settings, not repo files (set up 2026-11: environment `pub.dev` with required reviewers and `v*` tags only, tag ruleset "Release tags (v*)"): before relying on them, check with `gh api repos/bugsee/bugsee-flutter/rulesets` and `gh api repos/bugsee/bugsee-flutter/environments/pub.dev`; PLAN.md step 0 lists how to recreate them. **An agent
   never tags, pushes a tag, approves the environment or publishes**; it may run the dry run and report. `test/native_versions_test.dart` fails if the
   workflow is weakened: change the guard in the same PR, with the reason. The first version of a new package is a manual publish
   (`scripts/publish_feedback.sh --publish`); the Flutter version in every job is the floor, 3.50.0.

@@ -158,7 +158,7 @@ Bugsee.setNetworkFilter((e) { e.headers.remove('authorization'); return e; });
 | 9.x (`BugseeLaunchOptions`) | 10.x (`BugseeOptions`) |
 |---|---|
 | `maxRecordingTime` | `configDuration` |
-| `shakeToReport` | `reportingTriggersShake` (**off by default since Android 7.6.1 and iOS 7.1.0**: pass `true` to keep shake-to-report) |
+| `shakeToReport` | `reportingTriggersShake` (**off by default since Android 7.6.0 and iOS 7.1.0**: pass `true` to keep shake-to-report) |
 | `crashReport` | `detectCrash` |
 | `ndkCrashReport` (Android) | `detectCrashNdk` |
 | `videoEnabled` | `captureVideo` |
@@ -179,7 +179,7 @@ Bugsee.setNetworkFilter((e) { e.headers.remove('authorization'); return e; });
 | iOS `style` (`BugseeIosVisualStyle`) | `reportingUiStyle` (`BugseeStyle`: `light`, `dusk`, `basedOnStatusBar`, `system`; different members) |
 | iOS `monitorDiskSpace`, `monitorBluetoothStatus`, `captureAVPlayer` | `captureDiskSpace`, `captureBluetoothStatus`, `captureAvPlayer` |
 | Android `videoMode` (`BugseeVideoMode`) / `videoQuality` (`BugseeVideoQuality`) | `captureVideoMode` (`VideoMode`) / `captureVideoQuality` (`VideoQuality`) |
-| Android `notificationBarTrigger` | `reportingTriggersNotificationBar` (**off by default since Android 7.6.1**: pass `true` to keep the report notification) |
+| Android `notificationBarTrigger` | `reportingTriggersNotificationBar` (**off by default since Android 7.6.0**: pass `true` to keep the report notification) |
 | iOS `screenshotToReport`, `killDetection`; Android `serviceMode` | no one-to-one typed field verified: search `BugseeOptions` for the 7.x option, or reach it through `BugseeOptions.custom` |
 | `setCustomOption(key, value)` | `BugseeOptions(custom: {key: value})` (an unknown key is an `ArgumentError`, not silently dropped) |
 | `BugseeFrameRate`, `BugseeVideoQuality`, `BugseeVideoMode` enums | `FrameRate`, `VideoQuality`, `VideoMode`; enums carry the SDK's internal value |

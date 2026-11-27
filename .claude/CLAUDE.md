@@ -5,9 +5,14 @@ Guidance for reviewers and agents working in this repository.
 ## Project
 
 `bugsee_flutter`: the Flutter wrapper for the Bugsee 7.x native SDKs (Android 7.6.1, iOS 7.1.0), version `10.0.0-beta.1`,
-unpublished, plus the separate `packages/bugsee_flutter_feedback`. The implementation is complete and merged into `main` (formerly `nextgen`);
-`PLAN.md` is the status, the decisions (D1 to D13), the open questions and the release checklist. The authoritative wrapper spec is
+the first public beta (not yet on pub.dev until the maintainer pushes the tag), plus the separate `packages/bugsee_flutter_feedback`. The implementation is complete and merged into `main`
+(the default branch, formerly `nextgen`); `PLAN.md` is the status, the decisions (D1 to D14), the open questions and the release checklist. The authoritative wrapper spec is
 `sdk/wrapper-workbook` in the `bugsee/specs` repository (refer to it by repo name); `doc/workbook-conformance.md` maps it to the code.
+
+Repo map: `lib/` (Dart facade and capture), `android/` and `ios/` (the wrapper, iOS as a Swift package), `pigeons/` (bridge definition and its generator
+package), `packages/bugsee_flutter_feedback/` (separate package, own bridge), `scripts/` (codegen, release and pub.dev helpers; `scripts/device/` is the
+device harness), `tools/pana/` (locked pana toolchain, never published), `test/` (unit tests and the drift guards), `example/` (app and device tests),
+`native-versions.json` (the pins), `.github/` (workflows, `CI.md`).
 
 Where to look: `doc/README.md` (index), `doc/architecture.md` (layers and rules), `doc/design-rules.md` (the detailed rules per area, the
 long form of everything below), `doc/api-surface.md`, `doc/verification.md` (device evidence), `.github/CI.md` (checks), `README.md` (users).
@@ -83,6 +88,20 @@ long form of everything below), `doc/api-surface.md`, `doc/verification.md` (dev
 - **Docs**: a doc claim about code (a name, default, limit, command, path) is checked against the code; `README.md`, `CHANGELOG.md` (the newest entry is
   the pubspec version: `test/native_versions_test.dart`), `PLAN.md` and the pages in `doc/` change with the behaviour they describe.
 
+- **Release and publishing** (`.github/workflows/release.yml`, `.github/CI.md` "Releases", PLAN.md "Release checklist"): ONLY a pushed tag `v<version>`
+  publishes, core first, then the feedback package, over pub.dev's GitHub OIDC (no secret). The gate (read-only: tag on `main`, tag == both pubspecs
+  and both CHANGELOG tops, `ci-ok` green on the commit, format, codegen, analyze, test, dry runs, archive check, pana) runs before the two publish jobs,
+  which use the `pub.dev` environment (required reviewers). A manual `workflow_dispatch` is always a dry run. Tags `v*` are protected by a ruleset. **An agent
+  never tags, pushes a tag, approves the environment or publishes**; it may run the dry run and report. `test/native_versions_test.dart` fails if the
+  workflow is weakened: change the guard in the same PR, with the reason. The first version of a new package is a manual publish
+  (`scripts/publish_feedback.sh --publish`); the Flutter version in every job is the floor, 3.50.0.
+- **pana** (the pub.dev score): `scripts/pana_check.sh .` (CI job `pana`, and the release gate), every section full, the dependencies section may lose
+  10. pana and its dependencies are pinned by `tools/pana/pubspec.lock` (`--enforce-lockfile`); the feedback package is scored in the release only after
+  the core is live (pana resolves the core from pub.dev), so it cannot be scored earlier.
+- **Bumping a native pin**: edit `native-versions.json`, then `sync_option_manifests.dart`, `generate_options.dart`, and update the vendored fixtures
+  (`data_requests.json`, `report_enums.json`, `docs.json` source) and the repeated literals (the feedback Gradle file, harness test fixtures); the drift
+  guards list what is missed. `sdkBuild` comes from a banner of a real run. Do not rewrite historical "since/at version X" statements in docs.
+
 ## Checks
 
 ```bash
@@ -95,7 +114,13 @@ dart scripts/sync_option_manifests.dart --check      # network: the vendored man
 (cd example/android && ./gradlew :bugsee_flutter:testDebugUnitTest :bugsee_flutter_feedback:testDebugUnitTest)
 (cd ios/wrapper_tests && xcodebuild test -collect-test-diagnostics never -scheme bugsee_flutter_wrapper_tests -destination 'platform=iOS Simulator,name=<iPhone>')
 flutter pub publish --dry-run && scripts/publish_feedback.sh    # dry runs only; never publish from an agent
+scripts/pana_check.sh .                              # the pub.dev score (needs jq; pana runs from tools/pana)
+scripts/check_release.sh v<version>                  # tag vs both pubspecs and CHANGELOGs
 ```
+
+Environment notes: the Flutter 3.50.0 SDK is not on PATH by default (`~/fvm/versions/3.50.0/bin`). CI's recurring flake is a Maven Central 429 in the
+`build apk` jobs: re-run only the failed jobs of the NEWEST run (re-running an old run cancels the newest). Real devices only through the device lock script.
+The end-to-end symbolication run against a backend (`scripts/device/e2e_symbolication.dart`) needs app tokens and a device; its results are in `doc/verification.md`.
 
 Device and source-reading checks (not CI): `example/integration_test/*_test.dart` (`-d <emulator or simulator>`, some need `support/mock_api.py`
 and `--dart-define=BUGSEE_ENDPOINT=...`; see `.github/CI.md`), `dart scripts/device/verify.dart ...` (`doc/verification.md`),

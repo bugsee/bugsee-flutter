@@ -1208,6 +1208,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       final check = read('scripts/check_pub_archive.sh');
       for (final path in [
         'scripts/device/',
+        'tools/',
         'test/device_harness_test.dart',
         'example/lib/verify_main.dart',
         'example/lib/e2e_main.dart',
@@ -1223,6 +1224,7 @@ Runner[1:2] (Flutter) flutter: VERIFY|{"kind":"handler","phase":"before","type":
       // with broken imports (the harness test imported ../scripts/device/...).
       const excluded = [
         'scripts/device/',
+        'tools/',
         'test/device_harness_test.dart',
         'example/lib/verify_main.dart',
         'example/lib/e2e_main.dart',

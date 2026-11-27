@@ -1,0 +1,12 @@
+# Pins `pana` (the tool behind the pub.dev score) AND everything it resolves, through the committed
+# pubspec.lock, for scripts/pana_check.sh. Dev tooling: never published (.pubignore), not a workspace member.
+# Raising pana: change the version here, run `dart pub get` with the floor Dart, commit both files.
+name: pana_tool
+description: Pinned pana for scripts/pana_check.sh.
+publish_to: none
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  pana: 0.23.19

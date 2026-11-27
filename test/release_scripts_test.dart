@@ -1,6 +1,7 @@
 // The two scripts of the release workflow (.github/workflows/release.yml), run for real:
 // scripts/check_release.sh (tag == pubspecs == CHANGELOG tops) and scripts/pub_dev_status.sh
 // (is a version live on pub.dev), the latter against a local server so nothing reaches pub.dev.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -144,6 +145,129 @@ void main() {
 
     test('a bad command is a usage error', () async {
       expect((await run(['frobnicate'])).exitCode, 64);
+    });
+  });
+
+  // scripts/pana_check.sh judges pana's JSON per section: every section full, except the dependencies section,
+  // which may lose its allowance (default 10). PANA_REPORT_JSON feeds it a report instead of running pana.
+  group('pana_check.sh', () {
+    final jqOk = () {
+      try {
+        return Process.runSync('jq', ['--version']).exitCode == 0;
+      } on ProcessException {
+        return false;
+      }
+    }();
+
+    ProcessResult judge(
+      Map<String, int> lost, {
+      Map<String, String> env = const {},
+    }) {
+      const max = {
+        'Follow Dart file conventions': 30,
+        'Provide documentation': 20,
+        'Platform support': 20,
+        'Pass static analysis': 50,
+        'Support up-to-date dependencies': 40,
+      };
+      final sections = [
+        for (final e in max.entries)
+          {
+            'title': e.key,
+            'maxPoints': e.value,
+            'grantedPoints': e.value - (lost[e.key] ?? 0),
+            'summary': 'details of ${e.key}',
+          },
+      ];
+      final dir = Directory.systemTemp.createTempSync('pana');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final f = File('${dir.path}/report.json')
+        ..writeAsStringSync(
+          jsonEncode({
+            'scores': {
+              'grantedPoints': sections.fold<int>(
+                0,
+                (a, s) => a + (s['grantedPoints'] as int),
+              ),
+              'maxPoints': 140,
+            },
+            'report': {'sections': sections},
+          }),
+        );
+      return Process.runSync(
+        'bash',
+        ['scripts/pana_check.sh'],
+        environment: {'PANA_REPORT_JSON': f.path, ...env},
+      );
+    }
+
+    test('a full score passes', () {
+      if (!jqOk) return markTestSkipped('jq is not installed');
+      expect(judge({}).exitCode, 0);
+    });
+
+    test('the dependencies section may lose up to its allowance', () {
+      if (!jqOk) return markTestSkipped('jq is not installed');
+      expect(judge({'Support up-to-date dependencies': 10}).exitCode, 0);
+      final r = judge({'Support up-to-date dependencies': 20});
+      expect(r.exitCode, 1);
+      expect('${r.stderr}', contains('Support up-to-date dependencies'));
+      // the allowance is configurable
+      expect(
+        judge(
+          {'Support up-to-date dependencies': 20},
+          env: {'PANA_DEPENDENCY_ALLOWANCE': '20'},
+        ).exitCode,
+        0,
+      );
+    });
+
+    test('a loss in any other section fails, however small and whatever dependencies scored', () {
+      if (!jqOk) return markTestSkipped('jq is not installed');
+      for (final section in [
+        'Follow Dart file conventions',
+        'Provide documentation',
+        'Platform support',
+        'Pass static analysis',
+      ]) {
+        // headroom in dependencies must not hide it (a single total would)
+        final r = judge({section: 1});
+        expect(r.exitCode, 1, reason: section);
+        expect('${r.stderr}', contains('details of $section'));
+        expect(
+          judge({section: 1, 'Support up-to-date dependencies': 10}).exitCode,
+          1,
+          reason: section,
+        );
+      }
+    });
+
+    test('a bad allowance or a report without sections is an error', () {
+      if (!jqOk) return markTestSkipped('jq is not installed');
+      expect(judge({}, env: {'PANA_DEPENDENCY_ALLOWANCE': 'ten'}).exitCode, 2);
+      final dir = Directory.systemTemp.createTempSync('pana');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final f = File('${dir.path}/r.json')..writeAsStringSync('{"report":{}}');
+      expect(
+        Process.runSync(
+          'bash',
+          ['scripts/pana_check.sh'],
+          environment: {'PANA_REPORT_JSON': f.path},
+        ).exitCode,
+        2,
+      );
+    });
+
+    test('pana and what it resolves are pinned by a committed lock file', () {
+      expect(File('tools/pana/pubspec.lock').existsSync(), isTrue);
+      expect(
+        File('tools/pana/pubspec.yaml').readAsStringSync(),
+        contains(RegExp(r'^  pana: \d+\.\d+\.\d+$', multiLine: true)),
+        reason: 'an exact version, not a range',
+      );
+      final script = File('scripts/pana_check.sh').readAsStringSync();
+      expect(script, contains('dart pub get --enforce-lockfile'));
+      expect(script, isNot(contains('pub global activate')));
     });
   });
 }

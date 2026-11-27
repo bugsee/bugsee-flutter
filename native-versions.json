@@ -6,11 +6,11 @@
     "provenance": "Raised from 3.41.0 (the first release where a SwiftPM-only plugin resolves on Linux/Windows) to 3.50.0 / Dart 3.14.0 for the 10.0 major: Direct Interop (JNIgen and FFIgen for Objective-C stable, Pigeon interop mode in preview), AGP 9 and `material_ui` are only there from 3.50 (flutter.dev/blog/whats-new-in-flutter-3-50, 2026-11). Competitor floors (pub.dev, 2026-10-20): Sentry 3.44, Firebase/Datadog 3.27, Bugsnag/Shake/Embrace 3.10, Instabug 1.17."
   },
   "android": {
-    "sdk": "7.6.0",
+    "sdk": "7.6.1",
     "gradlePlugin": "4.1.1",
-    "sdkBuild": "2a88ea7fbf",
+    "sdkBuild": "95a968c019",
     "minSdk": 21,
-    "provenance": "Maven Central latest, 2026-11-17 (moved from 7.5.1; the plugin stays 4.1.1, the latest, tag v4.1.1). 7.6.0 changes behaviour, not the wrapper SPI: ReportingTriggerByShake and ReportingTriggerByNotification default to false, the HttpURLConnection response body arrives as a later event, the binary and JSON serializers and the logcat reader are hardened. Gradle plugin must be >= 4.0.7 (workbook 1.4). sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.6.0 [2a88ea7fbf]`: 10 characters, the tag v7.6.0 is 2a88ea7fb; read from a run on a physical phone, 2026-11-17): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
+    "provenance": "Maven Central latest, 2026-11-27 (7.6.1, published 2026-11-26, moved from 7.6.0 of 2026-11-17, which moved from 7.5.1; 7.6.1 is a patch of three SDK-internal fixes: PixelCopy on a private Surface copy, a server session opened on every launch, and a retry without the access token on a rejected token; the wrapper SPI and the options manifest (88 options) are unchanged; sdkBuild is the 10 characters of the tag v7.6.1 commit 95a968c019, NOT yet read from a banner of a run: the device harness reads it on the next run; the plugin stays 4.1.1, the latest, tag v4.1.1). 7.6.0 changes behaviour, not the wrapper SPI: ReportingTriggerByShake and ReportingTriggerByNotification default to false, the HttpURLConnection response body arrives as a later event, the binary and JSON serializers and the logcat reader are hardened. Gradle plugin must be >= 4.0.7 (workbook 1.4). sdkBuild is the commit the SDK prints in its banner (`Bugsee Android SDK 7.6.0 [2a88ea7fbf]` was 10 characters of the tag v7.6.0 commit 2a88ea7fb, read from a run on a physical phone, 2026-11-17): the device verification harness (scripts/device) matches it, because a version string alone cannot tell two builds of the same version apart (workbook 9.1.1).",
     "jdk": {
       "supported": [
         17,
@@ -34,7 +34,7 @@
     "dir": "packages/bugsee_flutter_feedback",
     "androidArtifact": "com.bugsee:bugsee-android-feedback",
     "iosProduct": "BugseeFeedback",
-    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, published 2026-11-16: bugsee-android-feedback 7.6.0, which depends on bugsee-android 7.6.0); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
+    "provenance": "The optional in-app chat, a separate package (PLAN.md D4) mirroring the native split. Its Android artifact is published at the same version as android.sdk (Maven Central, published 2026-11-16: bugsee-android-feedback 7.6.1, published 2026-11-26, depends on bugsee-android 7.6.1; 7.6.0 was published 2026-11-16); its iOS product is BugseeFeedback of feedbackSpmUrl at ios.sdk (it pins bugsee/spm exactly to the same tag). The feedback package's Gradle and Package.swift repeat these pins as literals (a published copy has no native-versions.json next to it) and test/feedback_package_drift_test.dart compares them."
   },
   "pigeon": {
     "version": "29.0.7",
@@ -43,6 +43,6 @@
   "optionsManifest": {
     "urlTemplate": "https://download.bugsee.com/sdk/options/{sdk}/{version}.json",
     "fixtureDir": "test/fixtures/option_manifests",
-    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.6.0.json (generatedAt 2026-11-16) and ios/7.1.0.json (generatedAt 2026-11-16), both fetched 2026-11-17, vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
+    "provenance": "Both SDKs publish an immutable options-manifest.json per release (bugsee/specs sdk/options, manifestVersion 1), generated from the live option registry: android/7.6.1.json (generatedAt 2026-11-26) and ios/7.1.0.json (generatedAt 2026-11-16), fetched 2026-11-27 (iOS: 2026-11-17, unchanged), vendored verbatim as android.json / ios.json in fixtureDir. `dart scripts/sync_option_manifests.dart --check` (weekly, native-pins.yml) refetches and diffs; everything else reads the committed copies offline."
   }
 }

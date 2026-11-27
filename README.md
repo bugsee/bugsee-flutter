@@ -54,7 +54,7 @@ while the core is unpublished.
    ```kotlin
    plugins {
        id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-       id("com.android.application") version "9.1.1" apply false   // Flutter 3.50 requires AGP 9
+       id("com.android.application") version "9.5.3" apply false   // Flutter 3.50 requires AGP 9
        id("com.bugsee.android.gradle") version "4.1.1" apply false   // the version this release is tested with
    }
    ```
